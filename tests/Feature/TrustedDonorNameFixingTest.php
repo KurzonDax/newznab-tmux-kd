@@ -162,6 +162,28 @@ class TrustedDonorNameFixingTest extends TestCase
         return ['hidden candidate' => [false], 'hidden donor' => [true]];
     }
 
+    public function test_a_stored_file_pass_names_an_xxx_posting_label_from_a_video_without_trust(): void
+    {
+        $this->insertRelease(1, 'Exampleab12 - [03/40] - "Exampleab12.part02.rar"', Category::XXX_X264);
+        DB::table('releases')->where('id', 1)->update(['size' => 10_000]);
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'Example Studio - Afternoon Feature (2026-01-10).mp4', 'size' => 3_000],
+            ['releases_id' => 1, 'name' => 'Example Studio - Extended Evening Feature (2026-01-11).mp4', 'size' => 3_000],
+        ]);
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        app(NameFixingService::class)->fixNamesWithFiles(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame('Example Studio - Extended Evening Feature (2026-01-11)', $release->searchname);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->predb_id);
+        $this->assertSame(1, (int) $release->isrenamed);
+        $this->assertSame(1, (int) $release->proc_files);
+        Event::assertDispatched(ReleaseNameFixed::class);
+    }
+
     public function test_media_uid_match_renames_from_trusted_donor_without_predb(): void
     {
         $this->assertTrustedDonorRenamesTarget('uid');

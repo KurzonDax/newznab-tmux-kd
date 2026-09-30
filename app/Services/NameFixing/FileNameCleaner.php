@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\NameFixing;
 
 use App\Models\Category;
+use App\Services\CollectionsCleaningService;
 use App\Traits\DetectsHashedNames;
 
 /**
@@ -645,6 +646,38 @@ class FileNameCleaner
         }
 
         return $this->looksLikeHashedName($searchName);
+    }
+
+    /**
+     * Whether a name is only an opaque posting label: one ASCII token of letters and digits,
+     * bare or inside its posting subject. The subject may repeat the label, carry the posted
+     * archive under that label, a counter, a trailing size and yEnc; any other word is a title.
+     */
+    public function isUnresolvedPostingLabel(string $name): bool
+    {
+        $label = null;
+        if (preg_match_all('/"([^"]*)"/', $name, $quoted) > 0) {
+            if (count($quoted[0]) !== 1) {
+                return false;
+            }
+            $label = $this->normalizeCandidateTitle($this->extractFilenameFromPath($quoted[1][0]));
+            $name = str_replace($quoted[0][0], ' ', $name);
+        }
+
+        $name = preg_replace('/[\[(]\s*\d+\s*\/\s*\d+\s*[\])]/', ' ', $name) ?? $name;
+        do {
+            $previous = $name;
+            $name = preg_replace(['/\byEnc\s*$/i', '/'.CollectionsCleaningService::REGEX_SUBJECT_SIZE.'$/'], '', rtrim($name)) ?? $name;
+        } while ($name !== $previous);
+
+        foreach (preg_split('/[\s._-]+/', $name, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $word) {
+            $label ??= $word;
+            if ($word !== $label) {
+                return false;
+            }
+        }
+
+        return $label !== null && preg_match('/^(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+$/', $label) === 1;
     }
 
     /**

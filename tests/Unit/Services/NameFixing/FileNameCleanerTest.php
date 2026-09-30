@@ -470,4 +470,58 @@ class FileNameCleanerTest extends TestCase
             'empty' => [''],
         ];
     }
+
+    #[DataProvider('unresolvedPostingLabels')]
+    public function test_an_opaque_posting_label_is_an_unresolved_posting_label(string $name): void
+    {
+        $this->assertTrue((new FileNameCleaner)->isUnresolvedPostingLabel($name));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function unresolvedPostingLabels(): array
+    {
+        return [
+            'bare token' => ['Exampleab12'],
+            'digits first' => ['12Exampleab'],
+            'subject' => ['Exampleab12 - [03/40] - "Exampleab12.part02.rar"'],
+            'subject with yEnc' => ['Exampleab12 - [03/40] - "Exampleab12.part02.rar" yEnc'],
+            'round counter' => ['Exampleab12 - (03/40) - "Exampleab12.part02.rar" yEnc'],
+            'counter only' => ['[03/40] - "Exampleab12.rar" yEnc'],
+            'old rar volume' => ['"Exampleab12.r05" yEnc'],
+            'par2 volume' => ['Exampleab12 [40/40] "Exampleab12.vol03+04.par2"'],
+            'trailing size' => ['Exampleab12 - [03/40] - "Exampleab12.part02.rar" - 1,23 GB'],
+            'trailing size and yEnc' => ['Exampleab12 - [03/40] - "Exampleab12.part02.rar" - 1,23 GB yEnc'],
+        ];
+    }
+
+    #[DataProvider('resolvedOrTitledNames')]
+    public function test_a_name_with_title_words_is_not_an_unresolved_posting_label(string $name): void
+    {
+        $this->assertFalse((new FileNameCleaner)->isUnresolvedPostingLabel($name));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function resolvedOrTitledNames(): array
+    {
+        return [
+            'descriptive title' => ['Example Studio - Evening Feature (2026)'],
+            'title words beside the label' => ['Exampleab12 - Evening Feature - [03/40] - "Exampleab12.part02.rar"'],
+            'title words in the posted file' => ['[03/40] - "Exampleab12 Evening Feature.part02.rar" yEnc'],
+            'a different label' => ['Exampleab12 - [03/40] - "Otherab34.part02.rar"'],
+            'the label in another case' => ['EXAMPLEAB12 - [03/40] - "Exampleab12.part02.rar"'],
+            'two quoted names' => ['"Exampleab12.part01.rar" "Exampleab12.part02.rar"'],
+            'letters only' => ['Exampleab'],
+            'digits only' => ['123456'],
+            'two tokens' => ['Example_ab12'],
+            'dotted scene name' => ['Example.Studio.26.01.11'],
+            'non-ASCII letters' => ['Exampleäb12'],
+            'split volume' => ['[03/40] - "Exampleab12.7z.001" yEnc'],
+            'counter and yEnc only' => ['[03/40] yEnc'],
+            'empty' => [''],
+        ];
+    }
 }

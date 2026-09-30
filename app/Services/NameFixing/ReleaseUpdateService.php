@@ -34,6 +34,11 @@ class ReleaseUpdateService
     public const DESCRIPTIVE_MEDIA_TITLE_METHOD = 'MediaInfo: Descriptive title';
 
     /**
+     * Methods that offer a descriptive video filename from stored files or an archive listing.
+     */
+    private const DESCRIPTIVE_FILENAME_METHODS = ['fileCheck: Descriptive title', 'RarInfo: Descriptive title'];
+
+    /**
      * @var list<string>
      */
     private const PLAUSIBILITY_TRUSTED_TYPES = [
@@ -232,8 +237,12 @@ class ReleaseUpdateService
                 return;
             }
 
+            $categoryId = (int) ($release->categories_id ?? $release->categoryid ?? 0);
+            $replacesXxxPostingLabel = $descriptiveTitleCandidate
+                && $this->replacesXxxPostingLabel($release, $name, $method, $type, $categoryId);
+
             // An episode's title is not the name of a release that holds more than that episode.
-            if ($this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {
+            if (! $replacesXxxPostingLabel && $this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {
                 $this->done = true;
 
                 return;
@@ -244,14 +253,15 @@ class ReleaseUpdateService
             $trustedSource = $sourceTrust['bypass_plausibility'];
             $currentNameObfuscated = $this->fileNameCleaner->currentNameLooksObfuscated(
                 (string) $release->searchname,
-                (int) ($release->categories_id ?? $release->categoryid ?? 0),
+                $categoryId,
                 isset($release->matchedBy)
                     ? (string) $release->matchedBy
                     : (isset($release->matched_by) ? (string) $release->matched_by : null),
             );
-            $acceptedDescriptiveTitle = $descriptiveTitleCandidate
-                && ($descriptiveMediaTitle || $this->fileNameCleaner->isDescriptiveTitle($name))
-                && $currentNameObfuscated;
+            $acceptedDescriptiveTitle = $replacesXxxPostingLabel
+                || ($descriptiveTitleCandidate
+                    && ($descriptiveMediaTitle || $this->fileNameCleaner->isDescriptiveTitle($name))
+                    && $currentNameObfuscated);
 
             if (! $trustedSource
                 && ! $acceptedDescriptiveTitle
@@ -304,6 +314,19 @@ class ReleaseUpdateService
             }
         }
         $this->done = true;
+    }
+
+    /**
+     * Under XXX, a descriptive video filename may replace an opaque posting label. The release
+     * may hold several videos, so neither the episode guard nor a size share applies to it.
+     */
+    private function replacesXxxPostingLabel(object $release, string $name, string $method, string $type, int $categoryId): bool
+    {
+        return $type === 'Filenames, '
+            && in_array($method, self::DESCRIPTIVE_FILENAME_METHODS, true)
+            && Category::rootCategoryFor($categoryId) === Category::XXX_ROOT
+            && $this->fileNameCleaner->isDescriptiveTitle($name)
+            && $this->fileNameCleaner->isUnresolvedPostingLabel((string) $release->searchname);
     }
 
     private const string EPISODE_TOKEN_REGEX = '/(?<![A-Za-z0-9])S(\d{1,4})[._ -]?E(\d{1,4})(?!\d)/i';

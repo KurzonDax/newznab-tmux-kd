@@ -75,6 +75,62 @@ class DescriptiveTitleNameFixingTest extends TestCase
     }
 
     /**
+     * The real updater, not the recording double, decides here.
+     */
+    #[DataProvider('xxxPostingLabels')]
+    public function test_the_stored_file_pass_names_an_xxx_posting_label_from_the_longest_video(string $label): void
+    {
+        $updater = new AcceptanceRecordingUpdater;
+        $service = new TestableDescriptiveTitleNameFixingService($updater, true);
+
+        $service->processFiles($this->xxxPostingRelease($label), $this->twoUnrelatedVideos(), false);
+
+        $this->assertSame('Example Studio - Extended Evening Feature (2026-01-11).mp4', $updater->accepted);
+        $this->assertSame('fileCheck: Descriptive title', $updater->acceptedMethod);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function xxxPostingLabels(): array
+    {
+        return [
+            'bare label' => ['Exampleab12'],
+            'posting subject' => ['Exampleab12 - [03/40] - "Exampleab12.part02.rar"'],
+        ];
+    }
+
+    public function test_the_stored_file_pass_leaves_an_xxx_posting_label_when_the_setting_is_off(): void
+    {
+        $updater = new AcceptanceRecordingUpdater;
+        $service = new TestableDescriptiveTitleNameFixingService($updater, false);
+
+        $service->processFiles($this->xxxPostingRelease('Exampleab12'), $this->twoUnrelatedVideos(), false);
+
+        $this->assertNull($updater->accepted);
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function twoUnrelatedVideos(): array
+    {
+        return [
+            (object) ['textstring' => 'Example Studio - Afternoon Feature (2026-01-10).mp4', 'size' => 3000],
+            (object) ['textstring' => 'Example Studio - Extended Evening Feature (2026-01-11).mp4', 'size' => 3000],
+        ];
+    }
+
+    private function xxxPostingRelease(string $label): object
+    {
+        return (object) [
+            'releases_id' => 1, 'predb_id' => 0, 'categories_id' => Category::XXX_X264,
+            'name' => 'Exampleab12 - [03/40] - "Exampleab12.part02.rar" yEnc', 'searchname' => $label,
+            'relsize' => 10000,
+        ];
+    }
+
+    /**
      * @param  list<array{textstring: string, size?: int}>  $files
      * @param  array{}|array{string, string}  $expected
      */
@@ -153,9 +209,9 @@ class TestableDescriptiveTitleNameFixingService extends NameFixingService
     /**
      * @param  list<object>  $files
      */
-    public function processFiles(object $release, array $files): void
+    public function processFiles(object $release, array $files, bool $echo = true): void
     {
-        $this->processFileCandidates($release, $files, true, true, false, false, false);
+        $this->processFileCandidates($release, $files, $echo, true, false, false, false);
     }
 
     protected function preDbFileCheck(object $release, bool $echo, string $type, bool $nameStatus, bool $show): bool
@@ -222,5 +278,40 @@ class RecordingDescriptiveTitleUpdater extends ReleaseUpdateService
     public function incrementChecked(): void
     {
         $this->checked++;
+    }
+}
+
+/**
+ * The real updater without persistence, recording the first name it accepts.
+ */
+class AcceptanceRecordingUpdater extends ReleaseUpdateService
+{
+    public ?string $accepted = null;
+
+    public ?string $acceptedMethod = null;
+
+    public function __construct()
+    {
+        $this->fileNameCleaner = new FileNameCleaner;
+        $this->echoOutput = false;
+    }
+
+    public function updateRelease(
+        object|array $release,
+        string $name,
+        string $method,
+        bool $echo,
+        string $type,
+        bool $nameStatus,
+        bool $show,
+        ?int $preId = 0,
+        bool $descriptiveTitleCandidate = false,
+        ?RecoveryNameEvidence $recoveryEvidence = null,
+    ): void {
+        parent::updateRelease($release, $name, $method, $echo, $type, $nameStatus, $show, $preId, $descriptiveTitleCandidate, $recoveryEvidence);
+        if ($this->matched && $this->accepted === null) {
+            $this->accepted = $name;
+            $this->acceptedMethod = $method;
+        }
     }
 }
