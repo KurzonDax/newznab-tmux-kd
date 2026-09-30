@@ -13,6 +13,7 @@ use App\Models\UsersRelease;
 use App\Services\Releases\WatchlistService;
 use App\Support\SiteViewSettings;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -54,9 +55,11 @@ class GlobalDataComposer
         $view->with('site', app(SiteViewSettings::class)->converted());
 
         if ($view->name() === 'layouts.main' && Auth::check()) {
+            $releaseCategoryId = data_get($view->getData()['release'] ?? null, 'categories_id');
             $view->with([
                 'watchlistCount' => array_sum(app(WatchlistService::class)->counts(Auth::user())),
                 'basketCount' => UsersRelease::query()->where('users_id', Auth::id())->count(),
+                'navigationCurrent' => self::currentSection(request(), is_numeric($releaseCategoryId) ? (int) $releaseCategoryId : null),
             ]);
         }
     }
@@ -122,6 +125,31 @@ class GlobalDataComposer
     }
 
     /**
+     * The header button marked as the section being viewed: a category root, All for the
+     * group and all-releases pages, or null. A release details page follows its category.
+     */
+    public static function currentSection(Request $request, ?int $releaseCategoryId): ?BrowseRoot
+    {
+        return match (true) {
+            $request->is('movies', 'movies/*') => BrowseRoot::Movies,
+            $request->is('tv', 'tv/*') => BrowseRoot::Tv,
+            $request->is('adult') => BrowseRoot::Adult,
+            $request->is('browsegroup', 'browse/all', 'browse/All', 'browse/group') => BrowseRoot::All,
+            $request->routeIs('browse') => BrowseRoot::fromRoute((string) $request->route('parentCategory')),
+            $request->routeIs('title') => BrowseRoot::fromRoute((string) $request->route('root')),
+            $request->routeIs('details') && $releaseCategoryId !== null => self::categoryRoot($releaseCategoryId),
+            default => null,
+        };
+    }
+
+    private static function categoryRoot(int $categoryId): ?BrowseRoot
+    {
+        $root = BrowseRoot::fromCategoryId($categoryId);
+
+        return $root === BrowseRoot::All ? null : $root;
+    }
+
+    /**
      * @param  array<string, mixed>  $categories
      * @return list<array{root: BrowseRoot, categories: list<array<string, mixed>>}>
      */
@@ -129,7 +157,7 @@ class GlobalDataComposer
     {
         $byId = array_column($categories, null, 'id');
         $roots = [];
-        foreach ([BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Adult, BrowseRoot::Other] as $root) {
+        foreach ([BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Books, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Adult, BrowseRoot::Other] as $root) {
             if (isset($byId[$root->categoryId()])) {
                 $roots[] = ['root' => $root, 'categories' => $byId[$root->categoryId()]['categories']];
             }

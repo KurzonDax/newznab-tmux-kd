@@ -403,15 +403,16 @@ final class AdultReleasesPageTest extends TestCase
         $this->page('/adult', $user)->assertForbidden()->assertSee('Adult is hidden in your account preferences.');
     }
 
-    public function test_the_header_menu_sends_adult_to_the_new_list_and_marks_browse_current(): void
+    public function test_the_header_menu_sends_adult_to_the_new_list_and_marks_adult_current(): void
     {
         $this->adult('A release');
         $response = $this->page('/adult')->assertOk()
-            ->assertSee('href="'.route('adult.releases').'" data-browse-root', false)
+            ->assertSee('href="'.route('adult.releases').'" class="public-menu-root">All Adult</a>', false)
             ->assertSee('href="'.e(route('adult.releases', ['category' => [self::DVD]])).'"', false)
             ->assertSee('href="'.e(route('adult.releases', ['category' => [self::WEBDL]])).'"', false)
             ->assertDontSee('href="'.url('/browse/xxx').'"', false);
-        $this->assertMatchesRegularExpression('/aria-label="Browse categories"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-xxx"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertSame(1, substr_count((string) $response->getContent(), 'aria-current="true"'));
     }
 
     public function test_the_four_sorts_order_the_list_and_the_adult_sort_and_filters_are_remembered_under_xxx(): void

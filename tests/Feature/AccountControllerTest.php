@@ -77,6 +77,7 @@ final class AccountControllerTest extends TestCase
             $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($response->getContent()));
             $response->assertSee('account-section-'.$section, false);
         }
+        $this->get('/account?section=appearance')->assertOk()->assertSee('name="viewpc" value="1" checked>PC</label>', false)->assertDontSee('PC / Games');
         $this->get('/profile?id=999')->assertRedirect('/account');
         $this->get('/profileedit')->assertRedirect('/account');
         $this->get('/profileedit?action=newapikey')->assertRedirect('/account?section=api');
