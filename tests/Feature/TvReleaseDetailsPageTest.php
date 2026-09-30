@@ -88,6 +88,7 @@ final class TvReleaseDetailsPageTest extends TestCase
 
         $response = $this->details($id)->assertOk();
         $html = (string) $response->getContent();
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-tv"\s+aria-current="true"/', $html);
 
         $response->assertSee('<h1 data-part="details heading"><a href="'.url('/tv/show/'.self::SHOW.'/7?open=5').'">The Glass Meridian</a> · S07E05 — Shift Ends</h1>', false)
             ->assertSee('<div class="tv-details-name" data-part="details release name">The.Glass.Meridian.S07E05.720p.WEB-DL.DDP5.1.H.264-PLAiD</div>', false)

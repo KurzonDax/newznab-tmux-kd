@@ -385,7 +385,7 @@ final class TvShowsPageTest extends TestCase
         foreach (['/series', '/series/M?year=1970s', '/series/12', '/trending-tv'] as $uri) {
             $this->page($uri)->assertNotFound();
         }
-        $this->page('/tv/shows')->assertSee('href="'.route('tv.shows').'"><i class="fas fa-tv" aria-hidden="true"></i>TV Shows</a>', false);
+        $this->page('/tv/shows')->assertSee('href="'.route('tv.shows').'">TV Shows</a>', false);
     }
 
     public function test_the_wall_and_the_search_need_the_tv_permission(): void

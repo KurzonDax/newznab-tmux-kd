@@ -389,8 +389,9 @@ final class TvReleasesPageTest extends TestCase
         $this->page('/browse/tv')->assertRedirect(route('tv.releases'));
         $this->page('/browse/TV/'.self::HD)->assertRedirect(route('tv.releases', ['category' => [self::HD]]));
         $this->page('/browse/tv/HD')->assertRedirect(route('tv.releases', ['category' => [self::HD]]));
-        $this->page('/tv')->assertSee('href="'.route('tv.releases').'" data-browse-root', false)
+        $response = $this->page('/tv')->assertSee('href="'.route('tv.releases').'" class="public-menu-root">All TV</a>', false)
             ->assertSee('href="'.route('tv.releases', ['category' => [self::HD]]).'"', false);
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-tv"\s+aria-current="true"/', (string) $response->getContent());
     }
 
     public function test_the_list_fragment_is_the_list_alone_and_the_count_is_cached_under_the_browse_version(): void

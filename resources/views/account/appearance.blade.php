@@ -18,7 +18,7 @@
     <form method="POST" action="{{ route('account.categories') }}" class="account-form">
         @csrf
         <fieldset><legend>Show categories</legend><div class="account-checkboxes">
-            @foreach(['movies' => 'Movies', 'tv' => 'TV', 'audio' => 'Audio', 'console' => 'Console', 'pc' => 'PC / Games', 'books' => 'Books', 'adult' => 'Adult', 'other' => 'Other'] as $key => $label)
+            @foreach(['movies' => 'Movies', 'tv' => 'TV', 'audio' => 'Audio', 'console' => 'Console', 'pc' => 'PC', 'books' => 'Books', 'adult' => 'Adult', 'other' => 'Other'] as $key => $label)
                 <label><input type="checkbox" name="view{{ $key }}" value="1" @checked($user->hasDirectPermission('view '.$key))>{{ $label }}</label>
             @endforeach
         </div></fieldset>

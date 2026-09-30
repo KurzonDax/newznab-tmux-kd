@@ -376,13 +376,14 @@ final class MovieReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('report', strtolower($unmatched));
     }
 
-    public function test_the_header_menu_sends_movies_to_the_new_list_and_marks_browse_current(): void
+    public function test_the_header_menu_sends_movies_to_the_new_list_and_marks_movies_current(): void
     {
         $this->movie('A release');
         $response = $this->page('/movies')->assertOk()
-            ->assertSee('href="'.route('movies.releases').'" data-browse-root', false)
+            ->assertSee('href="'.route('movies.releases').'" class="public-menu-root">All Movies</a>', false)
             ->assertSee('href="'.route('movies.releases', ['category' => [self::HD]]).'"', false);
-        $this->assertMatchesRegularExpression('/aria-label="Browse categories"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-movies"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertSame(1, substr_count((string) $response->getContent(), 'aria-current="true"'));
         $this->assertSame('/movies', route('movies.releases', [], false));
         $this->assertSame('/movies/search', route('movies.search', [], false));
     }

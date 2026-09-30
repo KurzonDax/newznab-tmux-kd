@@ -83,6 +83,7 @@ final class DetailsControllerTest extends TestCase
             ->assertSee('No media info for this release.')->assertSee('No NFO for this release.')
             ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-games"\s+aria-current="true"/', (string) $response->getContent());
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void

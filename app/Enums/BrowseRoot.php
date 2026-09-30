@@ -87,7 +87,7 @@ enum BrowseRoot: string
             self::All => 'All releases',
             self::Tv => 'TV',
             self::Adult => 'Adult',
-            self::Games => 'PC / Games',
+            self::Games => 'PC',
             default => ucfirst($this->value),
         };
     }

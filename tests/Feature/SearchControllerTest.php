@@ -122,6 +122,16 @@ final class SearchControllerTest extends TestCase
         $this->assertSame(1, $response->viewData('results')->currentPage());
     }
 
+    public function test_the_category_filter_groups_follow_the_header_order_and_name_pc_pc(): void
+    {
+        $html = (string) $this->actingAs($this->browserUser())->get('/search?q=dune')->assertOk()->getContent();
+        $document = new \DOMDocument;
+        @$document->loadHTML($html);
+        $groups = array_map(static fn (\DOMElement $group): string => $group->getAttribute('label'), iterator_to_array((new \DOMXPath($document))->query('//select[@id="search-filter-category"]/optgroup')));
+        $this->assertSame(['Movies', 'TV', 'Audio', 'Books', 'Console', 'PC', 'Adult', 'Other'], $groups);
+        $this->assertStringNotContainsString('PC / Games', $html);
+    }
+
     public function test_index_search_keeps_phrase_and_exclusion_syntax_when_rebuilding_chips(): void
     {
         $wanted = $this->release('Lexical hit without literal words');
