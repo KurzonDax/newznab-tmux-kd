@@ -6,6 +6,7 @@ namespace App\Services\MetadataProcessing;
 
 use App\Models\Category;
 use App\Models\Genre;
+use App\Support\ChildRows;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -72,12 +73,7 @@ final class MovieCredits
             return false;
         }
 
-        DB::transaction(static function () use ($movieinfoId, $genreRows, $peopleRows): void {
-            DB::table('movie_genres')->where('movieinfo_id', $movieinfoId)->delete();
-            DB::table('movie_genres')->insert(array_map(static fn (array $row): array => ['movieinfo_id' => $movieinfoId] + $row, $genreRows));
-            DB::table('movie_people')->where('movieinfo_id', $movieinfoId)->delete();
-            DB::table('movie_people')->insert(array_map(static fn (array $row): array => ['movieinfo_id' => $movieinfoId] + $row, $peopleRows));
-        });
+        ChildRows::replace('movieinfo', $movieinfoId, 'movieinfo_id', ['movie_genres' => $genreRows, 'movie_people' => $peopleRows]);
 
         return true;
     }

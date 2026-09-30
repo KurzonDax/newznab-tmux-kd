@@ -10,6 +10,7 @@ use App\Models\Network;
 use App\Models\TvInfo;
 use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\TmdbClient;
+use App\Support\ChildRows;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Sleep;
 
@@ -109,9 +110,8 @@ final class TvShowDetails
             return;
         }
 
-        // People are found or added before the transaction opens (see PeopleRows).
-        $cast = $this->castPersonIds($show);
-        DB::transaction(fn () => $this->store($videosId, $show, $cast));
+        // People, the network and the genres are found or added before the transaction opens (see PeopleRows).
+        $this->store($videosId, $show, $this->castPersonIds($show), $this->networkId($videosId, $show));
     }
 
     private function resolveTmdbId(object $video): ?int
@@ -149,31 +149,38 @@ final class TvShowDetails
      * @param  array<string, mixed>  $show
      * @param  list<int>  $cast
      */
-    private function store(int $videosId, array $show, array $cast): void
+    private function store(int $videosId, array $show, array $cast, ?int $networkId): void
     {
-        $publisher = (string) DB::table('tv_info')->where('videos_id', $videosId)->value('publisher');
-
-        $this->writeTvInfo($videosId, [
+        $values = [
             'original_language' => mb_substr((string) ($show['original_language'] ?? ''), 0, self::CODE_LENGTH),
             'status' => self::STATUS_MAP[(string) ($show['status'] ?? '')] ?? self::STATUS_UNKNOWN,
             'content_rating_us' => mb_substr($this->usContentRating($show), 0, self::CODE_LENGTH),
             'premiered' => $this->premiered($show),
-            'networks_id' => Network::idForName($this->firstNetworkName($show)) ?? Network::idForName($publisher),
+            'networks_id' => $networkId,
             'details_refreshed_at' => now(),
-        ]);
+        ];
 
-        DB::table('video_genres')->where('videos_id', $videosId)->delete();
-        DB::table('video_genres')->insert(array_map(
-            fn (int $genreId): array => ['videos_id' => $videosId, 'genres_id' => $genreId],
-            $this->genreIds($show),
-        ));
+        ChildRows::replace('videos', $videosId, 'videos_id', [
+            'video_genres' => array_map(static fn (int $genreId): array => ['genres_id' => $genreId], $this->genreIds($show)),
+            'video_people' => array_map(
+                static fn (int $personId, int $position): array => ['people_id' => $personId, 'position' => $position],
+                $cast,
+                array_keys($cast),
+            ),
+        ], fn () => $this->writeTvInfo($videosId, $values));
+    }
 
-        DB::table('video_people')->where('videos_id', $videosId)->delete();
-        DB::table('video_people')->insert(array_map(
-            fn (int $personId, int $position): array => ['videos_id' => $videosId, 'people_id' => $personId, 'position' => $position],
-            $cast,
-            array_keys($cast),
-        ));
+    /**
+     * The show's first TMDB network, else its publisher. Outside a transaction, the read after
+     * insertOrIgnore sees a name another worker has just added; inside one it may not.
+     *
+     * @param  array<string, mixed>  $show
+     */
+    private function networkId(int $videosId, array $show): ?int
+    {
+        $publisher = (string) DB::table('tv_info')->where('videos_id', $videosId)->value('publisher');
+
+        return Network::idForName($this->firstNetworkName($show)) ?? Network::idForName($publisher);
     }
 
     /**

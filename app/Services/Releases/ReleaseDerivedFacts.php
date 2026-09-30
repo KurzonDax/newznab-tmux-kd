@@ -10,6 +10,7 @@ use App\Models\Category;
 use App\Services\MediaInfo\DTO\MediaInfoSnapshotData;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\MediaInfoSnapshotService;
+use App\Support\ChildRows;
 use App\Support\LanguageNames;
 use App\Support\ReleaseQuality;
 use Illuminate\Support\Collection;
@@ -75,11 +76,7 @@ final class ReleaseDerivedFacts
             return;
         }
 
-        DB::transaction(static function () use ($releaseId, $declared): void {
-            DB::table('release_tv_episodes')->where('releases_id', $releaseId)->delete();
-            DB::table('release_tv_episodes')->insert(array_map(
-                static fn (array $row): array => ['releases_id' => $releaseId] + $row, $declared));
-        });
+        ChildRows::replace('releases', $releaseId, 'releases_id', ['release_tv_episodes' => $declared]);
     }
 
     /**
@@ -126,11 +123,8 @@ final class ReleaseDerivedFacts
             return false;
         }
 
-        DB::transaction(static function () use ($releaseId, $declared): void {
-            DB::table('release_audio_languages')->where('releases_id', $releaseId)->delete();
-            DB::table('release_audio_languages')->insert(array_map(
-                static fn (int $languageId): array => ['releases_id' => $releaseId, 'languages_id' => $languageId], $declared));
-        });
+        ChildRows::replace('releases', $releaseId, 'releases_id', ['release_audio_languages' => array_map(
+            static fn (int $languageId): array => ['languages_id' => $languageId], $declared)]);
 
         return true;
     }
