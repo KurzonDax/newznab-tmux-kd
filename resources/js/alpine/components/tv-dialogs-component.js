@@ -140,7 +140,10 @@ export function tvImageDialog() {
         /** Runs when the image has loaded: its natural size, and whether it is larger than shown. */
         measure() {
             const image = this.$refs.image;
-            if (!image || !image.naturalWidth) return;
+            if (!image || !image.naturalWidth) {
+                this.measuring = false;
+                return;
+            }
             this.dimensions = image.naturalWidth + ' × ' + image.naturalHeight;
             window.requestAnimationFrame(() => {
                 this.canFull = image.naturalWidth > image.clientWidth + 1 || image.naturalHeight > image.clientHeight + 1;

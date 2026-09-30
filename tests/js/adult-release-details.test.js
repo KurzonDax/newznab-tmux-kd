@@ -95,6 +95,15 @@ test('a sample whose image fails to load shows the dialog at once in its failed 
     assert.equal(dialog.dialogClass(), 'tv-dialog tv-image-dialog');
 });
 
+test('an image that loads without a size still shows, fitted', () => {
+    const { dialog, click: handle } = imageDialog();
+    handle(click(picture('sample', { openFull: '' })));
+    load(dialog, [0, 0], [0, 0]);
+
+    assert.deepEqual([dialog.canFull, dialog.full], [false, false]);
+    assert.equal(dialog.dialogClass(), 'tv-dialog tv-image-dialog');
+});
+
 test('closing and opening another picture forgets the full-size opening', () => {
     const { dialog, click: handle } = imageDialog();
     handle(click(picture('sample', { openFull: '' })));
@@ -127,7 +136,11 @@ test('the pictures sit side by side at 220 px; the play button is 56 px round an
     assert.match(css, /\.tv-details-pictures \{ display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; \}/);
     assert.match(css, /\.tv-details-pictures \.tv-details-preview img \{ max-height: 220px; \}/);
     assert.match(css, /\.tv-details-play \{[^}]*width: 56px; height: 56px;[^}]*border-radius: 50%;/);
-    assert.match(css, /\.tv-details-preview\.has-clip:hover \.tv-details-play, \.tv-details-preview\.has-clip:focus-visible \.tv-details-play \{ background: oklch\(0\.55 0\.17 305\);/);
+    assert.match(css, /\.tv-details-preview\.has-clip:hover \.tv-details-play, \.tv-details-preview\.has-clip:focus-visible \.tv-details-play \{ background: var\(--chip-clip-play-hover\);/);
+    const app = readFileSync(new URL('../../resources/css/app.css', import.meta.url), 'utf8');
+    assert.match(app, /--chip-clip-play-hover: oklch\(0\.55 0\.17 305\);/);
+    assert.match(app, /--picture-label-bg: rgb\(10 10 14 \/ 80%\);/);
+    assert.match(app, /--picture-play-bg: rgb\(10 10 14 \/ 72%\);/);
     assert.match(css, /\.tv-details-picture-label\.is-clip \{ right: 8px; left: auto; background: var\(--chip-clip-bg-dark\); color: var\(--chip-clip-fg-dark\); \}/);
     assert.match(css, /\.tv-image-dialog\.is-measuring \.tv-image-bar, \.tv-image-dialog\.is-measuring \.tv-image-frame \{ visibility: hidden; \}/);
 });

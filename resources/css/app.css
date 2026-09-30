@@ -127,6 +127,13 @@
     --chip-clip-bg-dark: oklch(0.31 0.085 305);
     --chip-clip-fg: oklch(0.40 0.17 305);
     --chip-clip-fg-dark: oklch(0.87 0.09 305);
+    /* The Adult details preview's play button fills magenta 305 on hover and focus (SPEC 5A.3). */
+    --chip-clip-play-hover: oklch(0.55 0.17 305);
+    /* Labels and the play button that sit on a picture: the same dark ground and white ink in both themes. */
+    --picture-label-bg: rgb(10 10 14 / 80%);
+    --picture-play-bg: rgb(10 10 14 / 72%);
+    --picture-overlay-ink: #fff;
+    --picture-play-shadow: 0 6px 18px -6px rgb(0 0 0 / 60%);
     --chip-completion-ok-bg: oklch(0.93 0.04 150);
     --chip-completion-ok-bg-dark: oklch(0.30 0.045 150);
     --chip-completion-ok-fg: oklch(0.38 0.09 150);

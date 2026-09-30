@@ -10,6 +10,7 @@
     $headings = ['resolution' => 'Resolution', 'size' => 'Size', 'posted' => 'Posted'];
     $heading = static fn (string $key): string => '<button type="button" data-similar-sort="'.$key.'">'.e($headings[$key]).'<i class="fas fa-sort" aria-hidden="true"></i></button>';
     $sorted = static fn (string $key): string => $key === 'posted' ? ' aria-sort="descending"' : '';
+    // The shared chip partial names each chip's data-part through $chipPart; these tables name none.
     $chipPart = static fn (string $name): ?string => null;
 @endphp
 <table class="tv-release-table">
@@ -42,8 +43,8 @@
                 </td>
                 <td><x-resolution-chip :resolution="$row->resolution" :part="false" /></td>
                 <td class="tv-num">{{ $row->size }}</td>
-                <td class="tv-num tv-files-cell">
-                    @if($row->files > 0)
+                <td class="tv-num">
+                    @if($row->hasFileCount())
                         <button type="button" class="tv-files filelist-badge" data-guid="{{ $row->guid }}" title="View file list">{{ $row->files }}</button>
                     @else
                         {{ $row->filesShown() }}

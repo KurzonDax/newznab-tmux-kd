@@ -21,9 +21,9 @@
      * @var list<\App\Data\AdultReleaseRow> $similar
      */
     $commentCount = $comments->total();
-    $tabs = ['overview' => 'Overview', 'files' => $row->files === 0 ? 'Files' : 'Files ('.$row->files.')', 'media' => 'Media info', 'nfo' => 'NFO', 'comments' => 'Comments ('.$commentCount.')'];
-    $mediaSummary = $row->mediaInfoWithResolution();
-    $uploader = mb_strlen($row->uploader) > 26 ? mb_substr($row->uploader, 0, 25).'…' : $row->uploader;
+    $tabs = ['overview' => 'Overview', 'files' => $row->hasFileCount() ? 'Files ('.$row->filesShown().')' : 'Files', 'media' => 'Media info', 'nfo' => 'NFO', 'comments' => 'Comments ('.$commentCount.')'];
+    // The resolution has its own chip, so the media chip reads the media summary alone; the poster chip shows the full name (the prototype).
+    $mediaSummary = $row->mediaInfo;
     $previewThumb = $row->preview['thumb'] ?? null;
     $sampleThumb = $row->sample['thumb'] ?? null;
 @endphp
@@ -74,7 +74,7 @@
                             <a class="tv-origin-chip" href="{{ route('browse.all', ['group' => $row->group]) }}" title="All releases in {{ $row->group }}"><i class="fas fa-users" aria-hidden="true"></i>{{ $row->groupLabel() }}</a>
                         @endif
                         @if($row->uploader !== '')
-                            <a class="tv-origin-chip" href="{{ route('browse.all', ['poster' => $row->uploader]) }}" title="All posts by {{ $row->uploader }}"><i class="fas fa-user" aria-hidden="true"></i>{{ $uploader }}</a>
+                            <a class="tv-origin-chip" href="{{ route('browse.all', ['poster' => $row->uploader]) }}" title="All posts by {{ $row->uploader }}"><i class="fas fa-user" aria-hidden="true"></i>{{ $row->uploader }}</a>
                         @endif
                     </div>
                 @endif

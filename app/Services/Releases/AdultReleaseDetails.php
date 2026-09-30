@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\AdultReleaseRow;
+use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseVideoClip;
@@ -30,11 +31,14 @@ final class AdultReleaseDetails
     {
         $row = $this->rows->load([(int) $release->id], false)[0] ?? null;
         abort_if($row === null, 404);
+        // The breadcrumb names the sub-category alone ("VR"); the facts read the root as "Adult", not its database title.
+        $subCategory = (string) (Category::query()->whereKey((int) $release->categories_id)->value('title') ?? '');
+        $category = $subCategory === '' ? $category : BrowseRoot::Adult->label().' > '.$subCategory;
 
         return [
             'row' => $row,
             'category' => $category,
-            'subCategory' => (string) (Category::query()->whereKey((int) $release->categories_id)->value('title') ?? $category),
+            'subCategory' => $subCategory,
             'clipSeconds' => $row->clip === null ? null : $this->clipSeconds((int) $release->id),
             'facts' => ReleaseDetailsFacts::grid($release, $row, $category),
             'predb' => ReleaseDetailsFacts::predb((int) $release->predb_id),
@@ -55,7 +59,8 @@ final class AdultReleaseDetails
 
     /**
      * Similar releases: today's search (the first two words of the name in the Adult categories,
-     * the viewer's excluded categories and password setting applied, without this release).
+     * the viewer's excluded categories and password setting applied, without this release),
+     * newest posted first as the table's Posted heading says (ties: the newer id first).
      *
      * @param  list<int>  $exclusions
      * @return list<AdultReleaseRow>
@@ -63,14 +68,16 @@ final class AdultReleaseDetails
     private function similar(Release $release, array $exclusions): array
     {
         $found = $this->search->searchSimilar((int) $release->id, (string) $release->searchname, $exclusions);
-        if (! is_iterable($found)) {
+        if (! is_array($found)) {
             return [];
         }
-        $ids = [];
-        foreach ($found as $match) {
-            $ids[] = (int) $match['id'];
+        $ids = array_values(array_filter(array_map(static fn (mixed $match): int => (int) $match['id'], $found), static fn (int $id): bool => $id !== (int) $release->id));
+        if ($ids === []) {
+            return [];
         }
+        $rows = $this->rows->load($ids, false);
+        usort($rows, static fn (AdultReleaseRow $a, AdultReleaseRow $b): int => [$b->postedAt, $b->id] <=> [$a->postedAt, $a->id]);
 
-        return $ids === [] ? [] : $this->rows->load($ids, false);
+        return $rows;
     }
 }

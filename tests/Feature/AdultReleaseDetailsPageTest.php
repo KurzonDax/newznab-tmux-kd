@@ -127,6 +127,19 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $response->assertSee('x-data="movieReleaseDetails"', false)->assertSee('x-on:submit="handleSubmit"', false)->assertSee('x-data="tvImageDialog"', false);
     }
 
+    public function test_the_media_chip_leaves_the_resolution_to_its_own_chip_and_the_poster_chip_shows_the_full_name(): void
+    {
+        $id = $this->adult('Some.Scene.XXX.1080p', ['fromname' => 'granite41 <granite41@example.invalid>']);
+        DB::table('video_data')->insert(['releases_id' => $id, 'videoformat' => 'HEVC', 'videocodec' => 'V_MPEGH/ISO/HEVC', 'videowidth' => 1920, 'videoheight' => 1080]);
+        DB::table('audio_data')->insert(['releases_id' => $id, 'audioid' => 1, 'audioformat' => 'E-AC-3', 'audiochannels' => '6']);
+
+        $response = $this->details($id)->assertOk();
+        $chips = $this->between($response, '<div class="tv-chips tv-details-chips">', '<div class="tv-chips tv-details-origin">');
+        $this->assertStringContainsString('H.265 · E-AC-3 5.1', $chips);
+        $this->assertStringNotContainsString('1080p · H.265', $chips);
+        $response->assertSee('<i class="fas fa-user" aria-hidden="true"></i>granite41 &lt;granite41@example.invalid&gt;</a>', false);
+    }
+
     public function test_the_cart_button_reads_in_cart_when_pressed(): void
     {
         $id = $this->adult('Some.Scene.XXX.1080p');
@@ -143,7 +156,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $response = $this->details($id);
         $this->assertSame(['Overview', 'Files', 'Media info', 'NFO', 'Comments (0)'], $this->tabs((string) $response->getContent()));
         $overview = $this->between($response, 'aria-labelledby="tab-overview" data-details-panel>', '<section id="files"');
-        $this->assertSame(['Category' => 'XXX &gt; x264', 'Size' => '1.00 GB', 'Files' => '—', 'Completion' => '100%', 'Posted' => 'Sep 20, 2026, 10:00 AM',
+        $this->assertSame(['Category' => 'Adult &gt; x264', 'Size' => '1.00 GB', 'Files' => '—', 'Completion' => '100%', 'Posted' => 'Sep 20, 2026, 10:00 AM',
             'Added' => 'Sep 20, 2026, 11:00 AM', 'Grabs' => '7', 'Group' => 'alt.binaries.example.erotica', 'Poster' => '—', 'Password status' => 'None detected'], $this->facts($overview));
 
         DB::table('releases')->where('id', $id)->update(['totalpart' => 12]);
@@ -188,6 +201,17 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->assertStringContainsString('<span class="tv-details-picture-label is-clip" aria-hidden="true">Clip</span>', $unmeasured);
     }
 
+    public function test_a_sample_without_a_full_size_copy_opens_its_thumbnail(): void
+    {
+        $id = $this->adult('Some.Scene.XXX.1080p', ['jpgstatus' => 1]);
+        $guid = $this->guid($id);
+        $this->image('sample', $guid.'_thumb');
+
+        $this->assertSame('<button type="button" class="tv-details-preview sample-badge" data-guid="'.$guid.'" data-release-display-name="Some.Scene.XXX.1080p"'
+            .' data-image-url="'.$this->url('sample', $guid.'_thumb').'" data-full-url="" data-image-title="Sample image" data-open-full aria-label="View sample image at full size">'
+            .'<img src="'.$this->url('sample', $guid.'_thumb').'" alt="Sample image"><span class="tv-details-picture-label" aria-hidden="true">Sample</span></button>', $this->pictures($id));
+    }
+
     public function test_a_preview_without_a_clip_opens_the_image_dialog_and_has_no_play_button_or_tag(): void
     {
         $id = $this->adult('Some.Scene.XXX.1080p', ['haspreview' => 1]);
@@ -227,7 +251,8 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $clip = $this->adult('Some.Scene.Part.Two.XXX.720p', ['videostatus' => 1, 'totalpart' => 0, 'resolution' => 3, 'postdate' => '2026-09-22 10:00:00']);
         $plain = $this->adult('Some.Scene.Other.XXX.2160p', ['totalpart' => 40, 'resolution' => 1, 'postdate' => '2026-09-21 10:00:00']);
         $this->excludeForUser(self::VR);
-        $this->similarIds = [$clip, $plain];
+        // The search's answer is put newest posted first, and this release is left out whatever it returns.
+        $this->similarIds = [$plain, $current, $clip];
 
         $response = $this->details($current)->assertOk();
         $this->assertSame([[$current, 'Some.Scene.XXX.1080p', [self::VR]]], $this->similarCalls);
@@ -390,12 +415,16 @@ final class AdultReleaseDetailsPageTest extends TestCase
         return array_map(static fn (string $guid): int => (int) $ids[$guid], $matches[1]);
     }
 
-    /** @return list<string> each row's Files cell text */
+    /** @return list<string> each row's Files cell text (the fourth cell: Release, Resolution, Size, Files) */
     private function fileCells(string $html): array
     {
-        preg_match_all('/<td class="tv-num tv-files-cell">(.*?)<\/td>/s', $html, $cells);
+        preg_match_all('/<tr data-release-row[^>]*>(.*?)<\/tr>/s', $html, $rows);
 
-        return array_map(static fn (string $cell): string => trim(strip_tags($cell)), $cells[1]);
+        return array_map(static function (string $row): string {
+            preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $row, $cells);
+
+            return trim(strip_tags($cells[1][3] ?? ''));
+        }, $rows[1]);
     }
 
     /** @return list<string> */
