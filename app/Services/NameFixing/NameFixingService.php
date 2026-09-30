@@ -561,7 +561,8 @@ class NameFixingService
             $releaseId = (int) $member->releases_id;
             $searchName = (string) $member->searchname;
             if (! isset($trustedDonorIds[$releaseId])
-                || ! $this->fileNameCleaner->isReadableReleaseTitle($searchName)) {
+                || ! $this->fileNameCleaner->isReadableReleaseTitle($searchName)
+                || $this->fileNameCleaner->isPromotionalTitle($searchName)) {
                 continue;
             }
 
@@ -576,7 +577,10 @@ class NameFixingService
             $releaseId = (int) $member->releases_id;
             $this->updateService->reset();
 
-            if ($elected !== null && $releaseId !== (int) $elected->releases_id) {
+            // A promotional member keeps its name, PreDB id and trust: election never repairs it.
+            if ($elected !== null
+                && $releaseId !== (int) $elected->releases_id
+                && ! $this->fileNameCleaner->isPromotionalTitle((string) $member->searchname)) {
                 if ($persistChanges
                     && (int) $elected->predb_id > 0
                     && strcasecmp((string) $member->searchname, (string) $elected->searchname) === 0) {
@@ -903,6 +907,11 @@ class NameFixingService
         bool $nameStatus,
         bool $show
     ): bool {
+        // Title policy belongs to naming; the selector only matches sizes.
+        $donors = array_values(array_filter(
+            $donors,
+            fn (object $donor): bool => ! $this->fileNameCleaner->isPromotionalTitle((string) $donor->searchname),
+        ));
         $donor = $this->donorMatchSelector->select($donors, (int) $release->relsize, $tolerancePercent);
         if ($donor === null) {
             return false;
@@ -1653,6 +1662,11 @@ class NameFixingService
     protected function mediaMovieNameCheck(object $release, bool $echo, string $type, bool $nameStatus, bool $show): bool
     {
         $newName = '';
+
+        // Decline wholly promotional titles before extraction can disguise them.
+        if ($this->fileNameCleaner->isPromotionalTitle((string) ($release->movie_name ?? ''))) {
+            return false;
+        }
 
         if (! empty($release->movie_name)) {
             if (! $this->fileNameCleaner->isPlausibleReleaseTitle(

@@ -51,7 +51,6 @@ class ReleaseUpdateService
         'NFO, ',
         'PAR2, ',
         'UID, ',
-        'Mediainfo, ',
         'PAR2 hash, ',
         'SRR, ',
         'CRC32, ',
@@ -208,6 +207,13 @@ class ReleaseUpdateService
             return;
         }
         if ($this->relid !== $release->releases_id) {
+            // Download-site advertising is never a name, whatever source or PreDB id presents it.
+            if ($this->fileNameCleaner->isPromotionalTitle($name)) {
+                $this->done = true;
+
+                return;
+            }
+
             $descriptiveMediaTitle = $method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD;
             if ($descriptiveMediaTitle
                 && (! $descriptiveTitleCandidate
@@ -220,6 +226,11 @@ class ReleaseUpdateService
             }
 
             $newTitle = $this->finalizeCandidate($release, $name, $type, $descriptiveMediaTitle);
+            if ($this->fileNameCleaner->isPromotionalTitle($newTitle)) {
+                $this->done = true;
+
+                return;
+            }
 
             // An episode's title is not the name of a release that holds more than that episode.
             if ($this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {

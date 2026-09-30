@@ -120,6 +120,22 @@ class FileNameCleaner
     private const TV_SIGNAL = '/\bS\d{1,2}(?:[Eex]\d{1,3})?\b/i';
 
     /**
+     * A dotted hostname, optionally with a web scheme and a trailing slash.
+     */
+    private const PROMOTIONAL_DOMAIN = '(?:https?://)?(?:[a-z0-9-]+\.)+[a-z]+/?';
+
+    /**
+     * Whole-title advertising templates: an attribution to a site or uploader,
+     * or a site's own "... Downloads" branding.
+     *
+     * @var list<string>
+     */
+    private const PROMOTIONAL_TITLE_PATTERNS = [
+        '~^(?:downloaded\s+from|uploaded\s+by|ripped\s+by|encoded\s+by)\s+(?:'.self::PROMOTIONAL_DOMAIN.'|[\p{L}\p{N}]+(?:\s*&\s*team)?)$~iu',
+        '~^'.self::PROMOTIONAL_DOMAIN.'\s*[-:|]\s*(?:(?:free|full|hd|uhd|4k|720p|1080p|2160p|hevc|x264|x265|h264|h265|h\.264|h\.265|videos?|movies?|porn|xxx)\s+)*downloads?$~iu',
+    ];
+
+    /**
      * Clean a filename for PreDB matching.
      *
      * @param  string  $fileName  The filename to clean
@@ -370,6 +386,32 @@ class FileNameCleaner
         return $title !== ''
             && preg_match('/[A-Za-z]{2,}/', $title) === 1
             && ! $this->looksLikeHashedName($title);
+    }
+
+    /**
+     * Determine whether a candidate title is wholly download-site advertising
+     * rather than a name. Matching ignores case, surrounding quotes/brackets,
+     * a trailing video/archive extension and evidence tokens that name
+     * finalization may have inserted; the title itself is never rewritten.
+     */
+    public function isPromotionalTitle(string $title): bool
+    {
+        $normalized = trim($title, " \t\n\r\0\x0B\"'[](){}<>");
+        foreach ([self::VIDEO_EXTENSIONS, ...self::ARCHIVE_PATTERNS] as $pattern) {
+            $normalized = preg_replace($pattern, '', $normalized) ?? $normalized;
+        }
+        $normalized = preg_replace(array_values(self::EVIDENCE_TOKEN_PATTERNS), ' ', $normalized) ?? $normalized;
+        $normalized = trim(preg_replace('/\s+/u', ' ', $normalized) ?? $normalized);
+        // Evidence inserted before a trailing ".org" leaves the label split from its hostname.
+        $normalized = preg_replace('/\s+(\.[a-z]+\/?)$/i', '$1', $normalized) ?? $normalized;
+
+        foreach (self::PROMOTIONAL_TITLE_PATTERNS as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
