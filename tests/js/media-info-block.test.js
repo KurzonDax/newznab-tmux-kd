@@ -112,26 +112,11 @@ test("music tags keep their facts and do not invent subtitles", () => {
 });
 
 test("the Bit rate and Sample rate headings are right-aligned over their numbers", () => {
+  const html = renderMediaInfo(media, "4K");
   const css = readFileSync(new URL("../../resources/css/media-info.css", import.meta.url), "utf8");
-  const rules = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)].map(([, selectors, body]) => ({
-    selectors: selectors.split(",").map((selector) => selector.trim()),
-    body,
-  }));
-  // [classes, elements] is enough for these class-and-element selectors
-  const specificity = (selector) => [
-    (selector.match(/\.[\w-]+/g) || []).length,
-    (selector.replace(/\.[\w-]+/g, "").match(/(^|[\s>+~])[a-z]+/g) || []).length,
-  ];
-  const outranks = ([classes, elements], [otherClasses, otherElements]) =>
-    classes > otherClasses || (classes === otherClasses && elements > otherElements);
-  const heading = rules.find((rule) => rule.selectors.includes(".mi-block .mi-table th"));
-  assert.ok(heading, "the general heading rule is still there");
-  assert.match(heading.body, /text-align:\s*left/, "other headings stay left-aligned");
 
-  const numberHeading = rules.find((rule) =>
-    rule.selectors.some((selector) => /th\.mi-num\b/.test(selector) && outranks(specificity(selector), specificity(".mi-block .mi-table th"))),
-  );
-  assert.ok(numberHeading, "a th.mi-num rule outranks the general heading rule");
-  assert.match(numberHeading.body, /text-align:\s*right/);
-  assert.match(numberHeading.body, /padding-right:\s*0\s*[;}]?/);
+  assert.match(html, /<th class="mi-num mi-col-rate">Sample rate<\/th>/);
+  // three classes and an element outrank the general heading rule's two classes and an element
+  assert.match(css, /\.mi-block \.mi-table th\.mi-num \{ padding-right: 0; text-align: right; \}/);
+  assert.match(css, /\.mi-block \.mi-table th \{[^}]*text-align: left;/, "other headings stay left-aligned");
 });
