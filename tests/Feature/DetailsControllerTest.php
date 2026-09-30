@@ -121,8 +121,9 @@ final class DetailsControllerTest extends TestCase
         $this->detailRelease('Plain.Movie.Release', ['imdbid' => '0111162']);
         $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Plain.Movie.Release'))->assertOk();
         $content = (string) $response->getContent();
-        $response->assertSee('Drama, '.e($markup), false)->assertSee('Tom &amp; Jerry', false)
-            ->assertSee('A1, A2, A3, A4, A5, A6, A7, A8<', false)->assertDontSee('A9', false);
+        $response->assertSee('Drama, '.e($markup), false)->assertSee('Tom &amp; Jerry', false);
+        $this->assertSame(1, preg_match_all('~>Cast</dt>\s*<dd[^>]*>([^<]*)</dd>~', $content, $castMatches), 'The page shows one Cast entry.');
+        $this->assertSame('A1, A2, A3, A4, A5, A6, A7, A8', $castMatches[1][0]);
         $this->assertStringNotContainsString('<script>alert(1)', $content);
         $this->assertStringNotContainsString('?genre=', $content);
         $this->assertStringNotContainsString('?actors=', $content);
