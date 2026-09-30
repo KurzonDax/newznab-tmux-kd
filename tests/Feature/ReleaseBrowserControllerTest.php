@@ -98,7 +98,7 @@ final class ReleaseBrowserControllerTest extends TestCase
                     'year' => (string) $year, 'started' => $year.'-06-15', 'releasedate' => $year.'-06-15', 'publishdate' => $year.'-06-15']);
             }
             $this->release('Year fixture '.$year, ['categories_id' => $category, 'isrenamed' => 1, 'nfostatus' => 1,
-                'postdate' => ($root === 'xxx' ? $year : 2001).'-06-15', 'adddate' => '2020-01-01', 'groups_id' => 1, 'fromname' => 'Year poster',
+                'postdate' => '2001-06-15', 'adddate' => '2020-01-01', 'groups_id' => 1, 'fromname' => 'Year poster',
                 ...($foreignKey !== '' ? [$foreignKey => $year] : [])]);
         }
         $user = $this->browserUser();
@@ -176,7 +176,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030];
         yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030];
         yield 'books' => ['books', 'bookinfo', 'bookinfo_id', 7030];
-        yield 'adult' => ['xxx', '', '', 6030];
     }
 
     public function test_long_cover_metadata_preserves_complete_values_and_actions(): void
@@ -259,7 +258,7 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_canonical_roots_and_numeric_subcategories_never_fall_back_to_all_releases(): void
     {
-        $roots = ['console' => 1030, 'audio' => 3030, 'games' => 4030, 'xxx' => 6030, 'books' => 7030, 'other' => 31];
+        $roots = ['console' => 1030, 'audio' => 3030, 'games' => 4030, 'books' => 7030, 'other' => 31];
         foreach ($roots as $root => $categoryId) {
             $this->release($root.' release', ['categories_id' => $categoryId]);
         }
@@ -279,6 +278,8 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->get('/browse/movies?watching=1')->assertRedirect(route('movies.releases'));
         $this->get('/browse/movies/3030')->assertNotFound();
         $this->get('/browse/movies/9999')->assertNotFound();
+        $this->get('/browse/xxx')->assertNotFound();
+        $this->get('/browse/xxx/6030')->assertNotFound();
         $this->get('/browse/not-a-root')->assertNotFound();
     }
 
@@ -286,6 +287,15 @@ final class ReleaseBrowserControllerTest extends TestCase
     {
         $this->actingAs($this->browserUser());
         foreach (['/trending-movies', '/movie/0111161', '/movie/tt0111161', '/Movies', '/Movies/HD', '/mymovies', '/mymovies/browse', '/title/movies/0111161'] as $path) {
+            $this->get($path)->assertNotFound();
+        }
+    }
+
+    public function test_retired_adult_pages_are_not_found(): void
+    {
+        $this->release('Adult release', ['categories_id' => 6030]);
+        $this->actingAs($this->browserUser());
+        foreach (['/XXX', '/XXX/HD%20Clips', '/browse/xxx', '/browse/adult'] as $path) {
             $this->get($path)->assertNotFound();
         }
     }
@@ -373,7 +383,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     }
 
     #[DataProvider('metadataRoots')]
-    public function test_other_root_filters_apply_to_metadata_and_adult_posted_year(string $root, int $categoryId, string $table, string $foreignKey, array $first, array $second, string $filters): void
+    public function test_other_root_filters_apply_to_metadata(string $root, int $categoryId, string $table, string $foreignKey, array $first, array $second, string $filters): void
     {
         $this->createGenresTable();
         $this->createMusicInfoTable();
@@ -385,8 +395,8 @@ final class ReleaseBrowserControllerTest extends TestCase
             DB::table($table)->insert(['id' => 1, 'title' => 'First title', ...$first]);
             DB::table($table)->insert(['id' => 2, 'title' => 'Second title', ...$second]);
         }
-        $this->release('Matching release', ['categories_id' => $categoryId, ...($foreignKey === '' ? ['postdate' => '2026-09-13 12:00:00'] : [$foreignKey => 1])]);
-        $this->release('Nonmatching release', ['categories_id' => $categoryId, ...($foreignKey === '' ? ['postdate' => '2020-09-13 12:00:00'] : [$foreignKey => 2])]);
+        $this->release('Matching release', ['categories_id' => $categoryId, $foreignKey => 1]);
+        $this->release('Nonmatching release', ['categories_id' => $categoryId, $foreignKey => 2]);
         $response = $this->actingAs($this->browserUser())->get('/browse/'.$root.'?'.$filters)->assertOk();
         $this->assertSame(1, $response->viewData('results')->total());
         $response->assertSee('Matching release')->assertDontSee('Nonmatching release');
@@ -403,7 +413,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         yield 'console platform and publisher' => ['console', 1030, 'consoleinfo', 'consoleinfo_id', ['releasedate' => '2026-01-01', 'platform' => 'Switch', 'publisher' => 'Studio A', 'genres_id' => 1], ['releasedate' => '2020-01-01', 'platform' => 'PS5', 'publisher' => 'Studio B'], 'year=2026&platform=Switch&publisher=Studio%20A&genre=Adventure'];
         yield 'games platform and publisher' => ['games', 4030, 'gamesinfo', 'gamesinfo_id', ['releasedate' => '2026-01-01', 'publisher' => 'Studio A', 'genres_id' => 1], ['releasedate' => '2020-01-01', 'publisher' => 'Studio B'], 'year=2026&platform=PC&publisher=Studio%20A&genre=Adventure'];
         yield 'books author and genre' => ['books', 7030, 'bookinfo', 'bookinfo_id', ['publishdate' => '2026-01-01', 'author' => 'Writer A', 'genre' => 'Adventure'], ['publishdate' => '2020-01-01', 'author' => 'Writer B', 'genre' => 'History'], 'year=2026&author=Writer%20A&genre=Adventure'];
-        yield 'adult year is posted year' => ['xxx', 6030, '', '', [], [], 'year=2026'];
     }
 
     public function test_legacy_group_link_redirects_to_the_canonical_exact_filter(): void
@@ -437,16 +446,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $response->assertSee('data-release-table', false)->assertSee('Saved release')->assertDontSee('Outside basket')
             ->assertSee('data-in-basket="1"', false)->assertSee('Sep 12, 2026 23:30');
         $this->assertSame(1, $response->viewData('results')->total());
-    }
-
-    public function test_legacy_adult_navigation_opens_the_canonical_subcategory_table(): void
-    {
-        $this->release('Adult release', ['categories_id' => 6030]);
-        $this->release('Movie release');
-        $this->actingAs($this->browserUser())->get('/XXX/HD?t=6030&per=24&parentCategory=movies&id=2030')
-            ->assertRedirect('/browse/xxx/6030?per=24');
-        $this->get('/browse/xxx/6030?per=24')->assertOk()->assertViewIs('browse.index')
-            ->assertSee('data-release-table', false)->assertSee('Adult release')->assertDontSee('Movie release');
     }
 
     public function test_search_accepts_q_and_uses_the_root_preferences_and_shared_browser(): void
@@ -604,7 +603,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $labels = array_map(static fn (\DOMNode $node): string => trim($node->textContent), iterator_to_array($xpath->query('//*[@data-release-cards]//*[contains(@class,"release-browser-card-value")]/span')));
         $this->assertSame(['Size', 'Added', 'Posted', 'Grabs'], $labels);
         $this->assertSame(match ($root) {
-            'audio' => 'square', 'xxx' => 'wide', default => 'tall'
+            'audio' => 'square', default => 'tall'
         }, $xpath->query('//*[@data-release-cards]//*[@data-shape]/@data-shape')->item(0)->nodeValue);
         $this->assertSame(1, $xpath->query('//button[@data-value="cards" and @aria-pressed="true"]')->length);
         $response->assertDontSee('aria-label="Thumbnails"', false);
@@ -618,7 +617,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         yield 'audio' => ['audio', 3030];
         yield 'console' => ['console', 1030];
         yield 'books' => ['books', 7030];
-        yield 'adult' => ['xxx', 6030];
     }
 
     #[DataProvider('entityCoverRoots')]
@@ -843,41 +841,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $manual->assertSee('123 title')->assertDontSee('Zulu 26');
         $this->get('/browse/'.$root.'?view=covers&per=24&letter=%23')->assertRedirect('/browse/'.$root.'?view=covers&per=24&letter=%23&sort=title&page=1');
         $this->get('/browse/'.$root.'?view=covers&per=24&letter=Q')->assertRedirect('/browse/'.$root.'?view=covers&per=24&letter=Q&sort=title&page=1');
-    }
-
-    public function test_adult_covers_use_preview_then_sample_then_placeholder_and_expand_one_release(): void
-    {
-        $covers = $this->makeTempDirectory('adult-cover-images');
-        config(['nntmux_settings.covers_path' => $covers]);
-        foreach (['preview', 'sample'] as $type) {
-            mkdir($covers.'/'.$type);
-        }
-        foreach (['A preview' => [1, 1], 'B sample' => [0, 1], 'C missing preview' => [1, 1], 'D no artwork' => [0, 0]] as $title => [$preview, $sample]) {
-            $this->release($title, ['categories_id' => 6030, 'haspreview' => $preview, 'jpgstatus' => $sample]);
-            if ($preview && $title !== 'C missing preview') {
-                file_put_contents($covers.'/preview/'.md5($title).'_thumb.jpg', 'image');
-            }
-            if ($sample) {
-                file_put_contents($covers.'/sample/'.md5($title).'_thumb.jpg', 'image');
-            }
-        }
-        $this->actingAs($this->browserUser());
-        $page = $this->get('/browse/xxx?view=covers&sort=title&size=l')->assertOk();
-        $this->assertSame(4, $page->viewData('results')->total());
-        $page->assertSee('PREVIEW')->assertSee('SAMPLE')->assertSee('500.00 MB')->assertDontSee('data-cover-count', false)
-            ->assertDontSee('data-cover-watch', false)->assertDontSee('data-value="xl"', false)->assertDontSee('Jump by initial');
-        $items = $page->viewData('results')->items();
-        $this->assertStringContainsString('/preview/'.md5('A preview').'_thumb.jpg', $items[0]->artwork);
-        $this->assertStringContainsString('/sample/'.md5('B sample').'_thumb.jpg', $items[1]->artwork);
-        $this->assertStringContainsString('/sample/'.md5('C missing preview').'_thumb.jpg', $items[2]->artwork);
-        $this->assertNull($items[3]->artwork);
-        $expanded = $this->get('/browse/xxx?view=covers&_fragment=cover&release_page=999&release_per=100&cover='.md5('B sample'))->assertOk();
-        $this->assertSame(1, $expanded->viewData('rows')->total());
-        $this->assertSame(1, $expanded->viewData('rows')->currentPage());
-        $this->assertSame(100, $expanded->viewData('rows')->perPage());
-        $expanded->assertSee('B sample')->assertDontSee('A preview')->assertDontSee('Title page')->assertSee('sample', false);
-        $this->assertSame(1, substr_count($expanded->getContent(), 'data-release-select'));
-        $this->get('/browse/xxx?view=covers&size=xl')->assertOk()->assertViewHas('browserState', static fn ($state): bool => $state->size === 's');
     }
 
     #[DataProvider('entityCoverRoots')]

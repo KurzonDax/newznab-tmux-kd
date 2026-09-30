@@ -114,7 +114,7 @@ final class ReleaseBrowserQuery
         $displayName = $this->displayName();
         if ($state->query !== '') {
             $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $state->query).'%';
-            if ($state->view === 'covers' && $state->root !== BrowseRoot::Adult) {
+            if ($state->view === 'covers') {
                 $query->where(function (Builder $titles) use ($state, $pattern): void {
                     $titles->whereRaw("m.title LIKE ? ESCAPE '!'", [$pattern]);
                     if ($state->root === BrowseRoot::Audio) {

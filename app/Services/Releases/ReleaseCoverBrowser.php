@@ -42,7 +42,7 @@ final class ReleaseCoverBrowser
         $column = match ($state->root) {
             BrowseRoot::Audio => 'musicinfo_id', BrowseRoot::Console => 'consoleinfo_id',
             BrowseRoot::Games => 'gamesinfo_id', BrowseRoot::Books => 'bookinfo_id',
-            BrowseRoot::Adult => 'guid', default => null,
+            default => null,
         };
         abort_if($state->view !== 'covers' || $column === null || $id === '', 404);
         $per = in_array($per, [24, 48, 100], true) ? $per : 24;
@@ -70,7 +70,6 @@ final class ReleaseCoverBrowser
             BrowseRoot::Console => app(ConsoleService::class)->getConsoleRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             BrowseRoot::Games => app(GamesService::class)->getGamesRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
             BrowseRoot::Books => app(BookService::class)->getBookRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
-            BrowseRoot::Adult => $this->adult($state, $user),
             default => collect(),
         };
         $items = $covers->map(fn (object $cover): ReleaseCoverItem => $cover instanceof ReleaseCoverItem ? $cover : $this->item($cover, $state->root));
@@ -117,24 +116,5 @@ final class ReleaseCoverBrowser
             releases: array_values($releases),
             titleUrl: route('title', ['root' => $root->value, 'id' => $id]),
         );
-    }
-
-    private function adult(ReleaseBrowserState $state, User $user): CoverBrowseResults
-    {
-        $page = app(ReleaseBrowserQuery::class)->paginate($state, $user);
-        $items = $page->getCollection()->map(function (object $release): ReleaseCoverItem {
-            $row = $release->row_data;
-            $preview = $release->haspreview == 1 ? getImageAssetUrl('preview', $row->guid.'_thumb') : null;
-            $sample = $release->jpgstatus == 1 ? getImageAssetUrl('sample', $row->guid.'_thumb') : null;
-
-            return new ReleaseCoverItem(
-                id: $row->guid, title: $row->name, artwork: $preview ?? $sample,
-                identifyingLine: $row->size.' · '.$row->added, releaseCount: 1,
-                artworkTag: $preview ? 'PREVIEW' : ($sample ? 'SAMPLE' : ''),
-                footerBadge: $row->category, footerValue: $row->completion.'%',
-            );
-        });
-
-        return new CoverBrowseResults($items, $page->total());
     }
 }
