@@ -14,6 +14,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Mockery;
 use Tests\Support\ProductionTables;
+use Tests\Support\RecordsTransactionStatements;
 use Tests\TestCase;
 
 /**
@@ -22,6 +23,8 @@ use Tests\TestCase;
  */
 final class ReleaseDerivedFactsTest extends TestCase
 {
+    use RecordsTransactionStatements;
+
     /** @var list<array{int, int}> What the search driver saw in `releases` when it was called. */
     private array $indexed = [];
 
@@ -358,6 +361,75 @@ final class ReleaseDerivedFactsTest extends TestCase
         $this->assertSame($refreshed, $this->allAudioLanguages());
         $this->assertSame(0, $this->writesDuring(fn () => $fill->up()));
         $this->assertSame($refreshed, $this->allAudioLanguages());
+    }
+
+    public function test_a_release_with_no_episode_rows_gets_them_after_its_lock_with_no_delete(): void
+    {
+        $this->insertRelease(1, 'Show.S01E01.1080p.WEB-DL-GRP', videosId: 7);
+
+        $transactions = $this->transactionStatements(fn () => Search::updateRelease(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'releases', 1, ['release_tv_episodes']);
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'release_tv_episodes'));
+        $this->assertSame([[1, 1]], $this->episodes(1));
+    }
+
+    public function test_stored_episode_rows_are_replaced_after_the_release_lock(): void
+    {
+        $this->insertRelease(1, 'Show.S01E01.1080p.WEB-DL-GRP', videosId: 7);
+        Search::updateRelease(1);
+        DB::table('releases')->where('id', 1)->update(['searchname' => 'Show.S01E02E03.1080p.WEB-DL-GRP']);
+
+        $transactions = $this->transactionStatements(fn () => Search::updateRelease(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'releases', 1, ['release_tv_episodes']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'release_tv_episodes'));
+        $this->assertSame([[1, 2], [1, 3]], $this->episodes(1));
+    }
+
+    public function test_a_release_with_no_audio_language_rows_gets_them_after_its_lock_with_no_delete(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'English']);
+
+        $transactions = $this->transactionStatements(fn () => Search::updateRelease(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'releases', 1, ['release_audio_languages']);
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'release_audio_languages'));
+        $this->assertSame(['English'], $this->audioLanguages(1));
+    }
+
+    public function test_stored_audio_language_rows_are_replaced_after_the_release_lock(): void
+    {
+        $this->insertRelease(1, 'Movie.2020.1080p.BluRay.x264-GRP', categoriesId: 2040);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'English']);
+        Search::updateRelease(1);
+        $this->insertAudioProbe(1, 1, '2026-01-01 00:00:00', 'complete', ['fr', 'de']);
+
+        $transactions = $this->transactionStatements(fn () => Search::updateRelease(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'releases', 1, ['release_audio_languages']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'release_audio_languages'));
+        $this->assertSame(['French', 'German'], $this->audioLanguages(1));
+    }
+
+    public function test_inside_an_open_transaction_a_release_with_no_rows_still_deletes_first(): void
+    {
+        $this->insertRelease(1, 'Show.S01E01.1080p.WEB-DL-GRP', videosId: 7);
+        DB::table('audio_data')->insert(['releases_id' => 1, 'audioid' => 1, 'audiolanguage' => 'English']);
+
+        // The enclosing transaction's snapshot may predate rows another writer committed.
+        $transactions = $this->transactionStatements(fn () => DB::transaction(fn () => Search::updateRelease(1)));
+
+        $this->assertCount(1, $transactions);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'release_tv_episodes'));
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'release_audio_languages'));
+        $this->assertSame([[1, 1]], $this->episodes(1));
+        $this->assertSame(['English'], $this->audioLanguages(1));
     }
 
     public function test_a_missing_release_is_still_handed_to_the_driver(): void

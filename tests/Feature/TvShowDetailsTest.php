@@ -16,11 +16,14 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Sleep;
 use Tests\Support\ProductionTables;
+use Tests\Support\RecordsTransactionStatements;
 use Tests\TestCase;
 
 /** Show details come from TMDB on a show's first match and on later matches at most once a day. */
 final class TvShowDetailsTest extends TestCase
 {
+    use RecordsTransactionStatements;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -299,6 +302,93 @@ final class TvShowDetailsTest extends TestCase
 
         $this->assertSame(['Comedy'], $this->genreTitles(1));
         $this->assertSame(['Solo'], $this->castNames(1));
+    }
+
+    public function test_a_show_with_no_rows_gets_them_after_its_lock_with_no_delete(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::response($this->show())]);
+
+        $transactions = $this->transactionStatements(fn () => $this->details()->refreshIfDue(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'videos', 1, ['video_genres', 'video_people']);
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'video_genres'));
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'video_people'));
+        $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
+        $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
+    }
+
+    public function test_a_shows_stored_rows_are_replaced_after_its_lock(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::sequence()
+            ->push($this->show())
+            ->push($this->show(['genres' => [['id' => 35, 'name' => 'Comedy']], 'aggregate_credits' => ['cast' => [['id' => 9, 'name' => 'Solo']]]]))]);
+        $this->details()->refreshIfDue(1);
+        Carbon::setTestNow('2026-09-27 12:00:00');
+
+        $transactions = $this->transactionStatements(fn () => $this->details()->refreshIfDue(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'videos', 1, ['video_genres', 'video_people']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'video_genres'));
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'video_people'));
+        $this->assertSame(['Comedy'], $this->genreTitles(1));
+        $this->assertSame(['Solo'], $this->castNames(1));
+    }
+
+    public function test_a_show_with_genres_and_no_cast_deletes_only_its_genres(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::sequence()
+            ->push($this->show(['aggregate_credits' => ['cast' => []]]))
+            ->push($this->show())]);
+        $this->details()->refreshIfDue(1);
+        Carbon::setTestNow('2026-09-27 12:00:00');
+
+        $transactions = $this->transactionStatements(fn () => $this->details()->refreshIfDue(1));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'videos', 1, ['video_genres', 'video_people']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'video_genres'));
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'video_people'));
+        $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
+        $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
+    }
+
+    public function test_inside_an_open_transaction_a_show_with_no_rows_still_deletes_first(): void
+    {
+        $this->insertShow(1, tmdb: 200);
+        Http::fake(['*tv/200?*' => Http::response($this->show())]);
+
+        // The enclosing transaction's snapshot may predate rows another writer committed.
+        $transactions = $this->transactionStatements(fn () => DB::transaction(fn () => $this->details()->refreshIfDue(1)));
+
+        $this->assertCount(1, $transactions);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'video_genres'));
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'video_people'));
+        $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
+        $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
+    }
+
+    public function test_the_network_is_found_or_added_outside_the_transaction(): void
+    {
+        $this->insertShow(1, tmdb: 200, publisher: 'Home Box Office');
+        Http::fake(['*tv/200?*' => Http::response($this->show(['networks' => [['name' => 'New Network']]]))]);
+        // Inside, the read after insertOrIgnore could not see a name another worker had just added.
+        $levels = [];
+        DB::listen(static function ($query) use (&$levels): void {
+            if (preg_match('/\bfrom "networks"|\binto "networks"/i', $query->sql) === 1) {
+                $levels[] = DB::transactionLevel();
+            }
+        });
+
+        $this->details()->refreshIfDue(1);
+
+        $this->assertNotSame([], $levels);
+        $this->assertSame([0], array_values(array_unique($levels)));
+        $this->assertSame('New Network', DB::table('networks')->where('id', DB::table('tv_info')->where('videos_id', 1)->value('networks_id'))->value('name'));
     }
 
     public function test_two_spellings_of_one_network_are_one_row_and_publisher_is_the_fallback(): void

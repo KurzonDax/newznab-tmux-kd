@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\ProductionTables;
+use Tests\Support\RecordsTransactionStatements;
 use Tests\Unit\ImdbScraperTestCase;
 
 /**
@@ -26,6 +27,8 @@ use Tests\Unit\ImdbScraperTestCase;
  */
 final class MovieCreditsTest extends ImdbScraperTestCase
 {
+    use RecordsTransactionStatements;
+
     private const string IMDB_ID = '0137523';
 
     protected function setUp(): void
@@ -412,6 +415,65 @@ final class MovieCreditsTest extends ImdbScraperTestCase
         $this->assertStringContainsString('Brad Pitt, Edward Norton, Robert Downey, Jr.', $before);
     }
 
+    public function test_a_film_with_no_rows_gets_them_after_its_lock_with_no_delete(): void
+    {
+        $id = $this->insertFilm();
+
+        $transactions = $this->transactionStatements(fn () => $this->credits()->sync($id, ['Drama'], [$this->person('David Fincher', 7467)], [$this->person('Brad Pitt', 287)]));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'movieinfo', $id, ['movie_genres', 'movie_people']);
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'movie_genres'));
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'movie_people'));
+        $this->assertSame(['Drama'], $this->genreTitles($id));
+        $this->assertSame(['Brad Pitt'], $this->names($id, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_films_stored_rows_are_replaced_after_its_lock(): void
+    {
+        $id = $this->insertFilm();
+        $this->credits()->sync($id, ['Drama'], [$this->person('David Fincher', 7467)], [$this->person('Brad Pitt', 287)]);
+
+        $transactions = $this->transactionStatements(fn () => $this->credits()->sync($id, ['Comedy'], [$this->person('New Director', 301)], [$this->person('Solo', 201)]));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'movieinfo', $id, ['movie_genres', 'movie_people']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'movie_genres'));
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'movie_people'));
+        $this->assertSame(['Comedy'], $this->genreTitles($id));
+        $this->assertSame(['New Director'], $this->names($id, MovieCredits::ROLE_DIRECTOR));
+        $this->assertSame(['Solo'], $this->names($id, MovieCredits::ROLE_CAST));
+    }
+
+    public function test_a_film_with_genres_and_no_people_deletes_only_its_genres(): void
+    {
+        $id = $this->insertFilm();
+        $this->credits()->sync($id, ['Drama'], [], []);
+
+        $transactions = $this->transactionStatements(fn () => $this->credits()->sync($id, ['Drama', 'Thriller'], [$this->person('David Fincher', 7467)], []));
+
+        $this->assertCount(1, $transactions);
+        $this->assertParentLockedFirst($transactions[0], 'movieinfo', $id, ['movie_genres', 'movie_people']);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'movie_genres'));
+        $this->assertSame(0, $this->deletesOn($transactions[0], 'movie_people'));
+        $this->assertSame(['Drama', 'Thriller'], $this->genreTitles($id));
+        $this->assertSame(['David Fincher'], $this->names($id, MovieCredits::ROLE_DIRECTOR));
+    }
+
+    public function test_inside_an_open_transaction_a_film_with_no_rows_still_deletes_first(): void
+    {
+        $id = $this->insertFilm();
+
+        // The enclosing transaction's snapshot may predate rows another writer committed.
+        $transactions = $this->transactionStatements(fn () => DB::transaction(fn () => $this->credits()->sync($id, ['Drama'], [], [$this->person('Brad Pitt', 287)])));
+
+        $this->assertCount(1, $transactions);
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'movie_genres'));
+        $this->assertSame(1, $this->deletesOn($transactions[0], 'movie_people'));
+        $this->assertSame(['Drama'], $this->genreTitles($id));
+        $this->assertSame(['Brad Pitt'], $this->names($id, MovieCredits::ROLE_CAST));
+    }
+
     private function service(): MovieService
     {
         return new MovieService;
@@ -468,6 +530,19 @@ final class MovieCreditsTest extends ImdbScraperTestCase
                 ['iso_3166_1' => 'US', 'release_dates' => [['certification' => ''], ['certification' => 'R'], ['certification' => 'NC-17']]],
             ]],
         ], $overrides);
+    }
+
+    private function credits(): MovieCredits
+    {
+        return app(MovieCredits::class);
+    }
+
+    /**
+     * @return array{name: string, tmdb_id: ?int}
+     */
+    private function person(string $name, ?int $tmdbId): array
+    {
+        return ['name' => $name, 'tmdb_id' => $tmdbId];
     }
 
     /**
