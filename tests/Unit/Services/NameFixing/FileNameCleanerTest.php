@@ -411,4 +411,63 @@ class FileNameCleanerTest extends TestCase
 
         $this->assertFalse($cleaner->isPlausibleReleaseTitle('Documentary Collection AV1'));
     }
+
+    #[DataProvider('promotionalTitles')]
+    public function test_a_wholly_promotional_title_is_recognized(string $title): void
+    {
+        $this->assertTrue((new FileNameCleaner)->isPromotionalTitle($title));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function promotionalTitles(): array
+    {
+        return [
+            'download attribution' => ['Downloaded from example.org'],
+            'video branding' => ['example.org - HEVC x265 Video Downloads'],
+            'porn branding' => ['example.org - HEVC x265 Porn Downloads'],
+            'case, whitespace and quotes' => ['  "DOWNLOADED   from  Example.ORG"  '],
+            'bracketed branding' => ['[example.org  -  hevc x265 video downloads]'],
+            'https and trailing slash' => ['Downloaded from https://example.org/'],
+            'https branding with a bar' => ['https://example.org/ | HEVC x265 Porn Downloads'],
+            'colon and singular download' => ['example.org: Download'],
+            'no labels' => ['example.org - Downloads'],
+            'other labels' => ['cdn-1.example.org - Free Full HD 1080p H.264 Movies Downloads'],
+            'uploaded by a domain' => ['Uploaded by example.org'],
+            'ripped by a domain' => ['Ripped by example.org'],
+            'encoded by a domain' => ['Encoded by example.org'],
+            'downloaded from a name' => ['Downloaded From ExampleCinemas'],
+            'encoded by a name' => ['Encoded By SomeName'],
+            'ripped by a name and team' => ['Ripped By SomeName & Team'],
+            'uploaded by a name' => ['Uploaded by SomeName'],
+            'stored attribution with evidence' => ['Downloaded from example 1080p WEB-DL.org'],
+            'stored branding with evidence' => ['example.org - HEVC x265 Video Downloads 1080p WEB-DL'],
+            'video filename' => ['example.org - HEVC x265 Porn Downloads.mp4'],
+            'attribution filename' => ['Downloaded from example.org.mkv'],
+        ];
+    }
+
+    #[DataProvider('ordinaryTitles')]
+    public function test_an_ordinary_title_is_not_promotional(string $title): void
+    {
+        $this->assertFalse((new FileNameCleaner)->isPromotionalTitle($title));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function ordinaryTitles(): array
+    {
+        return [
+            'domain with a real title' => ['example.org - Network Documentary'],
+            'downloads as a title word' => ['Downloads.2026.1080p.WEB-DL-GROUP'],
+            'site prefix before a scene name' => ['Example.site | Visible.Release.2026.1080p.10bit.WEBRip.6CH.x265.HEVC-GROUP'],
+            'scene name' => ['Visible.Release.2026.1080p.WEB-DL.x265-GROUP'],
+            'descriptive title' => ['Con Air (1997)'],
+            'attribution inside a longer title' => ['Downloaded from example.org and Other Stories'],
+            'attribution by several words' => ['Ripped By Some Other Name'],
+            'empty' => [''],
+        ];
+    }
 }

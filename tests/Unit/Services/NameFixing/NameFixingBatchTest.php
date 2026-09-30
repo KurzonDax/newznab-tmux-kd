@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\NameFixing;
 
+use App\Facades\Search;
 use App\Services\NameFixing\DonorMatchSelector;
+use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\PredbMatchSelector;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NameFixing\Srrdb\SrrdbLookupService;
 use Illuminate\Database\Connection;
@@ -392,6 +395,99 @@ class NameFixingBatchTest extends TestCase
         $this->assertSame(['checked' => 1, 'fixed' => 0], $service->processStandardBatch('a', 100, false));
     }
 
+    /**
+     * A rejected promotional embedded title settles only its own source: the
+     * release's usable video filename still names it in the same sweep.
+     */
+    #[Test]
+    public function the_sweep_rejects_a_promotional_media_title_and_still_names_from_a_filename(): void
+    {
+        Search::shouldReceive('searchPredb')->andReturn([]);
+        $release = $this->promotionalMediaRelease(110);
+        $release->proc_files = NameFixingService::PROC_FILES_NONE;
+        $database = $this->promotionalMediaConnection($release, 'Visible Feature (2026).mp4');
+        [$updates, $renames, $flags] = $this->recordingUpdater();
+
+        $this->assertSame(['checked' => 1, 'fixed' => 1], $this->serviceWith($database, $updates)->processStandardBatch('a', 100, false));
+        $this->assertSame([['Visible Feature (2026)', 'Filenames, ', 'fileCheck: Descriptive title']], $renames->getArrayCopy());
+        $this->assertSame([['proc_media_movie', NameFixingService::PROC_MEDIA_MOVIE_DONE, 110]], $flags->getArrayCopy());
+    }
+
+    #[Test]
+    public function the_sweep_settles_a_rejected_promotional_media_title_without_renaming(): void
+    {
+        $release = $this->promotionalMediaRelease(120);
+        $database = $this->promotionalMediaConnection($release, null);
+        [$updates, $renames, $flags] = $this->recordingUpdater();
+
+        $this->assertSame(['checked' => 1, 'fixed' => 0], $this->serviceWith($database, $updates)->processStandardBatch('a', 100, false));
+        $this->assertSame([], $renames->getArrayCopy());
+        $this->assertSame([['proc_media_movie', NameFixingService::PROC_MEDIA_MOVIE_DONE, 120]], $flags->getArrayCopy());
+    }
+
+    private function promotionalMediaRelease(int $id): object
+    {
+        $release = $this->processedRelease($id);
+        $release->searchname = '5da7b5393d4f4445ac4db1ee8e95f567';
+        $release->categories_id = 20;
+        $release->groups_id = 1;
+        $release->proc_media_movie = NameFixingService::PROC_MEDIA_MOVIE_NONE;
+
+        return $release;
+    }
+
+    private function promotionalMediaConnection(object $release, ?string $fileName): Connection
+    {
+        $database = $this->mockCandidateConnection();
+        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('select')->willReturnCallback(static function (string $sql) use ($release, $fileName): array {
+            $sql = str_replace('"', '', $sql);
+            $releaseId = (int) $release->releases_id;
+
+            return match (true) {
+                str_contains($sql, 'r.proc_media_movie') => [$release],
+                str_contains($sql, 'FROM media_infos mi') => [(object) [
+                    'releases_id' => $releaseId,
+                    'uid' => '',
+                    'movie_name' => 'example.org - HEVC x265 Porn Downloads',
+                    'file_name' => 'movie.mp4',
+                ]],
+                $fileName !== null && str_contains($sql, 'SELECT DISTINCT rf.releases_id') => [(object) ['releases_id' => $releaseId]],
+                $fileName !== null && str_contains($sql, 'rf.name AS textstring') => [(object) [
+                    'releases_id' => $releaseId,
+                    'textstring' => $fileName,
+                    'filename' => $fileName,
+                    'crc32' => '',
+                    'size' => 900,
+                ]],
+                default => [],
+            };
+        });
+
+        return $database;
+    }
+
+    /**
+     * @return array{ReleaseUpdateService, \ArrayObject<int, list<string>>, \ArrayObject<int, array{string, int, int}>}
+     */
+    private function recordingUpdater(): array
+    {
+        $renames = new \ArrayObject;
+        $flags = new \ArrayObject;
+        $updates = $this->createPartialMock(ReleaseUpdateService::class, ['performDatabaseUpdate', 'updateSingleColumn']);
+        $updates->method('performDatabaseUpdate')->willReturnCallback(static function (object $release, string $title, string $type, string $method) use ($renames): void {
+            $renames[] = [$title, $type, $method];
+        });
+        $updates->method('updateSingleColumn')->willReturnCallback(static function (string $column, int $value, int $id) use ($flags): void {
+            $flags[] = [$column, $value, $id];
+        });
+        $reflection = new ReflectionClass(ReleaseUpdateService::class);
+        $reflection->getProperty('fileNameCleaner')->setValue($updates, new FileNameCleaner);
+        $reflection->getProperty('echoOutput')->setValue($updates, false);
+
+        return [$updates, $renames, $flags];
+    }
+
     private function mockCandidateConnection(): Connection
     {
         $database = $this->getMockBuilder(SQLiteConnection::class)
@@ -453,6 +549,8 @@ class NameFixingBatchTest extends TestCase
         $reflection->getProperty('filePrioritizer')->setValue($service, new FilePrioritizer);
         $reflection->getProperty('donorMatchSelector')->setValue($service, new DonorMatchSelector);
         $reflection->getProperty('fileNameCleaner')->setValue($service, new FileNameCleaner);
+        $reflection->getProperty('fileExtractor')->setValue($service, new FileNameExtractor);
+        $reflection->getProperty('predbMatchSelector')->setValue($service, new PredbMatchSelector(new FileNameCleaner));
         $reflection->getProperty('descriptiveTitleRenameEnabled')->setValue($service, true);
 
         return $service;

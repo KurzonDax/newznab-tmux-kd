@@ -248,7 +248,7 @@ class TrustedDonorNameFixingTest extends TestCase
         ];
     }
 
-    public function test_scene_media_title_keeps_its_existing_trust_with_descriptive_renames_disabled(): void
+    public function test_scene_media_title_still_renames_with_descriptive_renames_disabled_but_is_not_trusted(): void
     {
         Settings::settingsUpdate(['descriptive_title_rename' => '0']);
         $name = 'Con.Air.1997.1080p.BluRay.x264-GROUP';
@@ -260,7 +260,43 @@ class TrustedDonorNameFixingTest extends TestCase
 
         $release = Release::query()->findOrFail(1);
         $this->assertSame($name, $release->searchname);
-        $this->assertSame(1, (int) $release->is_trusted_name);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+    }
+
+    #[DataProvider('promotionalMediaTitles')]
+    public function test_a_promotional_media_title_leaves_the_release_unrenamed(string $title, string $currentName, int $category): void
+    {
+        $this->insertRelease(1, $currentName, $category);
+        DB::table('media_infos')->insert(['releases_id' => 1, 'movie_name' => $title]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMediaMovieName(2, true, 2, true, false);
+
+        $release = Release::query()->findOrFail(1);
+        $this->assertSame($currentName, $release->searchname);
+        $this->assertSame(0, (int) $release->isrenamed);
+        $this->assertSame(0, (int) $release->is_trusted_name);
+        $this->assertSame(1, (int) $release->proc_media_movie);
+        Event::assertNotDispatched(ReleaseNameFixed::class);
+    }
+
+    /**
+     * @return array<string, array{string, string, int}>
+     */
+    public static function promotionalMediaTitles(): array
+    {
+        $hashed = '5da7b5393d4f4445ac4db1ee8e95f567';
+
+        return [
+            'attribution over a hash' => ['Downloaded from example.org', $hashed, Category::OTHER_HASHED],
+            'attribution over a readable name' => ['Downloaded from example.org', 'Studio - Example Feature', Category::OTHER_MISC],
+            'video branding over a hash' => ['example.org - HEVC x265 Video Downloads', $hashed, Category::OTHER_MISC],
+            'porn branding over a readable name' => ['example.org - HEVC x265 Porn Downloads', 'Studio - Example Feature', Category::XXX_OTHER],
+            'quoted https attribution' => ['"Downloaded From https://Example.org/"', $hashed, Category::OTHER_HASHED],
+            'attribution to a name' => ['Downloaded From ExampleCinemas', $hashed, Category::OTHER_HASHED],
+            'encoded by a name' => ['Encoded By SomeName', $hashed, Category::OTHER_HASHED],
+            'ripped by a name and team' => ['Ripped By SomeName & Team', $hashed, Category::OTHER_HASHED],
+        ];
     }
 
     #[DataProvider('partialMediaTitles')]
@@ -677,6 +713,120 @@ class TrustedDonorNameFixingTest extends TestCase
             $this->assertSame($canonicalName, $release->searchname);
             $this->assertSame(1, (int) $release->is_trusted_name);
         }
+    }
+
+    #[DataProvider('promotionalDonors')]
+    public function test_a_promotional_trusted_donor_does_not_name_a_copy(string $source, string $donorName): void
+    {
+        $this->insertRelease(1, $donorName, Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        $this->shareDonorEvidence($source, [1, 2]);
+
+        Search::shouldReceive('updateRelease')->never();
+        $this->runDonorSource($source);
+
+        $this->assertSame('6f0c31cb66a544c1912a0fc16e3d7b73', DB::table('releases')->where('id', 2)->value('searchname'));
+        $this->assertSame(0, (int) DB::table('releases')->where('id', 2)->value('is_trusted_name'));
+        $this->assertPromotionalDonorUntouched($donorName);
+    }
+
+    #[DataProvider('promotionalDonors')]
+    public function test_a_valid_donor_names_a_copy_when_a_promotional_donor_would_have_won(string $source, string $donorName): void
+    {
+        $canonicalName = 'Canonical.Release.2026.1080p-GROUP';
+        $this->insertRelease(1, $donorName, Category::MOVIE_HD, trusted: true);
+        $this->insertRelease(2, '6f0c31cb66a544c1912a0fc16e3d7b73');
+        $this->insertRelease(3, $canonicalName, Category::MOVIE_HD, trusted: true);
+        $this->shareDonorEvidence($source, [1, 2, 3]);
+
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        $this->runDonorSource($source);
+
+        $this->assertSame($canonicalName, DB::table('releases')->where('id', 2)->value('searchname'));
+        $this->assertSame(1, (int) DB::table('releases')->where('id', 2)->value('is_trusted_name'));
+        $this->assertSame($canonicalName, DB::table('releases')->where('id', 3)->value('searchname'));
+        $this->assertPromotionalDonorUntouched($donorName);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function promotionalDonors(): array
+    {
+        $cases = [];
+        foreach (['uid', 'hash', 'crc'] as $source) {
+            $cases["{$source} attribution"] = [$source, 'Downloaded from example.org'];
+            $cases["{$source} branding"] = [$source, 'example.org - HEVC x265 Video Downloads'];
+            $cases["{$source} stored attribution with evidence"] = [$source, 'Downloaded from example 1080p WEB-DL.org'];
+            $cases["{$source} stored branding with evidence"] = [$source, 'example.org - HEVC x265 Porn Downloads 1080p WEB-DL'];
+        }
+
+        return $cases;
+    }
+
+    #[DataProvider('promotionalUidMembers')]
+    public function test_uid_propagation_leaves_a_promotional_member_unchanged(string $memberName, bool $trusted): void
+    {
+        $this->insertRelease(1, 'Canonical.Release.2026.1080p-GROUP', Category::MOVIE_HD, trusted: true, predbId: 77);
+        $this->insertRelease(2, $memberName, Category::OTHER_MISC, trusted: $trusted);
+        $this->shareDonorEvidence('uid', [1, 2]);
+
+        Search::shouldReceive('updateRelease')->never();
+        app(NameFixingService::class)->fixNamesWithMedia(2, true, 2, true, false);
+
+        $member = DB::table('releases')->where('id', 2)->first();
+        $this->assertSame($memberName, $member->searchname);
+        $this->assertSame($trusted ? 1 : 0, (int) $member->is_trusted_name);
+        $this->assertSame(0, (int) $member->predb_id);
+        $this->assertSame(0, (int) $member->isrenamed);
+        $this->assertSame(1, (int) $member->proc_uid);
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function promotionalUidMembers(): array
+    {
+        return [
+            'untrusted attribution' => ['Downloaded from example.org', false],
+            'trusted branding' => ['example.org - HEVC x265 Video Downloads', true],
+            'trusted stored attribution with evidence' => ['Downloaded from example 1080p WEB-DL.org', true],
+        ];
+    }
+
+    /**
+     * @param  list<int>  $releaseIds
+     */
+    private function shareDonorEvidence(string $source, array $releaseIds): void
+    {
+        foreach ($releaseIds as $releaseId) {
+            match ($source) {
+                'crc' => DB::table('release_files')->insert(['releases_id' => $releaseId, 'name' => 'movie.mkv', 'crc32' => '0053CA13', 'size' => 900_000]),
+                'uid' => DB::table('media_infos')->insert(['releases_id' => $releaseId, 'unique_id' => '9988776655443322']),
+                'hash' => DB::table('par_hashes')->insert(['releases_id' => $releaseId, 'hash' => '1234567890abcdef1234567890abcdef']),
+                default => throw new \InvalidArgumentException("Unsupported source [{$source}]."),
+            };
+        }
+    }
+
+    private function runDonorSource(string $source): void
+    {
+        $service = app(NameFixingService::class);
+
+        match ($source) {
+            'crc' => $service->fixNamesWithCrc(2, true, 2, true, false),
+            'uid' => $service->fixNamesWithMedia(2, true, 2, true, false),
+            'hash' => $service->fixNamesWithParHash(2, true, 2, true, false),
+            default => throw new \InvalidArgumentException("Unsupported source [{$source}]."),
+        };
+    }
+
+    private function assertPromotionalDonorUntouched(string $donorName): void
+    {
+        $donor = DB::table('releases')->where('id', 1)->first();
+        $this->assertSame($donorName, $donor->searchname);
+        $this->assertSame(1, (int) $donor->is_trusted_name);
+        $this->assertSame(0, (int) $donor->predb_id);
     }
 
     private function assertTrustedDonorRenamesTarget(string $source): void
