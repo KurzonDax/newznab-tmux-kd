@@ -63,7 +63,8 @@ final readonly class ArtifactReleaseUpdate
         $completion = $document->measure($this->declaredFiles)->percentage();
         $values = $this->values;
         if ($this->kind === 'reconciliation' && $this->allows($release)) {
-            if ($this->label !== null && ! $release->is_trusted_name) {
+            // Never wipe a name that name fixing already set (isrenamed = 1).
+            if ($this->label !== null && ! $release->is_trusted_name && (int) $release->isrenamed !== 1) {
                 $values += ['name' => $this->label, ...Release::searchNameValues($this->label), 'is_trusted_name' => false, 'isrenamed' => 0];
             }
             if ($this->independentVideos) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
@@ -39,6 +40,7 @@ use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -417,6 +419,28 @@ class PendingReconciliationTest extends TestCase
         }
     }
 
+    public function test_historical_apply_keeps_a_name_that_name_fixing_already_set(): void
+    {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        $this->addNameFixingColumns();
+        $this->ingestCourse();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('historical-renamed')]);
+        [$sources] = $this->historicalSources(app(NzbService::class));
+        $renamed = $this->renameThroughNameFixing($sources[0]);
+        $recovery = app(HistoricalReconciliation::class);
+        $plan = $recovery->plan($sources);
+        $this->assertTrue($plan['applicable']);
+        $this->assertSame($sources[0], $plan['anchor']);
+        $this->assertSame('applied', $recovery->apply($sources, null, $plan['digest']));
+        $anchor = Release::query()->findOrFail($plan['anchor']);
+        foreach (['name', 'searchname', 'searchname_normalized', 'display_name', 'isrenamed', 'is_trusted_name'] as $column) {
+            $this->assertSame($renamed[$column], $anchor->getRawOriginal($column), $column);
+        }
+        $this->assertSame(Category::OTHER_MISC, (int) $anchor->categories_id);
+        $this->assertSame(1, DB::table('reconciled_artifacts')->where('release_id', $plan['anchor'])->count());
+    }
+
     public function test_unproved_different_families_do_not_gain_a_hold_from_shared_budget_deferrals(): void
     {
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
@@ -515,6 +539,30 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame(100.0, (float) $release->fresh()->completion);
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(1, DB::table('releases')->count());
+    }
+
+    public function test_late_addition_keeps_a_name_that_name_fixing_already_set(): void
+    {
+        $videos = array_slice(array_keys(Par2Fixture::course()), 1, 14);
+        [$service] = $this->ingestCourse([...$videos, 'bundle.r15']);
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+        $this->seedLegacyPartialPosting();
+        $this->addNameFixingColumns();
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('late-renamed')]);
+        $nzbs = app(NzbService::class);
+        $release = Release::query()->first();
+        $this->assertTrue($nzbs->createNzbForRelease($release)->success);
+        $renamed = $this->renameThroughNameFixing((int) $release->id);
+        $late = array_values(array_filter($this->courseHeaders, static fn ($header): bool => str_contains($header['Subject'], '"bundle.r15"')));
+        $this->assertCount(1, $late);
+        (new TestBinariesHarness)->simulateScan($late, ['id' => 1, 'name' => 'alt.binaries.boneless']);
+        $this->assertSame('late_added', $service->reconcile((int) DB::table('collections')->min('id'), 1));
+        $this->assertFalse(Schema::hasTable('reconciled_artifacts'));
+        $fresh = Release::query()->findOrFail($release->id);
+        foreach (['name', 'searchname', 'isrenamed', 'is_trusted_name'] as $column) {
+            $this->assertSame($renamed[$column], $fresh->getRawOriginal($column), $column);
+        }
+        $this->assertStringContainsString('bundle.r15', $nzbs->readNzbContents($release->guid));
     }
 
     public function test_interrupted_historical_apply_resumes_and_fences_all_sources_until_commit(): void
@@ -696,6 +744,36 @@ class PendingReconciliationTest extends TestCase
         }
 
         return [$sources, $originals];
+    }
+
+    /** The columns ReleaseUpdateService writes that the reconciliation test schema lacks. */
+    private function addNameFixingColumns(): void
+    {
+        Schema::table('releases', function (Blueprint $table): void {
+            foreach (['musicinfo_id', 'consoleinfo_id', 'bookinfo_id', 'anidbid', 'gamesinfo_id', 'proc_files'] as $column) {
+                $table->integer($column)->nullable();
+            }
+        });
+    }
+
+    /**
+     * Renames a release through the real name-fixing updater with an untrusted
+     * source, then proves the rename landed.
+     *
+     * @return array<string, mixed> the renamed row's raw name columns
+     */
+    private function renameThroughNameFixing(int $releaseId): array
+    {
+        $title = 'Some.Movie.2024.1080p.BluRay.x264-GROUP';
+        // Recategorization after a rename is not under test and needs tables this schema lacks.
+        Event::fake([ReleaseNameFixed::class]);
+        app(ReleaseUpdateService::class)->updateRelease(Release::query()->findOrFail($releaseId), $title, 'Filenames', true, 'Filenames, ', true, false);
+        $renamed = Release::query()->findOrFail($releaseId);
+        $this->assertSame($title, $renamed->searchname);
+        $this->assertSame(1, (int) $renamed->isrenamed);
+        $this->assertSame(0, (int) $renamed->is_trusted_name);
+
+        return array_intersect_key($renamed->getRawOriginal(), array_flip(['name', 'searchname', 'searchname_normalized', 'display_name', 'isrenamed', 'is_trusted_name']));
     }
 
     private function seedLegacyPartialPosting(): void

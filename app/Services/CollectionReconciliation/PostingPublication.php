@@ -130,7 +130,9 @@ class PostingPublication
                 }
                 $decision = json_decode($journal->decision, true, flags: JSON_THROW_ON_ERROR);
                 $label = ($decision['decision'] ?? $decision)['label'];
-                $identity = $lockedRelease->is_trusted_name ? [] : ['name' => $label, 'searchname' => $label, 'is_trusted_name' => false, 'isrenamed' => 0];
+                // Never wipe a name that name fixing already set (isrenamed = 1).
+                $identity = $lockedRelease->is_trusted_name || (int) $lockedRelease->isrenamed === 1
+                    ? [] : ['name' => $label, 'searchname' => $label, 'is_trusted_name' => false, 'isrenamed' => 0];
                 if ($journal->independent_videos) {
                     $identity['categories_id'] = Category::OTHER_MISC;
                 }
