@@ -22,12 +22,18 @@ class PcCategorizer extends AbstractCategorizer
     protected const PC_KEYWORDS = 'PC[ _.-]?GAMES?|\[PC\]|\(PC\)|Steam[._-]?Rip|Retail\s*PC|DRM-?Free';
 
     // System/architecture tokens; parentheses count as token delimiters for these
-    protected const SYSTEM_TOKENS = '(32|64)bit|converter|i\d86|key(gen|maker)|freebsd|GAMEGUiDE'
+    protected const SYSTEM_TOKENS = 'converter|i\d86|key(gen|maker)|freebsd|GAMEGUiDE'
         .'|hpux|irix|multilingual|Patch|Pro v\d{1,3}|portable|regged|software|solaris|template'
         .'|unix|win2kxp2k3|win64|win(2k|32|64|all|dows|nt(2k)?(xp)?|xp)|win9x(me|nt)?|x(32|64|86)';
 
     // System tokens common enough in prose that parenthesis delimiters would misfire
     protected const SYSTEM_TOKENS_STRICT = 'linux';
+
+    // Architecture tokens that also name an audio sample bit depth
+    protected const BIT_DEPTH_TOKENS = '(32|64)bit';
+
+    // Audio container/codec names; a bit depth or vN preset next to one describes audio, not software
+    protected const AUDIO_FORMAT_TOKENS = 'FLAC|WAVPACK|WV|APE|ALAC|TAK|TTA|WAV|AIFF|DSD(?:64|128|256)?|DSF|PCM|MP3|AAC|OGG|OPUS|M4A|Lossless';
 
     public function getName(): string
     {
@@ -165,14 +171,26 @@ class PcCategorizer extends AbstractCategorizer
             return $this->matched(Category::PC_0DAY, 0.9, '0day_explicit');
         }
 
+        $hasAudioFormat = (bool) preg_match('/(?<![a-z0-9])(?:'.self::AUDIO_FORMAT_TOKENS.')(?![a-z0-9])/i', $name);
+
         // System/architecture indicators
         if (preg_match('/(?:^|[._ (-])(?:'.self::SYSTEM_TOKENS.')(?:[._ )-]|$)/i', $name)
             || preg_match('/(?:^|[._ -])(?:'.self::SYSTEM_TOKENS_STRICT.')(?:[._ -]|$)/i', $name)) {
             return $this->matched(Category::PC_0DAY, 0.85, '0day_system');
         }
 
+        // A bit depth beside an audio format is a sample depth, not an architecture
+        if (! $hasAudioFormat && preg_match('/(?:^|[._ (-])(?:'.self::BIT_DEPTH_TOKENS.')(?:[._ )-]|$)/i', $name)) {
+            return $this->matched(Category::PC_0DAY, 0.85, '0day_system');
+        }
+
         // Software vendors and patterns
-        if (preg_match('/\b(Adobe|auto(cad|desk)|-BEAN|Cracked|Cucusoft|CYGNUS|Divx[._ -]Plus|\.(deb|exe)|DIGERATI|FOSI|-FONT|Key(filemaker|gen|maker)|Lynda\.com|lz0|MULTiLANGUAGE|Microsoft\s*(Office|Windows|Server)|MultiOS|-(iNViSiBLE|SPYRAL|SUNiSO|UNION|TE)|v\d{1,3}.*?Pro|[._ -]v\d{1,3}[._ -]|Xilisoft)\b/i', $name)) {
+        if (preg_match('/\b(Adobe|auto(cad|desk)|-BEAN|Cracked|Cucusoft|CYGNUS|Divx[._ -]Plus|\.(deb|exe)|DIGERATI|FOSI|-FONT|Key(filemaker|gen|maker)|Lynda\.com|lz0|MULTiLANGUAGE|Microsoft\s*(Office|Windows|Server)|MultiOS|-(iNViSiBLE|SPYRAL|SUNiSO|UNION|TE)|v\d{1,3}.*?Pro|Xilisoft)\b/i', $name)) {
+            return $this->matched(Category::PC_0DAY, 0.85, '0day_software');
+        }
+
+        // A vN beside an audio format is an MP3 VBR preset, not a software version
+        if (! $hasAudioFormat && preg_match('/\b[._ -]v\d{1,3}[._ -]\b/i', $name)) {
             return $this->matched(Category::PC_0DAY, 0.85, '0day_software');
         }
 

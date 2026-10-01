@@ -100,6 +100,59 @@ class PcCategorizerBoundaryTest extends TestCase
         $this->assertNotSame('0day_system', $result['debug']['matched_by']);
     }
 
+    public function test_audio_bit_depth_beside_a_lossless_format_is_not_pc_evidence(): void
+    {
+        $result = $this->categorize('George_Michael-Older-2LP-32BIT-WAVPACK-1996-REETKEVER');
+
+        $this->assertSame(Category::MUSIC_LOSSLESS, $result['categories_id']);
+    }
+
+    public function test_64bit_beside_flac_is_not_pc_evidence(): void
+    {
+        $result = $this->categorize('Artist-Album-64BIT-FLAC-2020-GRP');
+
+        $this->assertSame(Category::MUSIC_LOSSLESS, $result['categories_id']);
+    }
+
+    public function test_mp3_vbr_preset_is_not_a_software_version(): void
+    {
+        $result = $this->categorize('Macronympha-Psych Rot-V2-TAPE-2011 MP3');
+
+        $this->assertSame(Category::MUSIC_MP3, $result['categories_id']);
+    }
+
+    public function test_bit_token_without_an_audio_format_still_categorizes_as_pc_0day(): void
+    {
+        $result = $this->categorize('Wondershare.UniConverter.v15.32bit');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_system', $result['debug']['matched_by']);
+    }
+
+    public function test_version_token_without_an_audio_format_still_categorizes_as_pc_0day(): void
+    {
+        $result = $this->categorize('Some.Tool.v2.Setup');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_software', $result['debug']['matched_by']);
+    }
+
+    public function test_other_pc_evidence_wins_beside_an_audio_format(): void
+    {
+        $result = $this->categorize('MP3.Audio.Converter.v2.x64');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_system', $result['debug']['matched_by']);
+    }
+
+    public function test_audio_software_with_a_system_token_stays_pc_0day(): void
+    {
+        $result = $this->categorize('dBpoweramp.Music.Converter.FLAC.Edition.32bit');
+
+        $this->assertSame(Category::PC_0DAY, $result['categories_id']);
+        $this->assertSame('0day_system', $result['debug']['matched_by']);
+    }
+
     /**
      * @return array<string, mixed>
      */
