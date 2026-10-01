@@ -168,6 +168,24 @@ class AdminConsoleEditTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/<option value="3"\s+selected/', $page->getContent());
     }
 
+    public function test_console_edit_shows_the_stored_release_date(): void
+    {
+        $id = $this->createConsoleEntry('2015-06-09 00:00:00');
+
+        $page = $this->actingAs($this->admin())->get(route('admin.console-edit', ['id' => $id]))->assertOk();
+
+        $this->assertSame('2015-06-09', $this->releaseDateInputValue($page->getContent()));
+    }
+
+    public function test_console_edit_shows_an_empty_release_date_when_none_is_stored(): void
+    {
+        $id = $this->createConsoleEntry(null);
+
+        $page = $this->actingAs($this->admin())->get(route('admin.console-edit', ['id' => $id]))->assertOk();
+
+        $this->assertSame('', $this->releaseDateInputValue($page->getContent()));
+    }
+
     public function test_console_edit_keeps_every_genre_when_the_stored_genre_is_posted(): void
     {
         $id = $this->createTwoGenreGame();
@@ -235,6 +253,13 @@ class AdminConsoleEditTest extends TestCase
     {
         return DB::table('console_genres')->where('consoleinfo_id', $id)->orderBy('position')->get(['genres_id', 'position'])
             ->map(static fn (object $row): array => [(int) $row->genres_id, (int) $row->position])->all();
+    }
+
+    private function releaseDateInputValue(string $html): string
+    {
+        $this->assertSame(1, preg_match('/<input type="date"\s+id="releasedate"\s+name="releasedate"\s+value="([^"]*)"/', $html, $match));
+
+        return $match[1];
     }
 
     private function storedReleaseDate(int $id): string
