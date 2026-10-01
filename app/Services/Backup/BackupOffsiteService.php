@@ -131,7 +131,7 @@ class BackupOffsiteService
         float $deadline,
     ): bool {
         if (! $file['verified']) {
-            throw new RuntimeException("Source checksum verification failed for {$setId}/".basename($file['dump_path']));
+            throw new RuntimeException("Source backup file is missing or not its written size for {$setId}/".basename($file['dump_path']));
         }
 
         $setDirectory = $destination.DIRECTORY_SEPARATOR.$setId;
@@ -144,14 +144,7 @@ class BackupOffsiteService
         $checksum = (string) ($file['manifest']['sha256'] ?? '');
         $bytes = (int) ($file['manifest']['bytes'] ?? 0);
 
-        if ($this->isComplete(
-            $destinationDump,
-            $destinationManifest,
-            $file['manifest_path'],
-            $checksum,
-            $bytes,
-            $deadline,
-        )) {
+        if ($this->isComplete($destinationDump, $destinationManifest, $file['manifest_path'], $bytes)) {
             return false;
         }
 
@@ -256,25 +249,17 @@ class BackupOffsiteService
         return $binary;
     }
 
-    private function isComplete(
-        string $dump,
-        string $manifest,
-        string $sourceManifest,
-        string $checksum,
-        int $bytes,
-        float $deadline,
-    ): bool {
+    private function isComplete(string $dump, string $manifest, string $sourceManifest, int $bytes): bool
+    {
         if (! is_file($dump) || ! is_file($manifest) || ! is_file($sourceManifest)) {
             return false;
         }
 
-        $sourceManifestChecksum = $this->catalog->checksum($sourceManifest, $deadline);
-        $destinationManifestChecksum = $this->catalog->checksum($manifest, $deadline);
+        $sourceContents = file_get_contents($sourceManifest);
 
         return filesize($dump) === $bytes
-            && $checksum !== ''
-            && hash_equals($sourceManifestChecksum, $destinationManifestChecksum)
-            && hash_equals($checksum, $this->catalog->checksum($dump, $deadline));
+            && $sourceContents !== false
+            && $sourceContents === file_get_contents($manifest);
     }
 
     private function markSet(string $setId, string $status, ?string $error = null): void

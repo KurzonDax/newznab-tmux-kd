@@ -4,14 +4,57 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\Backup\BackupCatalog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
 
 class BackupListCommandTest extends TestCase
 {
     public function test_list_reports_verified_files_from_sets_on_disk(): void
+    {
+        $location = $this->prepareLocation();
+
+        $set = $location.'/20260816-020000';
+        mkdir($set);
+        $this->writeBackup($set, 'full', '20260816-0200', '2026-08-16T02:00:00-05:00');
+        $this->writeBackup($set, 'daily', '20260817-0200', '2026-08-17T02:00:00-05:00');
+
+        $this->artisan('backup:list')
+            ->expectsOutputToContain('full')
+            ->expectsOutputToContain('daily')
+            ->assertSuccessful();
+
+        $this->assertDatabaseCount('database_backups', 2);
+        $this->assertDatabaseHas('database_backups', [
+            'set_id' => '20260816-020000',
+            'kind' => 'full',
+            'status' => 'successful',
+        ]);
+    }
+
+    public function test_list_reads_manifests_and_sizes_without_hashing_backups(): void
+    {
+        $location = $this->prepareLocation();
+        $set = $location.'/20260816-020000';
+        mkdir($set);
+        $this->writeBackup($set, 'full', '20260816-0200', '2026-08-16T02:00:00-05:00');
+        $this->writeBackup($set, 'daily', '20260817-0200', '2026-08-17T02:00:00-05:00');
+        file_put_contents($set.'/daily-20260817-0200.sql.gz', 'corrupt');
+        $catalog = new CountingBackupCatalog;
+        $this->app->instance(BackupCatalog::class, $catalog);
+
+        $this->artisan('backup:list')
+            ->expectsOutputToContain('verified')
+            ->expectsOutputToContain('FAILED')
+            ->assertSuccessful();
+
+        $this->assertSame([], $catalog->checksummed);
+    }
+
+    private function prepareLocation(): string
     {
         $location = $this->makeTempDirectory('nntmux-backup-list');
         Schema::create('settings', function (Blueprint $table): void {
@@ -39,22 +82,7 @@ class BackupListCommandTest extends TestCase
             ['name' => 'backup_location', 'value' => $location],
         ]);
 
-        $set = $location.'/20260816-020000';
-        mkdir($set);
-        $this->writeBackup($set, 'full', '20260816-0200', '2026-08-16T02:00:00-05:00');
-        $this->writeBackup($set, 'daily', '20260817-0200', '2026-08-17T02:00:00-05:00');
-
-        $this->artisan('backup:list')
-            ->expectsOutputToContain('full')
-            ->expectsOutputToContain('daily')
-            ->assertSuccessful();
-
-        $this->assertDatabaseCount('database_backups', 2);
-        $this->assertDatabaseHas('database_backups', [
-            'set_id' => '20260816-020000',
-            'kind' => 'full',
-            'status' => 'successful',
-        ]);
+        return $location;
     }
 
     private function writeBackup(string $set, string $kind, string $timestamp, string $startedAt): void

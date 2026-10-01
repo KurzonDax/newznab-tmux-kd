@@ -45,12 +45,10 @@ class BackupCatalog
                     continue;
                 }
 
+                // A dump is hashed once, when it is written; its manifest keeps that hash.
+                // Reads never hash it again, so verified means present at its written size.
                 $dumpPath = substr($manifestPath, 0, -strlen('.manifest.json'));
-                $expectedChecksum = (string) ($manifest['sha256'] ?? '');
-                $verified = is_file($dumpPath)
-                    && filesize($dumpPath) === $manifest['bytes']
-                    && $expectedChecksum !== ''
-                    && hash_equals($expectedChecksum, $this->checksum($dumpPath, $deadline));
+                $verified = is_file($dumpPath) && filesize($dumpPath) === $manifest['bytes'];
 
                 $files[] = [
                     'manifest_path' => $manifestPath,

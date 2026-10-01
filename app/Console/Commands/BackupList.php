@@ -12,7 +12,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('backup:list')]
-#[Description('List database Backup sets and verify their checksums')]
+#[Description('List database Backup sets and check their files against their manifests')]
 class BackupList extends Command
 {
     public function handle(BackupCatalog $catalog, BackupLocationValidator $validator): int

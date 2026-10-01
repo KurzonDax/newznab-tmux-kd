@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Services\Backup\BackupCatalog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Carbon;
@@ -11,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
 
 class BackupTickCommandTest extends TestCase
@@ -114,6 +116,20 @@ class BackupTickCommandTest extends TestCase
             ->assertSuccessful();
 
         $this->assertCount(0, glob($this->backupLocation.'/*/daily-*.sql.gz') ?: []);
+    }
+
+    public function test_tick_with_nothing_due_does_not_hash_existing_backups(): void
+    {
+        $this->writeBackup('20260816-020000', 'full', '20260816-0200');
+        $this->writeBackup('20260815-020000', 'daily', '20260815-0200');
+        $catalog = new CountingBackupCatalog;
+        $this->app->instance(BackupCatalog::class, $catalog);
+
+        $this->artisan('backup:tick')
+            ->expectsOutputToContain('No database backup is due')
+            ->assertSuccessful();
+
+        $this->assertSame([], $catalog->checksummed);
     }
 
     private function createSchema(): void
