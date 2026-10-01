@@ -694,12 +694,16 @@ class ConsoleService
                 ]);
 
             if ($con['cover'] === 1) {
-                $con['cover'] = (int) $this->imageService->saveRemoteImage(
+                $coverSaved = $this->imageService->saveRemoteImage(
                     (string) $consoleId,
                     $con['coverurl'],
                     $this->imgSavePath,
                     ImageAssetProfile::MetadataCover,
                 )->success;
+
+                if ($coverSaved) {
+                    ConsoleInfo::query()->where('id', $consoleId)->update(['cover' => 1]);
+                }
             }
         } else {
             $consoleId = $check['id'];
