@@ -11,9 +11,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
+use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
 
 class AdminBackupsControllerTest extends TestCase
@@ -85,6 +87,61 @@ class AdminBackupsControllerTest extends TestCase
         $response->assertSee('Full');
         $response->assertSee('Copied');
         $response->assertDontSee('No Backup sets found');
+    }
+
+    #[DataProvider('backupEnabledValues')]
+    public function test_admin_page_lists_sets_without_hashing_backups(string $enabled): void
+    {
+        DB::table('settings')->where('name', 'backup_enabled')->update(['value' => $enabled]);
+        $this->writeFullSet('20260816-020000');
+        $catalog = CountingBackupCatalog::install($this->app);
+
+        $response = $this->actingAs($this->user('Admin'))->get(route('admin.backups.index'));
+
+        $response->assertOk();
+        $response->assertSee('20260816-020000');
+        $response->assertDontSee('No Backup sets found');
+        $response->assertSee('<td class="py-3 pr-4">Yes</td>', false);
+        $this->assertSame([], $catalog->checksummed);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function backupEnabledValues(): array
+    {
+        return ['disabled' => ['0'], 'enabled' => ['1']];
+    }
+
+    public function test_saving_settings_returns_to_the_page_without_hashing_backups(): void
+    {
+        $this->writeFullSet('20260816-020000');
+        $catalog = CountingBackupCatalog::install($this->app);
+
+        $response = $this->actingAs($this->user('Admin'))
+            ->followingRedirects()
+            ->post(route('admin.backups.update'), $this->validSettings());
+
+        $response->assertOk();
+        $response->assertSee('Database backup settings updated successfully.');
+        $response->assertSee('20260816-020000');
+        $this->assertSame([], $catalog->checksummed);
+    }
+
+    public function test_admin_page_marks_a_set_with_a_missing_or_resized_dump_unverified(): void
+    {
+        $missing = $this->writeFullSet('20260809-020000', '2026-08-09');
+        unlink($missing);
+        $resized = $this->writeFullSet('20260816-020000', '2026-08-16');
+        file_put_contents($resized, 'corrupt');
+
+        $response = $this->actingAs($this->user('Admin'))->get(route('admin.backups.index'));
+
+        $response->assertOk();
+        $response->assertSee('20260809-020000');
+        $response->assertSee('20260816-020000');
+        $response->assertSee('<td class="py-3 pr-4">No</td>', false);
+        $response->assertDontSee('<td class="py-3 pr-4">Yes</td>', false);
     }
 
     public function test_admin_can_save_valid_backup_settings(): void
@@ -335,6 +392,31 @@ class AdminBackupsControllerTest extends TestCase
         $user->assignRole($role);
 
         return $user;
+    }
+
+    /**
+     * Writes a one-file Full set whose manifest records the dump's size and hash.
+     */
+    private function writeFullSet(string $setId, string $day = '2026-08-16'): string
+    {
+        $directory = $this->backupLocation.'/'.$setId;
+        mkdir($directory);
+        $dump = $directory.'/full-'.str_replace('-', '', $day).'-0200.sql.gz';
+        file_put_contents($dump, gzencode("backup\n"));
+        file_put_contents($dump.'.manifest.json', json_encode([
+            'kind' => 'full',
+            'started_at' => $day.'T02:00:00-05:00',
+            'finished_at' => $day.'T02:01:00-05:00',
+            'tables' => ['settings'],
+            'tiers_included' => ['important'],
+            'bytes' => filesize($dump),
+            'sha256' => hash_file('sha256', $dump),
+            'app_version' => 'test',
+            'db_server_version' => 'test',
+            'set_id' => $setId,
+        ], JSON_THROW_ON_ERROR));
+
+        return $dump;
     }
 
     private function resetGlobalComposerState(): void

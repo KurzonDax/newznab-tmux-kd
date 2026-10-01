@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
+use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
 
 class BackupOffsiteCommandTest extends TestCase
@@ -158,6 +159,84 @@ class BackupOffsiteCommandTest extends TestCase
             'error' => 'Off-site rsync failed: destination disconnected',
         ]);
         Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => $mail->offsite);
+    }
+
+    public function test_copy_hashes_only_new_temp_copies_and_never_existing_backups(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        DB::table('settings')->insert([
+            ['name' => 'categorizeforeign', 'value' => '0'],
+            ['name' => 'catwebdl', 'value' => '0'],
+            ['name' => 'backup_location', 'value' => $source],
+            ['name' => 'backup_offsite_path', 'value' => $destination],
+            ['name' => 'backup_offsite_keep', 'value' => '2'],
+        ]);
+        $this->writeBackup($destination, '20260801-020000');
+        $this->writeBackup($source, '20260816-020000');
+        $this->writeDailyBackup($source, '20260816-020000');
+        $this->fakeSuccessfulCopies();
+        $catalog = CountingBackupCatalog::install($this->app);
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])
+            ->expectsOutputToContain('2 files copied')
+            ->assertSuccessful();
+
+        $this->assertSame(
+            ['.tmp-daily-20260817-0200.sql.gz', '.tmp-full-20260816-0200.sql.gz'],
+            $this->sortedBasenames($catalog->checksummed),
+        );
+
+        $catalog->checksummed = [];
+        $this->artisan('backup:offsite', ['--allow-local' => true])
+            ->expectsOutputToContain('0 files copied')
+            ->assertSuccessful();
+
+        $this->assertSame([], $catalog->checksummed);
+        $this->assertDirectoryExists($destination.'/20260801-020000');
+    }
+
+    public function test_copy_whose_bytes_differ_at_the_same_size_is_refused(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        DB::table('settings')->insert([
+            ['name' => 'categorizeforeign', 'value' => '0'],
+            ['name' => 'catwebdl', 'value' => '0'],
+            ['name' => 'backup_location', 'value' => $source],
+            ['name' => 'backup_offsite_path', 'value' => $destination],
+            ['name' => 'backup_offsite_keep', 'value' => '0'],
+        ]);
+        $this->writeBackup($source, '20260816-020000');
+        Mail::fake();
+
+        Process::preventStrayProcesses();
+        Process::fake(function (PendingProcess $process) {
+            if ($process->command === ['sh', '-c', 'command -v rsync']) {
+                return Process::result('/usr/bin/rsync'.PHP_EOL);
+            }
+
+            if (isset($process->environment['OFFSITE_SOURCE'], $process->environment['OFFSITE_TEMP'])) {
+                $bytes = (string) file_get_contents($process->environment['OFFSITE_SOURCE']);
+                file_put_contents($process->environment['OFFSITE_TEMP'], strrev($bytes));
+            }
+
+            return Process::result();
+        });
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])
+            ->expectsOutputToContain('Off-site checksum verification failed for 20260816-020000/full-20260816-0200.sql.gz')
+            ->assertFailed();
+
+        $this->assertFileDoesNotExist($destination.'/20260816-020000/full-20260816-0200.sql.gz');
+        $this->assertFileDoesNotExist($destination.'/20260816-020000/full-20260816-0200.sql.gz.manifest.json');
+        $this->assertSame([], glob($destination.'/20260816-020000/.tmp-*') ?: []);
+        $this->assertDatabaseHas('database_backups', [
+            'set_id' => '20260816-020000',
+            'offsite_status' => 'failed',
+        ]);
     }
 
     public function test_multi_file_set_is_not_marked_copied_until_every_file_succeeds(): void
@@ -394,6 +473,18 @@ class BackupOffsiteCommandTest extends TestCase
             'db_server_version' => 'test',
             'set_id' => $setId,
         ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  list<string>  $paths
+     * @return list<string>
+     */
+    private function sortedBasenames(array $paths): array
+    {
+        $names = array_map(basename(...), $paths);
+        sort($names);
+
+        return $names;
     }
 
     private function fakeSuccessfulCopies(): void

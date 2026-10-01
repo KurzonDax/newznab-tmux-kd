@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
 
 class BackupRunCommandTest extends TestCase
@@ -315,6 +316,32 @@ class BackupRunCommandTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260801-020000');
         $this->assertDirectoryExists($this->backupLocation.'/20260808-020000');
         $this->assertDirectoryExists($this->backupLocation.'/20260817-020000');
+    }
+
+    #[DataProvider('backupKinds')]
+    public function test_run_hashes_only_the_dump_it_writes(string $kind): void
+    {
+        DB::table('settings')->where('name', 'backup_keep_fulls')->update(['value' => '2']);
+        $this->writeExistingBackup('20260801-020000', 'full', '20260801-0200');
+        $this->writeExistingBackup('20260801-020000', 'daily', '20260802-0200');
+        $this->writeExistingBackup('20260808-020000', 'full', '20260808-0200');
+        $this->writeExistingBackup('20260808-020000', 'daily', '20260809-0200');
+        $catalog = CountingBackupCatalog::install($this->app);
+        $this->fakeSuccessfulDump();
+
+        $this->artisan("backup:run {$kind}")->assertSuccessful();
+
+        $written = glob($this->backupLocation."/*/{$kind}-20260817-0200.sql.gz") ?: [];
+        $this->assertCount(1, $written);
+        $this->assertSame(array_map(basename(...), $written), array_map(basename(...), $catalog->checksummed));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function backupKinds(): array
+    {
+        return ['full' => ['full'], 'daily' => ['daily']];
     }
 
     public function test_corrupt_full_does_not_count_toward_retention(): void
