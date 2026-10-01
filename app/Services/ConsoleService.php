@@ -388,6 +388,7 @@ class ConsoleService
         string $review = 'review'
     ): void {
         $releasedate = $releasedate !== '' ? $releasedate : null;
+        $esrb = $esrb !== '' ? $esrb : null;
         $review = $review === 'review' ? $review : substr($review, 0, 3000);
 
         ConsoleInfo::query()
@@ -685,7 +686,7 @@ class ConsoleService
                     'platform' => $con['platform'],
                     'publisher' => $con['publisher'],
                     'genres_id' => (int) $con['consolegenreid'] === -1 ? null : $con['consolegenreid'],
-                    'esrb' => $con['esrb'],
+                    'esrb' => ($con['esrb'] ?? '') !== '' ? $con['esrb'] : null,
                     'releasedate' => $con['releasedate'] !== '' ? $con['releasedate'] : null,
                     'review' => substr($con['review'], 0, 3000),
                     'created_at' => now(),

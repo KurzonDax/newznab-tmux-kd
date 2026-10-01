@@ -8,8 +8,10 @@ use App\Services\ConsoleService;
 use App\Services\IGDB\Models\Game;
 use App\Services\IGDBService;
 use App\Services\ReleaseImageService;
+use Illuminate\Support\Facades\DB;
 use Mockery;
 use ReflectionClass;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ConsoleServiceIgdbDelegationTest extends TestCase
@@ -34,7 +36,7 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
             'review' => 'Sci-fi shooter',
             'coverurl' => 'https://images.example.test/halo.jpg',
             'releasedate' => '2001-11-15',
-            'esrb' => '94%',
+            'esrb' => 'M',
             'url' => 'https://www.igdb.com/games/halo',
             'publisher' => 'Microsoft',
             'platform' => 'Xbox 360',
@@ -55,6 +57,35 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
         $this->assertSame(7, $result['consolegenreid']);
     }
 
+    public function test_a_new_game_without_an_age_rating_is_stored_with_a_null_esrb(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+
+        $consoleId = $this->serviceFindingAnUnratedGame()->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertGreaterThan(0, $consoleId);
+        $this->assertSame(1, DB::table('consoleinfo')->count());
+        $this->assertNull(DB::table('consoleinfo')->where('id', $consoleId)->value('esrb'));
+    }
+
+    public function test_an_existing_game_without_an_age_rating_is_updated_to_a_null_esrb(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+        $existingId = (int) DB::table('consoleinfo')->insertGetId([
+            'title' => 'Halo',
+            'asin' => '42',
+            'platform' => 'Xbox 360',
+            'esrb' => '94%',
+            'cover' => 0,
+        ]);
+
+        $consoleId = $this->serviceFindingAnUnratedGame()->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertSame($existingId, (int) $consoleId);
+        $this->assertSame(1, DB::table('consoleinfo')->count());
+        $this->assertNull(DB::table('consoleinfo')->where('id', $existingId)->value('esrb'));
+    }
+
     public function test_parse_title_no_longer_returns_legacy_browse_node(): void
     {
         /** @var ConsoleServiceTestDouble $service */
@@ -66,6 +97,26 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
         $this->assertSame('Halo 3', $result['title']);
         $this->assertSame('X360', $result['platform']);
         $this->assertArrayNotHasKey('node', $result);
+    }
+
+    private function serviceFindingAnUnratedGame(): ConsoleServiceTestDouble
+    {
+        $game = new Game([
+            'id' => 42,
+            'name' => 'Halo',
+            'aggregated_rating' => 94.2,
+            'genres' => [['name' => 'Action']],
+        ]);
+
+        $igdbService = Mockery::mock(IGDBService::class)->makePartial();
+        $igdbService->shouldReceive('isConfigured')->andReturn(true);
+        $igdbService->shouldReceive('searchConsole')->once()->with('Halo', 'Xbox 360')->andReturn($game);
+
+        /** @var ConsoleServiceTestDouble $service */
+        $service = (new ReflectionClass(ConsoleServiceTestDouble::class))->newInstanceWithoutConstructor();
+        $service->initialize($igdbService);
+
+        return $service;
     }
 }
 
