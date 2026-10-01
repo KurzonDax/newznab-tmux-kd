@@ -39,6 +39,27 @@ class AdminBookEditTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_book_edit_shows_the_stored_publish_date(): void
+    {
+        $id = $this->createBook('2015-06-09 00:00:00');
+
+        $page = $this->actingAs($this->admin())->get(route('admin.book-edit', ['id' => $id]))->assertOk();
+
+        $this->assertSame('2015-06-09', $this->publishDateInputValue($page->getContent()));
+    }
+
+    /**
+     * The URL input is also empty for this row, so the publishdate input itself is read.
+     */
+    public function test_book_edit_shows_an_empty_publish_date_when_none_is_stored(): void
+    {
+        $id = $this->createBook(null);
+
+        $page = $this->actingAs($this->admin())->get(route('admin.book-edit', ['id' => $id]))->assertOk();
+
+        $this->assertSame('', $this->publishDateInputValue($page->getContent()));
+    }
+
     public function test_book_edit_stores_a_submitted_publish_date(): void
     {
         $id = $this->createBook('2001-01-01 13:45:00');
@@ -113,6 +134,13 @@ class AdminBookEditTest extends TestCase
 
         $response->assertSessionHasErrors('title');
         $this->assertSame('Book Under Edit', (string) DB::table('bookinfo')->where('id', $id)->value('title'));
+    }
+
+    private function publishDateInputValue(string $html): string
+    {
+        $this->assertSame(1, preg_match('/<input type="date"\s+id="publishdate"\s+name="publishdate"\s+value="([^"]*)"/', $html, $match));
+
+        return $match[1];
     }
 
     private function createBook(?string $publishdate): int

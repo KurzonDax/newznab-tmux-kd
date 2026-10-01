@@ -70,7 +70,7 @@
                             <input type="date"
                                    id="publishdate"
                                    name="publishdate"
-                                   value="{{ isset($book['publishdate']) && $book['publishdate'] ? date('Y-m-d', $book['publishdate']) : '' }}"
+                                   value="{{ isset($book['publishdate']) && $book['publishdate'] ? date('Y-m-d', strtotime($book['publishdate'])) : '' }}"
                                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md focus:ring-primary-500 focus:border-primary-500">
                         </div>
 

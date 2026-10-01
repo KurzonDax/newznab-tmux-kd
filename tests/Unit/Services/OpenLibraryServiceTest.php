@@ -68,6 +68,16 @@ class OpenLibraryServiceTest extends TestCase
         $this->assertSame('9780134494166', $book['isbn']);
     }
 
+    public function test_a_year_only_publish_date_is_stored_as_january_first(): void
+    {
+        $this->assertSame('2008-01-01', $this->publishDateFor('2008'));
+    }
+
+    public function test_a_full_publish_date_is_stored_unchanged(): void
+    {
+        $this->assertSame('2015-06-09', $this->publishDateFor('2015-06-09'));
+    }
+
     public function test_malformed_search_response_is_reported_as_provider_unavailability(): void
     {
         $service = new OpenLibraryService(
@@ -79,5 +89,26 @@ class OpenLibraryServiceTest extends TestCase
         $this->expectException(BookProviderException::class);
 
         $service->searchBooks('malformed query');
+    }
+
+    private function publishDateFor(string $publishDate): ?string
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'title' => 'Clean Code',
+                'authors' => [['name' => 'Robert C. Martin']],
+                'publish_date' => $publishDate,
+            ])),
+        ]);
+
+        $service = new OpenLibraryService(
+            new Client(['handler' => HandlerStack::create($mock)])
+        );
+
+        $book = $service->findByIsbn('9780132350884');
+
+        $this->assertNotNull($book);
+
+        return $book['publishdate'];
     }
 }

@@ -239,6 +239,11 @@ class GoogleBooksService
             return null;
         }
 
+        // Carbon reads a bare year such as 2008 as a time of day, so store it as January 1.
+        if (preg_match('/^\d{4}$/', trim($date)) === 1) {
+            return trim($date).'-01-01';
+        }
+
         try {
             return Carbon::parse($date)->format('Y-m-d');
         } catch (\Exception) {

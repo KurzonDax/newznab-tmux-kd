@@ -284,6 +284,16 @@ class IsbnDbServiceTest extends TestCase
         $this->assertSame('Robert C. Martin', $book['author']);
     }
 
+    public function test_a_year_only_publish_date_is_stored_as_january_first(): void
+    {
+        $this->assertSame('2008-01-01', $this->publishDateFor('2008'));
+    }
+
+    public function test_a_full_publish_date_is_stored_unchanged(): void
+    {
+        $this->assertSame('2015-06-09', $this->publishDateFor('2015-06-09'));
+    }
+
     public function test_book_service_extracts_isbn_13_and_isbn_10(): void
     {
         /** @var BookService $bookService */
@@ -296,5 +306,30 @@ class IsbnDbServiceTest extends TestCase
         $this->assertSame('9780132350884', $isbn13);
         $this->assertSame('0132350882', $isbn10);
         $this->assertNull($none);
+    }
+
+    private function publishDateFor(string $datePublished): ?string
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'book' => [
+                    'title' => 'Clean Code',
+                    'isbn13' => '9780132350884',
+                    'authors' => ['Robert C. Martin'],
+                    'date_published' => $datePublished,
+                ],
+            ])),
+        ]);
+
+        $service = new IsbnDbService(
+            new Client(['handler' => HandlerStack::create($mock), 'base_uri' => 'https://api2.isbndb.com']),
+            'test-key'
+        );
+
+        $book = $service->findByIsbn('9780132350884');
+
+        $this->assertNotNull($book);
+
+        return $book['publishdate'];
     }
 }
