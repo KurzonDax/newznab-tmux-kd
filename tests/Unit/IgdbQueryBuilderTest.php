@@ -265,6 +265,95 @@ class IgdbQueryBuilderTest extends TestCase
         $this->assertSame('PEGI 12', $gameData['esrb']);
     }
 
+    public function test_a_console_game_stores_the_earliest_date_of_the_matched_platform(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'first_release_date' => 959860800, // 2000-06-01
+            'platforms' => $this->xboxAndPcPlatforms(),
+            'release_dates' => [
+                ['platform' => 9, 'date' => 959860800, 'human' => 'Jun 01, 2000'],
+                ['platform' => 12, 'date' => 1019736000, 'human' => 'Apr 25, 2002'],
+                ['platform' => 12, 'date' => 1016107200, 'human' => 'Mar 14, 2002'],
+                ['platform' => 6, 'date' => 999345600, 'human' => 'Sep 01, 2001'],
+            ],
+        ]);
+
+        $this->assertSame('Xbox 360', $consoleData['platform']);
+        $this->assertSame('2002-03-14', $consoleData['releasedate']);
+    }
+
+    public function test_a_console_game_without_a_dated_entry_for_its_platform_falls_back_to_the_first_release_date(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'first_release_date' => 959860800, // 2000-06-01
+            'platforms' => $this->xboxAndPcPlatforms(),
+            'release_dates' => [
+                ['platform' => 12, 'human' => 'TBD'],
+                ['platform' => 6, 'date' => 999345600, 'human' => 'Sep 01, 2001'],
+            ],
+        ]);
+
+        $this->assertSame('2000-06-01', $consoleData['releasedate']);
+    }
+
+    public function test_a_console_game_without_any_date_stores_no_date(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'platforms' => $this->xboxAndPcPlatforms(),
+        ]);
+
+        $this->assertSame('', $consoleData['releasedate']);
+    }
+
+    public function test_the_pc_path_prefers_the_pc_entry_then_the_first_entry(): void
+    {
+        $genreName = '';
+        $service = new IGDBService;
+
+        $withPcEntry = $service->buildGameData(new Game([
+            'id' => 7,
+            'name' => 'Halo',
+            'release_dates' => [
+                ['platform' => 14, 'date' => 1070452800],
+                ['platform' => 6, 'date' => 1076500800],
+            ],
+        ]), $genreName);
+        $withoutPcEntry = $service->buildGameData(new Game([
+            'id' => 7,
+            'name' => 'Halo',
+            'first_release_date' => 959860800,
+            'release_dates' => [
+                ['platform' => 14, 'date' => 1070452800],
+            ],
+        ]), $genreName);
+
+        $this->assertSame('2004-02-11', $withPcEntry['releasedate']);
+        $this->assertSame('2003-12-03', $withoutPcEntry['releasedate']);
+    }
+
+    public function test_the_pc_path_stores_no_date_when_igdb_has_none(): void
+    {
+        $genreName = '';
+        $gameData = (new IGDBService)->buildGameData(new Game([
+            'id' => 7,
+            'name' => 'Halo',
+        ]), $genreName);
+
+        $this->assertSame('', $gameData['releasedate']);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function xboxAndPcPlatforms(): array
+    {
+        return [
+            ['id' => 9, 'name' => 'PlayStation 3', 'abbreviation' => 'PS3'],
+            ['id' => 12, 'name' => 'Xbox 360', 'abbreviation' => 'X360'],
+            ['id' => 6, 'name' => 'PC (Microsoft Windows)', 'abbreviation' => 'PC'],
+        ];
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      * @return array<string, mixed>

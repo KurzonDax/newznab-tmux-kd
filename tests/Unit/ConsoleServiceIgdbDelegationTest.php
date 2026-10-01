@@ -86,6 +86,33 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
         $this->assertNull(DB::table('consoleinfo')->where('id', $existingId)->value('esrb'));
     }
 
+    public function test_a_game_without_any_release_date_is_stored_with_a_null_release_date(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+
+        $consoleId = $this->serviceFindingAnUnratedGame()->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertGreaterThan(0, $consoleId);
+        $this->assertNull(DB::table('consoleinfo')->where('id', $consoleId)->value('releasedate'));
+    }
+
+    public function test_an_existing_game_without_any_release_date_is_updated_to_a_null_release_date(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+        $existingId = (int) DB::table('consoleinfo')->insertGetId([
+            'title' => 'Halo',
+            'asin' => '42',
+            'platform' => 'Xbox 360',
+            'releasedate' => '2026-09-30 00:00:00',
+            'cover' => 0,
+        ]);
+
+        $consoleId = $this->serviceFindingAnUnratedGame()->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertSame($existingId, (int) $consoleId);
+        $this->assertNull(DB::table('consoleinfo')->where('id', $existingId)->value('releasedate'));
+    }
+
     public function test_parse_title_no_longer_returns_legacy_browse_node(): void
     {
         /** @var ConsoleServiceTestDouble $service */
