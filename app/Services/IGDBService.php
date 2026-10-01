@@ -405,17 +405,18 @@ class IGDBService
     {
         $genres = $this->extractGenres($game);
         $publishers = $this->extractCompanyNames($game, 'publisher');
+        $platform = $this->resolvePlatform($game, $platformHint);
 
         return [
             'title' => $game->name,
             'asin' => (string) $game->id,
             'review' => (string) ($game->summary ?? ''),
             'coverurl' => $this->getImageUrl($game->cover ?? null, 'cover_big'),
-            'releasedate' => $this->getReleaseDate($game),
+            'releasedate' => $this->getPlatformReleaseDate($game, $platform['id']),
             'esrb' => $this->getAgeRating($game),
             'url' => $game->url ?? '',
             'publisher' => ! empty($publishers) ? implode(',', $publishers) : 'Unknown',
-            'platform' => $this->resolvePlatformName($game, $platformHint),
+            'platform' => $platform['name'],
             'consolegenre' => ! empty($genres) ? implode(',', $genres) : 'Unknown',
             'salesrank' => '',
         ];
@@ -567,22 +568,29 @@ class IGDBService
         return array_values(array_unique($names));
     }
 
-    protected function resolvePlatformName(Game $game, string $platformHint): string
+    /**
+     * Resolve the game's platform matching the hint (else its first named platform) to its IGDB id and name.
+     *
+     * @return array{id: int|null, name: string}
+     */
+    protected function resolvePlatform(Game $game, string $platformHint): array
     {
         $normalizedHint = $this->normalizePlatformHint($platformHint);
-        $fallback = '';
+        $fallback = ['id' => null, 'name' => ''];
 
         foreach ((array) ($game->platforms ?? []) as $platform) {
             $name = is_array($platform) ? (string) ($platform['name'] ?? '') : (string) ($platform->name ?? '');
             $abbreviation = is_array($platform) ? (string) ($platform['abbreviation'] ?? '') : (string) ($platform->abbreviation ?? '');
+            $id = is_array($platform) ? ($platform['id'] ?? null) : ($platform->id ?? null);
+            $id = is_numeric($id) ? (int) $id : null;
 
-            if ($fallback === '' && $name !== '') {
-                $fallback = $name;
+            if ($fallback['name'] === '' && $name !== '') {
+                $fallback = ['id' => $id, 'name' => $name];
             }
 
             foreach ([$name, $abbreviation] as $candidate) {
                 if ($candidate !== '' && $this->normalizePlatformHint($candidate) === $normalizedHint) {
-                    return $name !== '' ? $name : $candidate;
+                    return ['id' => $id, 'name' => $name !== '' ? $name : $candidate];
                 }
             }
         }
@@ -760,7 +768,8 @@ class IGDBService
     }
 
     /**
-     * Get PC release date from IGDB game data.
+     * Get PC release date from IGDB game data: the PC entry, else the first entry, else the first
+     * release date, else none ('').
      */
     protected function getReleaseDate(Game $game): string
     {
@@ -775,6 +784,42 @@ class IGDBService
             }
         }
 
+        return $this->getFirstReleaseDate($game);
+    }
+
+    /**
+     * Get a console game's release date: the earliest dated entry of the given platform (IGDB keeps
+     * one entry per platform per region, in no date order), else the first release date, else
+     * none (''). Release date entries of other platforms are never used.
+     */
+    protected function getPlatformReleaseDate(Game $game, ?int $platformId): string
+    {
+        if ($platformId !== null) {
+            $earliest = null;
+            $releases = $game->release_dates ?? [];
+
+            foreach (is_iterable($releases) ? $releases : [] as $release) {
+                $platform = $this->nodeValue($release, 'platform');
+                $date = $this->nodeValue($release, 'date');
+
+                if (is_numeric($platform) && (int) $platform === $platformId && is_numeric($date)) {
+                    $earliest = $earliest === null ? (int) $date : min($earliest, (int) $date);
+                }
+            }
+
+            if ($earliest !== null) {
+                return Carbon::createFromTimestamp($earliest)->format('Y-m-d');
+            }
+        }
+
+        return $this->getFirstReleaseDate($game);
+    }
+
+    /**
+     * Get the game's first release date, or none ('') when IGDB has no date.
+     */
+    protected function getFirstReleaseDate(Game $game): string
+    {
         if (isset($game->first_release_date)) {
             if ($game->first_release_date instanceof Carbon) {
                 return $game->first_release_date->format('Y-m-d');
@@ -784,7 +829,7 @@ class IGDBService
             }
         }
 
-        return now()->format('Y-m-d');
+        return '';
     }
 
     /**
