@@ -55,6 +55,16 @@ class GoogleBooksServiceTest extends TestCase
         $this->assertSame('googlebooks:9780201616224', $books[0]['asin']);
     }
 
+    public function test_a_year_only_publish_date_is_stored_as_january_first(): void
+    {
+        $this->assertSame('2008-01-01', $this->publishDateFor('2008'));
+    }
+
+    public function test_a_full_publish_date_is_stored_unchanged(): void
+    {
+        $this->assertSame('2015-06-09', $this->publishDateFor('2015-06-09'));
+    }
+
     public function test_has_api_key_is_false_when_missing(): void
     {
         $service = new GoogleBooksService(null, '');
@@ -76,5 +86,35 @@ class GoogleBooksServiceTest extends TestCase
         $this->expectException(BookProviderException::class);
 
         $service->searchBooks('unavailable query');
+    }
+
+    private function publishDateFor(string $publishedDate): ?string
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'items' => [[
+                    'id' => 'gbook1',
+                    'volumeInfo' => [
+                        'title' => 'Clean Code',
+                        'authors' => ['Robert C. Martin'],
+                        'publishedDate' => $publishedDate,
+                        'industryIdentifiers' => [
+                            ['type' => 'ISBN_13', 'identifier' => '9780132350884'],
+                        ],
+                    ],
+                ]],
+            ])),
+        ]);
+
+        $service = new GoogleBooksService(
+            new Client(['handler' => HandlerStack::create($mock)]),
+            null
+        );
+
+        $books = $service->searchBooks('clean code');
+
+        $this->assertCount(1, $books);
+
+        return $books[0]['publishdate'];
     }
 }
