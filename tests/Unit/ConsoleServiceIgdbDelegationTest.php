@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Enums\ImageAssetProfile;
 use App\Services\ConsoleService;
 use App\Services\IGDB\Models\Game;
 use App\Services\IGDBService;
 use App\Services\ReleaseImageService;
+use App\Support\Data\ImageProcessingResult;
 use Illuminate\Support\Facades\DB;
 use Mockery;
 use ReflectionClass;
@@ -113,6 +115,51 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
         $this->assertNull(DB::table('consoleinfo')->where('id', $existingId)->value('releasedate'));
     }
 
+    public function test_a_new_game_whose_cover_is_saved_is_stored_with_cover_set(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+
+        $consoleId = $this->serviceFindingAGameWithACover(
+            ImageProcessingResult::success('/covers/console/1.jpg', 264, 374, 'image/jpeg'),
+            '1',
+        )->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertSame(1, (int) $consoleId);
+        $this->assertSame(1, (int) DB::table('consoleinfo')->where('id', $consoleId)->value('cover'));
+    }
+
+    public function test_a_new_game_whose_cover_fails_to_save_is_stored_with_cover_unset(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+
+        $consoleId = $this->serviceFindingAGameWithACover(
+            ImageProcessingResult::failure('Remote image could not be fetched.'),
+            '1',
+        )->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertSame(1, (int) $consoleId);
+        $this->assertSame(0, (int) DB::table('consoleinfo')->where('id', $consoleId)->value('cover'));
+    }
+
+    public function test_an_existing_game_whose_cover_is_saved_is_updated_with_cover_set(): void
+    {
+        ProductionTables::fromAuthority()->create('consoleinfo');
+        $existingId = (int) DB::table('consoleinfo')->insertGetId([
+            'title' => 'Halo',
+            'asin' => '42',
+            'platform' => 'Xbox 360',
+            'cover' => 0,
+        ]);
+
+        $consoleId = $this->serviceFindingAGameWithACover(
+            ImageProcessingResult::success('/covers/console/1.jpg', 264, 374, 'image/jpeg'),
+            (string) $existingId,
+        )->updateConsoleInfo(['title' => 'Halo', 'platform' => 'X360']);
+
+        $this->assertSame($existingId, (int) $consoleId);
+        $this->assertSame(1, (int) DB::table('consoleinfo')->where('id', $existingId)->value('cover'));
+    }
+
     public function test_parse_title_no_longer_returns_legacy_browse_node(): void
     {
         /** @var ConsoleServiceTestDouble $service */
@@ -145,11 +192,39 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
 
         return $service;
     }
+
+    private function serviceFindingAGameWithACover(ImageProcessingResult $saveResult, string $expectedImageName): ConsoleServiceTestDouble
+    {
+        $game = new Game([
+            'id' => 42,
+            'name' => 'Halo',
+            'cover' => ['image_id' => 'co1abc'],
+            'genres' => [['name' => 'Action']],
+        ]);
+
+        $igdbService = Mockery::mock(IGDBService::class)->makePartial();
+        $igdbService->shouldReceive('isConfigured')->andReturn(true);
+        $igdbService->shouldReceive('searchConsole')->once()->with('Halo', 'Xbox 360')->andReturn($game);
+
+        $imageService = Mockery::mock(ReleaseImageService::class);
+        $imageService->shouldReceive('saveRemoteImage')
+            ->once()
+            ->withArgs(fn (string $imgName, string $url, string $directory, ImageAssetProfile $profile): bool => $imgName === $expectedImageName
+                && $url === 'https://images.igdb.com/igdb/image/upload/t_cover_big/co1abc.jpg'
+                && $profile === ImageAssetProfile::MetadataCover)
+            ->andReturn($saveResult);
+
+        /** @var ConsoleServiceTestDouble $service */
+        $service = (new ReflectionClass(ConsoleServiceTestDouble::class))->newInstanceWithoutConstructor();
+        $service->initialize($igdbService, $imageService);
+
+        return $service;
+    }
 }
 
 class ConsoleServiceTestDouble extends ConsoleService
 {
-    public function initialize(IGDBService $igdbService): void
+    public function initialize(IGDBService $igdbService, ?ReleaseImageService $imageService = null): void
     {
         $this->echoOutput = false;
         $this->gameQty = 0;
@@ -158,7 +233,7 @@ class ConsoleServiceTestDouble extends ConsoleService
         $this->renamed = false;
         $this->failCache = [];
         $this->igdbService = $igdbService;
-        $this->imageService = new ReleaseImageService;
+        $this->imageService = $imageService ?? new ReleaseImageService;
     }
 
     protected function loadGenres(): array
