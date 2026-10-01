@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\MetadataProcessing\ConsoleGenres;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseSearchService;
 use Illuminate\Database\Eloquent\Collection;
@@ -61,7 +62,7 @@ class RSS extends ApiController
 					mu.review AS mu_review, mu.tracks AS mu_tracks, mu.cover AS mu_cover,
 					mug.title AS mu_genre, co.title AS co_title, co.url AS co_url,
 					co.publisher AS co_publisher, co.releasedate AS co_releasedate,
-					co.review AS co_review, co.cover AS co_cover, cog.title AS co_genre,
+					co.review AS co_review, co.cover AS co_cover, ".ConsoleGenres::titlesSql('co.id').' AS co_genre,
 					bo.cover AS bo_cover
 				FROM releases r
 				LEFT JOIN categories c ON c.id = r.categories_id
@@ -70,13 +71,12 @@ class RSS extends ApiController
 				LEFT OUTER JOIN musicinfo mu ON mu.id = r.musicinfo_id
 				LEFT OUTER JOIN genres mug ON mug.id = mu.genres_id
 				LEFT OUTER JOIN consoleinfo co ON co.id = r.consoleinfo_id
-				LEFT JOIN movieinfo m ON m.id = r.movieinfo_id
-				LEFT OUTER JOIN genres cog ON cog.id = co.genres_id %s
+				LEFT JOIN movieinfo m ON m.id = r.movieinfo_id %s
 				LEFT OUTER JOIN tv_episodes tve ON tve.id = r.tv_episodes_id
 				LEFT OUTER JOIN bookinfo bo ON bo.id = r.bookinfo_id
 				WHERE r.passwordstatus %s
 				%s %s %s %s
-				ORDER BY postdate DESC %s",
+				ORDER BY postdate DESC %s',
                 $cartSearch,
                 $this->releaseBrowseService->showPasswordsForRss(),
                 $catSearch,
@@ -177,7 +177,7 @@ class RSS extends ApiController
 					mu.review AS mu_review, mu.tracks AS mu_tracks, mu.cover AS mu_cover,
 					mug.title AS mu_genre, co.title AS co_title, co.url AS co_url,
 					co.publisher AS co_publisher, co.releasedate AS co_releasedate,
-					co.review AS co_review, co.cover AS co_cover, cog.title AS co_genre,
+					co.review AS co_review, co.cover AS co_cover, ".ConsoleGenres::titlesSql('co.id').' AS co_genre,
 					bo.cover AS bo_cover
 				FROM releases r
 				LEFT JOIN categories c ON c.id = r.categories_id
@@ -187,11 +187,10 @@ class RSS extends ApiController
 				LEFT OUTER JOIN genres mug ON mug.id = mu.genres_id
 				LEFT OUTER JOIN consoleinfo co ON co.id = r.consoleinfo_id
 				LEFT JOIN movieinfo m ON m.id = r.movieinfo_id
-				LEFT OUTER JOIN genres cog ON cog.id = co.genres_id
 				LEFT OUTER JOIN tv_episodes tve ON tve.id = r.tv_episodes_id
 				LEFT OUTER JOIN bookinfo bo ON bo.id = r.bookinfo_id
 				WHERE r.id IN (%s)
-				ORDER BY FIELD(r.id, %s)",
+				ORDER BY FIELD(r.id, %s)',
             $idList,
             $fieldOrder
         );

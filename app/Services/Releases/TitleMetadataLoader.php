@@ -7,6 +7,7 @@ namespace App\Services\Releases;
 use App\Data\ReleaseEntityData;
 use App\Data\TitleOverviewData;
 use App\Enums\BrowseRoot;
+use App\Services\MetadataProcessing\ConsoleGenres;
 use Illuminate\Support\Facades\DB;
 
 final class TitleMetadataLoader
@@ -33,8 +34,12 @@ final class TitleMetadataLoader
         $record = DB::table($source['table'])->where($source['key'], $id)->first();
         abort_if($record === null, 404);
         $info = $root === BrowseRoot::Tv ? DB::table('tv_info')->where('videos_id', $id)->first() : null;
-        $genre = in_array($root, [BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Games], true)
-            ? DB::table('genres')->where('id', $record->genres_id ?? 0)->value('title') : ($record->genre ?? null);
+        $genre = match (true) {
+            // Every genre in order, as RSS reads it; genres_id holds only the first.
+            $root === BrowseRoot::Console => app(ConsoleGenres::class)->titles((int) $record->id),
+            in_array($root, [BrowseRoot::Audio, BrowseRoot::Games], true) => DB::table('genres')->where('id', $record->genres_id ?? 0)->value('title'),
+            default => $record->genre ?? null,
+        };
         $tracks = $root === BrowseRoot::Audio ? $this->tracks((string) ($record->tracks ?? '')) : [];
         $date = collect([$record->year ?? null, $record->started ?? null, $record->releasedate ?? null, $record->publishdate ?? null])
             ->first(static fn ($value): bool => trim((string) $value) !== '' && (int) $value > 0);

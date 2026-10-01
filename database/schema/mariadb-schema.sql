@@ -264,6 +264,19 @@ CREATE TABLE `collections` (
   KEY `collections_formation_queue` (`groups_id`,`filecheck`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `console_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `console_genres` (
+  `consoleinfo_id` int(10) unsigned NOT NULL,
+  `genres_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre as the source lists it',
+  PRIMARY KEY (`genres_id`,`consoleinfo_id`),
+  KEY `ix_console_genres_console` (`consoleinfo_id`),
+  CONSTRAINT `fk_console_genres_consoleinfo_id` FOREIGN KEY (`consoleinfo_id`) REFERENCES `consoleinfo` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_console_genres_genres_id` FOREIGN KEY (`genres_id`) REFERENCES `genres` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `consoleinfo`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4026,3 +4039,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (302,'2026_09_27_20
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (303,'2026_09_27_200100_fill_release_audio_languages',18);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (304,'2026_09_29_000000_add_xxx_vr_category_where_missing',19);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (305,'2026_09_29_000100_refile_onlyfans_releases',19);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (306,'2026_10_01_000000_add_console_genres',20);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (307,'2026_10_01_000100_fill_console_genres',20);

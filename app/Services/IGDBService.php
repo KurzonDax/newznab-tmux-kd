@@ -418,6 +418,7 @@ class IGDBService
             'publisher' => ! empty($publishers) ? implode(',', $publishers) : 'Unknown',
             'platform' => $platform['name'],
             'consolegenre' => ! empty($genres) ? implode(',', $genres) : 'Unknown',
+            'consolegenres' => ! empty($genres) ? array_values($genres) : ['Unknown'],
             'salesrank' => '',
         ];
     }

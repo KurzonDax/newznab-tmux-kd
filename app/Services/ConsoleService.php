@@ -9,10 +9,10 @@ use App\Enums\SecondarySearchIndex;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\ConsoleInfo;
-use App\Models\Genre;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
+use App\Services\MetadataProcessing\ConsoleGenres;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Services\Releases\CoverBrowseScope;
 use App\Services\Releases\ReleaseBrowseService;
@@ -56,11 +56,14 @@ class ConsoleService
 
     protected ReleaseImageService $imageService;
 
-    public function __construct(?ReleaseImageService $imageService = null, ?IGDBService $igdbService = null)
+    protected ConsoleGenres $consoleGenres;
+
+    public function __construct(?ReleaseImageService $imageService = null, ?IGDBService $igdbService = null, ?ConsoleGenres $consoleGenres = null)
     {
         $this->echoOutput = config('nntmux.echocli');
         $this->imageService = $imageService ?? new ReleaseImageService;
         $this->igdbService = $igdbService ?? new IGDBService;
+        $this->consoleGenres = $consoleGenres ?? new ConsoleGenres;
 
         $this->gameQty = (int) Settings::settingValueOr('maxgamesprocessed', 150);
         $this->lookupThrottleMs = (int) Settings::settingValueOr('amazonsleep', 1000);
@@ -471,10 +474,7 @@ class ConsoleService
                 return false;
             }
 
-            $igdb = $this->igdbService->buildConsoleData($game, $gamePlatform);
-            $igdb['consolegenreid'] = $this->getGenreKey($igdb['consolegenre']);
-
-            return $igdb;
+            return $this->igdbService->buildConsoleData($game, $gamePlatform);
         } catch (IgdbHttpException $e) {
             if ($e->getStatusCode() === 429) {
                 return false;
@@ -675,6 +675,9 @@ class ConsoleService
     {
         $asin = isset($con['asin']) ? (string) $con['asin'] : null;
         $check = ConsoleInfo::query()->where('asin', $asin)->first();
+        // Found or created before any transaction opens, so no transaction holds a new genre
+        // another worker cannot see yet.
+        $genreIds = $this->consoleGenres->ids($con['consolegenres'] ?? []);
 
         if ($check === null) {
             $consoleId = ConsoleInfo::query()
@@ -685,13 +688,13 @@ class ConsoleService
                     'salesrank' => $con['salesrank'],
                     'platform' => $con['platform'],
                     'publisher' => $con['publisher'],
-                    'genres_id' => (int) $con['consolegenreid'] === -1 ? null : $con['consolegenreid'],
                     'esrb' => ($con['esrb'] ?? '') !== '' ? $con['esrb'] : null,
                     'releasedate' => $con['releasedate'] !== '' ? $con['releasedate'] : null,
                     'review' => substr($con['review'], 0, 3000),
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
+            $this->consoleGenres->replace($consoleId, $genreIds);
 
             if ($con['cover'] === 1) {
                 $coverSaved = $this->imageService->saveRemoteImage(
@@ -717,7 +720,7 @@ class ConsoleService
                 )->success;
             }
 
-            $this->update(
+            $this->consoleGenres->replace($consoleId, $genreIds, fn () => $this->update(
                 $consoleId,
                 $con['title'],
                 isset($con['asin']) ? (string) $con['asin'] : null,
@@ -728,44 +731,11 @@ class ConsoleService
                 $con['releasedate'] ?? null,
                 $con['esrb'],
                 $con['cover'],
-                $con['consolegenreid'],
+                $genreIds[0] ?? null,
                 $con['review'] ?? null
-            );
+            ));
         }
 
         return $consoleId;
-    }
-
-    /**
-     * Get or create genre key.
-     *
-     *
-     * @throws \Exception
-     */
-    protected function getGenreKey(string $genreName): false|int|string
-    {
-        $genreassoc = $this->loadGenres();
-
-        if (\in_array(strtolower($genreName), $genreassoc, true)) {
-            $genreKey = array_search(strtolower($genreName), $genreassoc, true);
-        } else {
-            $genreKey = Genre::query()->insertGetId(['title' => $genreName, 'type' => GenreService::CONSOLE_TYPE]);
-        }
-
-        return $genreKey;
-    }
-
-    /**
-     * Load genres from database.
-     *
-     * @return array<string, mixed>
-     *
-     * @throws \Exception
-     */
-    protected function loadGenres(): array
-    {
-        $gen = new GenreService;
-
-        return $gen->loadGenres((string) GenreService::CONSOLE_TYPE);
     }
 }

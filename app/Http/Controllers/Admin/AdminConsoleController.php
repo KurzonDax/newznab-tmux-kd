@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\BasePageController;
 use App\Services\ConsoleService;
 use App\Services\GenreService;
+use App\Services\MetadataProcessing\ConsoleGenres;
 use App\Services\ReleaseImageService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,11 +20,14 @@ class AdminConsoleController extends BasePageController
 
     protected ReleaseImageService $imageService;
 
-    public function __construct(ConsoleService $consoleService, ReleaseImageService $imageService)
+    protected ConsoleGenres $consoleGenres;
+
+    public function __construct(ConsoleService $consoleService, ReleaseImageService $imageService, ConsoleGenres $consoleGenres)
     {
         parent::__construct();
         $this->consoleService = $consoleService;
         $this->imageService = $imageService;
+        $this->consoleGenres = $consoleGenres;
     }
 
     /**
@@ -80,7 +84,7 @@ class AdminConsoleController extends BasePageController
                         ? $this->storedAttribute($con, 'releasedate')
                         : Carbon::parse($releasedateInput)->toDateTimeString();
 
-                    $this->consoleService->update(
+                    $save = fn () => $this->consoleService->update(
                         $id,
                         $validated['title'],
                         $request->input('asin'),
@@ -93,6 +97,15 @@ class AdminConsoleController extends BasePageController
                         $hasCover,
                         $genreId
                     );
+
+                    // The form holds one genre: an unchanged one keeps every genre the lookup
+                    // stored, a changed one becomes the game's only genre.
+                    $storedGenreId = $this->storedAttribute($con, 'genres_id');
+                    if ($genreId === ($storedGenreId === null ? null : (int) $storedGenreId)) {
+                        $save();
+                    } else {
+                        $this->consoleGenres->replace($id, $genreId === null ? [] : [$genreId], $save);
+                    }
 
                     return redirect()->route('admin.console-list')->with('success', 'Console game updated successfully');
 
