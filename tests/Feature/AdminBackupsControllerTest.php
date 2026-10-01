@@ -6,7 +6,6 @@ namespace Tests\Feature;
 
 use App\Http\Middleware\Google2FAMiddleware;
 use App\Models\User;
-use App\Services\Backup\BackupCatalog;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -95,7 +94,7 @@ class AdminBackupsControllerTest extends TestCase
     {
         DB::table('settings')->where('name', 'backup_enabled')->update(['value' => $enabled]);
         $this->writeFullSet('20260816-020000');
-        $catalog = $this->countChecksums();
+        $catalog = CountingBackupCatalog::install($this->app);
 
         $response = $this->actingAs($this->user('Admin'))->get(route('admin.backups.index'));
 
@@ -117,7 +116,7 @@ class AdminBackupsControllerTest extends TestCase
     public function test_saving_settings_returns_to_the_page_without_hashing_backups(): void
     {
         $this->writeFullSet('20260816-020000');
-        $catalog = $this->countChecksums();
+        $catalog = CountingBackupCatalog::install($this->app);
 
         $response = $this->actingAs($this->user('Admin'))
             ->followingRedirects()
@@ -418,14 +417,6 @@ class AdminBackupsControllerTest extends TestCase
         ], JSON_THROW_ON_ERROR));
 
         return $dump;
-    }
-
-    private function countChecksums(): CountingBackupCatalog
-    {
-        $catalog = new CountingBackupCatalog;
-        $this->app->instance(BackupCatalog::class, $catalog);
-
-        return $catalog;
     }
 
     private function resetGlobalComposerState(): void

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Services\Backup\BackupCatalog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -43,8 +42,7 @@ class BackupListCommandTest extends TestCase
         $this->writeBackup($set, 'full', '20260816-0200', '2026-08-16T02:00:00-05:00');
         $this->writeBackup($set, 'daily', '20260817-0200', '2026-08-17T02:00:00-05:00');
         file_put_contents($set.'/daily-20260817-0200.sql.gz', 'corrupt');
-        $catalog = new CountingBackupCatalog;
-        $this->app->instance(BackupCatalog::class, $catalog);
+        $catalog = CountingBackupCatalog::install($this->app);
 
         $this->artisan('backup:list')
             ->expectsOutputToContain('verified')

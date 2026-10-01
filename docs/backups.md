@@ -44,7 +44,7 @@ php artisan backup:tick
 php artisan backup:offsite
 ```
 
-`backup:list` reads manifests from disk, checks that each dump is present at the size its manifest records, and reconciles the database catalog. A dump's SHA-256 is calculated once, when it is written, and stored in its manifest; listing, scheduling, retention and off-site skips never re-hash existing dumps. Only one local backup and one off-site copy can run at a time. A second scheduled tick exits successfully and logs that it was skipped.
+`backup:list` reads manifests from disk, checks that each dump is present at the size its manifest records, and reconciles the database catalog. Only one local backup and one off-site copy can run at a time. A second scheduled tick exits successfully and logs that it was skipped.
 
 The admin **Run now** buttons record a request that `backup:tick` consumes within one minute. A Full request takes priority over a Daily request.
 

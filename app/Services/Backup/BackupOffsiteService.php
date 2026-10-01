@@ -131,7 +131,7 @@ class BackupOffsiteService
         float $deadline,
     ): bool {
         if (! $file['verified']) {
-            throw new RuntimeException("Source backup file is missing or not its written size for {$setId}/".basename($file['dump_path']));
+            throw new RuntimeException("Source checksum verification failed for {$setId}/".basename($file['dump_path']));
         }
 
         $setDirectory = $destination.DIRECTORY_SEPARATOR.$setId;

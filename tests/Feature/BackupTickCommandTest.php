@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Services\Backup\BackupCatalog;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Carbon;
@@ -122,8 +121,7 @@ class BackupTickCommandTest extends TestCase
     {
         $this->writeBackup('20260816-020000', 'full', '20260816-0200');
         $this->writeBackup('20260815-020000', 'daily', '20260815-0200');
-        $catalog = new CountingBackupCatalog;
-        $this->app->instance(BackupCatalog::class, $catalog);
+        $catalog = CountingBackupCatalog::install($this->app);
 
         $this->artisan('backup:tick')
             ->expectsOutputToContain('No database backup is due')

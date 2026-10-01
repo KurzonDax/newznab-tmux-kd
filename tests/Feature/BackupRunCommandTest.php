@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Mail\BackupFailed;
-use App\Services\Backup\BackupCatalog;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
@@ -327,8 +326,7 @@ class BackupRunCommandTest extends TestCase
         $this->writeExistingBackup('20260801-020000', 'daily', '20260802-0200');
         $this->writeExistingBackup('20260808-020000', 'full', '20260808-0200');
         $this->writeExistingBackup('20260808-020000', 'daily', '20260809-0200');
-        $catalog = new CountingBackupCatalog;
-        $this->app->instance(BackupCatalog::class, $catalog);
+        $catalog = CountingBackupCatalog::install($this->app);
         $this->fakeSuccessfulDump();
 
         $this->artisan("backup:run {$kind}")->assertSuccessful();
