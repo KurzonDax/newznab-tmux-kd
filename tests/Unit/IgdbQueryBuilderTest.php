@@ -142,6 +142,7 @@ class IgdbQueryBuilderTest extends TestCase
         $this->assertSame('42', $consoleData['asin']);
         $this->assertSame('Xbox 360', $consoleData['platform']);
         $this->assertSame('Action', $consoleData['consolegenre']);
+        $this->assertSame(['Action'], $consoleData['consolegenres']);
         $this->assertSame('E10+', $consoleData['esrb']);
         $this->assertSame('https://images.igdb.com/igdb/image/upload/t_cover_big/halo-cover.jpg', $consoleData['coverurl']);
         $this->assertSame('2001-11-15', $consoleData['releasedate']);
@@ -246,7 +247,7 @@ class IgdbQueryBuilderTest extends TestCase
         $this->assertNull($consoleData['esrb']);
 
         foreach ($consoleData as $value) {
-            $this->assertStringNotContainsString('%', (string) $value);
+            $this->assertStringNotContainsString('%', is_array($value) ? implode(',', $value) : (string) $value);
         }
     }
 

@@ -38,6 +38,7 @@ final class TitleControllerTest extends TestCase
             DB::table('categories')->insert(['id' => $category, 'title' => 'HD', 'root_categories_id' => $category - 30]);
             ProductionTables::fromAuthority()->create($table);
         }
+        ProductionTables::fromAuthority()->create('console_genres');
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('title-artwork')]);
     }
 
@@ -87,6 +88,21 @@ final class TitleControllerTest extends TestCase
         $filtered->assertDontSee('Album.MP3')->assertSee('Album.FLAC')->assertSee('Album.24-bit.FLAC');
         $this->assertSame(2, $filtered->viewData('results')->total());
         $this->assertSame(route('title', ['root' => 'audio', 'id' => '12']), $response->viewData('results')->first()->row_data->entity->titleUrl());
+    }
+
+    public function test_a_console_game_shows_every_genre_in_order_on_its_genre_line(): void
+    {
+        DB::table('genres')->insert(['id' => 2, 'title' => 'Shooter', 'type' => 1000]);
+        DB::table('consoleinfo')->insert(['id' => 12, 'title' => 'A Game', 'platform' => 'PS5', 'genres_id' => 2]);
+        DB::table('console_genres')->insert([
+            ['consoleinfo_id' => 12, 'genres_id' => 1, 'position' => 1],
+            ['consoleinfo_id' => 12, 'genres_id' => 2, 'position' => 0],
+        ]);
+
+        $response = $this->actingAs($this->browserUser())->get('/title/console/12')->assertOk();
+
+        $this->assertSame('Shooter,Adventure', $response->viewData('title')->metadata['Genre']);
+        $response->assertSee('Shooter,Adventure');
     }
 
     public function test_numeric_album_track_count_does_not_invent_a_track_list_or_provider_link(): void

@@ -390,10 +390,14 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->createConsoleInfoTable();
         $this->createBookInfoTable();
         $this->createGamesInfoTable();
+        ProductionTables::fromAuthority()->create('console_genres');
         DB::table('genres')->insert(['id' => 1, 'title' => 'Adventure', 'type' => 1]);
         if ($table !== '') {
             DB::table($table)->insert(['id' => 1, 'title' => 'First title', ...$first]);
             DB::table($table)->insert(['id' => 2, 'title' => 'Second title', ...$second]);
+        }
+        if ($table === 'consoleinfo') {
+            DB::table('console_genres')->insert(['consoleinfo_id' => 1, 'genres_id' => 1, 'position' => 0]);
         }
         $this->release('Matching release', ['categories_id' => $categoryId, $foreignKey => 1]);
         $this->release('Nonmatching release', ['categories_id' => $categoryId, $foreignKey => 2]);
@@ -404,6 +408,33 @@ final class ReleaseBrowserControllerTest extends TestCase
             $sorted = $this->get('/browse/audio?sort=artist')->assertOk();
             $this->assertSame('Nonmatching release', $sorted->viewData('results')->items()[0]->row_data->name);
         }
+    }
+
+    public function test_console_genre_filter_and_options_read_one_row_per_genre_within_the_listing(): void
+    {
+        $this->createGenresTable();
+        $this->createConsoleInfoTable();
+        ProductionTables::fromAuthority()->create('console_genres');
+        DB::table('categories')->insert(['id' => 1040, 'title' => 'Wii', 'root_categories_id' => 1000]);
+        foreach ([1 => 'Shooter', 2 => 'Adventure', 3 => 'Puzzle', 4 => 'Racing'] as $id => $title) {
+            DB::table('genres')->insert(['id' => $id, 'title' => $title, 'type' => 1000]);
+        }
+        foreach ([1 => [1, 2], 2 => [3], 3 => [4]] as $game => $genres) {
+            DB::table('consoleinfo')->insert(['id' => $game, 'title' => 'Game '.$game, 'genres_id' => $genres[0]]);
+            foreach ($genres as $position => $genre) {
+                DB::table('console_genres')->insert(['consoleinfo_id' => $game, 'genres_id' => $genre, 'position' => $position]);
+            }
+        }
+        $this->release('Two genre release', ['categories_id' => 1030, 'consoleinfo_id' => 1]);
+        $this->release('Puzzle release', ['categories_id' => 1030, 'consoleinfo_id' => 2]);
+        $this->release('Other sub-category release', ['categories_id' => 1040, 'consoleinfo_id' => 3]);
+
+        $filtered = $this->actingAs($this->browserUser())->get('/browse/console?genre=Adventure')->assertOk();
+
+        $this->assertSame(1, $filtered->viewData('results')->total());
+        $filtered->assertSee('Two genre release')->assertDontSee('Puzzle release');
+        $listing = $this->get('/browse/console/1030')->assertOk();
+        $this->assertSame(['Adventure', 'Puzzle', 'Shooter'], $listing->viewData('filterOptions')['genre']);
     }
 
     /** @return iterable<string, array{string, int, string, string, array<string, mixed>, array<string, mixed>, string}> */

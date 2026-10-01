@@ -149,7 +149,7 @@
                                     class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md focus:ring-primary-500 focus:border-primary-500">
                                 <option value="">Select Genre</option>
                                 @foreach($genres as $genre)
-                                    <option value="{{ $genre->id }}" {{ isset($con['genre_id']) && $con['genre_id'] == $genre->id ? 'selected' : '' }}>
+                                    <option value="{{ $genre->id }}" {{ isset($con['genres_id']) && $con['genres_id'] == $genre->id ? 'selected' : '' }}>
                                         {{ $genre->title }}
                                     </option>
                                 @endforeach
