@@ -111,6 +111,12 @@ class IgdbQueryBuilderTest extends TestCase
                     'name' => 'Halo',
                     'summary' => 'Sci-fi shooter',
                     'aggregated_rating' => 94.2,
+                    'age_ratings' => [
+                        [
+                            'organization' => ['id' => 1, 'name' => 'ESRB'],
+                            'rating_category' => ['id' => 4, 'rating' => 'E10+', 'organization' => 1],
+                        ],
+                    ],
                     'first_release_date' => 1005782400,
                     'cover' => [
                         'image_id' => 'halo-cover',
@@ -136,8 +142,189 @@ class IgdbQueryBuilderTest extends TestCase
         $this->assertSame('42', $consoleData['asin']);
         $this->assertSame('Xbox 360', $consoleData['platform']);
         $this->assertSame('Action', $consoleData['consolegenre']);
-        $this->assertSame('94%', $consoleData['esrb']);
+        $this->assertSame('E10+', $consoleData['esrb']);
         $this->assertSame('https://images.igdb.com/igdb/image/upload/t_cover_big/halo-cover.jpg', $consoleData['coverurl']);
         $this->assertSame('2001-11-15', $consoleData['releasedate']);
+    }
+
+    public function test_the_lookup_requests_the_supported_age_rating_fields(): void
+    {
+        $this->fakeIgdbGames([['id' => 42, 'name' => 'Halo']]);
+
+        $this->assertNotNull((new IGDBService)->searchConsole('Halo', 'X360'));
+
+        $fields = $this->fieldsOf($this->sentGameQueries()[0]);
+
+        $this->assertContains('age_ratings.organization.name', $fields);
+        $this->assertContains('age_ratings.rating_category.rating', $fields);
+        $this->assertNotContains('age_ratings.rating', $fields);
+        $this->assertNotContains('age_ratings.category', $fields);
+    }
+
+    public function test_the_fuzzy_search_filters_on_game_type_and_requests_the_website_type(): void
+    {
+        $this->fakeIgdbGames([]);
+
+        $this->assertNull((new IGDBService)->searchConsole('Halo Reach', 'X360'));
+
+        $fuzzy = array_values(array_filter(
+            $this->sentGameQueries(),
+            static fn (string $body): bool => str_contains($body, 'search "'),
+        ));
+
+        $this->assertNotEmpty($fuzzy);
+
+        foreach ($fuzzy as $body) {
+            $this->assertStringContainsString('where game_type = 0;', $body);
+            $this->assertStringNotContainsString('category', $this->whereOf($body));
+
+            $fields = $this->fieldsOf($body);
+            $this->assertContains('websites.type', $fields);
+            $this->assertNotContains('websites.category', $fields);
+        }
+    }
+
+    public function test_a_search_cached_before_the_field_change_is_not_reused(): void
+    {
+        $this->fakeIgdbGames([['id' => 42, 'name' => 'Halo']]);
+
+        $staleKey = 'igdb_console_search:'.md5(mb_strtolower('Halo|X360'));
+        Cache::put($staleKey, new Game(['id' => 7, 'name' => 'Stale Halo']), 86400);
+        $failedConsoleKey = 'igdb_console_search:'.md5(mb_strtolower('Halo|PS3'));
+        Cache::put("igdb_console_search_failed:{$failedConsoleKey}", true, 3600);
+        $failedPcKey = 'igdb_search:'.md5(mb_strtolower('Halo'));
+        Cache::put("igdb_search_failed:{$failedPcKey}", true, 3600);
+
+        $service = new IGDBService;
+
+        $this->assertSame('Halo', $service->searchConsole('Halo', 'X360')?->name);
+        $this->assertNotNull($service->searchConsole('Halo', 'PS3'));
+        $this->assertNotNull($service->search('Halo'));
+        $this->assertCount(3, $this->sentGameQueries());
+    }
+
+    public function test_a_pegi_only_game_stores_the_pegi_rating(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'age_ratings' => [
+                $this->ageRating(2, 'PEGI', 11, '16'),
+            ],
+        ]);
+
+        $this->assertSame('PEGI 16', $consoleData['esrb']);
+    }
+
+    public function test_an_esrb_rating_wins_over_a_pegi_rating_listed_before_it(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'age_ratings' => [
+                $this->ageRating(2, 'PEGI', 12, '18'),
+                $this->ageRating(1, 'ESRB', 6, 'M'),
+            ],
+        ]);
+
+        $this->assertSame('M', $consoleData['esrb']);
+    }
+
+    public function test_a_rating_from_another_organisation_is_ignored(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'age_ratings' => [
+                $this->ageRating(4, 'USK', 22, '16'),
+            ],
+        ]);
+
+        $this->assertNull($consoleData['esrb']);
+    }
+
+    public function test_a_critic_score_is_never_stored_as_the_age_rating(): void
+    {
+        $consoleData = $this->consoleDataFor([
+            'aggregated_rating' => 94.2,
+        ]);
+
+        $this->assertNull($consoleData['esrb']);
+
+        foreach ($consoleData as $value) {
+            $this->assertStringNotContainsString('%', (string) $value);
+        }
+    }
+
+    public function test_the_pc_path_stores_the_same_age_rating(): void
+    {
+        $genreName = '';
+        $gameData = (new IGDBService)->buildGameData(new Game([
+            'id' => 7,
+            'name' => 'Halo',
+            'aggregated_rating' => 94.2,
+            'age_ratings' => [
+                $this->ageRating(2, 'PEGI', 10, '12'),
+            ],
+        ]), $genreName);
+
+        $this->assertSame('PEGI 12', $gameData['esrb']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function consoleDataFor(array $attributes): array
+    {
+        $game = new Game(['id' => 42, 'name' => 'Halo'] + $attributes);
+
+        return (new IGDBService)->buildConsoleData($game, 'Xbox 360');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ageRating(int $organizationId, string $organization, int $categoryId, string $rating): array
+    {
+        return [
+            'id' => $categoryId * 100,
+            'organization' => ['id' => $organizationId, 'name' => $organization],
+            'rating_category' => ['id' => $categoryId, 'rating' => $rating, 'organization' => $organizationId],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $games
+     */
+    private function fakeIgdbGames(array $games): void
+    {
+        Http::fake([
+            'https://id.twitch.test/oauth2/token' => Http::response([
+                'access_token' => 'test-token',
+                'expires_in' => 3600,
+            ]),
+            'https://api.igdb.test/v4/games' => Http::response($games),
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function sentGameQueries(): array
+    {
+        return Http::recorded(static fn (Request $request): bool => $request->url() === 'https://api.igdb.test/v4/games')
+            ->map(static fn (array $pair): string => $pair[0]->body())
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function fieldsOf(string $body): array
+    {
+        $this->assertSame(1, preg_match('/^fields ([^;]*);/', $body, $matches), $body);
+
+        return explode(',', $matches[1]);
+    }
+
+    private function whereOf(string $body): string
+    {
+        return preg_match('/where ([^;]*);/', $body, $matches) === 1 ? $matches[1] : '';
     }
 }

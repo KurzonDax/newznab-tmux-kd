@@ -38,6 +38,10 @@ class IGDBService
 
     protected const int FAILED_LOOKUP_CACHE_TTL = 3600; // 1 hour
 
+    // Bumped when the requested fields or search filters change, so neither a Game
+    // cached without the new fields nor a failure cached by an old filter is reused.
+    protected const string SEARCH_CACHE_VERSION = 'v2';
+
     // Matching configuration
     protected const int MATCH_THRESHOLD = 85;
 
@@ -91,7 +95,7 @@ class IGDBService
             return null;
         }
 
-        $cacheKey = 'igdb_search:'.md5(mb_strtolower($title));
+        $cacheKey = 'igdb_search:'.self::SEARCH_CACHE_VERSION.':'.md5(mb_strtolower($title));
 
         // Check failed lookup cache
         if (Cache::has("igdb_search_failed:{$cacheKey}")) {
@@ -130,7 +134,7 @@ class IGDBService
             return null;
         }
 
-        $cacheKey = 'igdb_console_search:'.md5(mb_strtolower($title.'|'.$platformHint));
+        $cacheKey = 'igdb_console_search:'.self::SEARCH_CACHE_VERSION.':'.md5(mb_strtolower($title.'|'.$platformHint));
 
         if (Cache::has("igdb_console_search_failed:{$cacheKey}")) {
             Log::debug('IGDBService: Skipping previously failed console search', [
@@ -173,7 +177,7 @@ class IGDBService
      *                              review: string,
      *                              coverurl: string,
      *                              releasedate: string,
-     *                              esrb: string,
+     *                              esrb: ?string,
      *                              url: string,
      *                              backdropurl: string,
      *                              trailer: string,
@@ -287,7 +291,7 @@ class IGDBService
                 self::REQUESTS_PER_MINUTE,
                 function () use ($platformIds, $title) {
                     $query = Game::search($title)
-                        ->where('category', 0) // Main game only (not DLC, expansion, etc.)
+                        ->where('game_type', 0) // Main game only (not DLC, expansion, etc.)
                         ->with($this->getGameRelations())
                         ->orderByDesc('aggregated_rating_count')
                         ->limit(10);
@@ -330,8 +334,8 @@ class IGDBService
             'themes' => ['name'],
             'game_modes' => ['name'],
             'player_perspectives' => ['name'],
-            'age_ratings' => ['rating', 'category'],
-            'websites' => ['url', 'category'],
+            'age_ratings' => ['organization.name', 'rating_category.rating'],
+            'websites' => ['url', 'type'],
             'platforms' => ['name', 'abbreviation'],
             'release_dates' => ['date', 'platform', 'human'],
         ];
@@ -408,9 +412,7 @@ class IGDBService
             'review' => (string) ($game->summary ?? ''),
             'coverurl' => $this->getImageUrl($game->cover ?? null, 'cover_big'),
             'releasedate' => $this->getReleaseDate($game),
-            'esrb' => isset($game->aggregated_rating) && is_numeric($game->aggregated_rating)
-                ? round((float) $game->aggregated_rating).'%'
-                : $this->getAgeRating($game),
+            'esrb' => $this->getAgeRating($game),
             'url' => $game->url ?? '',
             'publisher' => ! empty($publishers) ? implode(',', $publishers) : 'Unknown',
             'platform' => $this->resolvePlatformName($game, $platformHint),
@@ -703,54 +705,58 @@ class IGDBService
     }
 
     /**
-     * Get age rating string from IGDB age ratings.
+     * The game's age rating: the bare ESRB code when IGDB has an ESRB rating, wherever
+     * it is listed, else "PEGI " plus the PEGI rating, else null. Ratings from the
+     * other organisations are ignored.
      */
-    protected function getAgeRating(Game $game): string
+    protected function getAgeRating(Game $game): ?string
     {
         $ageRatings = $game->age_ratings ?? [];
         if ($ageRatings instanceof Collection) {
-            $ageRatings = $ageRatings->toArray();
+            $ageRatings = $ageRatings->all();
         }
 
-        if (empty($ageRatings)) {
-            return 'Not Rated';
+        if (! is_array($ageRatings)) {
+            return null;
         }
 
-        // ESRB ratings map
-        $esrbMap = [
-            6 => 'RP (Rating Pending)',
-            7 => 'EC (Early Childhood)',
-            8 => 'E (Everyone)',
-            9 => 'E10+ (Everyone 10+)',
-            10 => 'T (Teen)',
-            11 => 'M (Mature 17+)',
-            12 => 'AO (Adults Only)',
-        ];
+        $pegi = null;
 
-        // PEGI ratings map
-        $pegiMap = [
-            1 => 'PEGI 3',
-            2 => 'PEGI 7',
-            3 => 'PEGI 12',
-            4 => 'PEGI 16',
-            5 => 'PEGI 18',
-        ];
+        foreach ($ageRatings as $ageRating) {
+            $organization = $this->nodeValue($this->nodeValue($ageRating, 'organization'), 'name');
+            $rating = $this->nodeValue($this->nodeValue($ageRating, 'rating_category'), 'rating');
 
-        foreach ($ageRatings as $rating) {
-            $category = is_array($rating) ? ($rating['category'] ?? 0) : ($rating->category ?? 0);
-            $ratingValue = is_array($rating) ? ($rating['rating'] ?? 0) : ($rating->rating ?? 0);
-
-            // Prefer ESRB
-            if ($category === 1 && isset($esrbMap[$ratingValue])) {
-                return $esrbMap[$ratingValue];
+            if (! is_string($rating) && ! is_int($rating)) {
+                continue;
             }
-            // Fall back to PEGI
-            if ($category === 2 && isset($pegiMap[$ratingValue])) {
-                return $pegiMap[$ratingValue];
+
+            $rating = trim((string) $rating);
+            if ($rating === '') {
+                continue;
+            }
+
+            if ($organization === 'ESRB') {
+                return $rating;
+            }
+
+            if ($organization === 'PEGI' && $pegi === null) {
+                $pegi = 'PEGI '.$rating;
             }
         }
 
-        return 'Not Rated';
+        return $pegi;
+    }
+
+    /**
+     * Read a field from an IGDB node, which the client hydrates as a DataNode or array.
+     */
+    private function nodeValue(mixed $node, string $key): mixed
+    {
+        if (is_array($node) || $node instanceof \ArrayAccess) {
+            return $node[$key] ?? null;
+        }
+
+        return null;
     }
 
     /**

@@ -126,6 +126,36 @@ class AdminConsoleEditTest extends TestCase
         $this->assertSame('Console Under Edit', (string) DB::table('consoleinfo')->where('id', $id)->value('title'));
     }
 
+    public function test_console_edit_keeps_a_stored_pegi_rating_when_only_the_title_changes(): void
+    {
+        $id = $this->createConsoleEntry(null);
+        DB::table('consoleinfo')->where('id', $id)->update(['esrb' => 'PEGI 16']);
+
+        $admin = $this->admin();
+
+        $page = $this->actingAs($admin)->get(route('admin.console-edit', ['id' => $id]));
+
+        $page->assertOk();
+        $this->assertMatchesRegularExpression('/<option value="PEGI 16"\s+selected\s*>/', $page->getContent());
+
+        $this->actingAs($admin)->post(route('admin.console-edit'), [
+            'id' => (string) $id,
+            'action' => 'submit',
+            'title' => 'A New Title',
+            'platform' => 'PS4',
+            'publisher' => 'A Publisher',
+            'esrb' => 'PEGI 16',
+            'salesrank' => '99',
+            'genre' => '1',
+            'releasedate' => '',
+        ])->assertRedirect(route('admin.console-list'));
+
+        $row = DB::table('consoleinfo')->where('id', $id)->first();
+
+        $this->assertSame('A New Title', $row->title);
+        $this->assertSame('PEGI 16', $row->esrb);
+    }
+
     private function storedReleaseDate(int $id): string
     {
         $stored = DB::table('consoleinfo')->where('id', $id)->value('releasedate');

@@ -114,12 +114,16 @@
                                     name="esrb"
                                     class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md focus:ring-primary-500 focus:border-primary-500">
                                 <option value="">Select Rating</option>
+                                <option value="EC" {{ isset($con['esrb']) && $con['esrb'] == 'EC' ? 'selected' : '' }}>EC - Early Childhood</option>
                                 <option value="E" {{ isset($con['esrb']) && $con['esrb'] == 'E' ? 'selected' : '' }}>E - Everyone</option>
                                 <option value="E10+" {{ isset($con['esrb']) && $con['esrb'] == 'E10+' ? 'selected' : '' }}>E10+ - Everyone 10+</option>
                                 <option value="T" {{ isset($con['esrb']) && $con['esrb'] == 'T' ? 'selected' : '' }}>T - Teen</option>
                                 <option value="M" {{ isset($con['esrb']) && $con['esrb'] == 'M' ? 'selected' : '' }}>M - Mature</option>
                                 <option value="AO" {{ isset($con['esrb']) && $con['esrb'] == 'AO' ? 'selected' : '' }}>AO - Adults Only</option>
                                 <option value="RP" {{ isset($con['esrb']) && $con['esrb'] == 'RP' ? 'selected' : '' }}>RP - Rating Pending</option>
+                                @foreach (['PEGI 3', 'PEGI 7', 'PEGI 12', 'PEGI 16', 'PEGI 18'] as $pegiRating)
+                                    <option value="{{ $pegiRating }}" {{ isset($con['esrb']) && $con['esrb'] == $pegiRating ? 'selected' : '' }}>{{ $pegiRating }}</option>
+                                @endforeach
                             </select>
                         </div>
 
