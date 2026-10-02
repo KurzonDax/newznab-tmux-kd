@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\CollectionReconciliation;
 
 use App\Services\Nzb\CompletionTally;
+use App\Services\Nzb\PhantomTrailingFile;
 
 final readonly class PostingDecision
 {
@@ -24,9 +25,12 @@ final readonly class PostingDecision
 
     public function completion(): float
     {
+        // A post declaring one file it never posted is measured against the files it holds; the
+        // declared total itself stays, because late collections are matched on it.
+        $declared = PhantomTrailingFile::declaredFiles(array_column($this->accepted, 'subject'), $this->declaredTotal);
         $tally = new CompletionTally;
         foreach ($this->accepted as $file) {
-            $tally->addFile(count($file->segments), $file->declaredParts, $this->declaredTotal);
+            $tally->addFile(count($file->segments), $file->declaredParts, $declared);
         }
 
         return $tally->signals()->percentage();

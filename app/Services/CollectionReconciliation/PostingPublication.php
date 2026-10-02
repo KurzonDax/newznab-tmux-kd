@@ -11,6 +11,7 @@ use App\Services\CollectionCleanupService;
 use App\Services\Nzb\CompletionTally;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\Nzb\PhantomTrailingFile;
 use App\Services\ReleaseRepair\RecoveryLease;
 use App\Support\Data\NzbCreationResult;
 use Illuminate\Support\Facades\DB;
@@ -125,8 +126,9 @@ class PostingPublication
                     throw new RuntimeException('nzb_atomic_rename_failed');
                 }
                 $tally = new CompletionTally;
+                $phantomHeldCount = PhantomTrailingFile::heldCount(array_column($files, 'subject'));
                 foreach ($files as $file) {
-                    $tally->addFile(count($file->segments), $file->declaredParts, $file->total);
+                    $tally->addFile(count($file->segments), $file->declaredParts, $phantomHeldCount ?? $file->total);
                 }
                 $decision = json_decode($journal->decision, true, flags: JSON_THROW_ON_ERROR);
                 $label = ($decision['decision'] ?? $decision)['label'];

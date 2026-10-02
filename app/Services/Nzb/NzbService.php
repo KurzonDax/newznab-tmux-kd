@@ -224,6 +224,8 @@ class NzbService
 
             $cursor = ['collection_id' => 0, 'name' => '', 'binary_id' => 0, 'partnumber' => 0];
             $openBinaryId = 0;
+            /** @var array<int, list<string>> $subjectsByCollection */
+            $subjectsByCollection = [];
             do {
                 $page = $this->loadNzbRowPage((int) $release->id, $cursor);
                 foreach ($page as $row) {
@@ -243,6 +245,7 @@ class NzbService
                         }
 
                         $subject = $this->buildBinarySubject((string) $row->binary_name, (int) $row->totalparts);
+                        $subjectsByCollection[(int) $row->collection_id][] = $subject;
                         $this->startNzbFile(
                             $XMLWriter,
                             (string) $collection->fromname,
@@ -284,21 +287,26 @@ class NzbService
                 return NzbCreationResult::transient("Failed to close temporary NZB file: {$tempPath}", $collectionIds, $path);
             }
 
-            $completionSignals = $this->completionMeasurer->measure(
-                $collections->mapWithKeys(static fn (Collection $collection): array => [
-                    (int) $collection->id => (int) $collection->declaredfiles,
-                ])->all(),
-            );
+            // A post declaring one file it never posted is measured against the files it holds,
+            // and a single-collection release stores that count in place of the declared one.
+            $heldCounts = $collections->mapWithKeys(static fn (Collection $collection): array => [
+                (int) $collection->id => PhantomTrailingFile::heldCount($subjectsByCollection[(int) $collection->id] ?? []),
+            ]);
+            $declaredFiles = $collections->mapWithKeys(static fn (Collection $collection): array => [
+                (int) $collection->id => $heldCounts[(int) $collection->id] ?? (int) $collection->declaredfiles,
+            ])->all();
+            $completionSignals = $this->completionMeasurer->measure($declaredFiles);
             $completion = $collections->count() > 1
-                ? $this->completionMeasurer->measureCombined($collections->mapWithKeys(static fn (Collection $collection): array => [(int) $collection->id => (int) $collection->declaredfiles])->all())->percentage()
+                ? $this->completionMeasurer->measureCombined($declaredFiles)->percentage()
                 : ($completionSignals[(int) $collections->keys()->first()] ?? null)?->percentage() ?? 0.0;
+            $correctedDeclaredFiles = $collections->count() === 1 ? $heldCounts->first() : null;
 
             $receipt = $recovery->verify($release, $tempPath);
-            $finalized = DB::transaction(function () use ($release, $completion, $tempPath, $path, $recovery, $receipt): bool {
+            $finalized = DB::transaction(function () use ($release, $completion, $correctedDeclaredFiles, $tempPath, $path, $recovery, $receipt): bool {
                 $affected = NzbCreationCandidateQuery::ownedPendingBuilder(
                     (int) $release->id,
                     $release->getAttribute(NzbCreationCandidateQuery::CLAIM_TOKEN_COLUMN),
-                )->update($this->successfulReleaseUpdateValues($completion));
+                )->update($this->successfulReleaseUpdateValues($completion, $correctedDeclaredFiles));
 
                 // This finalization always flips nzbstatus from pending to added,
                 // so zero affected rows means the ownership predicate no longer matched.
@@ -1299,9 +1307,12 @@ class NzbService
     }
 
     /**
+     * @param  int|null  $declaredFiles  The held count of a {@see PhantomTrailingFile}, replacing the
+     *                                   declared count creation stored; null leaves that count alone,
+     *                                   which is already the collection's own.
      * @return array<string, mixed>
      */
-    private function successfulReleaseUpdateValues(float $completion): array
+    private function successfulReleaseUpdateValues(float $completion, ?int $declaredFiles = null): array
     {
         // Reconcile creation-time completion against the same authoritative CBP arithmetic after
         // streaming. Late headers are valuable, and the value stored beside the final NZB must
@@ -1310,6 +1321,10 @@ class NzbService
             'nzbstatus' => self::NZB_ADDED,
             'completion' => $completion,
         ];
+
+        if ($declaredFiles !== null) {
+            $values['declaredfiles'] = $declaredFiles;
+        }
 
         if (NzbCreationCandidateQuery::supportsClaims()) {
             $values += [

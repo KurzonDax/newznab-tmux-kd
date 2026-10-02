@@ -90,6 +90,13 @@ php artisan releases:backfill-completion
 php artisan releases:backfill-completion --understated --dry-run
 php artisan releases:backfill-completion --understated
 
+# Re-measure rows below 100% that declared one file they never posted, or recorded no declared
+# count: where the stored NZB shows a phantom trailing file (#939), store the held count and the
+# completion measured against it. Reconciled postings keep their declared count. Rows changed since
+# the read, or held by recovery, are skipped for a re-run.
+php artisan releases:backfill-completion --phantom-trailing --dry-run
+php artisan releases:backfill-completion --phantom-trailing
+
 # One repair pass over a bounded batch. Runs hourly from the scheduler.
 php artisan releases:repair-completion --dry-run -v
 php artisan releases:repair-completion --limit=250

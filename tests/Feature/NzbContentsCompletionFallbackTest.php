@@ -10,6 +10,7 @@ use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\PhantomTrailingSets;
 use Tests\TestCase;
 
 /**
@@ -96,6 +97,19 @@ class NzbContentsCompletionFallbackTest extends TestCase
         $this->service()->parseNzb($this->guid(1), 1, 1);
 
         $this->assertSame(0.0, $this->completionOf(1));
+    }
+
+    #[Test]
+    public function an_imported_phantom_trailing_file_is_measured_against_the_files_held(): void
+    {
+        $this->releaseWithNzb(1, PhantomTrailingSets::base(), segmentsPerFile: 1, completion: 0.0);
+        $this->releaseWithNzb(2, PhantomTrailingSets::lastVolumeNotARemainder(), segmentsPerFile: 1, completion: 0.0);
+
+        $this->service()->parseNzb($this->guid(1), 1, 1);
+        $this->service()->parseNzb($this->guid(2), 2, 1);
+
+        $this->assertSame(100.0, $this->completionOf(1));
+        $this->assertEqualsWithDelta(12 / 13 * 100, $this->completionOf(2), 0.0001);
     }
 
     private function service(): NzbContentsService

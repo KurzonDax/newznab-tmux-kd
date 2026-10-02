@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\PhantomTrailingSets;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class ReleaseDuplicateAbsorberTest extends TestCase
@@ -397,6 +399,134 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $this->assertSame(100.0, (float) $anchor->fresh()->completion);
         $this->assertSame(3, DB::table('reconciled_artifact_operations')->count());
         $this->assertSame(4, (int) DB::table('reconciled_artifacts')->value('version'));
+    }
+
+    public function test_a_complete_phantom_trailing_copy_replaces_an_anchor_that_reads_below_it(): void
+    {
+        Search::shouldReceive('updateRelease')->once()->with(1)->andReturnTrue();
+        $anchor = $this->phantomAnchor();
+        $nzb = app(NzbService::class);
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, $this->phantomAnchorNzb());
+
+        // The caller's figure is scaled down for the 13th file that was never posted.
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml(
+            $anchor,
+            PhantomTrailingSets::nzb(PhantomTrailingSets::base()),
+            incomingSize: 2_000,
+            incomingDeclaredFiles: PhantomTrailingSets::DECLARED,
+            incomingCompletion: (12 / 13) * 100,
+        );
+
+        $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $result->outcome);
+        $stored = DB::table('releases')->first();
+        $this->assertSame(PhantomTrailingSets::HELD, (int) $stored->declaredfiles);
+        $this->assertSame(100.0, (float) $stored->completion);
+    }
+
+    public function test_a_complete_phantom_trailing_collection_is_rendered_although_its_creation_figure_reads_lower(): void
+    {
+        Search::shouldReceive('updateRelease')->once()->with(1)->andReturnTrue();
+        $anchor = $this->phantomAnchor();
+        $this->createBinariesTable();
+        $collection = $this->phantomCollection(200, PhantomTrailingSets::baseFiles());
+        $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::base()), NzbReplaceResult::success());
+
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100);
+
+        $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $result->outcome);
+        $this->assertSame([200], $nzb->buildCalls);
+        $this->assertSame(PhantomTrailingSets::HELD, (int) DB::table('releases')->value('declaredfiles'));
+        $this->assertSame(100.0, (float) DB::table('releases')->value('completion'));
+    }
+
+    public function test_a_collection_that_is_not_a_phantom_trailing_file_is_still_turned_away_unrendered(): void
+    {
+        $anchor = $this->phantomAnchor();
+        $this->createBinariesTable();
+        $files = PhantomTrailingSets::baseFiles();
+        $files[12] = 'Show.Name.vol31+32.par2';
+        $collection = $this->phantomCollection(200, $files);
+        $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::subjects($files)), NzbReplaceResult::success());
+
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100);
+
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame([], $nzb->buildCalls);
+    }
+
+    public function test_a_reconciled_anchor_stages_the_corrected_count_for_a_phantom_trailing_copy(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $anchor = $this->phantomAnchor();
+        $nzb = app(NzbService::class);
+        $original = $this->phantomAnchorNzb();
+        $target = PhantomTrailingSets::nzb(PhantomTrailingSets::base());
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, $original);
+        Schema::table('collections', function (Blueprint $table): void {
+            $table->unsignedInteger('groups_id')->default(1);
+            $table->timestamp('date')->nullable();
+        });
+        (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        DB::table('reconciled_postings')->insert(['release_id' => $anchor->id, 'digest' => str_repeat('a', 64),
+            'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $original)]);
+        DB::beginTransaction();
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $target, 2000, PhantomTrailingSets::DECLARED, (12 / 13) * 100);
+        $this->assertSame(DuplicateAbsorbOutcome::Deferred, $result->outcome);
+        DB::commit();
+
+        $this->assertTrue(app(ArtifactPublication::class)->execute($result->operationId)->success);
+        $this->assertSame(PhantomTrailingSets::HELD, (int) $anchor->fresh()->declaredfiles);
+        $this->assertSame(100.0, (float) $anchor->fresh()->completion);
+    }
+
+    /**
+     * An anchor of the phantom-trailing shape missing segments: 98% against the twelve files held.
+     */
+    private function phantomAnchor(): Release
+    {
+        DB::table('releases')->insert([
+            'id' => 1,
+            'name' => 'Show.Name',
+            'searchname' => 'Show.Name',
+            'searchname_normalized' => 'Show.Name',
+            'guid' => str_repeat('a', 36),
+            'size' => 1_000,
+            'totalpart' => PhantomTrailingSets::HELD,
+            'declaredfiles' => PhantomTrailingSets::HELD,
+            'completion' => 98.0,
+        ]);
+
+        return Release::query()->findOrFail(1);
+    }
+
+    private function phantomAnchorNzb(): string
+    {
+        return PhantomTrailingSets::nzb(PhantomTrailingSets::subjects(PhantomTrailingSets::baseFiles(), segments: 50), present: 49, messageIdPrefix: 'old');
+    }
+
+    /**
+     * @param  array<int, string>  $files
+     */
+    private function phantomCollection(int $id, array $files): Collection
+    {
+        DB::table('collections')->insert([
+            'id' => $id,
+            'filesize' => 2_000,
+            'declaredfiles' => PhantomTrailingSets::DECLARED,
+            'absorb_attempts' => 0,
+        ]);
+
+        foreach (PhantomTrailingSets::binaryNames($files) as $offset => $name) {
+            DB::table('binaries')->insert(['id' => $id * 100 + $offset, 'collections_id' => $id, 'name' => $name]);
+        }
+
+        return Collection::query()->findOrFail($id);
+    }
+
+    private function createBinariesTable(): void
+    {
+        ProductionTables::fromAuthority()->create('binaries', ['id', 'collections_id', 'name']);
     }
 
     private function anchor(int $nzbstatus = NzbService::NZB_ADDED): Release

@@ -7,6 +7,7 @@ namespace Tests\Unit\Services\ReleaseRepair;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\PhantomTrailingSets;
 
 /**
  * Planning what is missing from a stored NZB, and writing the recovered segments back in.
@@ -120,6 +121,27 @@ final class NzbRepairDocumentTest extends TestCase
         $reloaded = NzbRepairDocument::load($document->toXml());
         $this->assertNotNull($reloaded);
         $this->assertFalse($reloaded->plan()->hasWork(), 'The rewritten NZB must parse back as complete.');
+    }
+
+    #[Test]
+    public function a_phantom_trailing_file_is_measured_against_the_files_held(): void
+    {
+        $document = NzbRepairDocument::load(PhantomTrailingSets::nzb(PhantomTrailingSets::base()));
+        $this->assertNotNull($document);
+
+        $this->assertSame(100.0, $document->measure()->percentage());
+        $this->assertSame(100.0, $document->measure(PhantomTrailingSets::DECLARED)->percentage());
+        $this->assertSame(PhantomTrailingSets::HELD, $document->measure(PhantomTrailingSets::DECLARED)->filesDeclared);
+    }
+
+    #[Test]
+    public function a_set_that_is_not_a_phantom_trailing_file_keeps_its_declared_count(): void
+    {
+        $document = NzbRepairDocument::load(PhantomTrailingSets::nzb(PhantomTrailingSets::lastVolumeNotARemainder()));
+        $this->assertNotNull($document);
+
+        $this->assertEqualsWithDelta(12 / 13 * 100, $document->measure()->percentage(), 0.0001);
+        $this->assertEqualsWithDelta(12 / 13 * 100, $document->measure(PhantomTrailingSets::DECLARED)->percentage(), 0.0001);
     }
 
     #[Test]

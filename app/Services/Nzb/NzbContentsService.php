@@ -160,6 +160,8 @@ class NzbContentsService
 
         $messageID = $hiddenID = '';
         $completion = new CompletionTally;
+        // A post declaring one file it never posted is measured against the files it holds.
+        $phantomHeldCount = PhantomTrailingFile::heldCountOfNzb($nzbFile);
         // Initialize foundPAR2 based on settings; if lookupPar2 is false, we don't need to find one.
         $foundPAR2 = $this->lookupPar2 === false;
         // Initialize NFO flags based on whether we are checking for NFOs.
@@ -182,7 +184,7 @@ class NzbContentsService
             $completion->addFile(
                 $segmentCountInFile,
                 $this->parserService->extractPartsTotal($subject),
-                $this->parserService->extractFilesTotal($subject),
+                $phantomHeldCount ?? $this->parserService->extractFilesTotal($subject),
             );
 
             // --- NFO Detection ---

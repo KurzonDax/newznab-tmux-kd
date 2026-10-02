@@ -404,6 +404,9 @@ class NzbImportService
         $totalFiles = $totalSize = $groupID = 0;
         $isBlackListed = $groupName = $firstName = $posterName = $postDate = false;
 
+        // A post declaring one file it never posted is measured against the files it holds.
+        $phantomHeldCount = PhantomTrailingFile::heldCountOfNzb($nzbXML);
+
         // Go through the NZB, get the details, look if it's blacklisted, look if we have the groups.
         foreach ($nzbXML->file as $file) {
             $binary_names[] = $file['subject'];
@@ -486,7 +489,7 @@ class NzbImportService
                 $completion->addFile(
                     $segmentCount,
                     $this->parserService->extractPartsTotal($subject),
-                    $this->parserService->extractFilesTotal($subject),
+                    $phantomHeldCount ?? $this->parserService->extractFilesTotal($subject),
                 );
             } else {
                 if ($isBlackListed) {
