@@ -86,7 +86,7 @@ final class MissingFileMatcher
         return trim($masked);
     }
 
-    private static function normalizePoster(string $poster): string
+    public static function normalizePoster(string $poster): string
     {
         return trim(Utf8::clean($poster), " '\"");
     }

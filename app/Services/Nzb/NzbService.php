@@ -244,7 +244,7 @@ class NzbService
                             return NzbCreationResult::deterministic("Collection {$row->collection_id} has no valid cross-post groups.", $collectionIds, $path);
                         }
 
-                        $subject = $this->buildBinarySubject((string) $row->binary_name, (int) $row->totalparts);
+                        $subject = self::buildBinarySubject((string) $row->binary_name, (int) $row->totalparts);
                         $subjectsByCollection[(int) $row->collection_id][] = $subject;
                         $this->startNzbFile(
                             $XMLWriter,
@@ -256,7 +256,7 @@ class NzbService
                         $openBinaryId = $binaryId;
                     }
 
-                    $messageId = $this->normalizeSegmentMessageId($row->messageid);
+                    $messageId = self::normalizeSegmentMessageId($row->messageid);
                     if ($messageId === '') {
                         return NzbCreationResult::deterministic("Part {$row->partnumber} for binary {$binaryId} has an empty message ID.", $collectionIds, $path);
                     }
@@ -789,13 +789,13 @@ class NzbService
                     $writer,
                     (string) $collection->fromname,
                     (string) strtotime((string) $collection->date),
-                    $this->buildBinarySubject((string) $row->binary_name, (int) $row->totalparts),
+                    self::buildBinarySubject((string) $row->binary_name, (int) $row->totalparts),
                     $groups,
                 );
                 $openBinaryId = $binaryId;
             }
 
-            $messageId = $this->normalizeSegmentMessageId((string) $row->messageid);
+            $messageId = self::normalizeSegmentMessageId((string) $row->messageid);
             if ($messageId === '') {
                 return false;
             }
@@ -836,7 +836,7 @@ class NzbService
                     }
                     $file = $files[$record['file']] ?? throw new \RuntimeException('recovery_manifest_scope_mismatch');
                     $this->startNzbFile($writer, Utf8::clean(base64_decode($record['poster_identity'], true)),
-                        (string) strtotime($record['postdate']), $this->buildBinarySubject('"'.$file->displayName.'" yEnc', $file->totalParts), [$plan->group]);
+                        (string) strtotime($record['postdate']), self::buildBinarySubject('"'.$file->displayName.'" yEnc', $file->totalParts), [$plan->group]);
                     $current = $record['file'];
                 }
                 $this->writeNzbSegment($writer, $record['advertised_bytes'], $record['ordinal'], $record['message_id']);
@@ -1199,7 +1199,7 @@ class NzbService
     /**
      * Build the NZB subject line in the shape expected by downstream parsers.
      */
-    private function buildBinarySubject(string $binaryName, int $totalParts): string
+    public static function buildBinarySubject(string $binaryName, int $totalParts): string
     {
         return rtrim($binaryName).' (1/'.$totalParts.')';
     }
@@ -1207,7 +1207,7 @@ class NzbService
     /**
      * Normalize stored message IDs before writing them into NZB segments.
      */
-    private function normalizeSegmentMessageId(string $messageId): string
+    public static function normalizeSegmentMessageId(string $messageId): string
     {
         $messageId = trim($messageId);
 

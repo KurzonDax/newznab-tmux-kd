@@ -31,6 +31,7 @@ use App\Services\Releases\CollectionSweep;
 use App\Services\Releases\CollectionSweepLease;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
+use App\Services\Releases\LateHeaderMerger;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
@@ -105,6 +106,8 @@ final class ReleaseProcessingService
 
     private readonly ExecutableReleaseDiscardService $executableDiscard;
 
+    private readonly LateHeaderMerger $lateHeaderMerger;
+
     public function __construct(
         ?NzbService $nzb = null,
         ?ReleaseCleaningService $releaseCleaning = null,
@@ -115,6 +118,7 @@ final class ReleaseProcessingService
         ?PostProcessService $postProcessService = null,
         ?BinariesConfig $binariesConfig = null,
         ?ExecutableReleaseDiscardService $executableDiscard = null,
+        ?LateHeaderMerger $lateHeaderMerger = null,
     ) {
         $this->echoCLI = (bool) config('nntmux.echocli');
 
@@ -137,6 +141,7 @@ final class ReleaseProcessingService
             );
         $this->postProcessService = $postProcessService;
         $this->binariesConfig = $binariesConfig ?? BinariesConfig::fromSettings();
+        $this->lateHeaderMerger = $lateHeaderMerger ?? app(LateHeaderMerger::class);
 
         $this->settings = $this->loadSettings();
         $this->validateSettings();
@@ -216,6 +221,12 @@ final class ReleaseProcessingService
                                     $candidates = $this->formationCollectionIds($group, $ids, $status);
                                     foreach (array_chunk($candidates, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
                                         $lease->renew();
+                                        // Late headers for an incomplete release fill it instead of
+                                        // being discarded as a duplicate.
+                                        $chunk = array_values(array_diff($chunk, $this->lateHeaderMerger->merge($chunk)));
+                                        if ($chunk === []) {
+                                            continue;
+                                        }
                                         $this->reconcileIncompleteCollections($group, $chunk);
                                         $this->processCollectionSizes($group, $chunk);
                                         $this->deleteUnwantedCollections($group, $chunk);
