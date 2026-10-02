@@ -26,7 +26,20 @@ final class ShelfReleaseRows
      */
     public function load(array $ids, bool $byAdded): array
     {
-        $releases = $this->facts->load($ids);
+        return array_map(static fn (array $row): ShelfReleaseRow => new ShelfReleaseRow(...$row['facts']), $this->rowArguments($ids, $byAdded));
+    }
+
+    /**
+     * The page's releases with a shelf row's constructor arguments; Console adds its game to them
+     * (ConsoleReleaseRows).
+     *
+     * @param  list<int>  $ids  in display order
+     * @param  list<string>  $columns  further `releases` columns the caller reads
+     * @return list<array{release: object, facts: array<string, mixed>}>
+     */
+    public function rowArguments(array $ids, bool $byAdded, array $columns = []): array
+    {
+        $releases = $this->facts->load($ids, $columns);
         if ($releases === []) {
             return [];
         }
@@ -34,12 +47,12 @@ final class ShelfReleaseRows
         $titles = DB::table('categories')->whereIn('id', array_values(array_unique(array_map(static fn (object $release): int => (int) $release->categories_id, $releases))))
             ->pluck('title', 'id');
 
-        return array_map(function (object $release) use ($byAdded, $now, $titles): ShelfReleaseRow {
+        return array_map(function (object $release) use ($byAdded, $now, $titles): array {
             /** @var ReleaseRowData $row */
             $row = $release->row_data;
 
-            return new ShelfReleaseRow(...[...$this->facts->facts($release, $byAdded, $now), 'preview' => null, 'sample' => null,
-                'category' => (string) ($titles[(int) $release->categories_id] ?? ''), 'categoryPath' => $row->category]);
+            return ['release' => $release, 'facts' => [...$this->facts->facts($release, $byAdded, $now), 'preview' => null, 'sample' => null,
+                'category' => (string) ($titles[(int) $release->categories_id] ?? ''), 'categoryPath' => $row->category]];
         }, $releases);
     }
 }

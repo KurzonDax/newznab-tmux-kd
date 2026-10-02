@@ -98,13 +98,19 @@ final class ConsoleGenres
     }
 
     /**
-     * A SQL expression for the same text as titles(), for the game whose id is in the column.
+     * A SQL expression for the same text as titles(), for the game whose id is in the column; the
+     * Console releases list joins the titles with ', ' instead.
+     *
+     * @param  ',' | ', '  $separator
      */
-    public static function titlesSql(string $consoleinfoIdColumn): string
+    public static function titlesSql(string $consoleinfoIdColumn, string $separator = ','): string
     {
+        if (! in_array($separator, [',', ', '], true)) {
+            throw new \InvalidArgumentException('Unsupported genre title separator.');
+        }
         $joined = DB::getDriverName() === 'sqlite'
-            ? "GROUP_CONCAT(cgt.title, ',' ORDER BY cgl.position)"
-            : "GROUP_CONCAT(cgt.title ORDER BY cgl.position SEPARATOR ',')";
+            ? "GROUP_CONCAT(cgt.title, '{$separator}' ORDER BY cgl.position)"
+            : "GROUP_CONCAT(cgt.title ORDER BY cgl.position SEPARATOR '{$separator}')";
 
         return '(SELECT '.$joined.' FROM console_genres cgl INNER JOIN genres cgt ON cgt.id = cgl.genres_id'
             .' WHERE cgl.consoleinfo_id = '.$consoleinfoIdColumn.')';

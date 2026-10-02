@@ -335,6 +335,17 @@
 .tv-feed.is-shelf tbody td.tv-category { overflow: hidden; color: var(--tv-dim); text-overflow: ellipsis; white-space: nowrap; }
 .tv-feed.is-shelf tbody td.tv-size { color: var(--tv-ink); }
 .tv-feed.is-shelf tbody td.tv-date { color: var(--tv-dim); }
+/*
+ * Console releases (SPEC 5.4, 5.7, 5.8): the game's panel (Genre, Year) after the release's, as
+ * wide; the Movies poster slot as the cover column; the game line under the name in plain text
+ * (.tv-show-line underlines on hover); the Genre cell dim, wrapping, at most four lines.
+ */
+.tv-bar-list.is-shelf .filter-bar.is-game { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px); }
+.tv-col-genre { width: 150px; }
+.tv-game-line { display: block; width: fit-content; margin-top: 6px; color: var(--tv-dim); font-size: 13.5px; }
+.tv-feed.is-shelf th.tv-genre { padding-left: 12px; }
+.tv-feed.is-shelf tbody td.tv-genre { color: var(--tv-dim); line-height: 1.4; white-space: normal; }
+.tv-feed.is-shelf tbody td.tv-genre span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 
 /* TV shows wall */
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
