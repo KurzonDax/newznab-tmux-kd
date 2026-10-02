@@ -22,6 +22,7 @@ final readonly class ConsoleReleaseRow
      * @param  array{thumb: ?string, full: ?string}|null  $sample  always null: the lists show no sample
      * @param  string  $category  the release's sub-category title, the Category cell's text
      * @param  string  $categoryPath  the root and sub-category ("Console > PS3"), the Category cell's title
+     * @param  int  $categoryId  the release's sub-category id; the details page's Similar releases sorts by its place in the Category menu's order
      * @param  int|null  $gameId  the release's game (consoleinfo.id); null when it has none
      * @param  string  $gameTitle  the game's name; '' when the release has no game
      * @param  string  $gameYear  the year the game came out; '' when unknown or without a game
@@ -56,6 +57,7 @@ final readonly class ConsoleReleaseRow
         public string $uploader,
         public string $category,
         public string $categoryPath,
+        public int $categoryId,
         public ?int $gameId = null,
         public string $gameTitle = '',
         public string $gameYear = '',

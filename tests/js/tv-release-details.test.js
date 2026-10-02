@@ -41,9 +41,9 @@ function browser({ hash = '', responses = {} } = {}) {
     return { requests, history, listeners };
 }
 
-function detailsPage({ media = '1', nfo = '1', table = null } = {}) {
-    const tabs = TABS.map(tab => ({ dataset: { tab }, ...attributes({ 'aria-selected': tab === 'overview' ? 'true' : 'false' }), focus() { this.focused = true; } }));
-    const panels = TABS.map(id => ({ id, hidden: id !== 'overview' }));
+function detailsPage({ media = '1', nfo = '1', table = null, shown = TABS } = {}) {
+    const tabs = shown.map(tab => ({ dataset: { tab }, ...attributes({ 'aria-selected': tab === 'overview' ? 'true' : 'false' }), focus() { this.focused = true; } }));
+    const panels = shown.map(id => ({ id, hidden: id !== 'overview' }));
     const contents = Object.fromEntries(['files', 'media', 'nfo'].map(tab => [tab, { innerHTML: '' }]));
     const root = {
         dataset: { guid: 'abc', releaseId: '42', hasMedia: media, hasNfo: nfo, nzbLinkBase: 'https://nntmux.test/api/v1/api', apiToken: 'secret' },
@@ -130,6 +130,29 @@ test('arrow keys move between the tabs and keep focus on the tab row', () => {
     assert.equal(component.activeTab, 'comments');
     assert.equal(tabs[4].focused, true);
     component.tabKey(key('Home'));
+    assert.equal(component.activeTab, 'overview');
+});
+
+test('a page without the Media info tab (Books, Console and PC without media info) opens Overview for #media, and the arrow keys skip the absent tab', async () => {
+    const { history } = browser({ hash: '#media' });
+    const { component, tabs, panels } = detailsPage({ media: '0', shown: ['overview', 'files', 'nfo', 'comments'] });
+    assert.equal(component.activeTab, 'overview');
+    assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+    assert.deepEqual(panels.filter(panel => !panel.hidden).map(panel => panel.id), ['overview']);
+    await component.selectTab('media', true);
+    assert.equal(component.activeTab, 'overview');
+    assert.doesNotMatch(history.at(-1), /#/);
+    const key = name => ({ key: name, preventDefault() {} });
+    component.tabKey(key('ArrowRight'));
+    assert.equal(component.activeTab, 'files');
+    component.tabKey(key('ArrowRight'));
+    assert.equal(component.activeTab, 'nfo', 'Media info is skipped');
+    assert.equal(tabs[2].focused, true);
+    component.tabKey(key('ArrowLeft'));
+    assert.equal(component.activeTab, 'files');
+    component.tabKey(key('End'));
+    assert.equal(component.activeTab, 'comments');
+    component.tabKey(key('ArrowRight'));
     assert.equal(component.activeTab, 'overview');
 });
 

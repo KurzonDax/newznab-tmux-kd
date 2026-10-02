@@ -23,7 +23,7 @@ use Tests\TestCase;
 
 /**
  * Today's details page, which releases outside TV and Movies keep (TV and Movies have their own
- * pages: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest). Its releases are PC > Games.
+ * pages: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest). Its releases are Audio > MP3.
  */
 final class DetailsControllerTest extends TestCase
 {
@@ -32,7 +32,7 @@ final class DetailsControllerTest extends TestCase
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
 
-    private const PC_GAMES = 4050;
+    private const AUDIO_MP3 = 3010;
 
     private const BOOKS_EBOOK = 7020;
 
@@ -46,9 +46,11 @@ final class DetailsControllerTest extends TestCase
         $this->createReleaseSchema();
         Schema::table('releases', function (Blueprint $table): void {
             $table->unsignedInteger('predb_id')->nullable();
+            $table->unsignedTinyInteger('resolution')->default(0);
+            $table->unsignedTinyInteger('source')->default(0);
         });
-        DB::table('root_categories')->insert(['id' => 4000, 'title' => 'PC']);
-        DB::table('categories')->insert(['id' => self::PC_GAMES, 'title' => 'Games', 'root_categories_id' => 4000]);
+        DB::table('root_categories')->insert(['id' => 3000, 'title' => 'Audio']);
+        DB::table('categories')->insert(['id' => self::AUDIO_MP3, 'title' => 'MP3', 'root_categories_id' => 3000]);
         foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
@@ -75,7 +77,7 @@ final class DetailsControllerTest extends TestCase
 
     public function test_details_header_uses_the_shared_release_data_and_renders_each_tab(): void
     {
-        $this->release('Raw.Release', ['categories_id' => self::PC_GAMES, 'guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
+        $this->release('Raw.Release', ['categories_id' => self::AUDIO_MP3, 'guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
             'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null, 'gamesinfo_id' => null,
             'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null]);
         $response = $this->actingAs($this->browserUser())->get('/details/details-http')->assertOk()->assertViewIs('details.index');
@@ -83,7 +85,7 @@ final class DetailsControllerTest extends TestCase
             ->assertSee('No media info for this release.')->assertSee('No NFO for this release.')
             ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
-        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-games"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-audio"\s+aria-current="true"/', (string) $response->getContent());
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void
@@ -145,11 +147,11 @@ final class DetailsControllerTest extends TestCase
     {
         $current = $this->detailRelease('Some.Game.v1.0-GRP');
         $same = $this->detailRelease('Some.Game.v1.1-GRP', ['display_name' => 'Some Game update']);
-        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 4030, 'display_name' => 'Some Game disc image']);
+        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 3040, 'display_name' => 'Some Game disc image']);
         $book = $this->detailRelease('Some.Game.Strategy.Guide', ['categories_id' => self::BOOKS_EBOOK, 'display_name' => 'Some Game strategy guide']);
         $user = $this->browserUser();
-        DB::table('categories')->insert(['id' => 4010, 'title' => '0day', 'root_categories_id' => 4000]);
-        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 4010]);
+        DB::table('categories')->insert(['id' => 3020, 'title' => '0day', 'root_categories_id' => 3000]);
+        DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => 3020]);
         $searches = [];
         // search() runs MariaDB-only SQL; its rows carry id and categories_id and no categoryparentid.
         // categories_id comes back as a string here so the root comparison must not depend on its type.
@@ -172,16 +174,16 @@ final class DetailsControllerTest extends TestCase
         [$phrases, $limit, $excludedCategories, $categories] = [$searches[0][0], $searches[0][7], $searches[0][10], $searches[0][12]];
         $this->assertSame(['searchname' => getSimilarName('Some.Game.v1.0-GRP')], $phrases);
         $this->assertSame((int) config('nntmux.items_per_page'), $limit);
-        $this->assertContains(4010, array_map('intval', $excludedCategories));
-        $this->assertSame([4000], $categories);
+        $this->assertContains(3020, array_map('intval', $excludedCategories));
+        $this->assertSame([3000], $categories);
     }
 
     /** @return array<string, array{string, string}> */
     public static function hidingModes(): array
     {
         return [
-            'the whole root switched off' => ['root', 'PC'],
-            'only the sub-category unticked' => ['sub', 'PC - Games'],
+            'the whole root switched off' => ['root', 'Audio'],
+            'only the sub-category unticked' => ['sub', 'Audio - MP3'],
         ];
     }
 
@@ -194,11 +196,11 @@ final class DetailsControllerTest extends TestCase
         $this->detailRelease('Visible.Book-GRP', ['categories_id' => self::BOOKS_EBOOK]);
         $user = $this->browserUser();
         if ($mode === 'root') {
-            $user->revokePermissionTo('view pc');
+            $user->revokePermissionTo('view audio');
             app(PermissionRegistrar::class)->forgetCachedPermissions();
             $user = $user->fresh();
         } else {
-            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::PC_GAMES]);
+            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::AUDIO_MP3]);
         }
         $hidden = '/details/'.md5('Hidden.Game-GRP');
 
@@ -209,7 +211,7 @@ final class DetailsControllerTest extends TestCase
         $this->assertSame(0, DB::table('release_comments')->count());
 
         $visible = '/details/'.md5('Visible.Book-GRP');
-        $this->get($visible)->assertOk()->assertViewIs('details.index')->assertSee('Visible.Book-GRP');
+        $this->get($visible)->assertOk()->assertViewIs('details.shelf.index')->assertSee('Visible.Book-GRP');
         $this->post($visible, ['txtAddComment' => 'Lands.'])->assertRedirect($visible.'#comments');
         $this->assertSame(1, DB::table('release_comments')->count());
     }
@@ -217,7 +219,7 @@ final class DetailsControllerTest extends TestCase
     /** @param array<string, mixed> $attributes */
     private function detailRelease(string $name, array $attributes = []): int
     {
-        return $this->release($name, ['categories_id' => self::PC_GAMES, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
+        return $this->release($name, ['categories_id' => self::AUDIO_MP3, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
             'gamesinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, ...$attributes]);
     }
 }

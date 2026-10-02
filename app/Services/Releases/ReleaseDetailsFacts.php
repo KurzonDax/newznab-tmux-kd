@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\AdultReleaseRow;
+use App\Data\ConsoleReleaseRow;
 use App\Data\MovieReleaseRow;
+use App\Data\ShelfReleaseRow;
 use App\Data\TvReleaseRow;
 use App\Models\Predb;
 use App\Models\Release;
@@ -13,21 +15,22 @@ use App\Support\ReleaseCompletion;
 
 /**
  * The Overview facts grid of the redesigned details pages (TV SPEC 3.4, Movies SPEC 5C.2, Adult
- * SPEC 5A.3): Category, Size, Files, Completion, Posted, Added, Grabs, Group, Poster, Password
- * status; and the PreDB block of the Movies and Adult pages.
+ * SPEC 5A.3, Books / Console / PC SPEC 5A): Category, Size, Files, Completion, Posted, Added,
+ * Grabs, Group, Poster, Password status; and the PreDB block of the Movies, Adult, Books, Console
+ * and PC pages.
  */
 final class ReleaseDetailsFacts
 {
     /** @return list<array{string, string}> label, value */
-    public static function grid(Release $release, TvReleaseRow|MovieReleaseRow|AdultReleaseRow $row, string $category): array
+    public static function grid(Release $release, TvReleaseRow|MovieReleaseRow|AdultReleaseRow|ShelfReleaseRow|ConsoleReleaseRow $row, string $category): array
     {
         $status = (int) $release->passwordstatus;
 
         return [
             ['Category', $category],
             ['Size', $row->size],
-            // An Adult release with no stored file count reads "—", never 0 (Adult SPEC 5A.2).
-            ['Files', $row instanceof AdultReleaseRow ? $row->filesShown() : (string) $row->files],
+            // An Adult, Books, Console or PC release with no stored file count reads "—", never 0 (Adult SPEC 5A.2, Books / Console / PC SPEC 5A).
+            ['Files', $row instanceof TvReleaseRow || $row instanceof MovieReleaseRow ? (string) $row->files : $row->filesShown()],
             ['Completion', ReleaseCompletion::isMeasured($release->completion) ? ReleaseCompletion::percent($release->completion).'%' : 'Not measured'],
             ['Posted', self::when($release->postdate)],
             ['Added', self::when($release->adddate)],

@@ -47,18 +47,26 @@ export function tvReleaseDetails() {
             return undefined;
         },
 
-        /** Arrow keys move between tabs, as the WAI tabs pattern does. */
+        /** The tab buttons this page shows, in order: a page may leave one out (Media info without media info). With no tab buttons found, all five. */
+        pageTabs() {
+            const shown = Array.from(this.screen.querySelectorAll('[data-tab]'), button => button.dataset.tab).filter(tab => TABS.includes(tab));
+            return shown.length > 0 ? shown : TABS;
+        },
+
+        /** Arrow keys move between the page's tabs, as the WAI tabs pattern does. */
         tabKey(event) {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
             event.preventDefault();
-            const index = TABS.indexOf(this.activeTab);
-            const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: TABS.length - 1 }[event.key];
-            this.selectTab(TABS[(next + TABS.length) % TABS.length], true);
+            const tabs = this.pageTabs();
+            const index = tabs.indexOf(this.activeTab);
+            const next = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: tabs.length - 1 }[event.key];
+            this.selectTab(tabs[(next + tabs.length) % tabs.length], true);
             this.screen.querySelector('[data-tab="' + this.activeTab + '"]')?.focus();
         },
 
+        /** Opens a tab; one the page does not show (a remembered or linked Media info tab) opens Overview. */
         selectTab(tab, remember) {
-            this.activeTab = TABS.includes(tab) ? tab : 'overview';
+            this.activeTab = this.pageTabs().includes(tab) ? tab : 'overview';
             if (remember) {
                 const url = new URL(window.location.href);
                 url.hash = this.activeTab === 'overview' ? '' : this.activeTab;

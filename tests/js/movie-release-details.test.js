@@ -164,6 +164,58 @@ test('Similar releases sorts in the browser, apart from "All N", newest posted f
     assert.equal(requests.length, 0);
 });
 
+/** A Similar releases table of fake rows, sorted by clicks on its headings. */
+function similarTable(component, rows, keys) {
+    const cells = keys.map(key => ({ ...attributes(key === 'posted' ? { 'aria-sort': 'descending' } : {}), querySelector: () => ({ dataset: { similarSort: key } }) }));
+    const body = { rows, append(...ordered) { body.rows = ordered; } };
+    const table = { tBodies: [body], querySelectorAll: () => cells };
+    const sortBy = key => component.handleClick(click({ dataset: { similarSort: key }, closest: () => table }, ['[data-similar-sort]']).event);
+    return { body, cells, sortBy, order: () => body.rows.map(row => row.guid) };
+}
+
+test('the Books, Console and PC Similar table sorts by Category ascending on the first click, descending on the second; Size and Posted start descending', () => {
+    browser();
+    const { component } = detailsPage();
+    const row = (guid, category, size, posted, id) => ({ guid, dataset: { category: String(category), size: String(size), posted: String(posted), id: String(id) } });
+    const { cells, sortBy, order } = similarTable(component, [row('a', 2, 1, 30, 1), row('b', 0, 3, 20, 2), row('c', 1, 2, 10, 3)], ['category', 'size', 'posted']);
+    sortBy('category');
+    assert.deepEqual(order(), ['b', 'c', 'a']);
+    assert.equal(cells[0].getAttribute('aria-sort'), 'ascending');
+    sortBy('category');
+    assert.deepEqual(order(), ['a', 'c', 'b']);
+    assert.equal(cells[0].getAttribute('aria-sort'), 'descending');
+    sortBy('size');
+    assert.deepEqual(order(), ['b', 'c', 'a']);
+    assert.equal(cells[1].getAttribute('aria-sort'), 'descending');
+    sortBy('posted');
+    assert.deepEqual(order(), ['a', 'b', 'c']);
+    assert.equal(cells[2].getAttribute('aria-sort'), 'descending');
+});
+
+test('rows with data-category tied on the sorted value come newest posted first, then the higher id, in either direction', () => {
+    browser();
+    const { component } = detailsPage();
+    const row = (guid, category, posted, id) => ({ guid, dataset: { category: String(category), size: '5', posted: String(posted), id: String(id) } });
+    const { sortBy, order } = similarTable(component, [row('old', 0, 10, 9), row('low', 0, 20, 1), row('high', 0, 20, 7), row('last', 3, 30, 2)], ['category', 'size', 'posted']);
+    sortBy('category');
+    assert.deepEqual(order(), ['high', 'low', 'old', 'last']);
+    sortBy('category');
+    assert.deepEqual(order(), ['last', 'high', 'low', 'old']);
+    sortBy('size');
+    assert.deepEqual(order(), ['last', 'high', 'low', 'old']);
+});
+
+test('rows without data-category (the Movies and Adult Similar tables) keep their previous order on a tie', () => {
+    browser();
+    const { component } = detailsPage();
+    const row = (guid, size, posted) => ({ guid, dataset: { size: String(size), posted: String(posted), resolution: '1' } });
+    const { sortBy, order } = similarTable(component, [row('a', 5, 10), row('b', 5, 30), row('c', 9, 20)], ['resolution', 'size', 'posted']);
+    sortBy('size');
+    assert.deepEqual(order(), ['c', 'a', 'b']);
+    sortBy('resolution');
+    assert.deepEqual(order(), ['c', 'a', 'b']);
+});
+
 test('the Clip chip opens the image dialog with a player that fetches nothing until played, removed on close', () => {
     const created = [];
     globalThis.document = {
