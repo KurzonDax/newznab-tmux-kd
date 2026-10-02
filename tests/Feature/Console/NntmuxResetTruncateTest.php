@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class NntmuxResetTruncateTest extends TestCase
@@ -69,6 +70,8 @@ class NntmuxResetTruncateTest extends TestCase
             $this->releaseRow(3, nzbStatus: 1),
         ]);
         DB::table('parts')->insert(['binaries_id' => 1, 'partnumber' => 1]);
+        DB::table('usenet_group_provider_cursors')->insert(['usenet_groups_id' => 1, 'provider' => 'super', 'last_record' => 300]);
+        DB::table('usenet_group_provider_ingested_ranges')->insert(['usenet_groups_id' => 1, 'provider' => 'super', 'first_record' => 400]);
         foreach (['missed_parts', 'binaries', 'collections'] as $table) {
             DB::table($table)->insert(['id' => 1]);
         }
@@ -82,7 +85,7 @@ class NntmuxResetTruncateTest extends TestCase
         $this->assertSame([1, 2, 3], DB::table('releases')->orderBy('id')->pluck('id')->map(intval(...))->all());
         $this->assertSame(0, (int) DB::table('usenet_groups')->value('first_record'));
         $this->assertSame(0, (int) DB::table('usenet_groups')->value('last_record'));
-        foreach (['parts', 'missed_parts', 'binaries', 'collections'] as $table) {
+        foreach (['parts', 'missed_parts', 'binaries', 'collections', 'usenet_group_provider_cursors', 'usenet_group_provider_ingested_ranges'] as $table) {
             $this->assertSame(0, DB::table($table)->count());
         }
         foreach ($pendingArtifacts as $path) {
@@ -164,5 +167,8 @@ class NntmuxResetTruncateTest extends TestCase
             $table->increments('id');
             $table->unsignedInteger('releases_id')->nullable();
         });
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('usenet_group_provider_cursors', ['usenet_groups_id', 'provider', 'last_record']);
+        $tables->create('usenet_group_provider_ingested_ranges', ['usenet_groups_id', 'provider', 'first_record']);
     }
 }

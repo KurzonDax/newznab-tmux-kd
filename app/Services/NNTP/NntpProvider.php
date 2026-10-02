@@ -9,10 +9,11 @@ use InvalidArgumentException;
 /**
  * One configured NNTP backbone.
  *
- * Position carries the role: position 1 is the primary, which is the only provider that
- * ever serves header traffic (article numbers are per-server, so group positions, backfill
- * ranges and part-repair ranges are only meaningful against a single numbering). Every
- * enabled provider participates in article operations, in position order.
+ * Position carries the role: position 1 is the primary, which alone backfills, repairs parts
+ * and owns `usenet_groups` positions (article numbers are per-server, so those ranges are only
+ * meaningful against a single numbering). Every enabled provider scans headers forward, the
+ * secondary ones with their own positions, and participates in article operations, in
+ * position order.
  */
 final readonly class NntpProvider
 {

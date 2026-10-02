@@ -116,7 +116,9 @@ abstract class BaseRunner
             'backfill' => ['backfill:group', $first, $parts[1] ?? '1'],
             'backfill_all_quantity' => ['backfill:group', $first, '1', $rest],
             'backfill_all_quick' => ['backfill:group', $first, '1', '10000'],
-            'get_range' => ['articles:get-range', $first, $rest, $parts[2] ?? '0', $parts[3] ?? '0'],
+            // A seventh field names the secondary provider the range belongs to.
+            'get_range' => ['articles:get-range', $first, $rest, $parts[2] ?? '0', $parts[3] ?? '0',
+                ...(($parts[5] ?? '') === '' ? [] : ['--provider='.$parts[5]])],
             'part_repair' => ['binaries:part-repair', $first],
             'releases' => ['releases:process', $first],
             'update_group_headers' => ['group:update-headers', $first],

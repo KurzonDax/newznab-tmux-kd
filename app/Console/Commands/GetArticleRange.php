@@ -7,7 +7,10 @@ namespace App\Console\Commands;
 use App\Enums\HeaderScanDirection;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Models\UsenetGroupProviderCursor;
 use App\Services\Binaries\BinariesService;
+use App\Services\NNTP\NntpProvider;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -23,7 +26,8 @@ class GetArticleRange extends Command
                             {mode : Mode: binaries or backfill}
                             {group : Group name}
                             {first : First article number}
-                            {last : Last article number}';
+                            {last : Last article number}
+                            {--provider= : Provider NAME (NNTP_PROVIDER_n_NAME); defaults to provider 1}';
 
     /**
      * The console command description.
@@ -48,8 +52,27 @@ class GetArticleRange extends Command
             return self::FAILURE;
         }
 
+        $secondary = null;
+        $providerName = $this->option('provider');
+        if (\is_string($providerName) && $providerName !== '') {
+            $provider = NntpProviderPool::headerProviderNamed($providerName);
+            if ($provider === null) {
+                $this->error('Unknown or disabled NNTP provider: '.$providerName);
+
+                return self::FAILURE;
+            }
+            if (! $provider->isPrimary()) {
+                if ($mode === 'backfill') {
+                    $this->error('Backfill reads provider 1 only.');
+
+                    return self::FAILURE;
+                }
+                $secondary = $provider;
+            }
+        }
+
         try {
-            $nntp = $this->getNntp();
+            $nntp = $this->getNntp($secondary);
             $groupMySQL = UsenetGroup::getByName($groupName)->toArray();
 
             if ($groupMySQL === null) {
@@ -70,13 +93,21 @@ class GetArticleRange extends Command
                 $firstArticle,
                 $lastArticle,
                 $mode === 'backfill' ? HeaderScanDirection::Tail : HeaderScanDirection::Head,
-                ((int) Settings::settingValue('safepartrepair') === 1 ? 'update' : 'backfill')
+                // A secondary connection never records missed parts, whatever the type.
+                $secondary !== null || (int) Settings::settingValue('safepartrepair') !== 1 ? 'backfill' : 'update'
             );
 
             if ($binaries->lastScanWasRejected()) {
                 return self::FAILURE;
             }
             if (empty($return) && $mode === 'backfill') {
+                return self::SUCCESS;
+            }
+
+            if ($secondary !== null) {
+                UsenetGroupProviderCursor::advanceContiguously((int) $groupMySQL['id'], $secondary->name,
+                    $firstArticle, $lastArticle, $this->lastArticleTime($return));
+
                 return self::SUCCESS;
             }
 
@@ -101,9 +132,7 @@ class GetArticleRange extends Command
     {
         switch ($mode) {
             case 'binaries':
-                $date = $return['lastArticleDate'] ?? null;
-                $unixTime = $date === null ? null : (is_numeric($date) ? (int) $date : (int) strtotime($date));
-                UsenetGroup::advanceLastRecordContiguously((int) $groupMySQL['id'], $first, $last, $unixTime);
+                UsenetGroup::advanceLastRecordContiguously((int) $groupMySQL['id'], $first, $last, $this->lastArticleTime($return));
 
                 return;
 
@@ -128,12 +157,23 @@ class GetArticleRange extends Command
 
     }
 
+    /** @param  array<string, mixed>  $return */
+    private function lastArticleTime(array $return): ?int
+    {
+        $date = $return['lastArticleDate'] ?? null;
+
+        return $date === null ? null : (is_numeric($date) ? (int) $date : (int) strtotime($date));
+    }
+
     /**
-     * Get NNTP connection.
+     * Get NNTP connection, on the given secondary provider or else provider 1.
      */
-    private function getNntp(): NNTPService
+    private function getNntp(?NntpProvider $secondary = null): NNTPService
     {
         $nntp = app(NNTPService::class);
+        if ($secondary !== null) {
+            $nntp->useProvider($secondary, poolFailover: false);
+        }
 
         $connectResult = $nntp->doConnect();
 

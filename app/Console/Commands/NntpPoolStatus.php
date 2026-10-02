@@ -74,8 +74,8 @@ class NntpPoolStatus extends Command
         );
 
         $this->line('');
-        $this->line('Provider 1 is the primary: it serves all header traffic (group scanning, backfill,');
-        $this->line('part repair). Article operations walk every enabled provider in the order above.');
+        $this->line('Provider 1 is the primary: it alone runs backfill and part repair. Every enabled provider');
+        $this->line('scans headers forward; article operations walk every enabled provider in the order above.');
         $this->line('CONNECTIONS is advisory metadata only -- nothing enforces it.');
 
         $pool->quit();

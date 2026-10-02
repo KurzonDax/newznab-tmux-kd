@@ -3452,6 +3452,36 @@ CREATE TABLE `usenet_group_ingested_ranges` (
   CONSTRAINT `usenet_group_ingested_ranges_usenet_groups_id_foreign` FOREIGN KEY (`usenet_groups_id`) REFERENCES `usenet_groups` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `usenet_group_provider_cursors`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `usenet_group_provider_cursors` (
+  `usenet_groups_id` int(10) unsigned NOT NULL COMMENT 'usenet_groups.id of the group',
+  `provider` varchar(64) NOT NULL COMMENT 'Provider NAME (NNTP_PROVIDER_n_NAME)',
+  `provider_host` varchar(255) NOT NULL COMMENT 'Provider host the position was found on; a different host re-initialises it',
+  `last_record` bigint(20) unsigned NOT NULL COMMENT 'Newest article number scanned contiguously on this provider',
+  `last_record_postdate` datetime DEFAULT NULL COMMENT 'Post date of last_record',
+  `last_advanced_at` datetime DEFAULT NULL COMMENT 'When last_record last increased',
+  `server_first` bigint(20) unsigned DEFAULT NULL COMMENT 'First article from the last LIST ACTIVE',
+  `server_last` bigint(20) unsigned DEFAULT NULL COMMENT 'Last article from the last LIST ACTIVE',
+  `server_checked_at` datetime DEFAULT NULL COMMENT 'When server_first/server_last were written',
+  PRIMARY KEY (`usenet_groups_id`,`provider`),
+  CONSTRAINT `usenet_group_provider_cursors_usenet_groups_id_foreign` FOREIGN KEY (`usenet_groups_id`) REFERENCES `usenet_groups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `usenet_group_provider_ingested_ranges`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `usenet_group_provider_ingested_ranges` (
+  `usenet_groups_id` int(10) unsigned NOT NULL COMMENT 'usenet_groups.id of the group',
+  `provider` varchar(64) NOT NULL COMMENT 'Provider NAME (NNTP_PROVIDER_n_NAME)',
+  `first_record` bigint(20) unsigned NOT NULL COMMENT 'First article of a scanned range ahead of the cursor',
+  `last_record` bigint(20) unsigned NOT NULL COMMENT 'Last article of that range',
+  `last_record_postdate` datetime DEFAULT NULL COMMENT 'Post date of last_record',
+  PRIMARY KEY (`usenet_groups_id`,`provider`,`first_record`),
+  CONSTRAINT `usenet_group_provider_ingested_ranges_usenet_groups_id_foreign` FOREIGN KEY (`usenet_groups_id`) REFERENCES `usenet_groups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `usenet_groups`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4125,3 +4155,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (306,'2026_10_01_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (307,'2026_10_01_000100_fill_console_genres',20);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (308,'2026_10_01_000200_add_console_game_details',21);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (309,'2026_10_01_000300_add_releases_consoleinfo_cat_index',21);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (310,'2026_10_02_000000_create_usenet_group_provider_cursors',22);

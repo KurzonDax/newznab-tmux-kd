@@ -97,6 +97,15 @@ final class UsenetIngestSection implements SettingsSectionProvider
                             rules: ['required', 'integer', 'min:1'],
                             icon: 'fas fa-list-ol',
                         ),
+                        new SettingDefinition(
+                            key: 'secondary_header_start_hours',
+                            label: 'Secondary provider start',
+                            help: 'Used once per group: the first time a secondary news server (provider 2 and after) is scanned for a group, scanning starts this many hours back, then runs continuously alongside provider 1. Keep it at least the release delay plus 2 hours so posts still waiting to form are read. Changing it does not move a position that already exists.',
+                            type: SettingType::Int,
+                            unit: 'hours',
+                            rules: ['required', 'integer', 'min:1', 'max:2160'],
+                            icon: 'fas fa-clock-rotate-left',
+                        ),
                     ],
                 ),
                 new SettingCard(

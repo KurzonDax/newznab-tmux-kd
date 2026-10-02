@@ -19,9 +19,10 @@ declare(strict_types=1);
  *   NNTP_PROVIDER_{n}_TIMEOUT      Socket timeout, seconds.
  *   NNTP_PROVIDER_{n}_ENABLED      Excluded from every operation when false.
  *
- * Position 1 is the primary. Roles come from position, not from flags: provider 1 serves
- * all header traffic (article numbers are per-server, so header state is only meaningful
- * against one numbering) and is first in article-operation order. Every enabled provider
+ * Position 1 is the primary. Roles come from position, not from flags: provider 1 alone
+ * backfills, repairs parts and owns group positions (article numbers are per-server, so that
+ * state is only meaningful against one numbering) and is first in article-operation order.
+ * Every enabled provider scans headers forward, secondary ones with their own positions, and
  * participates in article operations, in listed order.
  */
 $providers = [];
@@ -52,7 +53,7 @@ return [
 
     /*
      * Header compression is a single global flag: it only matters for header traffic,
-     * and header traffic is primary-pinned, so there is nothing per-provider to say.
+     * and applies to every provider that scans headers.
      */
     'compressed_headers' => env('NNTP_COMPRESSED_HEADERS', false),
 ];

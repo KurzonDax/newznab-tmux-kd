@@ -86,4 +86,44 @@ class BinariesRunnerQueueTest extends TestCase
             9 => 'get_range  binaries  alt.binaries.alpha  131  136  9',
         ], (new BinariesRunner)->buildSafeBinariesQueue($groups, 35, 10));
     }
+
+    #[Test]
+    public function secondary_ranges_follow_every_provider_one_entry_round_robin(): void
+    {
+        $groups = [
+            (object) ['groupname' => 'alt.binaries.new', 'our_last' => 0, 'their_last' => 100],
+            (object) ['groupname' => 'alt.binaries.alpha', 'our_last' => 100, 'their_last' => 20_130],
+        ];
+        $secondary = [
+            ['provider' => 'super', 'group' => 'alt.binaries.alpha', 'ranges' => [[501, 510], [511, 520]]],
+            ['provider' => 'super', 'group' => 'alt.binaries.bravo', 'ranges' => [[601, 610]]],
+            ['provider' => 'third', 'group' => 'alt.binaries.alpha', 'ranges' => [[701, 710]]],
+        ];
+
+        $this->assertSame([
+            1 => 'update_group_headers  alt.binaries.new',
+            2 => 'part_repair  alt.binaries.alpha',
+            3 => 'get_range  binaries  alt.binaries.alpha  101  110  3',
+            4 => 'get_range  binaries  alt.binaries.alpha  111  120  4',
+            5 => 'get_range  binaries  alt.binaries.alpha  501  510  5  super',
+            6 => 'get_range  binaries  alt.binaries.bravo  601  610  6  super',
+            7 => 'get_range  binaries  alt.binaries.alpha  701  710  7  third',
+            8 => 'get_range  binaries  alt.binaries.alpha  511  520  8  super',
+        ], (new BinariesRunner)->buildSafeBinariesQueue($groups, 20, 10, [], $secondary));
+    }
+
+    #[Test]
+    public function a_seventh_get_range_field_names_the_provider(): void
+    {
+        $runner = new BinariesRunner;
+
+        $this->assertStringEndsWith(
+            "'articles:get-range' 'binaries' 'alt.binaries.alpha' '501' '510' '--provider=super'",
+            $runner->buildDnrCommandPublic('get_range  binaries  alt.binaries.alpha  501  510  5  super'),
+        );
+        $this->assertStringEndsWith(
+            "'articles:get-range' 'binaries' 'alt.binaries.alpha' '101' '110'",
+            $runner->buildDnrCommandPublic('get_range  binaries  alt.binaries.alpha  101  110  3'),
+        );
+    }
 }

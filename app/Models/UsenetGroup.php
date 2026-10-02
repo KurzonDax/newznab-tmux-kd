@@ -495,6 +495,9 @@ class UsenetGroup extends Model
     {
         // Remove rows from part repair.
         MissedPart::query()->where('groups_id', $id)->delete();
+        // Secondary providers re-initialise their positions from the start-hours setting.
+        DB::table('usenet_group_provider_ingested_ranges')->where('usenet_groups_id', $id)->delete();
+        DB::table('usenet_group_provider_cursors')->where('usenet_groups_id', $id)->delete();
 
         // Reset the group stats.
         return self::query()->where('id', $id)->update(
@@ -515,6 +518,10 @@ class UsenetGroup extends Model
      */
     public static function resetall(): int
     {
+        // Secondary providers re-initialise their positions from the start-hours setting.
+        DB::table('usenet_group_provider_ingested_ranges')->delete();
+        DB::table('usenet_group_provider_cursors')->delete();
+
         // Disable foreign key checks to allow truncating tables with foreign key constraints
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 

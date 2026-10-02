@@ -23,10 +23,10 @@ use RuntimeException;
  * provider 1 first, then each further enabled provider. Failover is per-article -- an article
  * fails only once every enabled provider has failed it.
  *
- * The pool deliberately exposes no header operations. Article *numbers* are per-server, so
- * group scanning, backfill, part repair and header re-scans are only meaningful against
- * provider 1's numbering; keeping them off this API makes "headers are primary-pinned" true
- * by construction rather than by convention.
+ * The pool deliberately exposes no header operations. Article *numbers* are per-server, so a
+ * header scan has to know which server's numbering it is reading: it picks its provider through
+ * {@see NNTPService::useProvider()} instead of failing over here. Provider 1 owns backfill, part
+ * repair and header re-scans; secondary providers scan forward with their own positions.
  */
 class NntpProviderPool
 {
@@ -123,7 +123,8 @@ class NntpProviderPool
     }
 
     /**
-     * The provider that owns all header traffic and leads article-operation order.
+     * The provider that owns backfill, part repair and group positions, and leads
+     * article-operation order.
      *
      * Throws rather than returning null: every NNTP operation needs a primary, and a silent
      * no-op here would look like "usenet is quiet today" instead of "nothing is configured".
@@ -142,6 +143,35 @@ class NntpProviderPool
     public static function tryPrimaryProvider(): ?NntpProvider
     {
         return self::configuredProviders()[0] ?? null;
+    }
+
+    /**
+     * Every enabled provider after position 1, in position order. Each scans headers forward
+     * with its own position; provider 1 alone backfills, repairs parts and captures recovery.
+     *
+     * @return list<NntpProvider>
+     */
+    public static function secondaryProviders(): array
+    {
+        return array_values(array_filter(
+            self::configuredProviders(),
+            static fn (NntpProvider $p): bool => $p->enabled && ! $p->isPrimary(),
+        ));
+    }
+
+    /**
+     * The provider a header command was pointed at by NAME: provider 1, or an enabled secondary
+     * provider. Null for a name that is unknown or names a disabled secondary provider.
+     */
+    public static function headerProviderNamed(string $name): ?NntpProvider
+    {
+        foreach (self::configuredProviders() as $provider) {
+            if ($provider->name === $name) {
+                return $provider->isPrimary() || $provider->enabled ? $provider : null;
+            }
+        }
+
+        return null;
     }
 
     /**

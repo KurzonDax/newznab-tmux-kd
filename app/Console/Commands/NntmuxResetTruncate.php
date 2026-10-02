@@ -38,6 +38,9 @@ class NntmuxResetTruncate extends Command
         ReleaseImageService $releaseImage,
     ): void {
         UsenetGroup::query()->update(['first_record' => 0, 'first_record_postdate' => null, 'last_record' => 0, 'last_record_postdate' => null, 'last_updated' => null]);
+        // Secondary providers re-initialise their positions from the start-hours setting.
+        DB::table('usenet_group_provider_ingested_ranges')->delete();
+        DB::table('usenet_group_provider_cursors')->delete();
         $this->info('Reseting all groups completed.');
         $usesMysql = DB::getDriverName() === 'mysql';
         if ($usesMysql) {

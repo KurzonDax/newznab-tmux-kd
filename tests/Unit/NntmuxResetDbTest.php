@@ -17,6 +17,8 @@ final class NntmuxResetDbTest extends TestCase
             'collections',
             'parts',
             'missed_parts',
+            'usenet_group_provider_cursors',
+            'usenet_group_provider_ingested_ranges',
             'videos',
             'tv_episodes',
             'tv_info',
