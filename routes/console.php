@@ -5,6 +5,7 @@ use App\Jobs\RemoveInactiveAccounts;
 use App\Models\UserActivityStat;
 use App\Models\UserDownload;
 use App\Models\UserRequest;
+use App\Services\NNTP\ProviderListingCanary;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Schedule;
 
@@ -78,3 +79,6 @@ Schedule::command('nntmux:search-maintain')
 // the cold-cache cost when opening /admin/index.
 Schedule::command('admin:warm-dashboard')->everyMinute()->withoutOverlapping();
 Schedule::command('backup:tick')->everyMinute()->withoutOverlapping()->runInBackground();
+// Measure how much of each provider's header listing the others also list, for the
+// nntp-headers status probe. Last, because a scheduled closure runs in schedule:run itself.
+Schedule::call(fn () => app(ProviderListingCanary::class)->run())->name('nntp-listing-canary')->hourlyAt(7)->withoutOverlapping();
