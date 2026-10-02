@@ -127,19 +127,22 @@ IGDB ids). `updateConsoleTable()` writes them with the columns it writes today, 
 (2.1, `details_refreshed_at` = now), then `ChildRows::replace()` (`app/Support/ChildRows.php:26`) for
 `console_genres`, `console_companies`, `console_game_modes` and `console_player_perspectives`, with lookup rows found or
 created before the transaction opens (the `ConsoleGenres::ids()` rule, so no transaction holds a new lookup row another
-worker cannot see). A missing value writes `NULL` or no child rows. `publisher` is written as today.
+worker cannot see). A missing value writes `NULL` or no child rows. `publisher` is written as today. The insert path
+puts the new row in the console secondary index, as `ConsoleInfoObserver` does for a model save.
 
 ### 3.2 Refresh when a new release arrives (the TV rule)
 
 When `processConsoleReleases()` finds a stored game for a release (`ConsoleService.php:544-550`) and that game's
 `details_refreshed_at` is `NULL` or older than 24 hours, it asks IGDB for the game by its stored IGDB id (`asin`) and
 saves it through 3.1; when IGDB has nothing, it only stamps `details_refreshed_at` (retried after 24 hours, as
-`TvShowDetails.php:100-102`). This is how games stored before this change get the new values: on their next release. No
+`TvShowDetails.php:100-102`). The save rewrites every column and child row a lookup writes, admin edits included, which
+last until the next refresh; `cover` keeps its stored value when IGDB has no cover or its download fails. This is how games stored before this change get the new values: on their next release. No
 scheduled refresh, no backfill command (the maintainer's rules). Needs `lookupgames` on and IGDB configured, as today.
 
 ### 3.3 The admin edit form
 
-Unchanged (`AdminConsoleController.php:91-96`): it does not touch the new columns or child tables.
+Unchanged (`AdminConsoleController.php:91-96`): it does not touch the new columns or child tables, and what it writes
+lasts until the game's next refresh (3.2).
 
 ### 3.4 Nothing else writes
 

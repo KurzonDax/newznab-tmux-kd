@@ -597,7 +597,7 @@ parameters:
 		-
 			message: '#^Call to an undefined static method App\\Services\\IGDB\\Models\\Company\:\:find\(\)\.$#'
 			identifier: staticMethod.notFound
-			count: 3
+			count: 1
 			path: app/Services/IGDBService.php
 
 		-

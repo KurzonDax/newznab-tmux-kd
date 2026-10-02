@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\IGDB\Models\Company;
 use App\Services\IGDB\Models\Game;
 use Illuminate\Support\Carbon;
@@ -40,13 +41,26 @@ class IGDBService
 
     // Bumped when the requested fields or search filters change, so neither a Game
     // cached without the new fields nor a failure cached by an old filter is reused.
-    protected const string SEARCH_CACHE_VERSION = 'v2';
+    protected const string SEARCH_CACHE_VERSION = 'v3';
 
     // Matching configuration
     protected const int MATCH_THRESHOLD = 85;
 
+    /** IGDB's website type for a game's official website. */
+    protected const int OFFICIAL_WEBSITE_TYPE = 1;
+
+    /** Length of consoleinfo.website. */
+    protected const int WEBSITE_LENGTH = 1000;
+
     // PC Platform IDs in IGDB
     protected const array PC_PLATFORM_IDS = [6, 13, 14, 3]; // PC Windows, DOS, Mac, Linux
+
+    /**
+     * Company names by IGDB company id, kept for one buildConsoleData() or buildGameData() call.
+     *
+     * @var array<int, string|null>
+     */
+    private array $companyNames = [];
 
     protected const array PLATFORM_ALIASES = [
         'x360' => 'xbox 360',
@@ -318,6 +332,28 @@ class IGDBService
     }
 
     /**
+     * The game with this IGDB id, asked afresh: a cached answer is never returned. Null when IGDB
+     * has no such game.
+     *
+     * @throws IgdbHttpException when IGDB cannot be asked, with status 429 when the rate limit is spent
+     */
+    public function findGame(int $igdbId): ?Game
+    {
+        $result = RateLimiter::attempt(
+            self::RATE_LIMIT_KEY,
+            self::REQUESTS_PER_MINUTE,
+            fn (): mixed => Game::query()->where('id', $igdbId)->with($this->getGameRelations())->fresh()->first(),
+            self::DECAY_SECONDS
+        );
+
+        if ($result === false) {
+            throw new IgdbHttpException('IGDB rate limit reached', 429);
+        }
+
+        return $result instanceof Game ? $result : null;
+    }
+
+    /**
      * Get relations to load with IGDB queries.
      *
      * @return array<string, mixed>
@@ -329,7 +365,7 @@ class IGDBService
             'screenshots' => ['url', 'image_id'],
             'artworks' => ['url', 'image_id'],
             'videos' => ['video_id', 'name'],
-            'involved_companies' => ['company', 'publisher', 'developer'],
+            'involved_companies' => ['company.name', 'publisher', 'developer'],
             'genres' => ['name'],
             'themes' => ['name'],
             'game_modes' => ['name'],
@@ -403,8 +439,11 @@ class IGDBService
      */
     public function buildConsoleData(Game $game, string $platformHint): array
     {
+        $this->companyNames = [];
         $genres = $this->extractGenres($game);
-        $publishers = $this->extractCompanyNames($game, 'publisher');
+        $developers = $this->extractCompanies($game, 'developer');
+        $publishers = $this->extractCompanies($game, 'publisher');
+        $publisherNames = array_values(array_unique(array_column($publishers, 'name')));
         $platform = $this->resolvePlatform($game, $platformHint);
 
         return [
@@ -415,11 +454,19 @@ class IGDBService
             'releasedate' => $this->getPlatformReleaseDate($game, $platform['id']),
             'esrb' => $this->getAgeRating($game),
             'url' => $game->url ?? '',
-            'publisher' => ! empty($publishers) ? implode(',', $publishers) : 'Unknown',
+            'publisher' => ! empty($publisherNames) ? implode(',', $publisherNames) : 'Unknown',
             'platform' => $platform['name'],
             'consolegenre' => ! empty($genres) ? implode(',', $genres) : 'Unknown',
             'consolegenres' => ! empty($genres) ? array_values($genres) : ['Unknown'],
             'salesrank' => '',
+            'storyline' => $this->storyline($game),
+            'critic_score' => $this->score($game->aggregated_rating ?? null),
+            'user_score' => $this->score($game->rating ?? null),
+            'website' => $this->officialWebsite($game),
+            'developers' => $developers,
+            'publishers' => $publishers,
+            'game_modes' => $this->namedEntries($game->game_modes ?? null),
+            'player_perspectives' => $this->namedEntries($game->player_perspectives ?? null),
         ];
     }
 
@@ -430,6 +477,8 @@ class IGDBService
      */
     public function buildGameData(Game $game, string &$genreName): array
     {
+        $this->companyNames = [];
+
         // Extract publishers and developers
         $publishers = [];
         $developers = [];
@@ -441,19 +490,12 @@ class IGDBService
             foreach ($involvedCompanies as $company) {
                 $isPublisher = is_array($company) ? ($company['publisher'] ?? false) : ($company->publisher ?? false);
                 $isDeveloper = is_array($company) ? ($company['developer'] ?? false) : ($company->developer ?? false);
-                $companyId = is_array($company) ? ($company['company'] ?? null) : ($company->company ?? null);
 
-                if ($isPublisher === true && $companyId) {
-                    $companyData = Company::find($companyId);
-                    if ($companyData) {
-                        $publishers[] = $companyData->name;
-                    }
+                if ($isPublisher === true && ($companyData = $this->involvedCompany($company)) !== null) {
+                    $publishers[] = $companyData['name'];
                 }
-                if ($isDeveloper === true && $companyId) {
-                    $companyData = Company::find($companyId);
-                    if ($companyData) {
-                        $developers[] = $companyData->name;
-                    }
+                if ($isDeveloper === true && ($companyData = $this->involvedCompany($company)) !== null) {
+                    $developers[] = $companyData['name'];
                 }
             }
         }
@@ -538,13 +580,16 @@ class IGDBService
     }
 
     /**
-     * @return array<int, string>
+     * The involved companies flagged `developer` or `publisher`, in IGDB's order, each company
+     * once. A company with no name is left out.
+     *
+     * @return list<array{igdb_id: int, name: string}>
      */
-    protected function extractCompanyNames(Game $game, string $flag): array
+    protected function extractCompanies(Game $game, string $flag): array
     {
-        $names = [];
+        $companies = [];
         if (empty($game->involved_companies)) {
-            return $names;
+            return $companies;
         }
 
         $involvedCompanies = $game->involved_companies;
@@ -554,19 +599,111 @@ class IGDBService
 
         foreach ($involvedCompanies as $company) {
             $isMatch = is_array($company) ? ($company[$flag] ?? false) : ($company->{$flag} ?? false);
-            $companyId = is_array($company) ? ($company['company'] ?? null) : ($company->company ?? null);
-
-            if ($isMatch !== true || ! $companyId) {
+            if ($isMatch !== true) {
                 continue;
             }
 
-            $companyData = Company::find($companyId);
-            if ($companyData !== null && ! empty($companyData->name)) {
-                $names[] = $companyData->name;
+            $companyData = $this->involvedCompany($company);
+            if ($companyData === null || $companyData['name'] === '' || isset($companies[$companyData['igdb_id']])) {
+                continue;
             }
+
+            $companies[$companyData['igdb_id']] = $companyData;
         }
 
-        return array_values(array_unique($names));
+        return array_values($companies);
+    }
+
+    /**
+     * An involved company entry's company with its IGDB id and name: the expanded `company` object, else,
+     * for a bare id (an answer cached before the name was requested), the `companies` endpoint,
+     * asked once per company for the rest of the call. Null when it has no id or IGDB has none.
+     *
+     * @return array{igdb_id: int, name: string}|null
+     */
+    private function involvedCompany(mixed $entry): ?array
+    {
+        $company = $this->nodeValue($entry, 'company');
+
+        if (is_array($company) || $company instanceof \ArrayAccess) {
+            $id = $this->nodeValue($company, 'id');
+            if (! is_numeric($id) || (int) $id <= 0) {
+                return null;
+            }
+
+            return ['igdb_id' => (int) $id, 'name' => trim((string) ($this->nodeValue($company, 'name') ?? ''))];
+        }
+
+        if (! is_numeric($company) || (int) $company <= 0) {
+            return null;
+        }
+
+        $id = (int) $company;
+        if (! array_key_exists($id, $this->companyNames)) {
+            $found = Company::find($id);
+            $this->companyNames[$id] = $found !== null ? trim((string) ($found->name ?? '')) : null;
+        }
+
+        return $this->companyNames[$id] !== null ? ['igdb_id' => $id, 'name' => $this->companyNames[$id]] : null;
+    }
+
+    private function storyline(Game $game): ?string
+    {
+        $storyline = $game->storyline ?? null;
+        $storyline = is_string($storyline) ? trim($storyline) : '';
+
+        return $storyline !== '' ? $storyline : null;
+    }
+
+    private function score(mixed $rating): ?int
+    {
+        return is_numeric($rating) ? (int) round((float) $rating) : null;
+    }
+
+    /**
+     * The URL of the first website of type 1 (Official Website); null when there is none or it
+     * does not fit consoleinfo.website.
+     */
+    private function officialWebsite(Game $game): ?string
+    {
+        foreach ((array) ($game->websites ?? []) as $website) {
+            if ((int) $this->nodeValue($website, 'type') !== self::OFFICIAL_WEBSITE_TYPE) {
+                continue;
+            }
+
+            $url = trim((string) ($this->nodeValue($website, 'url') ?? ''));
+
+            return $url !== '' && mb_strlen($url) <= self::WEBSITE_LENGTH ? $url : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Named relation entries (game modes, player perspectives) in IGDB's order, each name once,
+     * with IGDB's id when it sends one. An entry with a blank name is left out.
+     *
+     * @return list<array{igdb_id: int|null, name: string}>
+     */
+    private function namedEntries(mixed $entries): array
+    {
+        if ($entries instanceof Collection) {
+            $entries = $entries->all();
+        }
+
+        $named = [];
+        foreach (is_array($entries) ? $entries : [] as $entry) {
+            $name = $this->nodeValue($entry, 'name');
+            $name = is_string($name) ? trim($name) : '';
+            if ($name === '' || isset($named[$name])) {
+                continue;
+            }
+
+            $id = $this->nodeValue($entry, 'id');
+            $named[$name] = ['igdb_id' => is_numeric($id) ? (int) $id : null, 'name' => $name];
+        }
+
+        return array_values($named);
     }
 
     /**
