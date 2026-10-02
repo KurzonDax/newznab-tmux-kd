@@ -16,6 +16,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\NeverBlacklistedService;
+use Tests\Support\PhantomTrailingSets;
 use Tests\TestCase;
 
 final class NzbImportServiceTest extends TestCase
@@ -345,6 +347,63 @@ final class NzbImportServiceTest extends TestCase
         foreach ($service->artifactPaths as $artifactPath) {
             $this->assertFileDoesNotExist($artifactPath);
         }
+    }
+
+    public function test_an_imported_phantom_trailing_file_is_measured_and_stored_against_the_files_held(): void
+    {
+        $details = $this->scannedDetails(PhantomTrailingSets::base());
+
+        $this->assertSame(100.0, $details['completion']);
+        $this->assertSame(PhantomTrailingSets::HELD, $details['declaredFiles']);
+    }
+
+    public function test_an_imported_set_that_is_not_a_phantom_trailing_file_keeps_its_declared_count(): void
+    {
+        $details = $this->scannedDetails(PhantomTrailingSets::lastVolumeNotARemainder());
+
+        $this->assertEqualsWithDelta(12 / 13 * 100, $details['completion'], 0.0001);
+        $this->assertSame(PhantomTrailingSets::DECLARED, $details['declaredFiles']);
+    }
+
+    /**
+     * The details `scanNZBFile()` hands to `insertNZB()` for an NZB holding these subjects.
+     *
+     * @param  list<string>  $subjects
+     * @return array<string, mixed>
+     */
+    private function scannedDetails(array $subjects): array
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            /** @var array<string, mixed> */
+            public array $details = [];
+
+            public function scan(\SimpleXMLElement $nzb): NzbImportStatus
+            {
+                $this->allGroups = ['alt.binaries.test' => 1];
+                $this->blacklistService = new NeverBlacklistedService;
+
+                return $this->scanNZBFile($nzb);
+            }
+
+            protected function getAllGroups(): bool
+            {
+                return true;
+            }
+
+            protected function insertNZB(mixed $nzbDetails): NzbImportStatus
+            {
+                $this->details = $nzbDetails;
+
+                return NzbImportStatus::Inserted;
+            }
+        };
+
+        $nzb = simplexml_load_string(PhantomTrailingSets::nzb($subjects));
+        $this->assertNotFalse($nzb);
+        $this->assertSame(NzbImportStatus::Inserted, $service->scan($nzb));
+
+        return $service->details;
     }
 
     private function makeNzbFile(string $suffix): string

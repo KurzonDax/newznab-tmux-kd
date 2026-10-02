@@ -6,6 +6,7 @@ namespace Tests\Unit;
 
 use App\Services\ReleaseRepair\DeclaredFileCount;
 use PHPUnit\Framework\TestCase;
+use Tests\Support\PhantomTrailingSets;
 
 /**
  * Deriving a legacy release's declared file count from the subjects its NZB still carries.
@@ -67,6 +68,17 @@ class DeclaredFileCountTest extends TestCase
             '"Release.part01.rar" yEnc (1/211)',
             '"Release.part02.rar" yEnc (1/211)',
         ]));
+    }
+
+    public function test_a_phantom_trailing_file_declares_nothing_to_rescan(): void
+    {
+        // The declared 13th file was never posted; reporting 13 would send the re-scan after it.
+        $this->assertSame(0, $this->derive(PhantomTrailingSets::base()));
+    }
+
+    public function test_a_set_whose_last_volume_is_not_a_remainder_still_declares_its_total(): void
+    {
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->derive(PhantomTrailingSets::lastVolumeNotARemainder()));
     }
 
     public function test_an_empty_nzb_declares_nothing(): void

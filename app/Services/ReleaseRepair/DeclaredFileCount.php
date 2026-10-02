@@ -6,6 +6,7 @@ namespace App\Services\ReleaseRepair;
 
 use App\Models\Release;
 use App\Services\Nzb\NzbParserService;
+use App\Services\Nzb\PhantomTrailingFile;
 
 /**
  * How many files a release said it had, for releases created before anything recorded it.
@@ -58,6 +59,11 @@ final class DeclaredFileCount
      */
     public function derive(array $subjects): int
     {
+        // A post declaring one file it never posted holds everything it really has: no shortfall.
+        if (PhantomTrailingFile::heldCount($subjects) !== null) {
+            return 0;
+        }
+
         $votes = [];
 
         foreach ($subjects as $subject) {

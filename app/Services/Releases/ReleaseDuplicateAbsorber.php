@@ -12,6 +12,7 @@ use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\CollectionReconciliation\ArtifactReleaseUpdate;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
+use App\Services\Nzb\PhantomTrailingFile;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use App\Services\ReleaseRepair\RecoveryLease;
@@ -76,7 +77,9 @@ class ReleaseDuplicateAbsorber
         if (($receipt = app(ArtifactPublication::class)->duplicateReceipt((string) $anchor->guid, sourceId: (int) $collection->id)) !== null) {
             return $receipt->success ? DuplicateAbsorbResult::absorbed() : DuplicateAbsorbResult::deferred($receipt->operationId);
         }
-        if ($incomingCompletion <= (float) $anchor->completion) {
+        // The creation-time figure is scaled down for a file a phantom-trailing post never posted,
+        // so for that shape the decision waits for the rendered copy's own measurement.
+        if ($incomingCompletion <= (float) $anchor->completion && ! $this->isPhantomTrailingCollection($collection)) {
             return DuplicateAbsorbResult::notBetter();
         }
 
@@ -138,11 +141,19 @@ class ReleaseDuplicateAbsorber
         if (($receipt = app(ArtifactPublication::class)->duplicateReceipt((string) $anchor->guid, $nzbXml)) !== null) {
             return $receipt->success ? DuplicateAbsorbResult::absorbed() : DuplicateAbsorbResult::deferred($receipt->operationId);
         }
+
+        $document = NzbRepairDocument::load($nzbXml, $this->parser);
+        $phantomHeldCount = $document === null ? null : PhantomTrailingFile::heldCount($document->subjects());
+        if ($phantomHeldCount !== null) {
+            // A post declaring one file it never posted is judged, and stored, against the files it holds.
+            $incomingDeclaredFiles = $phantomHeldCount;
+            $incomingCompletion = $document->measure()->percentage();
+        }
+
         if ($incomingCompletion <= (float) $anchor->completion) {
             return DuplicateAbsorbResult::notBetter();
         }
 
-        $document = NzbRepairDocument::load($nzbXml, $this->parser);
         if ($document === null) {
             return DuplicateAbsorbResult::failed('The incoming duplicate NZB could not be parsed.');
         }
@@ -208,6 +219,17 @@ class ReleaseDuplicateAbsorber
 
             return DuplicateAbsorbResult::absorbed();
         }, 3);
+    }
+
+    /**
+     * Whether the incoming collection's binaries carry a {@see PhantomTrailingFile}.
+     */
+    private function isPhantomTrailingCollection(Collection $collection): bool
+    {
+        $names = DB::table('binaries')->where('collections_id', $collection->id)->pluck('name')
+            ->map(static fn (mixed $name): string => (string) $name)->all();
+
+        return PhantomTrailingFile::heldCount($names) !== null;
     }
 
     private function anchorNzbExists(Release $anchor): bool

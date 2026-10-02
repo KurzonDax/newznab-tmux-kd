@@ -7,6 +7,7 @@ namespace App\Services\ReleaseRepair;
 use App\Services\Nzb\CompletionSignals;
 use App\Services\Nzb\CompletionTally;
 use App\Services\Nzb\NzbParserService;
+use App\Services\Nzb\PhantomTrailingFile;
 use DOMDocument;
 use DOMElement;
 
@@ -205,10 +206,13 @@ final class NzbRepairDocument
     /**
      * @param  int|null  $declaredFiles  The resolved declared file count, where the caller has one.
      *                                   Without it the count is read from the subjects themselves,
-     *                                   which only sees the files the NZB still holds.
+     *                                   which only sees the files the NZB still holds. Either way
+     *                                   a {@see PhantomTrailingFile} is measured against the
+     *                                   files held.
      */
     public function measure(?int $declaredFiles = null): CompletionSignals
     {
+        $declaredFiles = PhantomTrailingFile::heldCount($this->subjects()) ?? $declaredFiles;
         $tally = new CompletionTally;
 
         foreach ($this->files as $file) {

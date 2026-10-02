@@ -669,6 +669,53 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(100.0, $this->completionFor(1));
     }
 
+    public function test_writer_measures_a_phantom_trailing_file_against_the_files_held_and_stores_that_count(): void
+    {
+        // Creation measured 12 of 13 declared files; the 13th was never posted. The set is the
+        // base fixture of Tests\Support\PhantomTrailingSets.
+        $this->insertRelease(1, 'p', completion: (12 / 13) * 100);
+        DB::statement('ALTER TABLE releases ADD COLUMN declaredfiles INTEGER NULL');
+        DB::table('releases')->where('id', 1)->update(['declaredfiles' => 13]);
+        $files = ['Show.Name.par2', 'Show.Name.part1.rar', 'Show.Name.part2.rar', 'Show.Name.part3.rar',
+            'Show.Name.part4.rar', 'Show.Name.part5.rar', 'Show.Name.vol00+01.par2', 'Show.Name.vol01+02.par2',
+            'Show.Name.vol03+04.par2', 'Show.Name.vol07+08.par2', 'Show.Name.vol15+16.par2', 'Show.Name.vol31+11.par2'];
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
+        DB::table('collections')->insert(['id' => 200, 'releases_id' => 1, 'fromname' => 'poster@example.test',
+            'date' => '2026-07-13 10:00:00', 'xref' => 'alt.test:12345', 'groups_id' => 1, 'declaredfiles' => 13]);
+        foreach ($files as $offset => $file) {
+            $this->insertWritableBinary(200, 20000 + $offset, sprintf('[%d/13] - "%s" yEnc', $offset + 1, $file), totalParts: 1, arrivedParts: 1);
+        }
+
+        $result = $this->writeNzb(1);
+
+        $this->assertTrue($result->success, $result->reason);
+        $this->assertSame(100.0, $this->completionFor(1));
+        $this->assertSame(12, (int) DB::table('releases')->where('id', 1)->value('declaredfiles'));
+    }
+
+    public function test_writer_keeps_the_declared_count_of_a_set_that_is_not_a_phantom_trailing_file(): void
+    {
+        $files = ['Show.Name.par2', 'Show.Name.part1.rar', 'Show.Name.part2.rar', 'Show.Name.part3.rar',
+            'Show.Name.part4.rar', 'Show.Name.part5.rar', 'Show.Name.vol00+01.par2', 'Show.Name.vol01+02.par2',
+            'Show.Name.vol03+04.par2', 'Show.Name.vol07+08.par2', 'Show.Name.vol15+16.par2', 'Show.Name.vol31+11.par2'];
+        $files[11] = 'Show.Name.vol31+32.par2';
+        $this->insertRelease(1, 'q', completion: (12 / 13) * 100);
+        DB::statement('ALTER TABLE releases ADD COLUMN declaredfiles INTEGER NULL');
+        DB::table('releases')->where('id', 1)->update(['declaredfiles' => 13]);
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
+        DB::table('collections')->insert(['id' => 200, 'releases_id' => 1, 'fromname' => 'poster@example.test',
+            'date' => '2026-07-13 10:00:00', 'xref' => 'alt.test:12345', 'groups_id' => 1, 'declaredfiles' => 13]);
+        foreach ($files as $offset => $file) {
+            $this->insertWritableBinary(200, 20000 + $offset, sprintf('[%d/13] - "%s" yEnc', $offset + 1, $file), totalParts: 1, arrivedParts: 1);
+        }
+
+        $result = $this->writeNzb(1);
+
+        $this->assertTrue($result->success, $result->reason);
+        $this->assertEqualsWithDelta((12 / 13) * 100, $this->completionFor(1), 0.0001);
+        $this->assertSame(13, (int) DB::table('releases')->where('id', 1)->value('declaredfiles'));
+    }
+
     public function test_a_release_measured_sub_threshold_waits_for_the_repair_engine(): void
     {
         $this->insertRelease(1, 'j', completion: (107 / 311) * 100);

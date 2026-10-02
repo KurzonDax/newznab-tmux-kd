@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Facades\Search;
+use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\PhantomTrailingSets;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 /**
@@ -190,6 +194,169 @@ class BackfillReleaseCompletionTest extends TestCase
         $this->assertSame(12.5, $this->completionOf(1));
     }
 
+    #[Test]
+    public function it_corrects_a_phantom_trailing_file_whether_or_not_the_declared_count_was_recorded(): void
+    {
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        Search::shouldReceive('updateRelease')->once()->with(2);
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+        $this->phantomRelease(2, PhantomTrailingSets::base(), declaredfiles: null);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])
+            ->expectsOutputToContain('2 matched, 0 unmatched, 0 skipped')
+            ->assertSuccessful();
+
+        foreach ([1, 2] as $id) {
+            $this->assertSame(100.0, $this->completionOf($id));
+            $this->assertSame(PhantomTrailingSets::HELD, $this->declaredFilesOf($id));
+        }
+    }
+
+    #[Test]
+    public function a_set_that_is_not_a_phantom_trailing_file_is_left_as_it_was(): void
+    {
+        $this->phantomRelease(1, PhantomTrailingSets::lastVolumeNotARemainder(), declaredfiles: PhantomTrailingSets::DECLARED);
+        $this->phantomRelease(2, PhantomTrailingSets::lastVolumeNotARemainder(), declaredfiles: null);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])
+            ->expectsOutputToContain('0 matched, 2 unmatched, 0 skipped')
+            ->assertSuccessful();
+
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(1));
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->declaredFilesOf(1));
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(2));
+        $this->assertNull(DB::table('releases')->where('id', 2)->value('declaredfiles'));
+    }
+
+    #[Test]
+    public function a_reconciled_posting_gets_the_corrected_completion_and_keeps_its_declared_count(): void
+    {
+        // Late collections merge into a reconciled posting only while the declared counts agree.
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        ProductionTables::fromAuthority()->create('reconciled_postings', ['id', 'release_id']);
+        DB::table('reconciled_postings')->insert(['id' => 1, 'release_id' => 1]);
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])->assertSuccessful();
+
+        $this->assertSame(100.0, $this->completionOf(1));
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->declaredFilesOf(1));
+    }
+
+    #[Test]
+    public function a_row_another_writer_changed_after_it_was_read_is_skipped(): void
+    {
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+        $this->app->instance(NzbService::class, new class extends NzbService
+        {
+            public function __construct()
+            {
+                parent::__construct(app(CollectionCleanupService::class));
+            }
+
+            public function readNzbContents(string $guid): string|false
+            {
+                $contents = parent::readNzbContents($guid);
+                // A repair lands between the backfill's read and its write.
+                DB::table('releases')->where('guid', $guid)->update(['completion' => 96.5]);
+
+                return $contents;
+            }
+        });
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])
+            ->expectsOutputToContain('0 matched, 0 unmatched, 1 skipped')
+            ->assertSuccessful();
+
+        $this->assertSame(96.5, $this->completionOf(1));
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->declaredFilesOf(1));
+    }
+
+    #[Test]
+    public function a_row_held_by_a_recovery_lease_is_skipped(): void
+    {
+        DB::statement('ALTER TABLE releases ADD COLUMN recovery_claimed_at DATETIME NULL');
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+        DB::table('releases')->where('id', 1)->update(['recovery_claimed_at' => now()]);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])
+            ->expectsOutputToContain('0 matched, 0 unmatched, 1 skipped')
+            ->assertSuccessful();
+
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(1));
+    }
+
+    #[Test]
+    public function the_phantom_trailing_dry_run_reports_and_writes_nothing(): void
+    {
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+        $this->phantomRelease(2, PhantomTrailingSets::lastVolumeNotARemainder(), declaredfiles: PhantomTrailingSets::DECLARED);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true, '--dry-run' => true])
+            ->expectsOutputToContain('Dry run')
+            ->expectsOutputToContain('1 matched, 1 unmatched, 0 skipped')
+            ->assertSuccessful();
+
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(1));
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->declaredFilesOf(1));
+    }
+
+    #[Test]
+    public function the_phantom_trailing_pass_selects_only_its_population(): void
+    {
+        // Complete, never measured, and declaring two more: none of them is this pass's business.
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED, completion: 100.0);
+        $this->phantomRelease(2, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED, completion: 0.0);
+        $this->phantomRelease(3, PhantomTrailingSets::base(), declaredfiles: 14);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true])
+            ->expectsOutputToContain('Examined 0 release(s)')
+            ->assertSuccessful();
+
+        $this->assertSame(0.0, $this->completionOf(2));
+        $this->assertSame(14, $this->declaredFilesOf(3));
+    }
+
+    #[Test]
+    public function the_default_pass_does_not_pick_up_phantom_trailing_rows(): void
+    {
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+
+        $this->artisan('releases:backfill-completion')->assertSuccessful();
+        $this->artisan('releases:backfill-completion', ['--understated' => true])->assertSuccessful();
+
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(1));
+        $this->assertSame(PhantomTrailingSets::DECLARED, $this->declaredFilesOf(1));
+    }
+
+    #[Test]
+    public function phantom_trailing_and_understated_together_are_refused(): void
+    {
+        $this->phantomRelease(1, PhantomTrailingSets::base(), declaredfiles: PhantomTrailingSets::DECLARED);
+
+        $this->artisan('releases:backfill-completion', ['--phantom-trailing' => true, '--understated' => true])
+            ->assertFailed();
+
+        $this->assertSame(round(12 / 13 * 100, 2), $this->completionOf(1));
+    }
+
+    /**
+     * A release whose stored NZB holds these subjects, one segment per file, stored at the
+     * scaled-down figure creation measured.
+     *
+     * @param  list<string>  $subjects
+     */
+    private function phantomRelease(int $id, array $subjects, ?int $declaredfiles, float $completion = 92.31): void
+    {
+        $this->releaseWithNzbFiles($id, $subjects, segmentsPerFile: 1, completion: $completion);
+        DB::table('releases')->where('id', $id)->update(['totalpart' => \count($subjects), 'declaredfiles' => $declaredfiles]);
+    }
+
+    private function declaredFilesOf(int $id): int
+    {
+        return (int) DB::table('releases')->where('id', $id)->value('declaredfiles');
+    }
+
     private function obfuscatedReleaseWithNzb(int $id, int $files, int $declaredTotal, float $completion): void
     {
         $subjects = [];
@@ -255,6 +422,8 @@ class BackfillReleaseCompletionTest extends TestCase
             guid VARCHAR(64) UNIQUE,
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             completion DOUBLE NOT NULL DEFAULT 0,
+            totalpart INTEGER NOT NULL DEFAULT 0,
+            declaredfiles INTEGER NULL,
             repair_attempted_at DATETIME NULL,
             repair_outcome VARCHAR(16) NULL
         )');
