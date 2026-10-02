@@ -22,6 +22,7 @@ class ServiceProbeRegistry
         QueueProbe $queueProbe,
         DiskProbe $diskProbe,
         MusicBrainzProbe $musicBrainzProbe,
+        NntpHeaderHealthProbe $nntpHeaderHealthProbe,
     ) {
         $this->probes = [
             $databaseProbe->identifier() => $databaseProbe,
@@ -31,6 +32,7 @@ class ServiceProbeRegistry
             $queueProbe->identifier() => $queueProbe,
             $diskProbe->identifier() => $diskProbe,
             $musicBrainzProbe->identifier() => $musicBrainzProbe,
+            $nntpHeaderHealthProbe->identifier() => $nntpHeaderHealthProbe,
         ];
     }
 

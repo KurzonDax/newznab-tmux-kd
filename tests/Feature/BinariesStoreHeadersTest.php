@@ -7,6 +7,7 @@ use App\Enums\HeaderScanDirection;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderParser;
+use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NNTPService;
 use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Database\QueryException;
@@ -156,6 +157,7 @@ class BinariesStoreHeadersTest extends TestCase
         $header['Date'] = '2026-08-01 12:00:00';
         $nntp = \Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('provider')->andReturn(NntpProvider::fromConfig(['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']));
         $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
         $nntp->shouldReceive('getXOVER')->with('8001-8001')->andReturn([$header]);
         $this->app->instance(NNTPService::class, $nntp);
@@ -199,6 +201,7 @@ class BinariesStoreHeadersTest extends TestCase
         });
         $nntp = \Mockery::mock(NNTPService::class);
         $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('provider')->andReturn(NntpProvider::fromConfig(['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']));
         $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
         $nntp->shouldReceive('getXOVER')->with('8001-8003')->andReturn($headers);
         $this->app->instance(NNTPService::class, $nntp);

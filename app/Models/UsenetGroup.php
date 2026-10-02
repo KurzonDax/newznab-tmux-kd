@@ -495,6 +495,7 @@ class UsenetGroup extends Model
     {
         // Remove rows from part repair.
         MissedPart::query()->where('groups_id', $id)->delete();
+        UsenetGroupProviderCursor::forget((int) $id);
 
         // Reset the group stats.
         return self::query()->where('id', $id)->update(
@@ -515,6 +516,8 @@ class UsenetGroup extends Model
      */
     public static function resetall(): int
     {
+        UsenetGroupProviderCursor::forget();
+
         // Disable foreign key checks to allow truncating tables with foreign key constraints
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 

@@ -34,18 +34,39 @@ final class CollectionQuietPredicate
         $lock = $currentRead && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true) ? ' FOR UPDATE' : '';
         $groups = DB::connection()->getQueryGrammar()->wrapTable('usenet_groups');
 
+        // A live secondary provider that is still reading this stretch of the group holds the
+        // head open: its headers for the post may not be stored yet. One more than $hours
+        // behind provider 1 is catching up and holds nothing; one that has not advanced for an
+        // hour has stalled and holds nothing.
+        $secondaryHold = '';
+        $secondaryBindings = [];
+        if (SchemaCapabilities::hasTable('usenet_group_provider_cursors')) {
+            $cursors = DB::connection()->getQueryGrammar()->wrapTable('usenet_group_provider_cursors');
+            $stall = DatabaseClock::cutoff(now()->subMinutes(60));
+            $lagFloor = DB::getDriverName() === 'sqlite'
+                ? "datetime(g.last_record_postdate, '-' || ? || ' hours')"
+                : 'DATE_SUB(g.last_record_postdate, INTERVAL ? HOUR)';
+            $secondaryHold = "
+                            AND NOT EXISTS (SELECT 1 FROM {$cursors} pc
+                                WHERE pc.usenet_groups_id = g.id
+                                AND pc.last_advanced_at >= {$stall['sql']}
+                                AND pc.last_record_postdate >= {$lagFloor}
+                                AND pc.last_record_postdate < {$headLimit}{$lock})";
+            $secondaryBindings = [...$stall['bindings'], $hours, $hours];
+        }
+
         return [
             'sql' => "(({$head} IS NULL AND {$tail} IS NULL AND {$wall})
                 OR (({$head} IS NOT NULL OR {$tail} IS NOT NULL) AND EXISTS (
                     SELECT 1 FROM {$groups} g WHERE g.id = {$alias}.groups_id
                     AND ({$head} IS NULL
-                        OR (g.active = 1 AND g.last_record_postdate >= {$headLimit})
+                        OR (g.active = 1 AND g.last_record_postdate >= {$headLimit}{$secondaryHold})
                         OR (g.active = 0 AND {$wall}))
                     AND ({$tail} IS NULL
                         OR (g.backfill = 1 AND g.backfill_settled_at IS NULL AND g.first_record_postdate <= {$tailLimit})
                         OR ((g.backfill = 0 OR g.backfill_settled_at IS NOT NULL) AND {$wall}))
                 {$lock})))",
-            'bindings' => [...$cutoff['bindings'], $hours, ...$cutoff['bindings'], -$hours, ...$cutoff['bindings']],
+            'bindings' => [...$cutoff['bindings'], $hours, ...$secondaryBindings, ...$cutoff['bindings'], -$hours, ...$cutoff['bindings']],
         ];
     }
 }

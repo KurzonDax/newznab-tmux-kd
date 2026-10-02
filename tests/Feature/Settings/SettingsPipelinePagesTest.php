@@ -82,7 +82,7 @@ class SettingsPipelinePagesTest extends TestCase
         $rendered = $this->renderSection('usenet-ingest');
 
         $this->assertStringContainsString('Header download', $rendered);
-        foreach (['binaries', 'binarythreads', 'bins_timer', 'maxmssgs', 'max_headers_iteration'] as $key) {
+        foreach (['binaries', 'binarythreads', 'bins_timer', 'maxmssgs', 'max_headers_iteration', 'secondary_header_start_hours'] as $key) {
             $this->assertStringContainsString('name="'.$key.'"', $rendered);
         }
 
@@ -167,6 +167,7 @@ class SettingsPipelinePagesTest extends TestCase
             'bins_timer' => '45',
             'maxmssgs' => '25000',
             'max_headers_iteration' => '500000',
+            'secondary_header_start_hours' => '36',
         ]);
 
         $this->assertSame('1', $this->storedSettingValue('binaries'));

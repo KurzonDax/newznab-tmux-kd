@@ -32,9 +32,9 @@ use Illuminate\Support\Facades\Log;
  * what was found: the repair engine's next pass synthesizes the rest from the message-IDs this
  * one supplies, which is why a partial recovery is worth writing at all.
  *
- * Header traffic is primary-pinned by construction -- article numbers are per-server, so this
- * takes an {@see NNTPService} directly and {@see NntpProviderPool} deliberately
- * exposes no header API to reach instead.
+ * The re-scan reads provider 1 only: its windows come from the release's stored article
+ * anchors, which are provider 1's numbers, so it takes an {@see NNTPService} directly and
+ * {@see NntpProviderPool} deliberately exposes no header API to reach instead.
  *
  * ## When a pass records nothing
  *

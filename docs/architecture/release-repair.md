@@ -209,8 +209,9 @@ exposes no header API to reach instead. See [nntp-providers.md](nntp-providers.m
 
 - **Anchored.** `releases.firstarticle` / `lastarticle` are the min and max `parts.number` the
   collection held, captured at release creation because NZB creation deletes the CBP rows. The
-  window is that span plus a pad.
-- **Bisected.** Legacy releases have only a postdate, so the group is bisected for the articles
+  window is that span plus a pad. Parts first stored from a secondary provider carry number 0
+  and are left out; a collection read only from secondary providers has no anchors.
+- **Bisected.** Legacy and unanchored releases have only a postdate, so the group is bisected for the articles
   either side of it — `BinariesService::articleForTimestamp()`, the same date-to-article search
   backfill uses, aimed at an absolute time rather than a number of days back.
 

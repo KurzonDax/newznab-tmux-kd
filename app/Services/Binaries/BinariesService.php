@@ -122,6 +122,14 @@ class BinariesService
     }
 
     /**
+     * Whether this scan reads a provider other than provider 1.
+     */
+    private function onSecondaryConnection(): bool
+    {
+        return ! $this->getNntp()->provider()->isPrimary();
+    }
+
+    /**
      * Get the configuration object.
      */
     public function getConfig(): BinariesConfig
@@ -289,6 +297,16 @@ class BinariesService
      */
     public function scan(array $groupMySQL, int $first, int $last, HeaderScanDirection $direction, string $type = 'update', ?array $missingParts = null): array
     {
+        $secondary = $this->onSecondaryConnection();
+        // Article numbers are per-server: part repair would clear provider 1's missed_parts rows
+        // that merely share these numbers, and backfill positions are provider 1's alone.
+        if ($secondary && ($type === 'partrepair' || $direction === HeaderScanDirection::Tail)) {
+            throw new \InvalidArgumentException(sprintf(
+                'NNTP provider %s scans forward only; part repair and backfill read provider 1.',
+                $this->getNntp()->provider()->name,
+            ));
+        }
+
         $this->startLoop = Carbon::now();
         $this->groupMySQL = $groupMySQL;
         $this->last = $last;
@@ -299,7 +317,7 @@ class BinariesService
 
         $returnArray = [];
         $partRepair = ($type === 'partrepair');
-        $addToPartRepair = ($type === 'update' && $this->config->partRepair);
+        $addToPartRepair = ! $secondary && $type === 'update' && $this->config->partRepair;
 
         // Download headers from NNTP
         $headers = $this->downloadHeaders($partRepair);
@@ -381,6 +399,12 @@ class BinariesService
             $this->headerParser->flushBlacklistUpdates();
 
             $chunkReport = HeaderStorageReport::empty();
+            if ($secondary) {
+                // Stored numbers are provider 1's numbering; 0 never matches a lookup by number.
+                foreach ($parseResult['headers'] as $index => $header) {
+                    $parseResult['headers'][$index]['Number'] = 0;
+                }
+            }
             if ($parseResult['headers'] !== []) {
                 try {
                     $chunkReport = $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction);
@@ -438,6 +462,11 @@ class BinariesService
     private function beginRecoveryScan(HeaderScanDirection $direction, int $chunks): ?RecoveryScanContext
     {
         $this->recoveryCapture = null;
+        // Recovery capture is scoped to provider 1's source epoch; another server would mint a
+        // new epoch on every scan.
+        if ($this->onSecondaryConnection()) {
+            return null;
+        }
         try {
             $config = RecoveryConfig::fromSettings();
             if (! $config->enabled) {

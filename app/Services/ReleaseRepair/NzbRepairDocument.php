@@ -74,6 +74,16 @@ final class NzbRepairDocument
     }
 
     /**
+     * Segment number => message-ID for every file, keyed by file index, document order.
+     *
+     * @return array<int, array<int, string>>
+     */
+    public function segments(): array
+    {
+        return array_map(fn (DOMElement $file): array => $this->segmentsOf($file), $this->files);
+    }
+
+    /**
      * What a file added by the header re-scan has to look like to belong to this release.
      *
      * Poster, date and groups are collection-wide in a stored NZB -- the writer stamps every

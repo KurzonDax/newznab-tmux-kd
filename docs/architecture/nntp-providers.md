@@ -17,16 +17,45 @@ NNTP_PROVIDER_{n}_ENABLED      excluded from every operation when false
 
 Roles come from **position**, not from flags.
 
-## Provider 1 owns the headers
+## Every enabled provider scans headers
 
-Article *numbers* are per-server. Every piece of header-scan state — a group's
-`first_record`/`last_record`, backfill ranges, part-repair ranges — is a set of article numbers,
-and those numbers mean nothing on another backbone. So header work is pinned to provider 1.
+A provider's header listing (XOVER) can leave posts out while the provider keeps accepting
+connections. So header scanning reads every enabled provider and merges the results: a post
+missing from one provider's listing is filled in from another's, with no switchover step.
+Headers for the same post land in the same `collections`, `binaries` and `parts` rows whichever
+provider they came from, and a repeated part is ignored rather than counted twice.
 
-This is enforced structurally rather than by convention: `NntpProviderPool` and the
-`ProviderClient` interface expose **no header operation at all**. There is no XOVER, no group
-selection, no backfill on the pool's API, so no future caller can accidentally scan headers
-against a fallback backbone.
+Article *numbers* are per-server, so each provider keeps its own positions:
+
+- **Provider 1** owns `usenet_groups.first_record`/`last_record`, backfill, part repair
+  (`missed_parts`) and obfuscation-recovery capture, exactly as before. `groups:update` writes
+  its server positions to `short_groups`.
+- **Each secondary provider** (enabled, position 2 and after) scans forward only, with its own
+  position per group in `usenet_group_provider_cursors`. `groups:update --provider=NAME` records
+  its server positions there and finds a starting article for any group it has no position for,
+  `secondary_header_start_hours` back (Usenet Ingest → Header download). The binaries pane
+  queues its `articles:get-range --provider=NAME` ranges after all of provider 1's. Parts first
+  stored from a secondary provider keep `parts.number = 0`, because their article number is
+  another server's.
+
+Release formation waits for a secondary provider that is live and caught up: an incomplete
+collection is not formed until every such provider has scanned past its newest header plus the
+release delay. A provider that has not advanced for an hour, or is more than the delay behind
+provider 1, holds nothing back.
+
+The pool itself still has no header API: `NntpProviderPool` and the `ProviderClient` interface
+expose no XOVER, group selection or backfill. A header scan picks its provider explicitly with
+`NNTPService::useProvider()`.
+
+### Runbook: changing a secondary provider
+
+Repointing a secondary provider at a different backbone needs no manual reset: its cursors
+record the host they were found on, and a host change re-initialises them on the next pass.
+
+A secondary server that renumbers its articles on the same host leaves its cursors beyond the
+server's newest article, so it queues nothing and the `nntp-headers` status probe reports its
+scanning stopped after an hour. Re-initialise it with tmux stopped:
+`DELETE FROM usenet_group_provider_cursors WHERE provider = '<name>';`
 
 ### Runbook: changing the primary provider
 
@@ -64,8 +93,9 @@ auth and protocol failures count against it.
 
 Per process, not shared: five consecutive failures skip a provider for article operations for
 60 seconds. A worker that trips a provider does not punish its siblings, and there is no shared
-state to keep consistent. Header work has no alternative provider to fall back to, so it is
-unaffected — a broken primary surfaces there as it always has.
+state to keep consistent. Header scans do not fail over: each reads the one provider it was
+pointed at, so a broken provider surfaces as its own failed ranges, and the `nntp-headers`
+status probe reports a provider whose scanning stops.
 
 ## Connections are advisory
 

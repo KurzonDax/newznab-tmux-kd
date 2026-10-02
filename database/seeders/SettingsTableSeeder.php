@@ -769,6 +769,10 @@ class SettingsTableSeeder extends Seeder
                 'name' => 'amazonsleep',
                 'value' => '1000',
             ],
+            [
+                'name' => 'secondary_header_start_hours',
+                'value' => '36',
+            ],
         ]);
     }
 }

@@ -25,8 +25,10 @@ final class CollectionArticleRangeMeasurer
 
     /**
      * @param  list<int>  $collectionIds
+     *                                    Parts first stored from a secondary provider carry number 0 (another server's numbering),
+     *                                    so they do not count; a collection holding only such parts is absent.
      * @return array<int, array{first: int, last: int}> Keyed by collection id; collections whose
-     *                                                  binaries hold no parts are absent.
+     *                                                  binaries hold no numbered parts are absent.
      */
     public function measure(array $collectionIds): array
     {
@@ -41,8 +43,8 @@ final class CollectionArticleRangeMeasurer
 
             $rows = DB::select(
                 "SELECT b.collections_id AS collections_id,
-                        MIN(p.number) AS first_article,
-                        MAX(p.number) AS last_article
+                        MIN(NULLIF(p.number, 0)) AS first_article,
+                        MAX(NULLIF(p.number, 0)) AS last_article
                  {$sources}
                  WHERE b.collections_id IN ({$placeholders})
                  GROUP BY b.collections_id",
