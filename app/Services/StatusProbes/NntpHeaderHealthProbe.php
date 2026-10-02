@@ -131,7 +131,7 @@ class NntpHeaderHealthProbe implements ServiceProbeInterface
 
         return [
             $this->watch(self::GATES_OPEN_SINCE, $gatesOpen),
-            $this->watch(self::CANARY_WATCH_SINCE, \count($this->enabledProviders()) >= 2),
+            $this->watch(self::CANARY_WATCH_SINCE, NntpProviderPool::primaryProvider()->enabled && NntpProviderPool::secondaryProviders() !== []),
         ];
     }
 
@@ -202,10 +202,7 @@ class NntpHeaderHealthProbe implements ServiceProbeInterface
             return $failure;
         }
 
-        foreach ($this->enabledProviders() as $provider) {
-            if ($provider->isPrimary()) {
-                continue;
-            }
+        foreach (NntpProviderPool::secondaryProviders() as $provider) {
             $newest = DB::table('usenet_group_provider_cursors as c')
                 ->join('usenet_groups as g', 'g.id', '=', 'c.usenet_groups_id')
                 ->where('c.provider', $provider->name)
@@ -280,11 +277,9 @@ class NntpHeaderHealthProbe implements ServiceProbeInterface
 
         $pairs = [];
         $primary = NntpProviderPool::primaryProvider();
-        foreach ($this->enabledProviders() as $provider) {
-            if (! $provider->isPrimary()) {
-                $pairs[] = $primary->name."\0".$provider->name;
-                $pairs[] = $provider->name."\0".$primary->name;
-            }
+        foreach (NntpProviderPool::secondaryProviders() as $provider) {
+            $pairs[] = $primary->name."\0".$provider->name;
+            $pairs[] = $provider->name."\0".$primary->name;
         }
 
         $qualifying = [];
@@ -313,12 +308,6 @@ class NntpHeaderHealthProbe implements ServiceProbeInterface
             'Listing canary has had no conclusive run since %s.',
             $newestConclusive ?? 'it started',
         )];
-    }
-
-    /** @return list<NntpProvider> */
-    private function enabledProviders(): array
-    {
-        return array_values(array_filter(NntpProviderPool::configuredProviders(), static fn (NntpProvider $p): bool => $p->enabled));
     }
 
     /** @param list<float> $values */

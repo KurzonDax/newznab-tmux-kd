@@ -52,16 +52,12 @@ final class ProviderListingCanary
 
     public function run(): void
     {
-        $enabled = array_values(array_filter(NntpProviderPool::configuredProviders(), static fn (NntpProvider $p): bool => $p->enabled));
-        if (\count($enabled) < 2) {
+        $primary = NntpProviderPool::primaryProvider();
+        $secondaries = NntpProviderPool::secondaryProviders();
+        if (! $primary->enabled || $secondaries === []) {
             return;
         }
-
-        $primary = array_values(array_filter($enabled, static fn (NntpProvider $p): bool => $p->isPrimary()))[0] ?? null;
-        $secondaries = array_values(array_filter($enabled, static fn (NntpProvider $p): bool => ! $p->isPrimary()));
-        if ($primary === null) {
-            return;
-        }
+        $enabled = [$primary, ...$secondaries];
 
         $measuredAt = now();
         $sampleTime = $measuredAt->copy()->subHours(self::SAMPLE_HOURS_AGO);
@@ -146,31 +142,31 @@ final class ProviderListingCanary
      *
      * @return array{groups_id: int, sample_provider: string, reference_provider: string, sample_time: string, sampled: int, found: int}|null
      */
-    private function measure(?NNTPService $p, ?NNTPService $q, NntpProvider $sample, NntpProvider $reference, UsenetGroup $group, Carbon $sampleTime): ?array
+    private function measure(?NNTPService $sampleNntp, ?NNTPService $referenceNntp, NntpProvider $sample, NntpProvider $reference, UsenetGroup $group, Carbon $sampleTime): ?array
     {
-        if ($p === null || $q === null) {
+        if ($sampleNntp === null || $referenceNntp === null) {
             return null;
         }
 
         try {
-            $groupP = $this->select($p, $sample, $group->name);
-            $groupQ = $this->select($q, $reference, $group->name);
+            $groupP = $this->select($sampleNntp, $sample, $group->name);
+            $groupQ = $this->select($referenceNntp, $reference, $group->name);
 
-            $start = $this->locator->locate($p, $groupP, $sampleTime->getTimestamp());
+            $start = $this->locator->locate($sampleNntp, $groupP, $sampleTime->getTimestamp());
             $sampleIds = [];
-            foreach ($this->xover($p, $sample, $group->name, $start, $start + self::SAMPLE_ARTICLES - 1) as $line) {
+            foreach ($this->xover($sampleNntp, $sample, $group->name, $start, $start + self::SAMPLE_ARTICLES - 1) as $line) {
                 if (preg_match(self::MULTI_SEGMENT, (string) ($line['Subject'] ?? '')) === 1) {
                     $sampleIds[] = trim((string) ($line['Message-ID'] ?? ''));
                 }
             }
 
-            $from = $this->locator->locate($q, $groupQ, $sampleTime->copy()->subHours(self::REFERENCE_HOURS)->getTimestamp());
-            $to = $this->locator->locate($q, $groupQ, $sampleTime->copy()->addHours(self::REFERENCE_HOURS)->getTimestamp());
+            $from = $this->locator->locate($referenceNntp, $groupQ, $sampleTime->copy()->subHours(self::REFERENCE_HOURS)->getTimestamp());
+            $to = $this->locator->locate($referenceNntp, $groupQ, $sampleTime->copy()->addHours(self::REFERENCE_HOURS)->getTimestamp());
             $listed = [];
             $batch = $this->batchSize();
             for ($first = $from; $first <= $to; $first += $batch) {
                 // Only the id set is kept; one batch of parsed lines at a time.
-                foreach ($this->xover($q, $reference, $group->name, $first, min($to, $first + $batch - 1)) as $line) {
+                foreach ($this->xover($referenceNntp, $reference, $group->name, $first, min($to, $first + $batch - 1)) as $line) {
                     $listed[trim((string) ($line['Message-ID'] ?? ''))] = true;
                 }
             }
