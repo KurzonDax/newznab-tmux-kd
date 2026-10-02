@@ -7,11 +7,20 @@ import { rowActions } from './tv-row-actions.js';
  */
 export const SELECTION_KEY = 'movies-film-selection';
 
-/** The table's order in a film page URL: `?sort=size` (descending), `?sort=size_asc`; newest posted first without one. */
-export function currentSort(href) {
+/**
+ * The table's order in a film page URL: `?sort=size` (descending), `?sort=size_asc`; newest posted first without one.
+ * `keys` are the sorts the page offers (offeredSorts()); any other sort reads as newest posted first, as the server does.
+ */
+export function currentSort(href, keys = ['resolution', 'category', 'size', 'posted']) {
     const value = new URL(href).searchParams.get('sort') ?? '';
     const ascending = value.endsWith('_asc'), key = ascending ? value.slice(0, -4) : value;
-    return ['resolution', 'size', 'posted'].includes(key) ? { key, dir: ascending ? 1 : -1 } : { key: 'posted', dir: -1 };
+    return keys.includes(key) ? { key, dir: ascending ? 1 : -1 } : { key: 'posted', dir: -1 };
+}
+
+/** The sorts a table's headings offer (their data-sort keys): a film's table has no Category, a game's no Resolution; undefined when none are found. */
+export function offeredSorts(table) {
+    const keys = [...(table?.querySelectorAll?.('[data-sort]') ?? [])].map(heading => heading.dataset.sort);
+    return keys.length > 0 ? keys : undefined;
 }
 
 /** The next order: the sorted heading flips it, another heading starts descending; Category starts ascending, in the Category menu's order. */
@@ -105,7 +114,7 @@ export function movieFilm() {
         ...rowActions(),
 
         async sortBy(key) {
-            await this.reloadList(sortUrl(window.location.href, nextSort(currentSort(window.location.href), key)));
+            await this.reloadList(sortUrl(window.location.href, nextSort(currentSort(window.location.href, offeredSorts(this.$refs.list)), key)));
             this.$refs.list.querySelector(`[data-sort="${key}"]`)?.focus({ preventScroll: true });
         },
 

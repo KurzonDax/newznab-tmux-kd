@@ -27,7 +27,6 @@
                 @include('details.partials.movie-info')
                 @include('details.partials.tv-info')
                 @include('details.partials.music-info')
-                @include('details.partials.console-info')
                 @include('details.partials.book-info')
                 @include('details.partials.anime-info')
                 @include('details.partials.predb-info')

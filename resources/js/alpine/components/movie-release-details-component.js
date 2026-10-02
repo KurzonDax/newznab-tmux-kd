@@ -1,5 +1,5 @@
 import { tvReleaseDetails, TABS } from './tv-release-details-component.js';
-import { currentSort, nextSort, sortUrl } from './movie-film-component.js';
+import { currentSort, nextSort, offeredSorts, sortUrl } from './movie-film-component.js';
 import { sortRows } from './tv-episode-list-component.js';
 import { fetchList } from './tv-list.js';
 
@@ -94,7 +94,7 @@ export function movieReleaseDetails() {
         },
 
         async sortTable(key) {
-            const url = sortUrl(window.location.href, nextSort(currentSort(window.location.href), key));
+            const url = sortUrl(window.location.href, nextSort(currentSort(window.location.href, offeredSorts(this.$refs.releases)), key));
             window.history.replaceState(null, '', url.toString());
             this._query = window.location.search;
             if (await this.reloadTable(url)) this.$refs.releases?.querySelector(`[data-sort="${key}"]`)?.focus({ preventScroll: true });

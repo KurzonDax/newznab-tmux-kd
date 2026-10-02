@@ -472,6 +472,15 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-film-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0 7px; font-variant-numeric: tabular-nums; }
 .tv-film-meta .resolution-chip { margin-left: 3px; }
 .tv-show-head .tv-starring + .tv-starring { margin-top: 2px; }
+/* Console release page of a release with a game (books-console-pc SPEC 5B): a release page laid out like the
+   film page. The release name is the heading at the release-details size, the game line under it names the
+   game in ink; the Storyline label is dim at normal weight and the info-line values are plain ink text. The
+   game line is scoped to the header: the lists' and tables' game line keeps its own size. */
+.tv-show-head h1.is-release-name { font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+.tv-show-head .tv-game-line { margin-top: 8px; font-size: 15.5px; }
+.tv-show-head .tv-game-line b { color: var(--tv-ink); font-weight: 600; }
+.tv-show-head p.tv-storyline b { color: var(--tv-dim); font-weight: 400; }
+.tv-starring .tv-starring-value { color: var(--tv-ink); }
 .tv-film-releases { margin-top: 40px; scroll-margin-top: 84px; }
 .tv-film-releases > h2 { margin: 0; color: var(--tv-ink); font-size: 21px; font-weight: 800; line-height: 1.1; letter-spacing: -0.015em; }
 .tv-film-bar .filter-bar { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px); }

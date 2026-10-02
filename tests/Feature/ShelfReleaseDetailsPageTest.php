@@ -133,7 +133,7 @@ final class ShelfReleaseDetailsPageTest extends TestCase
             ->assertSee('x-data="movieReleaseDetails"', false)->assertSee('data-nzb-link-base="'.url('/api/v1/api').'"', false);
     }
 
-    public function test_a_console_release_with_no_game_opens_this_page_and_one_with_a_stored_game_keeps_the_generic_page(): void
+    public function test_a_console_release_with_no_game_opens_this_page_and_one_with_a_stored_game_gets_the_game_page(): void
     {
         // No game id, the lookup's "found nothing" (-2), and a game id that names no stored game.
         foreach ([null, -2, 999] as $gameId) {
@@ -141,10 +141,13 @@ final class ShelfReleaseDetailsPageTest extends TestCase
             $this->details($id)->assertOk()->assertViewIs('details.shelf.index');
         }
 
-        $this->createGenericPageTables();
+        // A stored game's release gets the Console game page (issue #935), which also reads the game's companies, modes and perspectives.
+        foreach (['companies', 'console_companies', 'game_modes', 'console_game_modes', 'player_perspectives', 'console_player_perspectives'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
         DB::table('consoleinfo')->insert(['id' => 5, 'title' => 'Some Game', 'releasedate' => '2010-03-01', 'cover' => 0]);
         $game = $this->shelf('Some.Game.PS3-GRP', ['categories_id' => self::PS3, 'consoleinfo_id' => 5]);
-        $this->details($game)->assertOk()->assertViewIs('details.index');
+        $this->details($game)->assertOk()->assertViewIs('details.console.index');
     }
 
     public function test_the_chip_line_has_no_resolution_preview_sample_or_clip_chip_and_the_buttons_have_no_follow(): void
@@ -323,15 +326,6 @@ final class ShelfReleaseDetailsPageTest extends TestCase
             'musicinfo_id' => null, 'anidbid' => null, 'completion' => 100, 'nfostatus' => 0, 'haspreview' => 0, 'jpgstatus' => 0, 'videostatus' => 0,
             'size' => self::GB, 'totalpart' => 1, 'groups_id' => 99, 'guid' => md5('shelf release '.$number),
             'adddate' => Carbon::parse($posted)->addHour()->toDateTimeString(), ...$attributes, 'postdate' => $posted]);
-    }
-
-    /** The generic details page's further tables, for the Console release with a stored game that keeps it. */
-    private function createGenericPageTables(): void
-    {
-        foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table'] as $migration) {
-            (require database_path('migrations/'.$migration.'.php'))->up();
-        }
-        ProductionTables::fromAuthority()->create('dnzb_failures');
     }
 
     private function excludeForUser(int $category): void

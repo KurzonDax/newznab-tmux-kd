@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\ConsoleGamePageFilters;
 use App\Data\MovieFilmPageFilters;
 use App\Data\ReleaseRowData;
 use App\Enums\BrowseRoot;
@@ -18,11 +19,11 @@ use App\Models\Settings;
 use App\Models\Video;
 use App\Services\AnidbService;
 use App\Services\BookService;
-use App\Services\ConsoleService;
 use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
 use App\Services\Releases\AdultReleaseDetails;
+use App\Services\Releases\ConsoleGameReleaseDetails;
 use App\Services\Releases\MovieReleaseDetails;
 use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
@@ -81,7 +82,10 @@ class DetailsController extends BasePageController
         if ($root === BrowseRoot::Adult) {
             return $this->showAdult($data, $comments);
         }
-        if ($root === BrowseRoot::Books || $root === BrowseRoot::Games || ($root === BrowseRoot::Console && ! $this->hasConsoleGame($data))) {
+        if ($root === BrowseRoot::Console && $this->hasConsoleGame($data)) {
+            return $this->showConsoleGame($request, $data, $comments);
+        }
+        if ($root === BrowseRoot::Books || $root === BrowseRoot::Games || $root === BrowseRoot::Console) {
             return $this->showShelf($data, $comments);
         }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
@@ -122,11 +126,6 @@ class DetailsController extends BasePageController
         $book = '';
         if ((int) $data['bookinfo_id'] > 0) {
             $book = (new BookService)->getBookInfo($data['bookinfo_id']);
-        }
-
-        $con = '';
-        if ((int) $data['consoleinfo_id'] > 0) {
-            $con = (new ConsoleService)->getConsoleInfo($data['consoleinfo_id']);
         }
 
         $AniDBAPIArray = '';
@@ -177,7 +176,6 @@ class DetailsController extends BasePageController
             'anidbCountryModel' => $anidbCountryModel,
             'anidbCountryName' => $anidbCountryName,
             'music' => $mus,
-            'con' => $con,
             'book' => $book,
             'predb' => $pre,
             'comments' => $comments,
@@ -280,6 +278,36 @@ class DetailsController extends BasePageController
             'comments' => $comments,
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $this->userdata->api_token,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
+    }
+
+    /**
+     * Console releases with a stored game get their own page (docs/proposals/books-console-pc-redesign/SPEC.md
+     * 5B); comments post back here as before. `?sort=` and `?page=` belong to "All N releases of this
+     * game", and `?_fragment=releases` returns that section alone for a sort change or another page.
+     */
+    private function showConsoleGame(Request $request, Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+        $table = ConsoleGamePageFilters::fromRequest($request);
+        $pageNamed = $request->query('page') !== null;
+        $details = app(ConsoleGameReleaseDetails::class);
+        $shared = ['release' => $release, 'nzbLinkBase' => url('/api/v1/api'), 'apiToken' => (string) $this->userdata->api_token];
+        if ($request->query('_fragment') === 'releases') {
+            $section = $details->releasesTable($release, $exclusions, $table, $pageNamed);
+            abort_if($section['table'] === null, 404);
+
+            return view('details.console.releases', [...$shared, ...$section]);
+        }
+
+        return view('details.console.index', array_merge($this->viewData, $details->forRelease($release, $row->category, $exclusions, $table, $pageNamed), $shared, [
+            'comments' => $comments,
             'meta_title' => 'View NZB',
             'meta_keywords' => 'view,nzb,description,details',
             'meta_description' => 'View NZB for '.$release['searchname'],
