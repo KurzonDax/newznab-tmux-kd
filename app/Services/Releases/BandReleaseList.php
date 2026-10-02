@@ -72,7 +72,18 @@ abstract class BandReleaseList
         $key = $this->cachePrefix().'_count:'.ReleaseBrowseService::cacheVersion().':'.md5($filters->countKey().'|'.implode(',', $exclusions).'|'.$password);
         $minutes = max(1, (int) config('nntmux.cache_expiry_short', 5)) * 2;
 
-        return (int) Cache::remember($key, now()->addMinutes($minutes), fn (): int => $this->visible($filters, $exclusions, $this->countIndex($filters))->count());
+        return (int) Cache::remember($key, now()->addMinutes($minutes), fn (): int => $this->countVisible($filters, $exclusions));
+    }
+
+    /**
+     * The uncached count: the visible releases read from the count index.
+     *
+     * @param  TFilters  $filters
+     * @param  list<int>  $exclusions
+     */
+    protected function countVisible(ReleaseListFilters $filters, array $exclusions): int
+    {
+        return $this->visible($filters, $exclusions, $this->countIndex($filters))->count();
     }
 
     /**

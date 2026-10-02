@@ -67,6 +67,7 @@ use App\Http\Controllers\BrowseGroupController;
 use App\Http\Controllers\BtcPaymentController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\ConsoleController;
+use App\Http\Controllers\ConsoleReleasesController;
 use App\Http\Controllers\ContactUsController;
 use App\Http\Controllers\ContentController;
 use App\Http\Controllers\CoverController;
@@ -253,6 +254,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         // Books and PC (docs/proposals/books-console-pc-redesign/SPEC.md 1): /books is not the legacy Books/{id?} route, paths are case-sensitive
         Route::get('books', [ShelfReleasesController::class, 'books'])->name('books.releases');
         Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');
+        // Console (SPEC 1): /console is not the legacy Console/{id?} route, paths are case-sensitive
+        Route::get('console', [ConsoleReleasesController::class, 'index'])->name('console.releases');
     });
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');

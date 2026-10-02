@@ -68,11 +68,12 @@ abstract readonly class ShelfReleaseFilters extends ReleaseListFilters
      * "Comics · 95%+ complete · names containing “text”".
      *
      * @param  list<string>  $parts  the filters' parts, in the bar's order
+     * @param  string  $names  what the name search looks in ("release or game names" on Console)
      */
-    protected function describedWithSearch(array $parts): string
+    protected function describedWithSearch(array $parts, string $names = 'names'): string
     {
         if ($this->search !== '') {
-            $parts[] = 'names containing “'.$this->search.'”';
+            $parts[] = $names.' containing “'.$this->search.'”';
         }
 
         return implode(' · ', $parts);

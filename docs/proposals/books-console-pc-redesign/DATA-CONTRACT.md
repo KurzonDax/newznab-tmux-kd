@@ -176,9 +176,12 @@ At real size (17 releases, 15 visible, 13 synthetic games) every read is 0.1-0.4
   (`console_genres` by genre; `consoleinfo` by year), joined to their releases, the band as `categories_id BETWEEN 1000
   AND 1999`, sorted; the Movies list's shape (`MovieReleaseList.php:138`). Genre, the largest (131,647 releases), 33 /
   39 / 27 ms (page 1 / worst page / count); a small genre 1.4 / 1.2 ms; two genres 54 / 65 / 49 ms; Unknown (two parts:
-  releases with no game in the band, plus releases of games whose only genre is `Unknown`, merged) 18 / 43 / 16 ms; a
-  decade 68 / 79 / 59 ms; a typed range 21 / 19 ms; Genre + Year + Category 28 / 21 ms. Without the index the same reads
-  take 160-335 ms (Genre) and up to 321 ms (Year).
+  releases in the band with no game (`consoleinfo_id` IS NULL **or -2**, the value the lookup writes when IGDB finds
+  nothing, `ConsoleService::CONS_NTFND`), plus releases of games with no genre (`consoleinfo.genres_id` IS NULL or the
+  `Unknown` genre), merged) 18 / 43 / 16 ms; a decade 68 / 79 / 59 ms; a typed range 21 / 19 ms; Genre + Year +
+  Category 28 / 21 ms. Without the index the same reads take 160-335 ms (Genre) and up to 321 ms (Year).
+- **Genre column**: the game's genre titles in `console_genres.position` order joined with ", "; a game whose only
+  genre is `Unknown` reads "Unknown" (his design record, 2026-10-01: it matches the menu option).
 - **Genre menu**: the Console genres that have a game, A to Z, then Unknown: 0.1 ms. "Genres with a band release" took
   895 ms: **not used**. **Year menu**: decades are fixed (2020s to 1990s), no read.
 

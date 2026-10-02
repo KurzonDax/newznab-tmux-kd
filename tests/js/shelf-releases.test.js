@@ -88,3 +88,25 @@ test('the Book and PC table: Category 128 px, dim on one line, its heading lined
     // the class rules outrank the position rules (.tv-feed tbody td.tv-num, td:nth-child(n)): three classes over two
     assert.match(css, /\.tv-feed tbody td\.tv-num, \.tv-feed tbody td:nth-child\(5\) \{ color: var\(--tv-dim\); \}/);
 });
+
+test('the Console list remembers its sort under console', async () => {
+    const { component, posts } = screen('https://nntmux.test/console?genre%5B%5D=12&page=2', 'console');
+    await component.changeSort({ target: { value: 'posted_oldest' } });
+    assert.deepEqual(posts, [{ root: 'console', sort: 'posted_oldest' }]);
+    const url = new URL(window.location.href);
+    assert.deepEqual([url.searchParams.getAll('genre[]'), url.searchParams.has('page')], [['12'], false], 'a new sort keeps the Genre and opens page 1');
+});
+
+test('the Console table: cover 116 px, Category 128 px, Genre 150 px dim in up to four lines; the game line plain; the game panel two Movies release-bar cells', () => {
+    const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
+    assert.match(css, /\.tv-col-art \{ width: 116px; \}/, 'the Movies poster column');
+    assert.match(css, /\.tv-col-category \{ width: 128px; \}/);
+    assert.match(css, /\.tv-col-genre \{ width: 150px; \}/);
+    assert.match(css, /\.tv-feed\.is-shelf tbody td\.tv-genre \{ color: var\(--tv-dim\); line-height: 1\.4; white-space: normal; \}/, 'dim and wrapping');
+    assert.match(css, /\.tv-feed\.is-shelf tbody td\.tv-genre span \{ display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; \}/, 'at most four lines');
+    assert.match(css, /\.tv-feed\.is-shelf th\.tv-genre \{ padding-left: 12px; \}/, 'the heading starts where the cell text starts');
+    assert.match(css, /\.tv-game-line \{ display: block; width: fit-content; margin-top: 6px; color: var\(--tv-dim\); font-size: 13\.5px; \}/, 'dim 13.5 px under the name');
+    assert.doesNotMatch(css, /\.tv-game-line:hover/, 'plain text: no hover underline as .tv-show-line has');
+    assert.match(css, /\.tv-bar-list\.is-shelf \.filter-bar\.is-game \{ flex: 0 0 calc\(\(\(100% - 12px\) \/ 2 - 8px\) \* 2 \/ 5 \+ 8px\); \}/, 'the game panel as wide as the release panel');
+    assert.match(css, /\.tv-art a \{ position: relative; display: block; width: 88px; height: 132px;/, 'the 88 x 132 cover slot');
+});

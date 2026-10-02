@@ -1,5 +1,5 @@
 @php
-    /** @var \App\Data\ShelfReleaseRow $row */
+    /** @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow $row */
     $details = route('details', $row->guid);
     // The first chip on the page is measured as "chip base"; every other chip by its kind (the prototype comparison).
     $chipBaseTaken = false;
@@ -15,8 +15,24 @@
 @endphp
 <tr data-release-row>
     <td @if($first) data-part="release row cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>
+    @if($row instanceof \App\Data\ConsoleReleaseRow)
+        {{-- Console's cover, the Movies poster slot (SPEC 5.7); a release with no game or no cover file shows the "No cover" tile. --}}
+        <td class="tv-art">
+            @if($row->cover !== null)
+                <a href="{{ $details }}" tabindex="-1" aria-hidden="true"><img src="{{ $row->cover }}" alt="" loading="eager"></a>
+            @else
+                <a class="tv-placeholder" href="{{ $details }}" tabindex="-1" aria-hidden="true">
+                    <i class="fas fa-image" aria-hidden="true"></i>
+                    <span class="tv-placeholder-label">No cover</span>
+                </a>
+            @endif
+        </td>
+    @endif
     <td class="tv-what">
         <a class="tv-release-name" href="{{ $details }}" title="{{ $row->name }}" data-part="release name">{{ $row->name }}</a>
+        @if($row instanceof \App\Data\ConsoleReleaseRow && $row->hasGame())
+            <span class="tv-game-line">{{ $row->gameLine() }}</span>
+        @endif
         {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
@@ -26,6 +42,14 @@
         @endif
     </td>
     <td class="tv-category" title="{{ $row->categoryPath }}">{{ $row->category }}</td>
+    @if($row instanceof \App\Data\ConsoleReleaseRow)
+        {{-- The game's genres in IGDB order, up to four lines, the full list in the title (SPEC 5.8). --}}
+        @if($row->genres !== '')
+            <td class="tv-genre" title="{{ $row->genres }}"><span>{{ $row->genres }}</span></td>
+        @else
+            <td class="tv-genre"><span>—</span></td>
+        @endif
+    @endif
     <td class="tv-num tv-size">{{ $row->size }}</td>
     <td class="tv-num tv-date" title="{{ $row->dateTitle }}">{{ $row->date }}</td>
     <td>

@@ -7,6 +7,10 @@
 @endpush
 
 @section('content')
+@php
+    // Console (genreMenu set) adds the game: the name search also reads the game's name, and the game's panel follows the release's.
+    $games = isset($genreMenu);
+@endphp
 <div class="tv-screen" data-part="page ground and body text" x-data="tvReleases"
      data-preference-url="{{ route('profile.update-view') }}" data-preference-root="{{ $preferenceRoot }}" data-filters-clock="{{ $filtersClock }}"
      data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
@@ -14,11 +18,11 @@
     <div class="tv-wrap" data-part="content width wrapper">
         <div class="tv-filters">
             <h1 data-part="page title">{{ $heading }}</h1>
-            {{-- The name search (SPEC 5.6): narrows the list to names containing the text; never remembered. --}}
+            {{-- The name search (SPEC 5.6): narrows the list to names (on Console, release or game names) containing the text; never remembered. --}}
             <div class="tv-search tv-name-search">
                 <label>
                     <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
-                    <input type="text" x-ref="nameSearch" value="{{ $filters->search }}" placeholder="Search release names" autocomplete="off" aria-label="Search release names" data-part="search field"
+                    <input type="text" x-ref="nameSearch" value="{{ $filters->search }}" placeholder="{{ $games ? 'Search releases or games' : 'Search release names' }}" autocomplete="off" aria-label="{{ $games ? 'Search release and game names' : 'Search release names' }}" data-part="search field"
                            x-on:input="searchNames" x-on:keydown.escape.prevent="clearNameSearch">
                     <button type="button" @class(['tv-name-search-clear', 'is-hidden' => $filters->search === '']) x-ref="nameClear" aria-label="Clear the name search" title="Clear the name search" x-on:click="clearNameSearch" @if($filters->search === '') aria-hidden="true" tabindex="-1" @endif><i class="fas fa-xmark" aria-hidden="true"></i></button>
                 </label>
@@ -33,12 +37,18 @@
                 <i class="fas fa-chevron-down" aria-hidden="true"></i>
             </label>
         </div>
-        {{-- Two release cells (SPEC 5.2), each as wide as a Movie releases release-bar cell; no other filter. --}}
+        {{-- Two release cells (SPEC 5.2), each as wide as a Movie releases release-bar cell; Console adds the game's two cells in their own panel. --}}
         <div class="filter-row tv-bar-list is-shelf">
             <x-filter-bar label="The release" class="is-release">
                 <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" :exclude-other="$excludableOther" />
                 <x-checkbox-menu cell single name="completion" label="Completion" any="Any completion" :options="\App\Data\ReleaseListFilters::completionOptions()" :short="\App\Data\ReleaseListFilters::completionCells()" :selected="$filters->completion === null ? [] : [$filters->completion]" />
             </x-filter-bar>
+            @if($games)
+                <x-filter-bar label="The game" class="is-game">
+                    <x-checkbox-menu cell name="genre" label="Genre" any="Any genre" noun="genres" :options="$genreMenu" :selected="$filters->genres" />
+                    <x-year-menu :decades="\App\Data\ConsoleReleaseFilters::decadeOptions()" :selected="$filters->decades" :from="$filters->yearFrom" :to="$filters->yearTo" />
+                </x-filter-bar>
+            @endif
         </div>
         <div x-ref="list" class="tv-list-end">
             @include('shelf.releases.list')

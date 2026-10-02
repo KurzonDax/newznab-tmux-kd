@@ -24,6 +24,7 @@ final class PublicNavigationSectionTest extends TestCase
         yield 'adult list' => ['/adult', null, BrowseRoot::Adult];
         yield 'books list' => ['/books', null, BrowseRoot::Books];
         yield 'pc list' => ['/pc', null, BrowseRoot::Games];
+        yield 'console list' => ['/console', null, BrowseRoot::Console];
         yield 'books browse' => ['/browse/books', null, BrowseRoot::Books];
         yield 'books sub-category' => ['/browse/books/7010', null, BrowseRoot::Books];
         yield 'pc browse' => ['/browse/pc', null, BrowseRoot::Games];

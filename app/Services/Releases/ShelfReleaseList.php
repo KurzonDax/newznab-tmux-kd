@@ -30,6 +30,9 @@ abstract class ShelfReleaseList extends BandReleaseList
      */
     public const CATEGORY_ORDER = [];
 
+    /** The name the search reads: the display name, or the search name when it is empty. */
+    protected const string RELEASE_NAME = "COALESCE(NULLIF(TRIM(releases.display_name), ''), releases.searchname)";
+
     /** @param ShelfReleaseFilters $filters */
     protected function countIndex(ReleaseListFilters $filters): string
     {
@@ -68,13 +71,37 @@ abstract class ShelfReleaseList extends BandReleaseList
         if ($this->isMariaDb()) {
             $query->forceIndex($index);
         }
-        $this->whereRelease($query->where('releases.category_band', $this->band()), $filters, $exclusions);
+
+        return $this->released($query->where('releases.category_band', $this->band()), $filters, $exclusions);
+    }
+
+    /**
+     * The release filters and the name search on `releases`.
+     *
+     * @param  list<int>  $exclusions
+     */
+    protected function released(Builder $query, ShelfReleaseFilters $filters, array $exclusions): Builder
+    {
+        $this->whereRelease($query, $filters, $exclusions);
         if ($filters->search !== '') {
-            // Today's name search (ReleaseBrowserQuery): the display name, or the search name when it is empty, with %, _ and ! literal.
-            $query->whereRaw("COALESCE(NULLIF(TRIM(releases.display_name), ''), releases.searchname) LIKE ? ESCAPE '!'",
-                ['%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $filters->search).'%']);
+            $this->whereSearch($query, $filters->search);
         }
 
         return $query;
+    }
+
+    /**
+     * Today's name search (ReleaseBrowserQuery): the display name, or the search name when it is
+     * empty, contains the text, with %, _ and ! literal.
+     */
+    protected function whereSearch(Builder $query, string $search): void
+    {
+        $query->whereRaw(self::RELEASE_NAME." LIKE ? ESCAPE '!'", [self::likeContaining($search)]);
+    }
+
+    /** The LIKE pattern of names containing the text, escaped with '!'. */
+    protected static function likeContaining(string $search): string
+    {
+        return '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search).'%';
     }
 }
