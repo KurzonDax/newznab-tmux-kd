@@ -61,6 +61,16 @@ class UsenetGroupProviderCursor extends Model
     }
 
     /**
+     * Forget secondary providers' positions in one group, or in every group, so the next
+     * discovery re-initialises them from the start-hours setting.
+     */
+    public static function forget(?int $groupId = null): void
+    {
+        DB::table('usenet_group_provider_ingested_ranges')->when($groupId !== null, static fn ($query) => $query->where('usenet_groups_id', $groupId))->delete();
+        self::query()->when($groupId !== null, static fn ($query) => $query->where('usenet_groups_id', $groupId))->delete();
+    }
+
+    /**
      * Publish only covered article ranges, as {@see UsenetGroup::advanceLastRecordContiguously()}
      * does for provider 1. A range ahead of the cursor is parked until the gap before it fills.
      */

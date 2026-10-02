@@ -93,8 +93,9 @@ auth and protocol failures count against it.
 
 Per process, not shared: five consecutive failures skip a provider for article operations for
 60 seconds. A worker that trips a provider does not punish its siblings, and there is no shared
-state to keep consistent. Header work has no alternative provider to fall back to, so it is
-unaffected — a broken primary surfaces there as it always has.
+state to keep consistent. Header scans do not fail over: each reads the one provider it was
+pointed at, so a broken provider surfaces as its own failed ranges, and the `nntp-headers`
+status probe reports a provider whose scanning stops.
 
 ## Connections are advisory
 

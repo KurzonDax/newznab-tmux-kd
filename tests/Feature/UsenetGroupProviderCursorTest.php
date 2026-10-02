@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Models\UsenetGroupProviderCursor;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
@@ -107,6 +108,32 @@ class UsenetGroupProviderCursorTest extends TestCase
         UsenetGroupProviderCursor::advanceContiguously(1, 'super', 5001, 5100, null);
 
         $this->assertSame(5100, $this->cursor('super')->last_record);
+    }
+
+    public function test_the_migration_seeds_the_start_hours_without_overwriting_and_rolls_back(): void
+    {
+        Schema::drop('usenet_group_provider_ingested_ranges');
+        Schema::drop('usenet_group_provider_cursors');
+        ProductionTables::fromAuthority()->create('settings', ['name', 'value']);
+        DB::table('settings')->insert(['name' => 'secondary_header_start_hours', 'value' => '48']);
+        $migration = require database_path('migrations/2026_10_02_000000_create_usenet_group_provider_cursors.php');
+
+        $migration->up();
+
+        $this->assertTrue(Schema::hasColumns('usenet_group_provider_cursors', ['usenet_groups_id', 'provider', 'provider_host',
+            'last_record', 'last_record_postdate', 'last_advanced_at', 'server_first', 'server_last', 'server_checked_at']));
+        $this->assertTrue(Schema::hasColumns('usenet_group_provider_ingested_ranges',
+            ['usenet_groups_id', 'provider', 'first_record', 'last_record', 'last_record_postdate']));
+        $this->assertSame('48', DB::table('settings')->where('name', 'secondary_header_start_hours')->value('value'));
+
+        $migration->down();
+
+        $this->assertFalse(Schema::hasTable('usenet_group_provider_cursors'));
+        $this->assertFalse(Schema::hasTable('usenet_group_provider_ingested_ranges'));
+        $this->assertSame(0, DB::table('settings')->count());
+
+        $migration->up();
+        $this->assertSame('36', DB::table('settings')->where('name', 'secondary_header_start_hours')->value('value'));
     }
 
     private function cursor(string $provider): UsenetGroupProviderCursor

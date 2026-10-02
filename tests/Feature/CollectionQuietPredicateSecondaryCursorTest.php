@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Enums\CollectionDeletionReason;
 use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionQuietPredicate;
+use App\Support\DatabaseClock;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -81,9 +82,10 @@ class CollectionQuietPredicateSecondaryCursorTest extends TestCase
 
         $predicate = CollectionQuietPredicate::build(12);
 
+        $cutoff = DatabaseClock::cutoff(now()->subHours(12))['bindings'][0];
+        $this->assertSame([$cutoff, 12, $cutoff, -12, $cutoff], $predicate['bindings']);
         $this->assertStringNotContainsString('usenet_group_provider_cursors', $predicate['sql']);
-        $this->assertCount(5, $predicate['bindings']);
-        $this->assertSame([12, -12], [$predicate['bindings'][1], $predicate['bindings'][3]]);
+        $this->assertStringContainsString("OR (g.active = 1 AND g.last_record_postdate >= datetime(collections.last_seen_head_postdate, ? || ' hours'))\n", $predicate['sql']);
     }
 
     /** @param  array{at_hours: float|string, advanced_minutes_ago: int}|null  $cursor */
