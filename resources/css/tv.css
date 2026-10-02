@@ -322,6 +322,20 @@
 .tv-feed.is-adult .tv-origin-pair { min-width: min-content; }
 .tv-feed.is-adult .tv-origin-poster { min-width: 96px; }
 
+/*
+ * Book and PC releases (docs/proposals/books-console-pc-redesign/SPEC.md 5): the Adult list without
+ * the picture, Resolution and Audio, with a Category column. Two release cells, each as wide as a
+ * Movie releases release-bar cell; the cells are coloured by class, since the position rules above
+ * (fifth dim, sixth ink, tv-num dim) would colour this table wrongly: the Category cell dim on one
+ * line, its heading lined up with its text, Size in ink, the date dim.
+ */
+.tv-bar-list.is-shelf .filter-bar.is-release { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px); }
+.tv-col-category { width: 128px; }
+.tv-feed.is-shelf th.tv-category { padding-left: 12px; }
+.tv-feed.is-shelf tbody td.tv-category { overflow: hidden; color: var(--tv-dim); text-overflow: ellipsis; white-space: nowrap; }
+.tv-feed.is-shelf tbody td.tv-size { color: var(--tv-ink); }
+.tv-feed.is-shelf tbody td.tv-date { color: var(--tv-dim); }
+
 /* TV shows wall */
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
 .tv-person a { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 12px; background: var(--tv-on-accent-button); font-size: 12px; }

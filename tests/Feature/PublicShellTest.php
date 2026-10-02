@@ -88,7 +88,7 @@ final class PublicShellTest extends TestCase
         $xpath = $this->document($response->getContent());
         $this->assertSame(['Movies', 'TV', 'Audio', 'Books', 'Console', 'PC', 'Adult', 'Other', 'All'], $this->texts($xpath, '//nav[@aria-label="Main navigation"]//button[@aria-controls]'));
         $this->assertSame(['All Movies', 'All TV', 'All Audio', 'All Books', 'All Console', 'All PC', 'All Adult', 'All Other'], $this->texts($xpath, '//nav//a[@class="public-menu-root"]'));
-        $this->assertSame([route('movies.releases'), route('tv.releases'), url('/browse/audio'), url('/browse/books'), url('/browse/console'), url('/browse/games'), route('adult.releases'), url('/browse/other')], $this->hrefs($xpath, '//nav//a[@class="public-menu-root"]'));
+        $this->assertSame([route('movies.releases'), route('tv.releases'), url('/browse/audio'), route('books.releases'), url('/browse/console'), route('pc.releases'), route('adult.releases'), url('/browse/other')], $this->hrefs($xpath, '//nav//a[@class="public-menu-root"]'));
         $this->assertSame(['All', 'Movies', 'TV', 'Audio', 'Books', 'Console', 'PC', 'Adult', 'Other'], $this->texts($xpath, '//form[@role="search"]//*[@role="menuitemradio"]'));
         $this->assertSame(['0', '2000', '5000', '3000', '7000', '1000', '4000', '6000', '1'], array_map(static fn (\DOMElement $item): string => $item->getAttribute('data-value'), iterator_to_array($xpath->query('//form[@role="search"]//*[@role="menuitemradio"]'))));
         foreach ($xpath->query('//nav[@aria-label="Main navigation"]//button[@aria-controls]') as $button) {

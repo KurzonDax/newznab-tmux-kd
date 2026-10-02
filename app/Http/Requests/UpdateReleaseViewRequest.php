@@ -25,7 +25,7 @@ final class UpdateReleaseViewRequest extends FormRequest
             'size' => ['sometimes', 'string', Rule::in($root?->coverSizes() ?? ['s'])],
             'per' => ['sometimes', 'integer', 'in:24,48,100'],
             'thumbs' => ['sometimes', 'boolean'],
-            'sort' => ['sometimes', 'string', Rule::in(in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies, BrowseRoot::Adult], true) ? array_keys(ReleaseListFilters::SORTS) : [])],
+            'sort' => ['sometimes', 'string', Rule::in(in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies, BrowseRoot::Adult, BrowseRoot::Books, BrowseRoot::Games], true) ? array_keys(ReleaseListFilters::SORTS) : [])],
             'shows_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvShowFilters::SORTS) : [])],
             'films_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Movies ? array_keys(MovieFilmWallFilters::SORTS) : [])],
         ];
