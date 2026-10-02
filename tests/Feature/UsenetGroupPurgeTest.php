@@ -11,6 +11,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class UsenetGroupPurgeTest extends TestCase
@@ -50,6 +51,10 @@ class UsenetGroupPurgeTest extends TestCase
             ['id' => 1, 'numberid' => 1001, 'groups_id' => 1],
             ['id' => 2, 'numberid' => 2001, 'groups_id' => 2],
         ]);
+        foreach ([1, 2] as $groupId) {
+            DB::table('usenet_group_provider_cursors')->insert(['usenet_groups_id' => $groupId, 'provider' => 'super', 'last_record' => 300]);
+            DB::table('usenet_group_provider_ingested_ranges')->insert(['usenet_groups_id' => $groupId, 'provider' => 'super', 'first_record' => 400]);
+        }
 
         DB::table('releases')->insert([
             ['id' => 10, 'guid' => 'sole-release-guid', 'groups_id' => 1],
@@ -82,6 +87,10 @@ class UsenetGroupPurgeTest extends TestCase
         $this->assertDatabaseHas('binaries', ['collections_id' => 200]);
         $this->assertDatabaseHas('parts', ['binaries_id' => 2000]);
         $this->assertDatabaseHas('missed_parts', ['groups_id' => 2]);
+        foreach (['usenet_group_provider_cursors', 'usenet_group_provider_ingested_ranges'] as $table) {
+            $this->assertDatabaseMissing($table, ['usenet_groups_id' => 1]);
+            $this->assertDatabaseHas($table, ['usenet_groups_id' => 2]);
+        }
 
         $this->assertDatabaseMissing('releases', ['id' => 10]);
         $this->assertDatabaseHas('releases', ['id' => 20]);
@@ -137,6 +146,9 @@ class UsenetGroupPurgeTest extends TestCase
 
     private function createTables(): void
     {
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('usenet_group_provider_cursors', ['usenet_groups_id', 'provider', 'last_record']);
+        $tables->create('usenet_group_provider_ingested_ranges', ['usenet_groups_id', 'provider', 'first_record']);
         Schema::create('settings', function (Blueprint $table): void {
             $table->string('name')->primary();
             $table->text('value')->nullable();
