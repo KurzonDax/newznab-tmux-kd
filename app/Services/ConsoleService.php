@@ -531,7 +531,10 @@ class ConsoleService
             $game = $this->igdbService->findGame((int) $asin);
             $con = $game !== null ? $this->igdbService->buildConsoleData($game, (string) $stored->platform) : null;
         } catch (\Throwable $e) {
-            cli()->error('Error refreshing IGDB properties: '.$e->getMessage());
+            // A spent rate limit is not an error, as in fetchIGDBProperties(); the next release retries.
+            if (! $e instanceof IgdbHttpException || $e->getStatusCode() !== 429) {
+                cli()->error('Error refreshing IGDB properties: '.$e->getMessage());
+            }
 
             return true;
         }

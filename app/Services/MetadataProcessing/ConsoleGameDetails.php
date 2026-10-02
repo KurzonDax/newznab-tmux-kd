@@ -35,13 +35,7 @@ class ConsoleGameDetails
     {
         $companies = [];
         foreach ([self::DEVELOPER => 'developers', self::PUBLISHER => 'publishers'] as $role => $key) {
-            $ids = [];
-            foreach ($this->entries($con[$key] ?? null) as $company) {
-                $id = $this->companyId($company['igdb_id'] ?? null, $company['name'] ?? null);
-                if ($id !== null && ! in_array($id, $ids, true)) {
-                    $ids[] = $id;
-                }
-            }
+            $ids = $this->rowIds($con[$key] ?? null, fn (array $company): ?int => $this->companyId($company['igdb_id'] ?? null, $company['name'] ?? null));
             foreach ($ids as $position => $id) {
                 $companies[] = ['companies_id' => $id, 'role' => $role, 'position' => $position];
             }
@@ -59,13 +53,7 @@ class ConsoleGameDetails
      */
     private function lookupRows(string $table, mixed $entries): array
     {
-        $ids = [];
-        foreach ($this->entries($entries) as $entry) {
-            $id = $this->lookupId($table, $entry['igdb_id'] ?? null, $entry['name'] ?? null);
-            if ($id !== null && ! in_array($id, $ids, true)) {
-                $ids[] = $id;
-            }
-        }
+        $ids = $this->rowIds($entries, fn (array $entry): ?int => $this->lookupId($table, $entry['igdb_id'] ?? null, $entry['name'] ?? null));
 
         $rows = [];
         foreach ($ids as $position => $id) {
@@ -76,11 +64,23 @@ class ConsoleGameDetails
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * The row ids the entries resolve to, in order and each once; an entry that resolves to none
+     * is left out.
+     *
+     * @param  callable(array<string, mixed>): ?int  $resolve
+     * @return list<int>
      */
-    private function entries(mixed $entries): array
+    private function rowIds(mixed $entries, callable $resolve): array
     {
-        return is_array($entries) ? array_values(array_filter($entries, is_array(...))) : [];
+        $ids = [];
+        foreach (is_array($entries) ? $entries : [] as $entry) {
+            $id = is_array($entry) ? $resolve($entry) : null;
+            if ($id !== null && ! in_array($id, $ids, true)) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
     }
 
     /**

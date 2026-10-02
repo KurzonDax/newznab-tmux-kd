@@ -492,10 +492,10 @@ class IGDBService
                 $isDeveloper = is_array($company) ? ($company['developer'] ?? false) : ($company->developer ?? false);
 
                 if ($isPublisher === true && ($companyData = $this->involvedCompany($company)) !== null) {
-                    $publishers[] = $companyData[1];
+                    $publishers[] = $companyData['name'];
                 }
                 if ($isDeveloper === true && ($companyData = $this->involvedCompany($company)) !== null) {
-                    $developers[] = $companyData[1];
+                    $developers[] = $companyData['name'];
                 }
             }
         }
@@ -604,22 +604,22 @@ class IGDBService
             }
 
             $companyData = $this->involvedCompany($company);
-            if ($companyData === null || $companyData[1] === '' || isset($companies[$companyData[0]])) {
+            if ($companyData === null || $companyData['name'] === '' || isset($companies[$companyData['igdb_id']])) {
                 continue;
             }
 
-            $companies[$companyData[0]] = ['igdb_id' => $companyData[0], 'name' => $companyData[1]];
+            $companies[$companyData['igdb_id']] = $companyData;
         }
 
         return array_values($companies);
     }
 
     /**
-     * An involved company entry's company as [IGDB id, name]: the expanded `company` object, else,
+     * An involved company entry's company with its IGDB id and name: the expanded `company` object, else,
      * for a bare id (an answer cached before the name was requested), the `companies` endpoint,
      * asked once per company for the rest of the call. Null when it has no id or IGDB has none.
      *
-     * @return array{int, string}|null
+     * @return array{igdb_id: int, name: string}|null
      */
     private function involvedCompany(mixed $entry): ?array
     {
@@ -631,7 +631,7 @@ class IGDBService
                 return null;
             }
 
-            return [(int) $id, trim((string) ($this->nodeValue($company, 'name') ?? ''))];
+            return ['igdb_id' => (int) $id, 'name' => trim((string) ($this->nodeValue($company, 'name') ?? ''))];
         }
 
         if (! is_numeric($company) || (int) $company <= 0) {
@@ -644,7 +644,7 @@ class IGDBService
             $this->companyNames[$id] = $found !== null ? trim((string) ($found->name ?? '')) : null;
         }
 
-        return $this->companyNames[$id] !== null ? [$id, $this->companyNames[$id]] : null;
+        return $this->companyNames[$id] !== null ? ['igdb_id' => $id, 'name' => $this->companyNames[$id]] : null;
     }
 
     private function storyline(Game $game): ?string
