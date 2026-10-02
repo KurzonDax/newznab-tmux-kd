@@ -72,6 +72,21 @@ class ReleaseChipViewTest extends TestCase
         $this->assertStringNotContainsString('Hidden entity', $html);
     }
 
+    public function test_entity_chip_hides_books_and_pc_titles_and_keeps_the_console_link(): void
+    {
+        $this->assertSame('', trim(Blade::render('<x-entity-chip root="books" title="A Printed Book" year="2022" href="/details/book-guid" />')));
+        $this->assertSame('', trim(Blade::render('<x-entity-chip root="games" title="A Computer Game" year="2023" href="/details/pc-guid" />')));
+        $html = Blade::render('<x-entity-chip root="console" title="A Console Game" year="2024" href="/details/console-guid" />');
+        $document = new DOMDocument;
+        $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        $this->assertSame(1, $xpath->query('//a[@data-chip-variant="entity"]')->length);
+        $this->assertSame('/details/console-guid', $xpath->evaluate('string(//a[@data-chip-variant="entity"]/@href)'));
+        $this->assertSame('A Console Game · 2024', trim($xpath->evaluate('string(//a[@data-chip-variant="entity"])')));
+        $this->assertSame(1, $xpath->query('//a[@data-chip-variant="entity"]/i[contains(@class,"fa-gamepad")]')->length);
+    }
+
     public function test_chips_keep_text_safe_and_expose_native_links_and_modal_buttons(): void
     {
         $html = Blade::render(<<<'BLADE'

@@ -61,19 +61,16 @@ use App\Http\Controllers\Auth\PasskeyLoginController;
 use App\Http\Controllers\Auth\PasskeyManagementController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
-use App\Http\Controllers\BooksController;
 use App\Http\Controllers\BrowseController;
 use App\Http\Controllers\BrowseGroupController;
 use App\Http\Controllers\BtcPaymentController;
 use App\Http\Controllers\CartController;
-use App\Http\Controllers\ConsoleController;
 use App\Http\Controllers\ConsoleReleasesController;
 use App\Http\Controllers\ContactUsController;
 use App\Http\Controllers\ContentController;
 use App\Http\Controllers\CoverController;
 use App\Http\Controllers\DetailsController;
 use App\Http\Controllers\FailedReleasesController;
-use App\Http\Controllers\GamesController;
 use App\Http\Controllers\GetNzbController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\MediaInfoController;
@@ -233,10 +230,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         ->name('failed');
 
     Route::middleware('clearance')->group(function () {
-        Route::match(['GET', 'POST'], 'Games', [GamesController::class, 'show'])->name('Games');
         Route::match(['GET', 'POST'], 'Audio/{id?}', [MusicController::class, 'show'])->name('Audio');
-        Route::match(['GET', 'POST'], 'Console/{id?}', [ConsoleController::class, 'show'])->name('Console');
-        Route::match(['GET', 'POST'], 'Books/{id?}', [BooksController::class, 'index'])->name('Books');
         // TV-related routes
         Route::get('tv', [TvReleasesController::class, 'index'])->name('tv.releases');
         Route::get('tv/shows', [TvShowsController::class, 'index'])->name('tv.shows');
@@ -251,10 +245,10 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('movies/film/{movieinfoId}', [MovieFilmController::class, 'show'])->whereNumber('movieinfoId')->name('movies.film');
         // Adult-related routes
         Route::get('adult', [AdultReleasesController::class, 'index'])->name('adult.releases');
-        // Books and PC (docs/proposals/books-console-pc-redesign/SPEC.md 1): /books is not the legacy Books/{id?} route, paths are case-sensitive
+        // Books and PC (docs/proposals/books-console-pc-redesign/SPEC.md 1): paths are case-sensitive
         Route::get('books', [ShelfReleasesController::class, 'books'])->name('books.releases');
         Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');
-        // Console (SPEC 1): /console is not the legacy Console/{id?} route, paths are case-sensitive
+        // Console (SPEC 1): paths are case-sensitive
         Route::get('console', [ConsoleReleasesController::class, 'index'])->name('console.releases');
     });
 

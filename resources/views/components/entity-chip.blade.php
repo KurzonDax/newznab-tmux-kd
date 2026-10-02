@@ -5,12 +5,11 @@
         'movies' => 'fa-film',
         'tv', 'anime' => 'fa-tv',
         'audio', 'music' => 'fa-music',
-        'console', 'games' => 'fa-gamepad',
-        'books' => 'fa-book-open',
+        'console' => 'fa-gamepad',
         default => 'fa-box',
     };
 @endphp
 
-@if($root !== 'adult' && filled($title))
+@if(! in_array($root, ['adult', 'books', 'games'], true) && filled($title))
     <x-chip variant="entity" :icon="'fas '.$icon" :href="$href" :title="'Open '.$title" {{ $attributes }}>{{ $title }}{{ filled($year) && !in_array($root, ['tv', 'anime'], true) ? ' · '.$year : '' }}</x-chip>
 @endif

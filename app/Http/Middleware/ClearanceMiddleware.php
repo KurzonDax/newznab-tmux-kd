@@ -114,8 +114,8 @@ class ClearanceMiddleware
             return $next($request);
         }
 
-        // PC/Games category
-        if ($this->matchesCategoryPath($path, 'Games') || $this->matchesCategoryPath($path, 'PC')) {
+        // PC category
+        if ($this->matchesCategoryPath($path, 'PC')) {
             if (! $user->hasDirectPermission('view pc')) {
                 return $this->abortCategoryDisabled('PC');
             }

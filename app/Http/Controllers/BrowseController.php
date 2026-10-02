@@ -25,7 +25,7 @@ class BrowseController extends BasePageController
     public function show(Request $request, string $parentCategory, string $id = 'All'): mixed
     {
         $root = BrowseRoot::fromRoute($parentCategory);
-        abort_if($root === null || $root === BrowseRoot::All || $root === BrowseRoot::Adult, 404);
+        abort_if($root === null || in_array($root, [BrowseRoot::All, BrowseRoot::Adult, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Books], true), 404);
         $category = null;
         if (strtolower($id) !== 'all') {
             $query = Category::query()->where('root_categories_id', $root->categoryId());

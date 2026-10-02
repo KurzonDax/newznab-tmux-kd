@@ -71,7 +71,8 @@ final class ReleaseEntityDataLoaderTest extends TestCase
         self::assertSame(match ($root) {
             'tv' => route('tv.show', ['videosId' => 7]),
             'movies' => route('movies.film', ['movieinfoId' => 21]),
-            default => route('title', ['root' => $root, 'id' => '7']),
+            'audio' => route('title', ['root' => 'audio', 'id' => '7']),
+            default => null,
         }, $entities[1]->titleUrl());
         self::assertSame($root === 'movies' ? 21 : null, $entities[1]->filmId);
         foreach ($queries as $query) {

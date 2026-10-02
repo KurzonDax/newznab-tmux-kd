@@ -23,7 +23,7 @@
             <dl class="title-stats">
                 <div><dt>Releases</dt><dd>{{ number_format($releaseCount) }}</dd></div>
                 @if($latestRelease)<div><dt>Latest</dt><dd>{{ userDateDiffForHumans($latestRelease) }}</dd></div>@endif
-                @if($title->root === \App\Enums\BrowseRoot::Audio && $bestQuality)<div><dt>Best</dt><dd>{{ $bestQuality }}</dd></div>@endif
+                @if($bestQuality)<div><dt>Best</dt><dd>{{ $bestQuality }}</dd></div>@endif
             </dl>
         </div>
     </section>

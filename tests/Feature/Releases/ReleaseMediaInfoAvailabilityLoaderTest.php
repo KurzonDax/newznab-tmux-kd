@@ -9,9 +9,6 @@ use App\Enums\BrowseRoot;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Models\User;
-use App\Services\BookService;
-use App\Services\ConsoleService;
-use App\Services\GamesService;
 use App\Services\MusicService;
 use App\Services\Releases\ReleaseMediaInfoAvailabilityLoader;
 use Illuminate\Database\Schema\Blueprint;
@@ -213,9 +210,6 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
     {
         return [
             'Audio' => [MusicService::class, 'getMusicRange', 'musicinfo', 'musicinfo_id'],
-            'Games' => [GamesService::class, 'getGamesRange', 'gamesinfo', 'gamesinfo_id'],
-            'Books' => [BookService::class, 'getBookRange', 'bookinfo', 'bookinfo_id'],
-            'Console' => [ConsoleService::class, 'getConsoleRange', 'consoleinfo', 'consoleinfo_id'],
         ];
     }
 
