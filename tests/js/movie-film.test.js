@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { currentSort, movieFilm, nextSort, SELECTION_KEY, sortUrl } from '../../resources/js/alpine/components/movie-film-component.js';
+import { currentSort, movieFilm, nextSort, offeredSorts, SELECTION_KEY, sortUrl } from '../../resources/js/alpine/components/movie-film-component.js';
 
 /** The film page (movies/film/index.blade.php): its table's sorts, cells and selection (SPEC 5B.2). */
 
@@ -52,6 +52,26 @@ test('the order comes from the URL: newest posted first without a sort, _asc for
     assert.deepEqual(currentSort('https://nntmux.test/movies/film/10?sort=size'), { key: 'size', dir: -1 });
     assert.deepEqual(currentSort('https://nntmux.test/movies/film/10?sort=resolution_asc'), { key: 'resolution', dir: 1 });
     assert.deepEqual(currentSort('https://nntmux.test/movies/film/10?sort=grabs'), { key: 'posted', dir: -1 });
+});
+
+test('the Console game page\'s Category sort is read back from the URL and its first click sorts ascending (issue #935)', () => {
+    assert.deepEqual(currentSort('https://nntmux.test/details/abc?sort=category'), { key: 'category', dir: -1 });
+    assert.deepEqual(currentSort('https://nntmux.test/details/abc?sort=category_asc'), { key: 'category', dir: 1 });
+    const href = 'https://nntmux.test/details/abc';
+    assert.equal(sortUrl(href, nextSort(currentSort(href), 'category')).searchParams.get('sort'), 'category_asc');
+});
+
+test('a page reads back only the sorts its headings offer: a film\'s table has no Category, so ?sort=category is newest posted first there', () => {
+    const headings = keys => ({ querySelectorAll: selector => (selector === '[data-sort]' ? keys.map(sort => ({ dataset: { sort } })) : []) });
+    const film = offeredSorts(headings(['resolution', 'size', 'posted']));
+    assert.deepEqual(film, ['resolution', 'size', 'posted']);
+    assert.deepEqual(currentSort('https://nntmux.test/movies/film/10?sort=category', film), { key: 'posted', dir: -1 });
+    assert.deepEqual(currentSort('https://nntmux.test/movies/film/10?sort=resolution_asc', film), { key: 'resolution', dir: 1 });
+    const game = offeredSorts(headings(['category', 'size', 'posted']));
+    assert.deepEqual(currentSort('https://nntmux.test/details/abc?sort=category_asc', game), { key: 'category', dir: 1 });
+    assert.deepEqual(currentSort('https://nntmux.test/details/abc?sort=resolution', game), { key: 'posted', dir: -1 });
+    assert.equal(offeredSorts(headings([])), undefined);
+    assert.equal(offeredSorts(undefined), undefined);
 });
 
 test('a heading sorts descending on its first click and flips on the next', () => {

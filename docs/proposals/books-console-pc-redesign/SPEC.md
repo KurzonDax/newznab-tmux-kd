@@ -251,8 +251,8 @@ two versions on the way and both must stay rejected (Appendix B):
 The approved page, top to bottom:
 
 - **Breadcrumb** `Console releases › <sub-category>`.
-- **The cover** at the left, 200 px wide (the film page's poster), the "No cover" placeholder when the game has none;
-  the text column beside it, 640 px at most, as the film page's.
+- **The cover** at the left, 200 px wide (the film page's poster), the title card with the game's name and year when
+  the game has no cover, as the film page's; the text column beside it, 640 px at most, as the film page's.
 - **The release name** as the heading, at the release-details size (24 px), wrapping anywhere.
 - **The game line** under it: the game's name (ink, semibold) · year · platform (the sub-category).
 - The release's **chip line** and the **group and poster** chips.
