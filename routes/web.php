@@ -94,6 +94,7 @@ use App\Http\Controllers\ReleaseViewPreferencesController;
 use App\Http\Controllers\RssController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SearchSuggestController;
+use App\Http\Controllers\ShelfReleasesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
 use App\Http\Controllers\TitleController;
@@ -249,6 +250,9 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('movies/film/{movieinfoId}', [MovieFilmController::class, 'show'])->whereNumber('movieinfoId')->name('movies.film');
         // Adult-related routes
         Route::get('adult', [AdultReleasesController::class, 'index'])->name('adult.releases');
+        // Books and PC (docs/proposals/books-console-pc-redesign/SPEC.md 1): /books is not the legacy Books/{id?} route, paths are case-sensitive
+        Route::get('books', [ShelfReleasesController::class, 'books'])->name('books.releases');
+        Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');
     });
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');

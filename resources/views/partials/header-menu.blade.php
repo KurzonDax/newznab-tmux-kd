@@ -4,7 +4,7 @@
     <nav class="public-primary-nav" aria-label="Main navigation">
         @foreach($navigationRoots as $navigationRoot)
             @php($root = $navigationRoot['root'])
-            @php($list = match ($root) { \App\Enums\BrowseRoot::Tv => 'tv.releases', \App\Enums\BrowseRoot::Movies => 'movies.releases', \App\Enums\BrowseRoot::Adult => 'adult.releases', default => null })
+            @php($list = match ($root) { \App\Enums\BrowseRoot::Tv => 'tv.releases', \App\Enums\BrowseRoot::Movies => 'movies.releases', \App\Enums\BrowseRoot::Adult => 'adult.releases', \App\Enums\BrowseRoot::Books => 'books.releases', \App\Enums\BrowseRoot::Games => 'pc.releases', default => null })
             <div class="public-nav-drop" data-menu-drop="nav-menu-{{ $root->value }}" x-on:focusout="dropFocusLeft">
                 <button type="button" class="public-nav-item" data-menu="nav-menu-{{ $root->value }}" x-on:click="toggleMenu" x-on:keydown.down.prevent="openMenuAndFocus" x-bind:aria-expanded="openMenu === 'nav-menu-{{ $root->value }}'" aria-controls="nav-menu-{{ $root->value }}" @if(($navigationCurrent ?? null) === $root) aria-current="true" @endif><span>{{ $root->label() }}</span><i class="fas fa-chevron-down public-nav-chevron" aria-hidden="true"></i></button>
                 <div id="nav-menu-{{ $root->value }}" class="card public-menu public-nav-menu" x-cloak x-show="openMenu === 'nav-menu-{{ $root->value }}'" x-on:click="navigate">

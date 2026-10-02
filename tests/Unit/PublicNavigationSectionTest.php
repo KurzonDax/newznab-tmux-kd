@@ -22,6 +22,8 @@ final class PublicNavigationSectionTest extends TestCase
         yield 'tv shows' => ['/tv/shows', null, BrowseRoot::Tv];
         yield 'tv show page' => ['/tv/show/12', null, BrowseRoot::Tv];
         yield 'adult list' => ['/adult', null, BrowseRoot::Adult];
+        yield 'books list' => ['/books', null, BrowseRoot::Books];
+        yield 'pc list' => ['/pc', null, BrowseRoot::Games];
         yield 'books browse' => ['/browse/books', null, BrowseRoot::Books];
         yield 'books sub-category' => ['/browse/books/7010', null, BrowseRoot::Books];
         yield 'pc browse' => ['/browse/pc', null, BrowseRoot::Games];

@@ -134,6 +134,8 @@ class GlobalDataComposer
             $request->is('movies', 'movies/*') => BrowseRoot::Movies,
             $request->is('tv', 'tv/*') => BrowseRoot::Tv,
             $request->is('adult') => BrowseRoot::Adult,
+            $request->is('books') => BrowseRoot::Books,
+            $request->is('pc') => BrowseRoot::Games,
             $request->is('browsegroup', 'browse/all', 'browse/All', 'browse/group') => BrowseRoot::All,
             $request->routeIs('browse') => BrowseRoot::fromRoute((string) $request->route('parentCategory')),
             $request->routeIs('title') => BrowseRoot::fromRoute((string) $request->route('root')),
