@@ -6,7 +6,10 @@ namespace App\Services\Releases;
 
 use App\Models\Release;
 use App\Services\CollectionReconciliation\ArtifactPublication;
+use App\Services\CollectionReconciliation\CollectionOwnership;
+use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\Nzb\NzbService;
+use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ReleaseRepair\DeclaredFileCount;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
@@ -82,7 +85,13 @@ final class LateHeaderMerger
     public function removeLateCollection(int $collectionId, int $partsRead): bool
     {
         return DB::transaction(static function () use ($collectionId, $partsRead): bool {
-            if (DB::table('collections')->where('id', $collectionId)->lockForUpdate()->first(['id']) === null) {
+            // Ownership is rechecked under the lock ingestion takes: recovery or reconciliation
+            // may have claimed the collection since this pass selected it.
+            $collection = DB::table('collections')->where('id', $collectionId)
+                ->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query, populationIds: [$collectionId], currentRead: true))
+                ->tap(static fn ($query) => CollectionOwnership::exclude($query, populationIds: [$collectionId], currentRead: true))
+                ->lockForUpdate()->first(['id']);
+            if ($collection === null) {
                 return false;
             }
 
@@ -108,7 +117,8 @@ final class LateHeaderMerger
     private function mergeInto(Release $release, int $collectionId, string $collectionPoster): bool
     {
         if (app(RecoveryIdentityPolicy::class)->publication((int) $release->id) !== null
-            || ArtifactPublication::handles((string) $release->guid)) {
+            || ArtifactPublication::handles((string) $release->guid)
+            || PostingPublication::has((int) $release->id)) {
             return false;
         }
 
@@ -136,7 +146,7 @@ final class LateHeaderMerger
             }
 
             $completionAfter = $completionBefore;
-            if ($merge['segments'] > 0) {
+            if ($merge['changed']) {
                 $replaced = $this->nzb->replaceNzbContentsWithLease((string) $release->guid, $document->toXml(), $lease, hash('sha256', $original));
                 if (! $replaced->success) {
                     return true;
@@ -166,7 +176,8 @@ final class LateHeaderMerger
      * Add the late collection's segments and files to the document.
      *
      * @param  list<object{name: string, totalparts: int|string, partnumber: int|string, messageid: string, size: int|string, binaries_id: int|string}>  $parts
-     * @return array{segments: int, files: int, declared: int}|null Null when no binary belongs to the release.
+     * @return array{segments: int, files: int, changed: bool, declared: int}|null Null when no binary belongs to the release;
+     *                                                                             segments counts those added to held files.
      */
     private function apply(Release $release, NzbRepairDocument $document, NzbFileEnvelope $envelope, string $collectionPoster, array $parts): ?array
     {
@@ -246,10 +257,10 @@ final class LateHeaderMerger
             return null;
         }
 
-        $added = $document->addSegments($newSegments);
-        $added += $document->addFiles($newFiles, $envelope);
+        $segments = $document->addSegments($newSegments);
+        $fileSegments = $document->addFiles($newFiles, $envelope);
 
-        return ['segments' => $added, 'files' => \count($newFiles), 'declared' => $declared];
+        return ['segments' => $segments, 'files' => \count($newFiles), 'changed' => $segments + $fileSegments > 0, 'declared' => $declared];
     }
 
     /**

@@ -60,13 +60,12 @@ class LateHeaderMergeTest extends TestCase
         Cache::flush();
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
         NzbCreationCandidateQuery::flushCapabilityCache();
-        DB::statement('CREATE TABLE categories (id INTEGER PRIMARY KEY, title TEXT, root_categories_id INTEGER)');
-        DB::statement('CREATE TABLE root_categories (id INTEGER PRIMARY KEY, title TEXT)');
+        $tables = ProductionTables::fromAuthority();
+        foreach (['categories', 'root_categories', 'predb', 'release_regexes', 'release_naming_regexes'] as $table) {
+            $tables->create($table);
+        }
         DB::table('root_categories')->insert(['id' => 0, 'title' => 'Other']);
         DB::table('categories')->insert(['id' => 10, 'title' => 'Misc', 'root_categories_id' => 0]);
-        DB::statement('CREATE TABLE predb (id INTEGER PRIMARY KEY, title TEXT UNIQUE, filename TEXT)');
-        DB::statement('CREATE TABLE release_regexes (releases_id INTEGER, collection_regex_id INTEGER, naming_regex_id INTEGER, PRIMARY KEY (releases_id, collection_regex_id, naming_regex_id))');
-        DB::statement('CREATE TABLE release_naming_regexes (id INTEGER PRIMARY KEY, group_regex TEXT, regex TEXT, status INTEGER, ordinal INTEGER)');
         foreach (['categorizeforeign' => '0', 'catwebdl' => '0', 'nzbsplitlevel' => '1', 'check_passworded_rars' => '0', 'delaytime' => '1'] as $name => $value) {
             DB::table('settings')->updateOrInsert(['name' => $name], ['value' => $value]);
         }
