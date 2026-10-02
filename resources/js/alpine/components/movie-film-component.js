@@ -14,9 +14,9 @@ export function currentSort(href) {
     return ['resolution', 'size', 'posted'].includes(key) ? { key, dir: ascending ? 1 : -1 } : { key: 'posted', dir: -1 };
 }
 
-/** The next order: the sorted heading flips it, another heading starts descending. */
+/** The next order: the sorted heading flips it, another heading starts descending; Category starts ascending, in the Category menu's order. */
 export function nextSort(current, key) {
-    return current.key === key ? { key, dir: -current.dir } : { key, dir: -1 };
+    return current.key === key ? { key, dir: -current.dir } : { key, dir: key === 'category' ? 1 : -1 };
 }
 
 /** The URL of the first page in that order; newest posted first carries no sort. */

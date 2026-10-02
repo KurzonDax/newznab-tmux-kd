@@ -445,6 +445,9 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-release-table .tv-num { text-align: right; white-space: nowrap; }
 .tv-release-table .tv-nowrap { white-space: nowrap; }
 .tv-release-table .tv-chips { gap: 5px; margin-top: 6px; }
+/* The Books, Console and PC details pages' Category column: 120 px (the lists' is 128), the sub-category dim on one line, cut with an ellipsis. */
+.tv-col-details-category { width: 120px; }
+.tv-release-table td.tv-category { overflow: hidden; color: var(--tv-dim); text-overflow: ellipsis; white-space: nowrap; }
 .tv-packs { margin: 26px 0 70px; }
 .tv-packs:has(+ .tv-packs) { margin-bottom: 26px; }
 .tv-packs h3 { margin: 0 0 6px; color: var(--tv-ink); font-size: 17px; font-weight: 800; line-height: 1; }

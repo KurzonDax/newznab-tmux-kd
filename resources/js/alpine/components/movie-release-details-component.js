@@ -14,6 +14,17 @@ export function tablePageUrl(href, current) {
     return url;
 }
 
+/**
+ * Similar releases in an order: the Books, Console and PC tables' rows carry data-category, and
+ * their ties come newest posted first, then the higher id (the prototype's detSort); the Movies
+ * and Adult rows keep their previous order on a tie.
+ */
+export function sortSimilarRows(rows, sort) {
+    if (!rows.some(row => row.dataset.category !== undefined)) return sortRows(rows, sort);
+    const value = (row, key) => Number(row.dataset[key]);
+    return [...rows].sort((a, b) => (value(a, sort.key) - value(b, sort.key)) * sort.dir || value(b, 'posted') - value(a, 'posted') || value(b, 'id') - value(a, 'id'));
+}
+
 /** Whether a URL names a page of the table without naming a tab, so the page opens at the table. */
 export function opensAtTable(href) {
     const url = new URL(href);
@@ -110,7 +121,7 @@ export function movieReleaseDetails() {
             this.similarSort = nextSort(this.similarSort, button.dataset.similarSort);
             const table = button.closest('table');
             const body = table.tBodies[0];
-            body.append(...sortRows(Array.from(body.rows), this.similarSort));
+            body.append(...sortSimilarRows(Array.from(body.rows), this.similarSort));
             table.querySelectorAll('th').forEach(cell => {
                 const sorter = cell.querySelector('[data-similar-sort]');
                 if (sorter && sorter.dataset.similarSort === this.similarSort.key) cell.setAttribute('aria-sort', this.similarSort.dir > 0 ? 'ascending' : 'descending');

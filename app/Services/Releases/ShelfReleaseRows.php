@@ -52,7 +52,8 @@ final class ShelfReleaseRows
             $row = $release->row_data;
 
             return ['release' => $release, 'facts' => [...$this->facts->facts($release, $byAdded, $now), 'preview' => null, 'sample' => null,
-                'category' => (string) ($titles[(int) $release->categories_id] ?? ''), 'categoryPath' => $row->category]];
+                'category' => (string) ($titles[(int) $release->categories_id] ?? ''), 'categoryPath' => $row->category,
+                'categoryId' => (int) $release->categories_id]];
         }, $releases);
     }
 }

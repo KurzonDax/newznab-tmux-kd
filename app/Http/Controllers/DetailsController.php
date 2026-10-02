@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Data\MovieFilmPageFilters;
 use App\Data\ReleaseRowData;
 use App\Enums\BrowseRoot;
+use App\Models\ConsoleInfo;
 use App\Models\Country;
 use App\Models\DnzbFailure;
 use App\Models\Predb;
@@ -18,7 +19,6 @@ use App\Models\Video;
 use App\Services\AnidbService;
 use App\Services\BookService;
 use App\Services\ConsoleService;
-use App\Services\GamesService;
 use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
@@ -28,6 +28,7 @@ use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseReportPresentation;
 use App\Services\Releases\ReleaseSearchService;
+use App\Services\Releases\ShelfReleaseDetails;
 use App\Services\Releases\TitleMetadataLoader;
 use App\Services\Releases\TvReleaseDetails;
 use Illuminate\Http\Request;
@@ -80,6 +81,9 @@ class DetailsController extends BasePageController
         if ($root === BrowseRoot::Adult) {
             return $this->showAdult($data, $comments);
         }
+        if ($root === BrowseRoot::Books || $root === BrowseRoot::Games || ($root === BrowseRoot::Console && ! $this->hasConsoleGame($data))) {
+            return $this->showShelf($data, $comments);
+        }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
         $reportPresentation = app(ReleaseReportPresentation::class)->forRelease(
@@ -108,11 +112,6 @@ class DetailsController extends BasePageController
                     }
                 }
             }
-        }
-
-        $game = '';
-        if ((int) $data['gamesinfo_id'] > 0) {
-            $game = (new GamesService)->getGamesInfoById($data['gamesinfo_id']);
         }
 
         $mus = '';
@@ -179,7 +178,6 @@ class DetailsController extends BasePageController
             'anidbCountryName' => $anidbCountryName,
             'music' => $mus,
             'con' => $con,
-            'game' => $game,
             'book' => $book,
             'predb' => $pre,
             'comments' => $comments,
@@ -264,5 +262,35 @@ class DetailsController extends BasePageController
             'meta_keywords' => 'view,nzb,description,details',
             'meta_description' => 'View NZB for '.$release['searchname'],
         ]));
+    }
+
+    /**
+     * Books and PC releases, and Console releases with no game, get the release-only page
+     * (docs/proposals/books-console-pc-redesign/SPEC.md 5A); comments post back here as before.
+     */
+    private function showShelf(Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+
+        return view('details.shelf.index', array_merge($this->viewData, app(ShelfReleaseDetails::class)->forRelease($release, $row->category, $exclusions), [
+            'release' => $release,
+            'comments' => $comments,
+            'nzbLinkBase' => url('/api/v1/api'),
+            'apiToken' => (string) $this->userdata->api_token,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
+    }
+
+    /** Whether a Console release names a stored game: the lookup writes -2 when it finds none. */
+    private function hasConsoleGame(Release $release): bool
+    {
+        $gameId = (int) $release->consoleinfo_id;
+
+        return $gameId > 0 && ConsoleInfo::query()->whereKey($gameId)->exists();
     }
 }
