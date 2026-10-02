@@ -264,6 +264,45 @@ CREATE TABLE `collections` (
   KEY `collections_formation_queue` (`groups_id`,`filecheck`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `companies`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `companies` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT COMMENT 'Company id',
+  `name` varchar(255) NOT NULL COMMENT 'Company name as IGDB first gave it',
+  `igdb_id` int(10) unsigned DEFAULT NULL COMMENT 'IGDB company id',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_companies_igdb_id` (`igdb_id`),
+  KEY `ix_companies_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `console_companies`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `console_companies` (
+  `consoleinfo_id` int(10) unsigned NOT NULL COMMENT 'consoleinfo.id of the game',
+  `companies_id` int(10) unsigned NOT NULL COMMENT 'companies.id of the company',
+  `role` tinyint(3) unsigned NOT NULL COMMENT '0 developer, 1 publisher',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order within the role',
+  PRIMARY KEY (`companies_id`,`consoleinfo_id`,`role`),
+  KEY `ix_console_companies_console` (`consoleinfo_id`,`role`,`position`),
+  CONSTRAINT `fk_console_companies_companies_id` FOREIGN KEY (`companies_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_console_companies_consoleinfo_id` FOREIGN KEY (`consoleinfo_id`) REFERENCES `consoleinfo` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `console_game_modes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `console_game_modes` (
+  `consoleinfo_id` int(10) unsigned NOT NULL COMMENT 'consoleinfo.id of the game',
+  `game_modes_id` int(10) unsigned NOT NULL COMMENT 'game_modes.id of the mode',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order as IGDB lists it',
+  PRIMARY KEY (`game_modes_id`,`consoleinfo_id`),
+  KEY `ix_console_game_modes_console` (`consoleinfo_id`),
+  CONSTRAINT `fk_console_game_modes_consoleinfo_id` FOREIGN KEY (`consoleinfo_id`) REFERENCES `consoleinfo` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_console_game_modes_game_modes_id` FOREIGN KEY (`game_modes_id`) REFERENCES `game_modes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `console_genres`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -275,6 +314,19 @@ CREATE TABLE `console_genres` (
   KEY `ix_console_genres_console` (`consoleinfo_id`),
   CONSTRAINT `fk_console_genres_consoleinfo_id` FOREIGN KEY (`consoleinfo_id`) REFERENCES `consoleinfo` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_console_genres_genres_id` FOREIGN KEY (`genres_id`) REFERENCES `genres` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `console_player_perspectives`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `console_player_perspectives` (
+  `consoleinfo_id` int(10) unsigned NOT NULL COMMENT 'consoleinfo.id of the game',
+  `player_perspectives_id` int(10) unsigned NOT NULL COMMENT 'player_perspectives.id of the perspective',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order as IGDB lists it',
+  PRIMARY KEY (`player_perspectives_id`,`consoleinfo_id`),
+  KEY `ix_console_player_perspectives_console` (`consoleinfo_id`),
+  CONSTRAINT `fk_console_player_perspectives_consoleinfo_id` FOREIGN KEY (`consoleinfo_id`) REFERENCES `consoleinfo` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_console_player_perspectives_player_perspectives_id` FOREIGN KEY (`player_perspectives_id`) REFERENCES `player_perspectives` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `consoleinfo`;
@@ -295,6 +347,11 @@ CREATE TABLE `consoleinfo` (
   `cover` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
+  `storyline` text DEFAULT NULL COMMENT 'IGDB storyline; NULL = none',
+  `critic_score` tinyint(3) unsigned DEFAULT NULL COMMENT 'IGDB aggregated_rating rounded, 0-100; NULL = none',
+  `user_score` tinyint(3) unsigned DEFAULT NULL COMMENT 'IGDB rating rounded, 0-100; NULL = none',
+  `website` varchar(1000) DEFAULT NULL COMMENT 'URL of the first IGDB website of type 1 (Official Website); NULL = none',
+  `details_refreshed_at` timestamp NULL DEFAULT NULL COMMENT 'When IGDB details were last fetched; NULL = never',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ix_consoleinfo_asin` (`asin`),
   KEY `ix_consoleinfo_genres_id` (`genres_id`),
@@ -511,6 +568,18 @@ CREATE TABLE `forumpost` (
   KEY `userid` (`users_id`),
   CONSTRAINT `FK_users_fp` FOREIGN KEY (`users_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `game_modes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `game_modes` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT COMMENT 'Game mode id',
+  `name` varchar(120) NOT NULL COMMENT 'Game mode name as IGDB lists it',
+  `igdb_id` int(10) unsigned DEFAULT NULL COMMENT 'IGDB game mode id; NULL = none known',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_game_modes_name` (`name`),
+  UNIQUE KEY `ux_game_modes_igdb_id` (`igdb_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `gamesinfo`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -2003,6 +2072,18 @@ CREATE TABLE `personal_access_tokens` (
   KEY `personal_access_tokens_tokenable_type_tokenable_id_index` (`tokenable_type`,`tokenable_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `player_perspectives`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `player_perspectives` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT COMMENT 'Player perspective id',
+  `name` varchar(120) NOT NULL COMMENT 'Player perspective name as IGDB lists it',
+  `igdb_id` int(10) unsigned DEFAULT NULL COMMENT 'IGDB player perspective id; NULL = none known',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_player_perspectives_name` (`name`),
+  UNIQUE KEY `ux_player_perspectives_igdb_id` (`igdb_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `poster_renames`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -2964,7 +3045,8 @@ CREATE TABLE `releases` (
   KEY `ix_releases_band_res_posted` (`category_band`,`resolution`,`postdate`,`id`,`source`,`categories_id`,`passwordstatus`,`completion`),
   KEY `ix_releases_band_res_added` (`category_band`,`resolution`,`adddate`,`id`,`source`,`categories_id`,`passwordstatus`,`completion`),
   KEY `ix_releases_band_src_posted` (`category_band`,`source`,`postdate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`),
-  KEY `ix_releases_band_src_added` (`category_band`,`source`,`adddate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`)
+  KEY `ix_releases_band_src_added` (`category_band`,`source`,`adddate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`),
+  KEY `ix_releases_consoleinfo_cat` (`consoleinfo_id`,`categories_id`,`passwordstatus`,`postdate`,`adddate`,`completion`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `releases_groups`;
@@ -4041,3 +4123,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (304,'2026_09_29_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (305,'2026_09_29_000100_refile_onlyfans_releases',19);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (306,'2026_10_01_000000_add_console_genres',20);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (307,'2026_10_01_000100_fill_console_genres',20);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (308,'2026_10_01_000200_add_console_game_details',21);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (309,'2026_10_01_000300_add_releases_consoleinfo_cat_index',21);

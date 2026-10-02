@@ -12,6 +12,7 @@ use App\Models\ConsoleInfo;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
+use App\Services\MetadataProcessing\ConsoleGameDetails;
 use App\Services\MetadataProcessing\ConsoleGenres;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
 use App\Services\Releases\CoverBrowseScope;
@@ -19,9 +20,11 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Support\CoverBrowseResults;
 use App\Support\LookupThrottle;
 use App\Support\MetadataSearchLookup;
+use App\Support\SecondaryIndexDocuments;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * ConsoleService - Console/Game processing service.
@@ -38,6 +41,9 @@ class ConsoleService
     public const int CONS_UPROC = 0; // Release has not been processed.
 
     public const int CONS_NTFND = -2;
+
+    /** A stored game is asked about again on its next release once this many hours have passed. */
+    private const int REFRESH_AFTER_HOURS = 24;
 
     public bool $echoOutput;
 
@@ -58,12 +64,15 @@ class ConsoleService
 
     protected ConsoleGenres $consoleGenres;
 
-    public function __construct(?ReleaseImageService $imageService = null, ?IGDBService $igdbService = null, ?ConsoleGenres $consoleGenres = null)
+    protected ConsoleGameDetails $consoleGameDetails;
+
+    public function __construct(?ReleaseImageService $imageService = null, ?IGDBService $igdbService = null, ?ConsoleGenres $consoleGenres = null, ?ConsoleGameDetails $consoleGameDetails = null)
     {
         $this->echoOutput = config('nntmux.echocli');
         $this->imageService = $imageService ?? new ReleaseImageService;
         $this->igdbService = $igdbService ?? new IGDBService;
         $this->consoleGenres = $consoleGenres ?? new ConsoleGenres;
+        $this->consoleGameDetails = $consoleGameDetails ?? new ConsoleGameDetails;
 
         $this->gameQty = (int) Settings::settingValueOr('maxgamesprocessed', 150);
         $this->lookupThrottleMs = (int) Settings::settingValueOr('amazonsleep', 1000);
@@ -374,7 +383,7 @@ class ConsoleService
     // ========================================
 
     /**
-     * Update console info record.
+     * Update console info record. A null summary leaves the stored one as it is.
      */
     public function update(
         int $id,
@@ -388,27 +397,30 @@ class ConsoleService
         ?string $esrb,
         int $cover,
         ?int $genresId,
-        string $review = 'review'
+        ?string $review = null
     ): void {
         $releasedate = $releasedate !== '' ? $releasedate : null;
         $esrb = $esrb !== '' ? $esrb : null;
-        $review = $review === 'review' ? $review : substr($review, 0, 3000);
+
+        $values = [
+            'title' => $title,
+            'asin' => $asin,
+            'url' => $url,
+            'salesrank' => $salesrank,
+            'platform' => $platform,
+            'publisher' => $publisher,
+            'releasedate' => $releasedate,
+            'esrb' => $esrb,
+            'cover' => $cover,
+            'genres_id' => $genresId,
+        ];
+        if ($review !== null) {
+            $values['review'] = substr($review, 0, 3000);
+        }
 
         ConsoleInfo::query()
             ->where('id', $id)
-            ->update([
-                'title' => $title,
-                'asin' => $asin,
-                'url' => $url,
-                'salesrank' => $salesrank,
-                'platform' => $platform,
-                'publisher' => $publisher,
-                'releasedate' => $releasedate,
-                'esrb' => $esrb,
-                'cover' => $cover,
-                'genres_id' => $genresId,
-                'review' => $review,
-            ]);
+            ->update($values);
     }
 
     // ========================================
@@ -488,6 +500,64 @@ class ConsoleService
         return false;
     }
 
+    /**
+     * Refreshes a stored game from IGDB when a new release of it arrives, unless that was done in
+     * the last 24 hours. A game IGDB no longer returns, or whose stored id is not an IGDB id, only
+     * gets its stamp. A failure writes nothing and is retried on the game's next release; nothing
+     * propagates. Nothing refreshes games in the background.
+     *
+     * @return bool Whether IGDB was asked.
+     */
+    public function refreshIfDue(ConsoleInfo $stored): bool
+    {
+        if (! $this->igdbService->isConfigured()) {
+            return false;
+        }
+
+        $refreshedAt = $stored->details_refreshed_at;
+        if ($refreshedAt !== null && $refreshedAt->gt(now()->subHours(self::REFRESH_AFTER_HOURS))) {
+            return false;
+        }
+
+        $asin = (string) $stored->asin;
+        if (! ctype_digit($asin) || (int) $asin <= 0) {
+            // An Amazon ASIN or a typed value: not retried on every release, retried after 24 hours.
+            $this->stampDetailsRefreshed((int) $stored->id);
+
+            return false;
+        }
+
+        try {
+            $game = $this->igdbService->findGame((int) $asin);
+            $con = $game !== null ? $this->igdbService->buildConsoleData($game, (string) $stored->platform) : null;
+        } catch (\Throwable $e) {
+            cli()->error('Error refreshing IGDB properties: '.$e->getMessage());
+
+            return true;
+        }
+
+        if ($con === null) {
+            $this->stampDetailsRefreshed((int) $stored->id);
+
+            return true;
+        }
+
+        $con['cover'] = $con['coverurl'] !== '' ? 1 : 0;
+
+        try {
+            $this->updateConsoleTable($con);
+        } catch (\Throwable $e) {
+            cli()->error('Error saving refreshed IGDB properties: '.$e->getMessage());
+        }
+
+        return true;
+    }
+
+    private function stampDetailsRefreshed(int $consoleId): void
+    {
+        DB::table('consoleinfo')->where('id', $consoleId)->update(['details_refreshed_at' => now()]);
+    }
+
     // ========================================
     // Release Processing Methods
     // ========================================
@@ -547,6 +617,9 @@ class ConsoleService
                                 cli()->primary("{$gameInfo['title']} - {$gameInfo['platform']}");
                         }
                         $gameId = $gameCheck['id'] ?? -2;
+                        if ($gameId > 0 && $gameCheck instanceof ConsoleInfo && $this->refreshIfDue($gameCheck)) {
+                            $usedExternalLookup = true;
+                        }
                     }
                 } elseif ($this->echoOutput) {
                     echo '.';
@@ -678,6 +751,13 @@ class ConsoleService
         // Found or created before any transaction opens, so no transaction holds a new genre
         // another worker cannot see yet.
         $genreIds = $this->consoleGenres->ids($con['consolegenres'] ?? []);
+        $linkRows = $this->consoleGameDetails->linkRows($con);
+        $details = [
+            'storyline' => $con['storyline'] ?? null,
+            'critic_score' => $con['critic_score'] ?? null,
+            'user_score' => $con['user_score'] ?? null,
+            'website' => $con['website'] ?? null,
+        ];
 
         if ($check === null) {
             $consoleId = ConsoleInfo::query()
@@ -693,8 +773,10 @@ class ConsoleService
                     'review' => substr($con['review'], 0, 3000),
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
-            $this->consoleGenres->replace($consoleId, $genreIds);
+                ] + $details);
+            // The stamp is written with the genre and link rows, so a failed write leaves it NULL
+            // and the game's next release retries.
+            $this->consoleGenres->replace($consoleId, $genreIds, fn () => $this->stampDetailsRefreshed($consoleId), $linkRows);
 
             if ($con['cover'] === 1) {
                 $coverSaved = $this->imageService->saveRemoteImage(
@@ -708,34 +790,61 @@ class ConsoleService
                     ConsoleInfo::query()->where('id', $consoleId)->update(['cover' => 1]);
                 }
             }
+
+            // insertGetId() fires no model event, so the row is indexed here as ConsoleInfoObserver
+            // indexes a row saved through the model.
+            $this->indexNewGame($consoleId);
         } else {
             $consoleId = $check['id'];
 
-            if ($con['cover'] === 1) {
-                $con['cover'] = (int) $this->imageService->saveRemoteImage(
-                    (string) $consoleId,
-                    $con['coverurl'],
-                    $this->imgSavePath,
-                    ImageAssetProfile::MetadataCover,
-                )->success;
+            // A cover saved over the game's cover file sets the flag; otherwise the stored flag
+            // stays, so a cover uploaded on the admin form is kept while IGDB has none.
+            $cover = (int) $check['cover'];
+            if ($con['cover'] === 1 && $this->imageService->saveRemoteImage(
+                (string) $consoleId,
+                $con['coverurl'],
+                $this->imgSavePath,
+                ImageAssetProfile::MetadataCover,
+            )->success) {
+                $cover = 1;
             }
 
-            $this->consoleGenres->replace($consoleId, $genreIds, fn () => $this->update(
-                $consoleId,
-                $con['title'],
-                isset($con['asin']) ? (string) $con['asin'] : null,
-                $con['url'],
-                isset($con['salesrank']) && $con['salesrank'] !== '' ? (int) $con['salesrank'] : null,
-                $con['platform'],
-                $con['publisher'],
-                $con['releasedate'] ?? null,
-                $con['esrb'],
-                $con['cover'],
-                $genreIds[0] ?? null,
-                $con['review'] ?? null
-            ));
+            $this->consoleGenres->replace($consoleId, $genreIds, function () use ($consoleId, $con, $cover, $genreIds, $details): void {
+                $this->update(
+                    $consoleId,
+                    $con['title'],
+                    isset($con['asin']) ? (string) $con['asin'] : null,
+                    $con['url'],
+                    isset($con['salesrank']) && $con['salesrank'] !== '' ? (int) $con['salesrank'] : null,
+                    $con['platform'],
+                    $con['publisher'],
+                    $con['releasedate'] ?? null,
+                    $con['esrb'],
+                    $cover,
+                    $genreIds[0] ?? null,
+                    $con['review'] ?? null
+                );
+                DB::table('consoleinfo')->where('id', $consoleId)->update($details + ['details_refreshed_at' => now()]);
+            }, $linkRows);
         }
 
         return $consoleId;
+    }
+
+    private function indexNewGame(int $consoleId): void
+    {
+        try {
+            $row = DB::table('consoleinfo')->where('id', $consoleId)->first();
+            Search::insertSecondary(
+                SecondarySearchIndex::Console,
+                $consoleId,
+                SecondaryIndexDocuments::consoleFromArray((array) $row)
+            );
+        } catch (\Throwable $e) {
+            Log::error('ConsoleService: sync to search index failed', [
+                'id' => $consoleId,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

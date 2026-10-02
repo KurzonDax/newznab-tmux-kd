@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -215,6 +216,19 @@ class AdminConsoleEditTest extends TestCase
 
         $this->assertSame([], $this->genreRows($id));
         $this->assertNull(DB::table('consoleinfo')->where('id', $id)->value('genres_id'));
+    }
+
+    #[TestWith(['2'])]
+    #[TestWith(['4'])]
+    public function test_console_edit_keeps_the_stored_summary_whether_the_genre_is_unchanged_or_changed(string $genre): void
+    {
+        $id = $this->createTwoGenreGame();
+        DB::table('consoleinfo')->where('id', $id)->update(['review' => 'The summary IGDB gave.']);
+
+        $this->postGenre($id, $genre);
+
+        $this->assertSame('The summary IGDB gave.', DB::table('consoleinfo')->where('id', $id)->value('review'));
+        $this->assertSame((int) $genre, (int) DB::table('consoleinfo')->where('id', $id)->value('genres_id'));
     }
 
     /** A game the lookup stored with the genres Shooter (2) and Adventure (3); Puzzle (4) is unused. */

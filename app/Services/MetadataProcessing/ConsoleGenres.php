@@ -58,15 +58,16 @@ final class ConsoleGenres
      *
      * @param  list<int>  $genreIds
      * @param  (Closure(): void)|null  $alsoWrite  Other writes for the same transaction, run before `genres_id` is set.
+     * @param  array<string, list<array<string, mixed>>>  $otherRows  Other child tables' new rows for the same transaction, keyed by table, without `consoleinfo_id`.
      */
-    public function replace(int $consoleinfoId, array $genreIds, ?Closure $alsoWrite = null): void
+    public function replace(int $consoleinfoId, array $genreIds, ?Closure $alsoWrite = null, array $otherRows = []): void
     {
         $rows = [];
         foreach (array_values($genreIds) as $position => $genreId) {
             $rows[] = ['genres_id' => $genreId, 'position' => $position];
         }
 
-        ChildRows::replace('consoleinfo', $consoleinfoId, 'consoleinfo_id', ['console_genres' => $rows],
+        ChildRows::replace('consoleinfo', $consoleinfoId, 'consoleinfo_id', ['console_genres' => $rows] + $otherRows,
             static function () use ($consoleinfoId, $genreIds, $alsoWrite): void {
                 if ($alsoWrite !== null) {
                     $alsoWrite();

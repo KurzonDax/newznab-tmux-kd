@@ -29,6 +29,8 @@ class QueryBuilder
 
     protected ?int $limitValue = null;
 
+    protected bool $fresh = false;
+
     /**
      * @param  class-string<TModel>  $modelClass
      */
@@ -104,6 +106,18 @@ class QueryBuilder
         return $this->orderBy($field, 'desc');
     }
 
+    /**
+     * Ask IGDB even when the client holds a cached answer for this query.
+     *
+     * @return self<TModel>
+     */
+    public function fresh(): self
+    {
+        $this->fresh = true;
+
+        return $this;
+    }
+
     public function limit(int $limit): self
     {
         $this->limitValue = max(1, $limit);
@@ -116,7 +130,7 @@ class QueryBuilder
      */
     public function get(): Collection
     {
-        $payload = $this->client?->request($this->modelClass::endpoint(), $this->toQuery()) ?? [];
+        $payload = $this->client?->request($this->modelClass::endpoint(), $this->toQuery(), $this->fresh) ?? [];
 
         return collect($payload)->map(fn (array $attributes) => new $this->modelClass($attributes));
     }

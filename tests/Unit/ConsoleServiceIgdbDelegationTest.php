@@ -8,6 +8,7 @@ use App\Enums\ImageAssetProfile;
 use App\Services\ConsoleService;
 use App\Services\IGDB\Models\Game;
 use App\Services\IGDBService;
+use App\Services\MetadataProcessing\ConsoleGameDetails;
 use App\Services\MetadataProcessing\ConsoleGenres;
 use App\Services\ReleaseImageService;
 use App\Support\Data\ImageProcessingResult;
@@ -241,7 +242,7 @@ class ConsoleServiceIgdbDelegationTest extends TestCase
 
     private function createConsoleTables(): void
     {
-        foreach (['consoleinfo', 'genres', 'console_genres'] as $table) {
+        foreach (['consoleinfo', 'genres', 'console_genres', 'companies', 'console_companies', 'game_modes', 'console_game_modes', 'player_perspectives', 'console_player_perspectives'] as $table) {
             ProductionTables::fromAuthority()->create($table);
         }
     }
@@ -335,5 +336,6 @@ class ConsoleServiceTestDouble extends ConsoleService
         $this->igdbService = $igdbService;
         $this->imageService = $imageService ?? new ReleaseImageService;
         $this->consoleGenres = new ConsoleGenres;
+        $this->consoleGameDetails = new ConsoleGameDetails;
     }
 }

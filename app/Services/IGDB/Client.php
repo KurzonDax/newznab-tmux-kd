@@ -13,14 +13,15 @@ class Client
     protected const string TOKEN_CACHE_KEY = 'igdb:access_token';
 
     /**
+     * @param  bool  $fresh  Ask IGDB even when an answer is cached; the new answer is still cached.
      * @return array<int, array<string, mixed>>
      */
-    public function request(string $endpoint, string $query): array
+    public function request(string $endpoint, string $query, bool $fresh = false): array
     {
         $cacheLifetime = max(0, (int) config('igdb.cache_lifetime', 86400));
         $cacheKey = 'igdb:query:'.md5($endpoint.'|'.$query);
 
-        if ($cacheLifetime > 0) {
+        if ($cacheLifetime > 0 && ! $fresh) {
             /** @var array<int, array<string, mixed>>|null $cached */
             $cached = Cache::get($cacheKey);
             if ($cached !== null) {

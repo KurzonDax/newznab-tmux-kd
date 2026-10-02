@@ -24,6 +24,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $releasedate
  * @property string|null $review
  * @property bool $cover
+ * @property string|null $storyline
+ * @property int|null $critic_score
+ * @property int|null $user_score
+ * @property string|null $website
+ * @property Carbon|null $details_refreshed_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  *
@@ -61,6 +66,18 @@ class ConsoleInfo extends Model
      * @var array<string>
      */
     protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'details_refreshed_at' => 'datetime',
+            'critic_score' => 'integer',
+            'user_score' => 'integer',
+        ];
+    }
 
     // ========================================
     // Relationships
