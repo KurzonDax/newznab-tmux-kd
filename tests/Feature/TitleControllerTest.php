@@ -38,7 +38,6 @@ final class TitleControllerTest extends TestCase
             DB::table('categories')->insert(['id' => $category, 'title' => 'HD', 'root_categories_id' => $category - 30]);
             ProductionTables::fromAuthority()->create($table);
         }
-        ProductionTables::fromAuthority()->create('console_genres');
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('title-artwork')]);
     }
 
@@ -54,9 +53,6 @@ final class TitleControllerTest extends TestCase
     public static function entityRoots(): iterable
     {
         yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030];
-        yield 'console' => ['console', 'consoleinfo', 'consoleinfo_id', 1030];
-        yield 'games' => ['games', 'gamesinfo', 'gamesinfo_id', 4030];
-        yield 'books' => ['books', 'bookinfo', 'bookinfo_id', 7030];
     }
 
     #[DataProvider('entityRoots')]
@@ -90,21 +86,6 @@ final class TitleControllerTest extends TestCase
         $this->assertSame(route('title', ['root' => 'audio', 'id' => '12']), $response->viewData('results')->first()->row_data->entity->titleUrl());
     }
 
-    public function test_a_console_game_shows_every_genre_in_order_on_its_genre_line(): void
-    {
-        DB::table('genres')->insert(['id' => 2, 'title' => 'Shooter', 'type' => 1000]);
-        DB::table('consoleinfo')->insert(['id' => 12, 'title' => 'A Game', 'platform' => 'PS5', 'genres_id' => 2]);
-        DB::table('console_genres')->insert([
-            ['consoleinfo_id' => 12, 'genres_id' => 1, 'position' => 1],
-            ['consoleinfo_id' => 12, 'genres_id' => 2, 'position' => 0],
-        ]);
-
-        $response = $this->actingAs($this->browserUser())->get('/title/console/12')->assertOk();
-
-        $this->assertSame('Shooter,Adventure', $response->viewData('title')->metadata['Genre']);
-        $response->assertSee('Shooter,Adventure');
-    }
-
     public function test_numeric_album_track_count_does_not_invent_a_track_list_or_provider_link(): void
     {
         DB::table('musicinfo')->insert(['id' => 12, 'title' => 'Count Album', 'tracks' => '12', 'url' => 'javascript:alert(1)']);
@@ -115,28 +96,18 @@ final class TitleControllerTest extends TestCase
         $response->assertDontSee('javascript:alert');
     }
 
-    public function test_book_overview_escapes_metadata_and_uses_its_isbn_link(): void
-    {
-        DB::table('bookinfo')->insert(['id' => 12, 'title' => 'A Book', 'author' => 'An Author', 'pages' => '320',
-            'isbn' => '978-0-123456-78-9', 'publishdate' => '2021-01-01', 'overview' => '<p>A &lt;quiet&gt; story.</p>']);
-        $this->release('Book.EPUB', ['categories_id' => 7030, 'bookinfo_id' => 12]);
-        $response = $this->actingAs($this->browserUser())->get('/title/books/12')->assertOk();
-        $response->assertSee('An Author')->assertSee('320')->assertSee('https://isbndb.com/book/9780123456789', false)
-            ->assertSee('A &lt;quiet&gt; story.', false)->assertDontSee('<quiet>', false)->assertSee('/title/books/12', false);
-    }
-
     public function test_unknown_and_non_entity_roots_are_not_found_and_permissions_apply_to_titles(): void
     {
         $this->actingAs($this->createUserWithRole('User'));
-        foreach (['all', 'movies', 'tv', 'xxx', 'other', 'unknown'] as $root) {
+        foreach (['all', 'movies', 'tv', 'xxx', 'other', 'unknown', 'console', 'games', 'pc', 'books'] as $root) {
             $this->get('/title/'.$root.'/12')->assertNotFound();
         }
-        $this->get('/title/console/12')->assertForbidden();
+        $this->get('/title/audio/12')->assertForbidden();
     }
 
     public function test_missing_titles_are_not_found_for_an_authorized_user(): void
     {
-        $this->actingAs($this->browserUser())->get('/title/console/12')->assertNotFound();
+        $this->actingAs($this->browserUser())->get('/title/audio/12')->assertNotFound();
         $this->get('/title/movies/1234567')->assertNotFound();
     }
 }

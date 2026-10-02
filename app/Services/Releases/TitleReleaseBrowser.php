@@ -63,7 +63,7 @@ final class TitleReleaseBrowser
     private function qualityOrder(string $quality): int
     {
         $order = ['2160p', '2160i', '1080p', '1080i', '720p', '720i', '576p', '576i', '480p', '480i',
-            '24-bit FLAC', 'FLAC', 'ALAC', 'WAV', 'MP3', 'AAC', 'OPUS', 'OGG', 'EPUB', 'PDF', 'MOBI', 'AZW3', 'AZW'];
+            '24-bit FLAC', 'FLAC', 'ALAC', 'WAV', 'MP3', 'AAC', 'OPUS', 'OGG'];
 
         return (int) array_search($quality, $order, true);
     }

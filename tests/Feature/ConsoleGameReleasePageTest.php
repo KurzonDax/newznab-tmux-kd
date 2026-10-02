@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Mockery;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -28,6 +29,7 @@ use Tests\TestCase;
  */
 final class ConsoleGameReleasePageTest extends TestCase
 {
+    use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -122,6 +124,16 @@ final class ConsoleGameReleasePageTest extends TestCase
         $response->assertSee('x-data="movieReleaseDetails"', false)->assertSee('data-nzb-link-base="'.url('/api/v1/api').'"', false)
             ->assertSee('<div class="tv-chips tv-details-chips">', false)->assertSee('<div class="tv-chips tv-details-origin">', false)
             ->assertDontSee('Console Game Information');
+    }
+
+    public function test_the_game_release_page_renders_no_retired_address(): void
+    {
+        $this->game();
+        $id = $this->console('Halo.Reach.PS3-GRP');
+
+        $response = $this->details($id)->assertOk()->assertViewIs('details.console.index');
+
+        $this->assertNoRetiredAddress((string) $response->getContent(), 'Console game release page');
     }
 
     public function test_a_game_with_no_cover_shows_the_film_page_s_title_card_never_no_cover(): void

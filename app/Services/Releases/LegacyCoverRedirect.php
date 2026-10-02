@@ -25,7 +25,7 @@ final class LegacyCoverRedirect
                 'artist_asc' => 'artist', 'stats_desc' => 'grabs', default => 'newest',
             };
         }
-        if (in_array($root, [BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Games], true)) {
+        if ($root === BrowseRoot::Audio) {
             $genre = $parameters['genre'] ?? null;
             if (is_string($genre) && ctype_digit($genre)) {
                 $parameters['genre'] = (string) (DB::table('genres')->where('id', $genre)->value('title') ?? $genre);
@@ -42,7 +42,7 @@ final class LegacyCoverRedirect
             }
         } elseif ($categoryPath !== '' && strtolower($categoryPath) !== 'all') {
             $category = Category::query()->where('root_categories_id', $root->categoryId())
-                ->where('title', $categoryPath === 'WiiVare' ? 'WiiVareVC' : $categoryPath)->firstOrFail();
+                ->where('title', $categoryPath)->firstOrFail();
         } elseif ($request->filled('t') && (string) $categoryInput !== (string) $root->categoryId()) {
             $category = Category::query()->where('root_categories_id', $root->categoryId())->whereKey($categoryInput)->firstOrFail();
         }

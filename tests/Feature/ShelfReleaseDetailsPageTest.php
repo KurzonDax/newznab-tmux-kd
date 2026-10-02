@@ -15,6 +15,7 @@ use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -29,6 +30,7 @@ use Tests\TestCase;
 final class ShelfReleaseDetailsPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -131,6 +133,15 @@ final class ShelfReleaseDetailsPageTest extends TestCase
             ->assertDontSee('tv-details-art', false)->assertDontSee('tv-about', false)->assertDontSee('tv-details-pictures', false)
             ->assertDontSee('tv-details-preview', false)->assertDontSee('No cover')->assertDontSee('style="', false)
             ->assertSee('x-data="movieReleaseDetails"', false)->assertSee('data-nzb-link-base="'.url('/api/v1/api').'"', false);
+    }
+
+    public function test_release_pages_render_no_retired_address(): void
+    {
+        foreach (['Books' => self::EBOOK, 'PC' => self::ZERO_DAY, 'Console with no game' => self::PS3] as $section => $category) {
+            $id = $this->shelf('Retired.Address.'.$this->nextRelease.'-GRP', ['categories_id' => $category]);
+            $response = $this->details($id)->assertOk()->assertViewIs('details.shelf.index');
+            $this->assertNoRetiredAddress((string) $response->getContent(), $section.' release page');
+        }
     }
 
     public function test_a_console_release_with_no_game_opens_this_page_and_one_with_a_stored_game_gets_the_game_page(): void

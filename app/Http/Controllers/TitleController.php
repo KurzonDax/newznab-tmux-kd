@@ -14,9 +14,8 @@ class TitleController extends BasePageController
     public function show(Request $request, string $root, string $id, TitleMetadataLoader $metadata, TitleReleaseBrowser $browser): mixed
     {
         $category = BrowseRoot::fromRoute($root);
-        abort_unless(in_array($category, [BrowseRoot::Audio, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Books], true), 404);
-        $permission = 'view '.($category === BrowseRoot::Games ? 'pc' : $category->value);
-        abort_unless($this->userdata->getDirectPermissions()->contains('name', $permission), 403);
+        abort_unless($category === BrowseRoot::Audio, 404);
+        abort_unless($this->userdata->getDirectPermissions()->contains('name', 'view audio'), 403);
         abort_unless(ctype_digit($id) && (int) $id > 0, 404);
         $id = (string) (int) $id;
         $title = $metadata->load($category, $id);

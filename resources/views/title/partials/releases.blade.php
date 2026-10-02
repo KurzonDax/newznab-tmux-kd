@@ -1,7 +1,7 @@
 <div data-title-releases>
     @if(count($qualities) > 1)
-        <div class="card title-quality" role="group" aria-label="{{ $title->root === \App\Enums\BrowseRoot::Audio ? 'Format' : 'Quality' }}">
-            <span class="text-muted">{{ $title->root === \App\Enums\BrowseRoot::Audio ? 'Format' : 'Quality' }}:</span>
+        <div class="card title-quality" role="group" aria-label="Format">
+            <span class="text-muted">Format:</span>
             <button type="button" class="title-quality-chip" data-title-quality="" aria-pressed="{{ $activeQualities === [] ? 'true' : 'false' }}">All</button>
             @foreach($qualities as $quality)<button type="button" class="title-quality-chip" data-title-quality="{{ $quality }}" aria-pressed="{{ in_array($quality, $activeQualities, true) ? 'true' : 'false' }}">{{ $quality }}</button>@endforeach
         </div>

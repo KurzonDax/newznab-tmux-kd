@@ -32,8 +32,6 @@ final class ReleaseQuality
             }
         } elseif (($resolution = self::resolutionToken($name)) !== '') {
             return $resolution;
-        } elseif ($root === BrowseRoot::Books && preg_match('/\b(EPUB|PDF|MOBI|AZW3?)\b/i', $name, $match)) {
-            return strtoupper($match[1]);
         }
 
         return '';

@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -28,6 +29,7 @@ use Tests\TestCase;
 final class DetailsControllerTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -86,6 +88,21 @@ final class DetailsControllerTest extends TestCase
             ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
         $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-audio"\s+aria-current="true"/', (string) $response->getContent());
+    }
+
+    public function test_an_audio_release_page_links_its_audio_browse_and_title_pages(): void
+    {
+        ProductionTables::fromAuthority()->create('musicinfo');
+        $this->createGenresTable();
+        DB::table('musicinfo')->insert(['id' => 12, 'title' => 'An Album', 'artist' => 'The Artist', 'year' => '2021']);
+        $this->detailRelease('Album.Release', ['musicinfo_id' => 12]);
+
+        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Album.Release'))->assertOk()->assertViewIs('details.index');
+
+        $crumbs = (string) preg_replace('/>\s+</', '><', $this->between((string) $response->getContent(), '<nav class="title-breadcrumb" aria-label="Breadcrumb">', '</nav>'));
+        $this->assertStringContainsString('<a href="'.url('/browse/audio').'">Audio</a>', $crumbs);
+        $this->assertStringContainsString('<a href="'.route('title', ['root' => 'audio', 'id' => 12]).'">An Album</a>', $crumbs);
+        $this->assertNoRetiredAddress((string) $response->getContent(), 'Audio release page');
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void
@@ -214,6 +231,17 @@ final class DetailsControllerTest extends TestCase
         $this->get($visible)->assertOk()->assertViewIs('details.shelf.index')->assertSee('Visible.Book-GRP');
         $this->post($visible, ['txtAddComment' => 'Lands.'])->assertRedirect($visible.'#comments');
         $this->assertSame(1, DB::table('release_comments')->count());
+    }
+
+    private function between(string $html, string $from, string $to): string
+    {
+        $start = strpos($html, $from);
+        $this->assertNotFalse($start, 'Missing '.$from);
+        $start += strlen($from);
+        $end = strpos($html, $to, $start);
+        $this->assertNotFalse($end, 'Missing '.$to);
+
+        return substr($html, $start, $end - $start);
     }
 
     /** @param array<string, mixed> $attributes */

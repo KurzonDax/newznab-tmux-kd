@@ -517,19 +517,17 @@ final class ConsoleReleasesPageTest extends TestCase
         $this->assertSame([], $this->remembered($user, 'console') ?? []);
     }
 
-    public function test_the_list_needs_the_console_permission_and_the_old_console_page_stays(): void
+    public function test_the_list_needs_the_console_permission(): void
     {
         $user = $this->browserUser();
         $user->revokePermissionTo('view console');
         $this->page('/console', $user)->assertForbidden()->assertSee('Console is hidden in your account preferences.');
     }
 
-    public function test_the_old_console_page_still_answers_at_its_capitalised_address(): void
+    public function test_the_capitalised_console_address_is_gone_and_the_list_still_answers(): void
     {
-        $this->assertSame('Console', app('router')->getRoutes()->match(request()->create('/Console'))->getName());
+        $this->page('/Console')->assertNotFound();
         $this->assertSame('console.releases', app('router')->getRoutes()->match(request()->create('/console'))->getName());
-        // today's page, unchanged: the legacy route still sends it on to the old browse covers
-        $this->page('/Console')->assertRedirect(url('/browse/console?view=covers'));
     }
 
     public function test_the_header_sends_console_to_the_new_list_and_marks_it_current(): void

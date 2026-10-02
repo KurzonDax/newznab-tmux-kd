@@ -48,8 +48,6 @@ final readonly class ReleaseBrowserState
         return match ($this->root) {
             BrowseRoot::Tv => 'episodes',
             BrowseRoot::Audio => 'albums',
-            BrowseRoot::Console, BrowseRoot::Games => 'games',
-            BrowseRoot::Books => 'books',
             default => 'titles',
         };
     }
@@ -61,7 +59,7 @@ final readonly class ReleaseBrowserState
 
     public function hasLetters(): bool
     {
-        return $this->view === 'covers' && in_array($this->root, [BrowseRoot::Audio, BrowseRoot::Books], true);
+        return $this->view === 'covers' && $this->root === BrowseRoot::Audio;
     }
 
     /** @return array<string, mixed> */
@@ -95,9 +93,9 @@ final readonly class ReleaseBrowserState
         $query = $request->input('q', '');
         $sort = $request->input('sort', 'newest');
         $letter = $request->input('letter', '');
-        $letter = ! $tableOnly && $view === 'covers' && in_array($root, [BrowseRoot::Audio, BrowseRoot::Books], true)
+        $letter = ! $tableOnly && $view === 'covers' && $root === BrowseRoot::Audio
             && is_string($letter) && preg_match('/^[A-Z#]$/', $letter) ? $letter : '';
-        $filters = array_filter($request->only(['year', 'year_from', 'year_to', 'genre', 'network', 'label', 'platform', 'publisher', 'author', 'artist']), static fn ($value): bool => is_string($value) && $value !== '');
+        $filters = array_filter($request->only(['year', 'year_from', 'year_to', 'genre', 'network', 'label', 'artist']), static fn ($value): bool => is_string($value) && $value !== '');
 
         return new self(
             root: $root,

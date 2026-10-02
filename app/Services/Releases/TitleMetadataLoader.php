@@ -7,7 +7,6 @@ namespace App\Services\Releases;
 use App\Data\ReleaseEntityData;
 use App\Data\TitleOverviewData;
 use App\Enums\BrowseRoot;
-use App\Services\MetadataProcessing\ConsoleGenres;
 use Illuminate\Support\Facades\DB;
 
 final class TitleMetadataLoader
@@ -35,9 +34,7 @@ final class TitleMetadataLoader
         abort_if($record === null, 404);
         $info = $root === BrowseRoot::Tv ? DB::table('tv_info')->where('videos_id', $id)->first() : null;
         $genre = match (true) {
-            // Every genre in order, as RSS reads it; genres_id holds only the first.
-            $root === BrowseRoot::Console => app(ConsoleGenres::class)->titles((int) $record->id),
-            in_array($root, [BrowseRoot::Audio, BrowseRoot::Games], true) => DB::table('genres')->where('id', $record->genres_id ?? 0)->value('title'),
+            $root === BrowseRoot::Audio => DB::table('genres')->where('id', $record->genres_id ?? 0)->value('title'),
             default => $record->genre ?? null,
         };
         $tracks = $root === BrowseRoot::Audio ? $this->tracks((string) ($record->tracks ?? '')) : [];
@@ -48,17 +45,13 @@ final class TitleMetadataLoader
             BrowseRoot::Tv => ['Network' => $info->publisher ?? null, 'First aired' => $record->started ?? null],
             BrowseRoot::Audio => ['Artist' => $record->artist ?? null, 'Year' => $year, 'Label' => $record->publisher ?? null,
                 'Genre' => $genre, 'Tracks' => $tracks === [] ? ($record->tracks ?? null) : count($tracks)],
-            BrowseRoot::Console, BrowseRoot::Games => ['Platform' => $root === BrowseRoot::Games ? 'PC' : ($record->platform ?? null),
-                'Publisher' => $record->publisher ?? null, 'Genre' => $genre, 'Released' => $record->releasedate ?? null, 'ESRB' => $record->esrb ?? null],
-            BrowseRoot::Books => ['Author' => $record->author ?? null, 'Publisher' => $record->publisher ?? null,
-                'Published' => $record->publishdate ?? null, 'Pages' => $record->pages ?? null, 'ISBN' => $record->isbn ?? null, 'Genre' => $genre],
             default => [],
         };
         $metadata = array_filter(array_map(static fn ($value): string => trim(strip_tags((string) $value)), $metadata),
             static fn (string $value): bool => $value !== '' && $value !== '0' && ! str_starts_with($value, '0000-'));
         $overview = match ($root) {
             BrowseRoot::Tv => $info->summary ?? '',
-            BrowseRoot::Books => $record->overview ?? '', default => '',
+            default => '',
         };
 
         return new TitleOverviewData(
@@ -97,12 +90,6 @@ final class TitleMetadataLoader
             $value = preg_replace('/^tt/', '', (string) $identity[0]) ?? '';
             if (ctype_digit($value) && (int) $value > 0) {
                 $links[$label] = $identity[1].(($identity[2] ?? false) ? str_pad($value, 7, '0', STR_PAD_LEFT) : $value);
-            }
-        }
-        if ($root === BrowseRoot::Books && ! empty($record->isbn)) {
-            $isbn = preg_replace('/[^0-9Xx]/', '', (string) $record->isbn) ?? '';
-            if (in_array(strlen($isbn), [10, 13], true)) {
-                $links['ISBNdb'] = 'https://isbndb.com/book/'.$isbn;
             }
         }
         if (($url = $this->webUrl((string) ($record->url ?? ''))) !== null) {

@@ -88,18 +88,8 @@ final class ConsoleGenres
     }
 
     /**
-     * The game's genre titles in order, joined with `,` and no space.
-     */
-    public function titles(int $consoleinfoId): string
-    {
-        return DB::table('console_genres as cg')->join('genres as g', 'g.id', '=', 'cg.genres_id')
-            ->where('cg.consoleinfo_id', $consoleinfoId)->orderBy('cg.position')
-            ->pluck('g.title')->implode(',');
-    }
-
-    /**
-     * A SQL expression for the same text as titles(), for the game whose id is in the column; the
-     * Console releases list joins the titles with ', ' instead.
+     * A SQL expression for the game's genre titles in order, joined with `,` and no space, for the
+     * game whose id is in the column; the Console releases list joins the titles with ', ' instead.
      *
      * @param  ',' | ', '  $separator
      */

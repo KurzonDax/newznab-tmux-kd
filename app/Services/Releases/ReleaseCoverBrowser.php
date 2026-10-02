@@ -8,9 +8,6 @@ use App\Data\ReleaseBrowserState;
 use App\Data\ReleaseCoverItem;
 use App\Enums\BrowseRoot;
 use App\Models\User;
-use App\Services\BookService;
-use App\Services\ConsoleService;
-use App\Services\GamesService;
 use App\Services\MusicService;
 use App\Support\CoverBrowseResults;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -40,8 +37,7 @@ final class ReleaseCoverBrowser
     public function expanded(ReleaseBrowserState $state, User $user, string $id, int $page = 1, int $per = 24): LengthAwarePaginator
     {
         $column = match ($state->root) {
-            BrowseRoot::Audio => 'musicinfo_id', BrowseRoot::Console => 'consoleinfo_id',
-            BrowseRoot::Games => 'gamesinfo_id', BrowseRoot::Books => 'bookinfo_id',
+            BrowseRoot::Audio => 'musicinfo_id',
             default => null,
         };
         abort_if($state->view !== 'covers' || $column === null || $id === '', 404);
@@ -67,9 +63,6 @@ final class ReleaseCoverBrowser
         $scope = new CoverBrowseScope(app(ReleaseBrowserQuery::class)->matchingQuery($state, $user), $state);
         $covers = match ($state->root) {
             BrowseRoot::Audio => app(MusicService::class)->getMusicRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
-            BrowseRoot::Console => app(ConsoleService::class)->getConsoleRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
-            BrowseRoot::Games => app(GamesService::class)->getGamesRange($state->page, $categories, $offset, $state->per, $order, excludedCats: $excluded, scope: $scope),
-            BrowseRoot::Books => app(BookService::class)->getBookRange($state->page, $categories, $offset, $state->per, $order, $excluded, scope: $scope),
             default => collect(),
         };
         $items = $covers->map(fn (object $cover): ReleaseCoverItem => $cover instanceof ReleaseCoverItem ? $cover : $this->item($cover, $state->root));
@@ -88,20 +81,11 @@ final class ReleaseCoverBrowser
         $entity = collect($releases)->first()?->row_data?->entity;
         $line = match ($root) {
             BrowseRoot::Audio => [$cover->artist ?? '', $cover->year ?? ''],
-            BrowseRoot::Console => [$cover->platform ?? '', substr((string) ($cover->releasedate ?? ''), 0, 4)],
-            BrowseRoot::Games => ['PC', substr((string) ($cover->releasedate ?? ''), 0, 4)],
-            BrowseRoot::Books => [$cover->author ?? '', substr((string) ($cover->publishdate ?? ''), 0, 4)],
             default => [],
         };
-        $badge = (string) match ($root) {
-            BrowseRoot::Console => $cover->esrb ?? '',
-            default => $cover->genre ?? '',
-        };
+        $badge = (string) ($cover->genre ?? '');
         $metadata = match ($root) {
             BrowseRoot::Audio => [$cover->artist ?? '', $badge, $cover->publisher ?? ''],
-            BrowseRoot::Console => [$cover->platform ?? '', $cover->publisher ?? '', $badge],
-            BrowseRoot::Games => ['PC', $cover->publisher ?? '', $badge],
-            BrowseRoot::Books => [$cover->author ?? '', $cover->publisher ?? ''],
             default => [],
         };
         $id = (string) $cover->id;

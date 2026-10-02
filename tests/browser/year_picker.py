@@ -64,8 +64,7 @@ with sync_playwright() as pw:
     context.route('**/*', respond)
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
-    contexts = [(f'/browse/{category}', view) for category in ['audio', 'console', 'games', 'books']
-                for view in (['table', 'covers'] if category == 'games' else ['table', 'cards', 'covers'])]
+    contexts = [('/browse/audio', view) for view in ['table', 'cards', 'covers']]
     if args.match: contexts = [item for item in contexts if args.match in item[0]]
     for path, view in contexts:
         page.set_viewport_size({'width': 390, 'height': 844})
