@@ -75,9 +75,10 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers  Parsed headers with 'matches' already populated
      * @param  array<string, mixed>  $groupMySQL  Group info from database
      * @param  bool  $addToPartRepair  Whether to track failed inserts
+     * @param  bool  $fromSecondary  Whether the headers were read from a secondary provider
      * @return HeaderStorageReport Article numbers needing part repair, plus why they got there
      */
-    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true, HeaderScanDirection $direction = HeaderScanDirection::Head): HeaderStorageReport
+    public function store(array $headers, array $groupMySQL, bool $addToPartRepair = true, HeaderScanDirection $direction = HeaderScanDirection::Head, bool $fromSecondary = false): HeaderStorageReport
     {
         $this->report = HeaderStorageReport::empty();
 
@@ -94,7 +95,7 @@ final class HeaderStorageService
         $total = \count($headers);
         for ($offset = 0; $offset < $total; $offset += $chunkSize) {
             $chunk = \array_slice($headers, $offset, $chunkSize);
-            $this->storeChunk($chunk, $groupMySQL, $addToPartRepair, $direction);
+            $this->storeChunk($chunk, $groupMySQL, $addToPartRepair, $direction, $fromSecondary);
             unset($chunk);
         }
 
@@ -107,11 +108,11 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $groupMySQL
      */
-    private function storeChunk(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction): void
+    private function storeChunk(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction, bool $fromSecondary): void
     {
         $attempt = 0;
         do {
-            if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair, $direction)) {
+            if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair, $direction, $fromSecondary)) {
                 $this->report = $this->report->withStoredChunk($this->attemptFailedNumbers, $attempt > 0, $this->attemptInvalidHeaders);
 
                 return;
@@ -175,7 +176,7 @@ final class HeaderStorageService
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $groupMySQL
      */
-    private function storeChunkAttempt(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction): bool
+    private function storeChunkAttempt(array $headers, array $groupMySQL, bool $addToPartRepair, HeaderScanDirection $direction, bool $fromSecondary): bool
     {
         $this->lastStorageException = null;
         $this->attemptFailedNumbers = [];
@@ -225,7 +226,7 @@ final class HeaderStorageService
                     $this->collectionHandler->getAllIds(),
                     $this->config->sqlChunkSize,
                     $direction,
-                    $this->frontierStamp($headers, $groupMySQL, $direction),
+                    $this->frontierStamp($headers, $groupMySQL, $direction, $fromSecondary),
                 )) {
                     $transaction->markError();
                 }
@@ -261,10 +262,15 @@ final class HeaderStorageService
     }
 
     /**
+     * Tail stamps the chunk's oldest posting date and Head its newest. Provider 1's Head stamp
+     * never falls below the group frontier: a post the server lists late then waits for its
+     * last part like a fresh one. A secondary provider's chunk keeps its own date; the
+     * secondary hold decides when it holds a collection.
+     *
      * @param  array<int, array<string, mixed>>  $headers
      * @param  array<string, mixed>  $group
      */
-    private function frontierStamp(array $headers, array $group, HeaderScanDirection $direction): ?string
+    private function frontierStamp(array $headers, array $group, HeaderScanDirection $direction, bool $fromSecondary): ?string
     {
         if ($direction === HeaderScanDirection::Repair) {
             return $group['last_record_postdate'] ?? null;
@@ -272,10 +278,15 @@ final class HeaderStorageService
 
         $timestamps = [];
         foreach ($headers as $header) {
-            $date = $header['Date'] ?? null;
-            $timestamp = is_numeric($date) ? (int) $date : strtotime((string) $date);
-            if ($timestamp !== false && $timestamp > 0) {
+            $timestamp = $this->postingTimestamp($header['Date'] ?? null);
+            if ($timestamp !== null) {
                 $timestamps[] = $timestamp;
+            }
+        }
+        if ($direction === HeaderScanDirection::Head && ! $fromSecondary) {
+            $floor = $this->postingTimestamp($group['last_record_postdate'] ?? null);
+            if ($floor !== null) {
+                $timestamps[] = $floor;
             }
         }
         if ($timestamps === []) {
@@ -283,6 +294,16 @@ final class HeaderStorageService
         }
 
         return date('Y-m-d H:i:s', $direction === HeaderScanDirection::Tail ? min($timestamps) : max($timestamps));
+    }
+
+    private function postingTimestamp(mixed $date): ?int
+    {
+        if ($date === null) {
+            return null;
+        }
+        $timestamp = is_numeric($date) ? (int) $date : strtotime((string) $date);
+
+        return $timestamp !== false && $timestamp > 0 ? $timestamp : null;
     }
 
     private function isTransientLockError(?\Throwable $exception): bool

@@ -883,7 +883,8 @@ final class CbpMariaDbIngestionTest extends TestCase
         $storage = new HeaderStorageService;
         $header = $this->header(8001, 1, 100);
         $header['Date'] = '2026-08-01 12:00:00';
-        $group = ['id' => 1, 'name' => 'alt.binaries.test', 'last_record_postdate' => '2026-08-02 12:00:00'];
+        // A group frontier earlier than every forward header leaves the forward stamps to the headers.
+        $group = ['id' => 1, 'name' => 'alt.binaries.test', 'last_record_postdate' => '2026-07-31 12:00:00'];
         $storage->store([$header], $group, direction: HeaderScanDirection::Head);
         $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
         $header['Date'] = '2026-08-01 10:00:00';
@@ -897,6 +898,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         $header['Date'] = '2026-08-01 11:00:00';
         $storage->store([$header], $group, direction: HeaderScanDirection::Tail);
         $this->assertSame('2026-08-01 10:00:00', DB::table('collections')->value('last_seen_tail_postdate'));
+        $group['last_record_postdate'] = '2026-08-02 12:00:00';
         $storage->store([$header], $group, direction: HeaderScanDirection::Repair);
         $this->assertSame('2026-08-02 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
         $this->assertNotNull(DB::table('collections')->value('last_seen_at'));

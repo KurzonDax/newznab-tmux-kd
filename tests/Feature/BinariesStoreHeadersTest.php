@@ -4,17 +4,21 @@ namespace Tests\Feature;
 
 use App\Enums\CollectionFileCheckStatus;
 use App\Enums\HeaderScanDirection;
+use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
 use App\Services\Binaries\HeaderParser;
 use App\Services\NNTP\NntpProvider;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
+use App\Services\Releases\CollectionQuietPredicate;
 use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\NeverBlacklistedService;
+use Tests\Support\ProductionTables;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
 
@@ -233,7 +237,8 @@ class BinariesStoreHeadersTest extends TestCase
         $harness = new TestBinariesHarness;
         $header = $this->makeHeader(8001, 1, 2, 100);
         $header['Date'] = '2026-08-01 12:00:00';
-        $group = ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => '2026-08-02 12:00:00'];
+        // A group frontier earlier than every forward header leaves the forward stamps to the headers.
+        $group = ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => '2026-07-31 12:00:00'];
         $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Head);
         $this->assertSame('2026-08-01 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
         $header['Date'] = '2026-08-01 10:00:00';
@@ -247,9 +252,149 @@ class BinariesStoreHeadersTest extends TestCase
         $header['Date'] = '2026-08-01 11:00:00';
         $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Tail);
         $this->assertSame('2026-08-01 10:00:00', DB::table('collections')->value('last_seen_tail_postdate'));
+        $group['last_record_postdate'] = '2026-08-02 12:00:00';
         $harness->simulateScan([$header], $group, direction: HeaderScanDirection::Repair);
         $this->assertSame('2026-08-02 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
         $this->assertNotNull(DB::table('collections')->value('last_seen_at'));
+    }
+
+    public function test_a_provider_one_head_stamp_never_falls_below_the_group_frontier(): void
+    {
+        $this->createFrontierGroup('2026-08-17 12:00:00');
+        $header = $this->makeHeader(8001, 1, 2);
+        $header['Date'] = '2026-08-16 06:00:00';
+
+        (new TestBinariesHarness)->simulateScan([$header], ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => '2026-08-17 12:00:00']);
+
+        $this->assertSame('2026-08-17 12:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-08-17 23:00:00']);
+        $this->assertSame([], $this->quietCollectionIds());
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-08-18 00:00:00']);
+        $this->assertSame([1], $this->quietCollectionIds());
+    }
+
+    public function test_a_null_group_frontier_leaves_the_chunk_date(): void
+    {
+        $header = $this->makeHeader(8001, 1, 2);
+        $header['Date'] = '2026-08-16 06:00:00';
+
+        (new TestBinariesHarness)->simulateScan([$header], ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => null]);
+
+        $this->assertSame('2026-08-16 06:00:00', DB::table('collections')->value('last_seen_head_postdate'));
+    }
+
+    /** @return array<string, array{?string, string}> */
+    public static function headStampProviders(): array
+    {
+        return ['provider 1' => [null, '2026-08-17 12:00:00'], 'secondary provider' => ['super', '2026-08-16 06:00:00']];
+    }
+
+    #[DataProvider('headStampProviders')]
+    public function test_only_provider_one_floors_the_forward_head_stamp_at_the_group_frontier(?string $provider, string $expectedHead): void
+    {
+        config(['nntmux_nntp.providers' => [
+            ['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid'],
+            ['position' => 2, 'name' => 'super', 'host' => 'super.example.invalid'],
+        ]]);
+        NntpProviderPool::forgetConfiguredProviders();
+        $this->createFrontierGroup('2026-08-17 12:00:00');
+        ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
+        ProductionTables::fromAuthority()->create('usenet_group_provider_ingested_ranges');
+        DB::table('usenet_group_provider_cursors')->insert([
+            'usenet_groups_id' => 1, 'provider' => 'super', 'provider_host' => 'super.example.invalid',
+            'last_record' => 8000, 'last_record_postdate' => '2026-08-15 00:00:00',
+        ]);
+        $header = $this->makeHeader(8001, 1, 2);
+        $header['Number'] = '8001';
+        $header['Subject'] = 'Example.File.Name yEnc (1/2)';
+        $header['Date'] = '2026-08-16 06:00:00';
+        $nntp = \Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('useProvider');
+        $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('provider')->andReturn(NntpProvider::fromConfig($provider === null
+            ? ['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']
+            : ['position' => 2, 'name' => 'super', 'host' => 'super.example.invalid']));
+        $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
+        $nntp->shouldReceive('getXOVER')->with('8001-8001')->andReturn([$header]);
+        $this->app->instance(NNTPService::class, $nntp);
+        $this->app->instance(BinariesService::class, new BinariesService(
+            config: new BinariesConfig(echoCli: false),
+            headerParser: new HeaderParser(new NeverBlacklistedService),
+        ));
+
+        try {
+            $this->artisan('articles:get-range', ['mode' => 'binaries', 'group' => 'alt.test', 'first' => 8001, 'last' => 8001]
+                + ($provider === null ? [] : ['--provider' => $provider]))->assertSuccessful();
+        } finally {
+            NntpProviderPool::forgetConfiguredProviders();
+        }
+
+        $this->assertSame($expectedHead, DB::table('collections')->value('last_seen_head_postdate'));
+    }
+
+    public function test_the_range_command_advances_provider_one_to_the_newest_date_in_the_range(): void
+    {
+        $this->createFrontierGroup('2026-08-01 00:00:00');
+        $headers = [];
+        foreach (['8001' => '2026-08-01 13:00:00', '8002' => '2026-08-01 10:00:00'] as $number => $date) {
+            $header = $this->makeHeader((int) $number, 1, 1);
+            $header['Number'] = (string) $number;
+            $header['Subject'] = 'File.'.$number.' yEnc (1/1)';
+            $header['Date'] = $date;
+            $headers[] = $header;
+        }
+        $nntp = \Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('doConnect')->andReturn(true);
+        $nntp->shouldReceive('provider')->andReturn(NntpProvider::fromConfig(['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']));
+        $nntp->shouldReceive('selectGroup')->andReturn(['group' => 'alt.test', 'first' => 1, 'last' => 10000]);
+        $nntp->shouldReceive('getXOVER')->with('8001-8002')->andReturn($headers);
+        $this->app->instance(NNTPService::class, $nntp);
+        $this->app->instance(BinariesService::class, new BinariesService(
+            config: new BinariesConfig(echoCli: false),
+            headerParser: new HeaderParser(new NeverBlacklistedService),
+        ));
+
+        $this->artisan('articles:get-range', ['mode' => 'binaries', 'group' => 'alt.test', 'first' => 8001, 'last' => 8002])->assertSuccessful();
+
+        $this->assertSame(8002, (int) DB::table('usenet_groups')->value('last_record'));
+        $this->assertSame('2026-08-01 13:00:00', DB::table('usenet_groups')->value('last_record_postdate'));
+    }
+
+    public function test_a_quiet_collection_stays_quiet_when_its_group_advances_over_older_articles(): void
+    {
+        $this->createFrontierGroup('2026-08-18 00:00:00');
+        $header = $this->makeHeader(8001, 1, 2);
+        $header['Date'] = '2026-08-17 12:00:00';
+        (new TestBinariesHarness)->simulateScan([$header], ['id' => 1, 'name' => 'alt.test', 'last_record_postdate' => '2026-08-10 00:00:00']);
+        $this->assertSame([1], $this->quietCollectionIds());
+
+        UsenetGroup::advanceLastRecordContiguously(1, 8001, 8100, (int) strtotime('2026-08-17 06:00:00'));
+
+        $this->assertSame(8100, (int) DB::table('usenet_groups')->value('last_record'));
+        $this->assertSame('2026-08-18 00:00:00', DB::table('usenet_groups')->value('last_record_postdate'));
+        $this->assertSame([1], $this->quietCollectionIds());
+    }
+
+    /** One active forward-only group at position 8000, plus the columns the quiet predicate reads. */
+    private function createFrontierGroup(string $lastRecordPostdate): void
+    {
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id', 'name', 'active', 'backfill', 'first_record',
+            'last_record', 'first_record_postdate', 'last_record_postdate', 'backfill_settled_at', 'last_updated']);
+        DB::table('usenet_groups')->insert([
+            'id' => 1, 'name' => 'alt.test', 'active' => 1, 'backfill' => 0, 'first_record' => 1, 'last_record' => 8000,
+            'first_record_postdate' => '2026-08-01 00:00:00', 'last_record_postdate' => $lastRecordPostdate,
+        ]);
+        (require database_path('migrations/2026_09_05_213352_create_usenet_group_ingested_ranges_table.php'))->up();
+        // The quiet predicate's wall clock reads the production `added` column this class's fixture omits.
+        DB::statement('ALTER TABLE collections ADD COLUMN added DATETIME NULL');
+    }
+
+    /** @return list<int> */
+    private function quietCollectionIds(): array
+    {
+        $predicate = CollectionQuietPredicate::build(12);
+
+        return array_map('intval', DB::table('collections')->whereRaw($predicate['sql'], $predicate['bindings'])->pluck('id')->all());
     }
 
     public function test_named_set_headers_form_one_collection_with_declared_total(): void

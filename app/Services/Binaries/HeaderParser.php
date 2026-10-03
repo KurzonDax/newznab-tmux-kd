@@ -159,6 +159,10 @@ final class HeaderParser
     /**
      * Extract highest and lowest article info from headers.
      *
+     * `newestArticleDate` is the newest parseable `Date` among the valid headers, or null. It is
+     * the forward scan's range date: a server that lists old articles late puts them at the top
+     * of a range, so the last article's date can be older than posts the range holds.
+     *
      * @param  array<int, array<string, mixed>>  $headers
      * @return array<string, mixed>
      */
@@ -166,6 +170,8 @@ final class HeaderParser
     {
         $firstValidHeader = null;
         $lastValidHeader = null;
+        $newestDate = null;
+        $newestTimestamp = null;
 
         foreach ($headers as $header) {
             if (! array_key_exists('Number', $header)) {
@@ -206,6 +212,13 @@ final class HeaderParser
             ];
             $firstValidHeader ??= $validHeader;
             $lastValidHeader = $validHeader;
+
+            $date = $validHeader['date'];
+            $timestamp = is_numeric($date) ? (int) $date : strtotime((string) $date);
+            if ($timestamp !== false && $timestamp > 0 && ($newestTimestamp === null || $timestamp > $newestTimestamp)) {
+                $newestTimestamp = $timestamp;
+                $newestDate = $date;
+            }
         }
 
         if ($firstValidHeader === null || $lastValidHeader === null) {
@@ -217,6 +230,7 @@ final class HeaderParser
             'firstArticleDate' => $firstValidHeader['date'],
             'lastArticleNumber' => $lastValidHeader['number'],
             'lastArticleDate' => $lastValidHeader['date'],
+            'newestArticleDate' => $newestDate,
         ];
     }
 }

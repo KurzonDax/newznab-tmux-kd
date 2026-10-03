@@ -106,7 +106,7 @@ class GetArticleRange extends Command
 
             if ($secondary !== null) {
                 UsenetGroupProviderCursor::advanceContiguously((int) $groupMySQL['id'], $secondary->name,
-                    $firstArticle, $lastArticle, $this->lastArticleTime($return));
+                    $firstArticle, $lastArticle, $this->newestArticleTime($return));
 
                 return self::SUCCESS;
             }
@@ -132,7 +132,7 @@ class GetArticleRange extends Command
     {
         switch ($mode) {
             case 'binaries':
-                UsenetGroup::advanceLastRecordContiguously((int) $groupMySQL['id'], $first, $last, $this->lastArticleTime($return));
+                UsenetGroup::advanceLastRecordContiguously((int) $groupMySQL['id'], $first, $last, $this->newestArticleTime($return));
 
                 return;
 
@@ -157,10 +157,14 @@ class GetArticleRange extends Command
 
     }
 
-    /** @param  array<string, mixed>  $return */
-    private function lastArticleTime(array $return): ?int
+    /**
+     * The forward range's date: its newest posting date, not its last article's.
+     *
+     * @param  array<string, mixed>  $return
+     */
+    private function newestArticleTime(array $return): ?int
     {
-        $date = $return['lastArticleDate'] ?? null;
+        $date = $return['newestArticleDate'] ?? null;
 
         return $date === null ? null : (is_numeric($date) ? (int) $date : (int) strtotime($date));
     }

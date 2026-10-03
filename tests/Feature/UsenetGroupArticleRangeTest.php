@@ -7,10 +7,13 @@ namespace Tests\Feature;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Binaries\BinariesService;
+use App\Services\Binaries\HeaderParser;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\NeverBlacklistedService;
 use Tests\TestCase;
 
 class UsenetGroupArticleRangeTest extends TestCase
@@ -111,6 +114,77 @@ class UsenetGroupArticleRangeTest extends TestCase
         $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1300, 'last_record_postdate' => '2026-08-17 12:00:00']);
     }
 
+    /**
+     * @param  list<array{int, int, ?string}>  $parked
+     * @param  array{int, int, ?string}  $incoming
+     */
+    #[DataProvider('frontierDates')]
+    public function test_the_frontier_date_only_moves_forward_and_never_past_now(?string $stored, array $parked, array $incoming, ?string $expected, int $expectedLast): void
+    {
+        Carbon::setTestNow('2026-08-17 14:31:00');
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => $stored]);
+        foreach ($parked as [$first, $last, $date]) {
+            $this->assertSame(0, UsenetGroup::advanceLastRecordContiguously(1, $first, $last, self::timestamp($date)));
+        }
+
+        [$first, $last, $date] = $incoming;
+        $this->assertSame(1, UsenetGroup::advanceLastRecordContiguously(1, $first, $last, self::timestamp($date)));
+
+        $group = DB::table('usenet_groups')->find(1);
+        $this->assertSame($expectedLast, (int) $group->last_record);
+        $this->assertSame($expected, $group->last_record_postdate);
+        $this->assertSame(0, DB::table('usenet_group_ingested_ranges')->count());
+    }
+
+    /**
+     * Shared with the secondary cursor test. The position starts at 1000 and `now()` is
+     * 2026-08-17 14:31:00. Each case: stored date, parked ranges, incoming range, expected
+     * date, expected position.
+     *
+     * @return array<string, array{?string, list<array{int, int, ?string}>, array{int, int, ?string}, ?string, int}>
+     */
+    public static function frontierDates(): array
+    {
+        return [
+            'an older range moves the position, not the date' => ['2026-08-17 12:00:00', [], [1001, 1100, '2026-08-17 10:00:00'], '2026-08-17 12:00:00', 1100],
+            'a newer range moves the date forward' => ['2026-08-17 12:00:00', [], [1001, 1100, '2026-08-17 13:00:00'], '2026-08-17 13:00:00', 1100],
+            'an absorbed parked range older than the incoming one' => ['2026-08-17 10:00:00', [[1101, 1200, '2026-08-17 09:00:00']], [1001, 1100, '2026-08-17 11:00:00'], '2026-08-17 11:00:00', 1200],
+            'an absorbed parked range and an incoming range both older than stored' => ['2026-08-17 10:00:00', [[1101, 1200, '2026-08-17 09:00:00']], [1001, 1100, '2026-08-17 08:00:00'], '2026-08-17 10:00:00', 1200],
+            'the newest of two absorbed parked ranges wins' => ['2026-08-17 10:00:00', [[1101, 1200, '2026-08-17 13:00:00'], [1201, 1300, '2026-08-17 09:00:00']], [1001, 1100, '2026-08-17 08:00:00'], '2026-08-17 13:00:00', 1300],
+            'a future date is capped at now' => ['2026-08-17 12:00:00', [], [1001, 1100, '2026-08-18 00:00:00'], '2026-08-17 14:31:00', 1100],
+            'a stored date later than now is kept' => ['2026-08-17 15:00:00', [], [1001, 1100, '2026-08-17 14:00:00'], '2026-08-17 15:00:00', 1100],
+            'a NULL stored date takes the incoming date' => [null, [], [1001, 1100, '2026-08-17 11:00:00'], '2026-08-17 11:00:00', 1100],
+            'a NULL incoming date keeps the stored date' => ['2026-08-17 12:00:00', [], [1001, 1100, null], '2026-08-17 12:00:00', 1100],
+            'the date stays NULL when every input is NULL' => [null, [], [1001, 1100, null], null, 1100],
+        ];
+    }
+
+    public function test_the_range_date_is_the_newest_valid_posting_date_in_the_range(): void
+    {
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => '2026-08-17 09:00:00']);
+        $headers = [
+            ['Number' => '1001', 'Date' => '2026-08-17 09:30:00'],
+            ['Number' => '1002', 'Date' => '2026-08-17 13:00:00'],
+            ['Number' => '1003', 'Date' => 'not a date'],
+            ['Number' => '9999', 'Date' => '2026-08-17 14:00:00'],
+            ['Number' => '1004', 'Date' => '2026-08-17 10:00:00'],
+        ];
+        $summary = (new HeaderParser(new NeverBlacklistedService))->getArticleRange($headers, 'alt.test', 1001, 1004);
+
+        $this->assertSame('2026-08-17 10:00:00', $summary['lastArticleDate']);
+        $this->assertSame('2026-08-17 13:00:00', $summary['newestArticleDate']);
+
+        $group = ['id' => 1, 'name' => 'alt.test', 'first_record' => 500, 'first_record_postdate' => '2026-08-10 00:00:00', 'last_record' => 1000];
+        $this->scanProgressService()->persistScanProgress($group, [], $summary, 1004);
+
+        $this->assertDatabaseHas('usenet_groups', ['id' => 1, 'last_record' => 1004, 'last_record_postdate' => '2026-08-17 13:00:00']);
+    }
+
+    private static function timestamp(?string $date): ?int
+    {
+        return $date === null ? null : (int) strtotime($date);
+    }
+
     public function test_every_tail_rewind_clears_the_settled_marker(): void
     {
         foreach (['recordBackfillProgress', 'rewindFirstRecord', 'initializeOrRewindFirstRecord'] as $method) {
@@ -154,18 +228,7 @@ class UsenetGroupArticleRangeTest extends TestCase
 
     public function test_stale_header_scan_cannot_move_group_boundaries_in_the_wrong_direction(): void
     {
-        $service = new class(new BinariesConfig(partRepair: false, echoCli: false)) extends BinariesService
-        {
-            /**
-             * @param  array<string, mixed>  $groupMySQL
-             * @param  array<string, mixed>  $groupNNTP
-             * @param  array<string, mixed>  $scanSummary
-             */
-            public function persistScanProgress(array &$groupMySQL, array $groupNNTP, array $scanSummary, int $last): void
-            {
-                $this->updateGroupAfterScan($groupMySQL, $groupNNTP, $scanSummary, $last);
-            }
-        };
+        $service = $this->scanProgressService();
         $staleGroup = [
             'id' => 1,
             'name' => 'alt.test',
@@ -179,6 +242,7 @@ class UsenetGroupArticleRangeTest extends TestCase
             'firstArticleDate' => '2026-08-12 00:00:00',
             'lastArticleNumber' => 900,
             'lastArticleDate' => '2026-08-15 00:00:00',
+            'newestArticleDate' => '2026-08-15 00:00:00',
         ], 900);
 
         $group = DB::table('usenet_groups')->find(1);
@@ -187,5 +251,21 @@ class UsenetGroupArticleRangeTest extends TestCase
         $this->assertSame('2026-08-10 00:00:00', $group->first_record_postdate);
         $this->assertSame(1_000, $group->last_record);
         $this->assertSame('2026-08-16 00:00:00', $group->last_record_postdate);
+    }
+
+    private function scanProgressService(): BinariesService
+    {
+        return new class(new BinariesConfig(partRepair: false, echoCli: false)) extends BinariesService
+        {
+            /**
+             * @param  array<string, mixed>  $groupMySQL
+             * @param  array<string, mixed>  $groupNNTP
+             * @param  array<string, mixed>  $scanSummary
+             */
+            public function persistScanProgress(array &$groupMySQL, array $groupNNTP, array $scanSummary, int $last): void
+            {
+                $this->updateGroupAfterScan($groupMySQL, $groupNNTP, $scanSummary, $last);
+            }
+        };
     }
 }

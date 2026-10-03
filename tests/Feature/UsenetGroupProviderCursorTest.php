@@ -8,6 +8,7 @@ use App\Models\UsenetGroupProviderCursor;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProviderExternal;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
@@ -68,6 +69,29 @@ class UsenetGroupProviderCursorTest extends TestCase
         $this->assertSame(1200, $cursor->last_record);
         $this->assertSame('2026-08-17 12:00:00', $cursor->last_record_postdate);
         $this->assertSame('2026-08-17 14:30:00', $cursor->last_advanced_at);
+    }
+
+    /**
+     * @param  list<array{int, int, ?string}>  $parked
+     * @param  array{int, int, ?string}  $incoming
+     */
+    #[DataProviderExternal(UsenetGroupArticleRangeTest::class, 'frontierDates')]
+    public function test_the_cursor_date_follows_the_frontier_date_rule(?string $stored, array $parked, array $incoming, ?string $expected, int $expectedLast): void
+    {
+        Carbon::setTestNow('2026-08-17 14:31:00');
+        DB::table('usenet_group_provider_cursors')->where('provider', 'super')->update(['last_record_postdate' => $stored]);
+        foreach ($parked as [$first, $last, $date]) {
+            $this->assertSame(0, UsenetGroupProviderCursor::advanceContiguously(1, 'super', $first, $last, $date === null ? null : (int) strtotime($date)));
+        }
+
+        [$first, $last, $date] = $incoming;
+        $this->assertSame(1, UsenetGroupProviderCursor::advanceContiguously(1, 'super', $first, $last, $date === null ? null : (int) strtotime($date)));
+
+        $cursor = $this->cursor('super');
+        $this->assertSame($expectedLast, $cursor->last_record);
+        $this->assertSame($expected, $cursor->last_record_postdate);
+        $this->assertSame('2026-08-16 00:00:00', $this->cursor('other')->last_record_postdate);
+        $this->assertSame(0, DB::table('usenet_group_provider_ingested_ranges')->count());
     }
 
     public function test_parking_a_range_stamps_activity_without_moving_the_cursor(): void
