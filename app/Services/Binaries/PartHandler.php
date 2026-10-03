@@ -61,6 +61,20 @@ final class PartHandler
     }
 
     /**
+     * Whether a header can become a part row: a positive segment number and a printable
+     * ASCII message-id of 1-255 characters.
+     *
+     * @param  array<string, mixed>  $header
+     */
+    public static function isStorable(array $header): bool
+    {
+        $partNumber = (int) ($header['matches'][2] ?? 0);
+        $messageId = trim((string) ($header['Message-ID'] ?? ''));
+
+        return $partNumber > 0 && $messageId !== '' && strlen($messageId) <= 255 && preg_match('/^[\x20-\x7E]+$/D', $messageId) === 1;
+    }
+
+    /**
      * Add a part to the pending insert queue.
      *
      * @param  array<string, mixed>  $header
@@ -68,9 +82,7 @@ final class PartHandler
      */
     public function addPart(int $binaryId, array $header): bool
     {
-        $partNumber = (int) ($header['matches'][2] ?? 0);
-        $messageId = trim((string) ($header['Message-ID'] ?? ''));
-        if ($partNumber <= 0 || $messageId === '' || strlen($messageId) > 255 || preg_match('/^[\x20-\x7E]+$/D', $messageId) !== 1) {
+        if (! self::isStorable($header)) {
             if (isset($header['Number'])) {
                 $this->failedPartNumbers[] = $header['Number'];
             }
@@ -81,8 +93,8 @@ final class PartHandler
         $this->parts[] = [
             'binaries_id' => $binaryId,
             'number' => $header['Number'],
-            'messageid' => $messageId,
-            'partnumber' => $partNumber,
+            'messageid' => trim((string) $header['Message-ID']),
+            'partnumber' => (int) $header['matches'][2],
             'size' => $header['Bytes'],
         ];
 

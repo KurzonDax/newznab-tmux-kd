@@ -19,9 +19,10 @@ final readonly class HeaderStorageReport
     /**
      * @param  list<int|string>  $failedNumbers  Article numbers that must be refetched by part repair
      * @param  int  $unresolvedHeaders  Headers whose collection or binary id never resolved
-     * @param  int  $rejectedHeaders  Headers that were unusable or whose part insert failed
+     * @param  int  $rejectedHeaders  Headers whose part insert failed
      * @param  int  $rolledBackChunks  Chunks that exhausted their retries and rolled back
      * @param  int  $recoveredChunks  Chunks that failed an attempt and then stored on retry
+     * @param  int  $invalidHeaders  Headers skipped because they can never be stored (see PartHandler::isStorable())
      */
     public function __construct(
         public array $failedNumbers = [],
@@ -29,6 +30,7 @@ final readonly class HeaderStorageReport
         public int $rejectedHeaders = 0,
         public int $rolledBackChunks = 0,
         public int $recoveredChunks = 0,
+        public int $invalidHeaders = 0,
     ) {}
 
     public static function empty(): self
@@ -41,7 +43,7 @@ final readonly class HeaderStorageReport
      *
      * @param  list<int|string>  $failedNumbers  Parts the committed chunk still could not store
      */
-    public function withStoredChunk(array $failedNumbers, bool $recovered): self
+    public function withStoredChunk(array $failedNumbers, bool $recovered, int $invalidHeaders = 0): self
     {
         return new self(
             array_merge($this->failedNumbers, $failedNumbers),
@@ -49,6 +51,7 @@ final readonly class HeaderStorageReport
             $this->rejectedHeaders,
             $this->rolledBackChunks,
             $this->recoveredChunks + ($recovered ? 1 : 0),
+            $this->invalidHeaders + $invalidHeaders,
         );
     }
 
@@ -57,7 +60,7 @@ final readonly class HeaderStorageReport
      *
      * @param  list<int|string>  $failedNumbers  Every article number the chunk carried
      */
-    public function withRolledBackChunk(array $failedNumbers, int $unresolvedHeaders, int $rejectedHeaders): self
+    public function withRolledBackChunk(array $failedNumbers, int $unresolvedHeaders, int $rejectedHeaders, int $invalidHeaders = 0): self
     {
         return new self(
             array_merge($this->failedNumbers, $failedNumbers),
@@ -65,6 +68,7 @@ final readonly class HeaderStorageReport
             $this->rejectedHeaders + $rejectedHeaders,
             $this->rolledBackChunks + 1,
             $this->recoveredChunks,
+            $this->invalidHeaders + $invalidHeaders,
         );
     }
 
@@ -76,6 +80,7 @@ final readonly class HeaderStorageReport
             $this->rejectedHeaders + $other->rejectedHeaders,
             $this->rolledBackChunks + $other->rolledBackChunks,
             $this->recoveredChunks + $other->recoveredChunks,
+            $this->invalidHeaders + $other->invalidHeaders,
         );
     }
 
@@ -91,7 +96,7 @@ final readonly class HeaderStorageReport
 
     public function hasNothingToReport(): bool
     {
-        return $this->failedNumbers === [] && $this->recoveredChunks === 0;
+        return $this->failedNumbers === [] && $this->recoveredChunks === 0 && $this->invalidHeaders === 0;
     }
 
     /**
@@ -119,6 +124,9 @@ final readonly class HeaderStorageReport
                 $summary .= ' ('.implode(', ', $reasons).')';
             }
             $segments[] = $summary;
+        }
+        if ($this->invalidHeaders > 0) {
+            $segments[] = $this->invalidHeaders.Str::plural(' header', $this->invalidHeaders).' skipped as unstorable';
         }
         if ($this->recoveredChunks > 0) {
             $segments[] = $this->recoveredChunks.Str::plural(' chunk', $this->recoveredChunks).' stored on retry';

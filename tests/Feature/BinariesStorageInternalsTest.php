@@ -15,6 +15,7 @@ use App\Services\CollectionsCleaningService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class BinariesStorageInternalsTest extends TestCase
@@ -249,17 +250,57 @@ class BinariesStorageInternalsTest extends TestCase
         $this->assertSame(200, (int) $part->size);
     }
 
-    public function test_invalid_message_id_rolls_back_the_header_chunk(): void
+    public function test_an_invalid_message_id_is_skipped_without_rolling_back_the_chunk(): void
     {
         $this->createHeaderStorageTables();
         $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
         $header = $this->parsedHeader(910, 1, 'Invalid.Message.Release', 100);
         $header['Message-ID'] = "<invalid\u{00E9}@example>";
 
-        $this->assertSame([910], $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true)->uniqueFailedNumbers());
+        $report = $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true);
+
+        $this->assertSame([], $report->uniqueFailedNumbers());
+        $this->assertSame(1, $report->invalidHeaders);
+        $this->assertSame(0, $report->rolledBackChunks);
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(0, DB::table('binaries')->count());
         $this->assertSame(0, DB::table('parts')->count());
+    }
+
+    #[DataProvider('unstorableHeaders')]
+    public function test_an_unstorable_header_is_skipped_and_its_chunk_mates_are_stored(int $partNumber, ?string $messageId): void
+    {
+        $this->createHeaderStorageTables();
+        $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
+        $headers = [];
+        for ($part = 1; $part <= 10; $part++) {
+            $headers[] = $this->parsedHeaderWithTotal(930 + $part, $part, 10, 'Storable.Release');
+        }
+        $unstorable = $this->parsedHeader(941, $partNumber, 'Unstorable.Release');
+        if ($messageId !== null) {
+            $unstorable['Message-ID'] = $messageId;
+        }
+        $headers[] = $unstorable;
+
+        $report = $service->store($headers, ['id' => 1, 'name' => 'alt.test'], true);
+
+        $this->assertSame(1, $report->invalidHeaders);
+        $this->assertSame(0, $report->rolledBackChunks);
+        $this->assertNotContains(941, $report->uniqueFailedNumbers());
+        $this->assertSame(10, DB::table('parts')->count());
+        $this->assertSame(1, DB::table('binaries')->count());
+        $this->assertSame(1, DB::table('collections')->count());
+    }
+
+    /** @return array<string, array{int, ?string}> */
+    public static function unstorableHeaders(): array
+    {
+        return [
+            'segment 0' => [0, null],
+            'empty message-id' => [1, ''],
+            '256-character message-id' => [1, '<'.str_repeat('a', 254).'>'],
+            'non-printable message-id' => [1, "<bad\x01id@example>"],
+        ];
     }
 
     public function test_zero_file_number_uses_subject_and_poster_identity(): void
@@ -590,12 +631,11 @@ class BinariesStorageInternalsTest extends TestCase
 
     public function test_rejected_header_is_not_retried_and_is_reported_as_rejected(): void
     {
-        $this->createHeaderStorageTables();
+        $this->createHeaderStorageTables('CHECK(size < 500)');
         $attempts = $this->simulateUnresolvedCollectionRace(0);
 
         $service = new HeaderStorageService($this->deterministicCollectionHandler(), config: new BinariesConfig(sqlChunkSize: 10));
-        $header = $this->parsedHeader(910, 1, 'Invalid.Message.Release', 100);
-        $header['Message-ID'] = "<invalid\u{00E9}@example>";
+        $header = $this->parsedHeader(910, 1, 'Rejected.Part.Release', 999);
 
         $report = $service->store([$header], ['id' => 1, 'name' => 'alt.test'], true);
 

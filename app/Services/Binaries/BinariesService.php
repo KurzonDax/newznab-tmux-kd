@@ -376,6 +376,8 @@ class BinariesService
 
         $storageReport = HeaderStorageReport::empty();
         $repairedNumbers = [];
+        /** @var array<string, mixed>|null $firstUnstorable */
+        $firstUnstorable = null;
         $missingPartSet = $missingParts === null
             ? null
             : array_fill_keys(array_map('intval', $missingParts), true);
@@ -390,13 +392,21 @@ class BinariesService
             foreach ($parseResult['received'] ?? [] as $number) {
                 $this->headersReceived[(int) $number] = true;
             }
-            foreach ($parseResult['repaired'] ?? [] as $number) {
-                $repairedNumbers[(int) $number] = true;
-            }
             $this->notYEnc += (int) $parseResult['notYEnc'];
             $this->headersBlackListed += (int) $parseResult['blacklisted'];
             $this->headersRejected += (int) ($parseResult['rejected'] ?? 0);
             $this->headerParser->flushBlacklistUpdates();
+
+            if ($firstUnstorable === null) {
+                // Before the secondary renumbering, so the log names the real article.
+                foreach ($parseResult['headers'] as $header) {
+                    if (! PartHandler::isStorable($header)) {
+                        $firstUnstorable = $header;
+
+                        break;
+                    }
+                }
+            }
 
             $chunkReport = HeaderStorageReport::empty();
             if ($secondary) {
@@ -424,6 +434,17 @@ class BinariesService
                 }
             }
             $storageReport = $storageReport->merge($chunkReport);
+
+            // Part repair clears only what it stored: a rolled-back chunk keeps every number, and a
+            // committed chunk keeps the parts whose insert did not land.
+            if ($chunkReport->rolledBackChunks === 0) {
+                $failedNumbers = array_fill_keys(array_map('intval', $chunkReport->uniqueFailedNumbers()), true);
+                foreach ($parseResult['repaired'] ?? [] as $number) {
+                    if (! isset($failedNumbers[(int) $number])) {
+                        $repairedNumbers[(int) $number] = true;
+                    }
+                }
+            }
             $this->recoveryCapture?->recordOrdinary($recoveryContext?->chunk(intdiv($offset, $this->config->headerChunkSize)), $chunkReport, count($parseResult['headers']));
 
             unset($rawChunk, $parseResult);
@@ -436,6 +457,18 @@ class BinariesService
 
         $this->startPR = Carbon::now();
         $this->timeInsert = $this->startPR->diffInSeconds($this->startUpdate, true);
+
+        if ($storageReport->invalidHeaders > 0 && $firstUnstorable !== null) {
+            Log::warning('Skipped headers that cannot be stored.', [
+                'group' => $groupMySQL['name'],
+                'provider' => $this->getNntp()->provider()->name,
+                'requested_first' => $first,
+                'requested_last' => $last,
+                'count' => $storageReport->invalidHeaders,
+                'first_article' => (int) $firstUnstorable['Number'],
+                'first_subject' => substr((string) ($firstUnstorable['Subject'] ?? ''), 0, 120),
+            ]);
+        }
 
         // Handle repaired parts
         if ($partRepair && $repairedNumbers !== []) {

@@ -38,6 +38,9 @@ final class HeaderStorageService
     /** @var array<int, HeaderFailureReason> Why each header of the current attempt could not be placed */
     private array $attemptFailures = [];
 
+    /** Headers the current chunk attempt skipped because they can never be stored */
+    private int $attemptInvalidHeaders = 0;
+
     private ?\Throwable $lastStorageException = null;
 
     public function __construct(
@@ -109,7 +112,7 @@ final class HeaderStorageService
         $attempt = 0;
         do {
             if ($this->storeChunkAttempt($headers, $groupMySQL, $addToPartRepair, $direction)) {
-                $this->report = $this->report->withStoredChunk($this->attemptFailedNumbers, $attempt > 0);
+                $this->report = $this->report->withStoredChunk($this->attemptFailedNumbers, $attempt > 0, $this->attemptInvalidHeaders);
 
                 return;
             }
@@ -120,6 +123,7 @@ final class HeaderStorageService
                     $this->attemptFailedNumbers,
                     $this->countAttemptFailures(static fn (HeaderFailureReason $reason): bool => $reason->isTransientRace()),
                     $this->countAttemptFailures(static fn (HeaderFailureReason $reason): bool => ! $reason->isTransientRace()),
+                    $this->attemptInvalidHeaders,
                 );
 
                 return;
@@ -176,6 +180,7 @@ final class HeaderStorageService
         $this->lastStorageException = null;
         $this->attemptFailedNumbers = [];
         $this->attemptFailures = [];
+        $this->attemptInvalidHeaders = 0;
         $this->collectionHandler->reset();
         $this->binaryHandler->reset();
         $this->partHandler->reset();
@@ -183,7 +188,8 @@ final class HeaderStorageService
 
         $chunkNumbers = [];
         foreach ($headers as $header) {
-            if (isset($header['Number']) && (\is_int($header['Number']) || \is_string($header['Number']))) {
+            // A skipped header is never a storage failure, so a rollback never queues it for repair.
+            if (isset($header['Number']) && (\is_int($header['Number']) || \is_string($header['Number'])) && PartHandler::isStorable($header)) {
                 $chunkNumbers[] = $header['Number'];
             }
         }
@@ -290,6 +296,16 @@ final class HeaderStorageService
      */
     private function processHeaderChunk(array $headers, array $groupMySQL, HeaderStorageTransaction $transaction): void
     {
+        // Skip a header that can never become a part before anything is written for it, so it
+        // neither creates a collection or binary nor rolls back its chunk-mates. Keys are kept:
+        // the loops below pair results by them.
+        $storable = array_filter($headers, PartHandler::isStorable(...));
+        $this->attemptInvalidHeaders = \count($headers) - \count($storable);
+        $headers = $storable;
+        if ($headers === []) {
+            return;
+        }
+
         $totalFilesByIndex = [];
         $fileNumbersByIndex = [];
 

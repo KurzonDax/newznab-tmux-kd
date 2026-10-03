@@ -171,6 +171,10 @@ class BinariesRunner extends BaseRunner
      * The article ranges each of a secondary provider's cursors is behind its server's newest
      * article, read from positions refreshed since $checkedSince. Database reads only.
      *
+     * Each group's ranges run newest first: a cursor far behind reads the present before its
+     * backlog, which fills behind it in later passes. Ranges ahead of the cursor are parked
+     * when they complete, and the cursor moves once the backlog below them is read.
+     *
      * @return list<array{provider: string, group: string, ranges: list<array{int, int}>}>
      */
     public function secondaryRanges(NntpProvider $provider, string $checkedSince, int $maxHeaders, int $maxMessages): array
@@ -196,20 +200,16 @@ class BinariesRunner extends BaseRunner
         $work = [];
         foreach ($cursors as $cursor) {
             $last = (int) $cursor->last_record;
-            $count = min((int) $cursor->server_last - $last, $maxHeaders);
-            if ($count <= 0) {
+            $serverLast = (int) $cursor->server_last;
+            $budget = min($serverLast - $last, $maxHeaders);
+            if ($budget <= 0) {
                 continue;
             }
-
-            $ranges = $this->sliceRanges($last, $count, $maxMessages);
-            // The remainder slice runs one article long; never ask past the server's newest.
-            $tail = array_key_last($ranges);
-            $ranges[$tail][1] = min($ranges[$tail][1], $last + $count);
 
             $work[] = [
                 'provider' => $provider->name,
                 'group' => (string) $cursor->name,
-                'ranges' => $this->subtractRanges($ranges, $parked[(int) $cursor->usenet_groups_id] ?? []),
+                'ranges' => $this->newestUnreadRanges($last + 1, $serverLast, $parked[(int) $cursor->usenet_groups_id] ?? [], $budget, $maxMessages),
             ];
         }
 
@@ -305,6 +305,28 @@ class BinariesRunner extends BaseRunner
         }
 
         return $queues;
+    }
+
+    /**
+     * Cut the unread articles of [$first, $last] -- those outside $parked -- into ranges of at
+     * most $maxMessages, from the newest down, until $budget articles are covered. Each unread
+     * interval is cut from its top, so only its lowest range can be shorter.
+     *
+     * @param  list<array{int, int}>  $parked  Sorted by first article
+     * @return list<array{int, int}>
+     */
+    private function newestUnreadRanges(int $first, int $last, array $parked, int $budget, int $maxMessages): array
+    {
+        $ranges = [];
+        foreach (array_reverse($this->subtractRanges([[$first, $last]], $parked)) as [$start, $end]) {
+            for ($top = $end; $top >= $start && $budget > 0; $top = $bottom - 1) {
+                $bottom = max($start, $top - $maxMessages + 1, $top - $budget + 1);
+                $ranges[] = [$bottom, $top];
+                $budget -= $top - $bottom + 1;
+            }
+        }
+
+        return $ranges;
     }
 
     /**
