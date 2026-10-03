@@ -40,7 +40,9 @@ Article *numbers* are per-server, so each provider keeps its own positions:
   and fills the backlog behind them. A completed range above the position is parked in
   `usenet_group_provider_ingested_ranges`; the position moves when the backlog below it is
   complete. Parts first stored from a secondary provider keep `parts.number = 0`, because their
-  article number is another server's.
+  article number is another server's. A cursor's `last_record_postdate` follows the group
+  frontier's rule: newest published posting date, capped at now, never backwards (see
+  "Collection clocks" in [the indexing pipeline](indexing-pipeline.md)).
 
 Release formation waits for a secondary provider that is live and caught up: an incomplete
 collection is not formed until every such provider has scanned past its newest header plus the

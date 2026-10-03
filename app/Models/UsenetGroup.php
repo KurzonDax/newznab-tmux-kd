@@ -10,6 +10,7 @@ use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\ReleaseManagementService;
+use App\Support\FrontierPostdate;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -154,16 +155,20 @@ class UsenetGroup extends Model
     /**
      * Publish only covered article ranges. Retries may overlap a range already
      * committed by a peer; coverage, rather than completion order, moves the head.
+     *
+     * The posting date is the newest date of the ranges published so far, capped at now; it
+     * never moves backwards ({@see FrontierPostdate}). `$newestPostdate` is the newest posting
+     * date in this range, and a parked range keeps it until it is absorbed.
      */
-    public static function advanceLastRecordContiguously(int $id, int $first, int $last, ?int $lastPostdate): int
+    public static function advanceLastRecordContiguously(int $id, int $first, int $last, ?int $newestPostdate): int
     {
-        return DB::transaction(function () use ($id, $first, $last, $lastPostdate): int {
+        return DB::transaction(function () use ($id, $first, $last, $newestPostdate): int {
             $group = self::query()->whereKey($id)->lockForUpdate()->first();
             if ($group === null || $last <= $group->last_record || $last < $first) {
                 return 0;
             }
 
-            $postdate = $lastPostdate === null ? null : self::dateTimeFromTimestamp($lastPostdate)->format('Y-m-d H:i:s');
+            $postdate = $newestPostdate === null ? null : self::dateTimeFromTimestamp($newestPostdate)->format('Y-m-d H:i:s');
             if ($group->last_record !== 0 && $first > $group->last_record + 1) {
                 DB::table('usenet_group_ingested_ranges')->insertOrIgnore([
                     'usenet_groups_id' => $id, 'first_record' => $first,
@@ -174,22 +179,20 @@ class UsenetGroup extends Model
             }
 
             $frontier = $last;
-            $postdate ??= $group->last_record_postdate;
+            $published = [$postdate];
             while ($range = DB::table('usenet_group_ingested_ranges')
                 ->where('usenet_groups_id', $id)
                 ->where('first_record', '<=', $frontier + 1)
                 ->orderBy('first_record')->lockForUpdate()->first()) {
-                if ((int) $range->last_record > $frontier) {
-                    $frontier = (int) $range->last_record;
-                    $postdate = $range->last_record_postdate ?? $postdate;
-                }
+                $frontier = max($frontier, (int) $range->last_record);
+                $published[] = $range->last_record_postdate;
                 DB::table('usenet_group_ingested_ranges')->where('usenet_groups_id', $id)
                     ->where('first_record', $range->first_record)->delete();
             }
 
             return self::query()->whereKey($id)->update([
                 'last_record' => $frontier,
-                'last_record_postdate' => $postdate,
+                'last_record_postdate' => FrontierPostdate::advance($group->last_record_postdate, $published),
                 'last_updated' => now(),
             ]);
         }, 5);

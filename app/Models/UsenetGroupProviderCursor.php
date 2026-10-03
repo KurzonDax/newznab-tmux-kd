@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Support\FrontierPostdate;
 use App\Support\SettingNumber;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -76,15 +77,17 @@ class UsenetGroupProviderCursor extends Model
     /**
      * Publish only covered article ranges, as {@see UsenetGroup::advanceLastRecordContiguously()}
      * does for provider 1. A range ahead of the cursor is parked until the gap before it fills.
+     * The posting date follows the same rule: the newest date of the ranges published so far,
+     * capped at now, never moving backwards ({@see FrontierPostdate}).
      *
      * The binaries pass reads a secondary provider newest first, so the cursor moves only when
      * the lowest backlog range completes. `last_advanced_at` therefore stamps any completed
      * range, parked or not: the release wait and the header health probe read it as "still
      * scanning".
      */
-    public static function advanceContiguously(int $groupId, string $provider, int $first, int $last, ?int $lastPostdate): int
+    public static function advanceContiguously(int $groupId, string $provider, int $first, int $last, ?int $newestPostdate): int
     {
-        return DB::transaction(function () use ($groupId, $provider, $first, $last, $lastPostdate): int {
+        return DB::transaction(function () use ($groupId, $provider, $first, $last, $newestPostdate): int {
             $cursor = self::query()->where('usenet_groups_id', $groupId)->where('provider', $provider)
                 ->lockForUpdate()->first();
             // A missing row means a reset deleted it while this range was being read; the next
@@ -93,7 +96,7 @@ class UsenetGroupProviderCursor extends Model
                 return 0;
             }
 
-            $postdate = $lastPostdate === null ? null : self::dateTimeFromTimestamp($lastPostdate);
+            $postdate = $newestPostdate === null ? null : self::dateTimeFromTimestamp($newestPostdate);
             if ($cursor->last_record !== 0 && $first > $cursor->last_record + 1) {
                 DB::table('usenet_group_provider_ingested_ranges')->insertOrIgnore([
                     'usenet_groups_id' => $groupId, 'provider' => $provider, 'first_record' => $first,
@@ -106,16 +109,14 @@ class UsenetGroupProviderCursor extends Model
             }
 
             $frontier = $last;
-            $postdate ??= $cursor->last_record_postdate;
+            $published = [$postdate];
             while ($range = DB::table('usenet_group_provider_ingested_ranges')
                 ->where('usenet_groups_id', $groupId)
                 ->where('provider', $provider)
                 ->where('first_record', '<=', $frontier + 1)
                 ->orderBy('first_record')->lockForUpdate()->first()) {
-                if ((int) $range->last_record > $frontier) {
-                    $frontier = (int) $range->last_record;
-                    $postdate = $range->last_record_postdate ?? $postdate;
-                }
+                $frontier = max($frontier, (int) $range->last_record);
+                $published[] = $range->last_record_postdate;
                 DB::table('usenet_group_provider_ingested_ranges')->where('usenet_groups_id', $groupId)
                     ->where('provider', $provider)
                     ->where('first_record', $range->first_record)->delete();
@@ -123,7 +124,7 @@ class UsenetGroupProviderCursor extends Model
 
             return self::query()->where('usenet_groups_id', $groupId)->where('provider', $provider)->update([
                 'last_record' => $frontier,
-                'last_record_postdate' => $postdate,
+                'last_record_postdate' => FrontierPostdate::advance($cursor->last_record_postdate, $published),
                 'last_advanced_at' => now(),
             ]);
         }, 5);

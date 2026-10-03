@@ -417,7 +417,7 @@ class BinariesService
             }
             if ($parseResult['headers'] !== []) {
                 try {
-                    $chunkReport = $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction);
+                    $chunkReport = $this->headerStorage->store($parseResult['headers'], $groupMySQL, $addToPartRepair, $direction, $secondary);
                 } catch (\Throwable $e) {
                     $this->logError('storeHeaders failed: '.$e->getMessage());
                     $thrownNumbers = [];
@@ -895,16 +895,17 @@ class BinariesService
                 }
             }
 
-            $lastArticleTimestamp = isset($scanSummary['lastArticleDate'])
-                ? strtotime($scanSummary['lastArticleDate'])
+            // The range's newest posting date: its last article can be an old post listed late.
+            $newestArticleTimestamp = isset($scanSummary['newestArticleDate'])
+                ? (is_numeric($scanSummary['newestArticleDate']) ? (int) $scanSummary['newestArticleDate'] : strtotime($scanSummary['newestArticleDate']))
                 : $this->postdate($scanSummary['lastArticleNumber'], $groupNNTP);
-            $lastArticleDate = $lastArticleTimestamp !== false ? $lastArticleTimestamp : time();
+            $newestArticleDate = $newestArticleTimestamp !== false ? $newestArticleTimestamp : time();
 
             if (UsenetGroup::advanceLastRecordContiguously(
                 (int) $groupMySQL['id'],
                 $this->first,
                 $last,
-                $lastArticleDate
+                $newestArticleDate
             ) > 0) {
                 $progress = UsenetGroup::query()->findOrFail((int) $groupMySQL['id']);
                 $groupMySQL['last_record'] = $progress->last_record;

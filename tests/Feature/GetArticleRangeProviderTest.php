@@ -68,7 +68,8 @@ class GetArticleRangeProviderTest extends TestCase
         $binaries->shouldReceive('setNntp')->once()->with($nntp);
         $binaries->shouldReceive('scan')->once()
             ->withArgs(static fn (array $group, int $first, int $last, HeaderScanDirection $direction, string $type): bool => $group['id'] === 1 && $first === 9_001 && $last === 9_100 && $direction === HeaderScanDirection::Head && $type === 'backfill')
-            ->andReturn(['firstArticleNumber' => 9_001, 'lastArticleNumber' => 9_100, 'lastArticleDate' => '2026-10-02 11:30:00']);
+            ->andReturn(['firstArticleNumber' => 9_001, 'lastArticleNumber' => 9_100,
+                'lastArticleDate' => '2026-10-02 09:00:00', 'newestArticleDate' => '2026-10-02 11:30:00']);
         $binaries->shouldReceive('lastScanWasRejected')->andReturn(false);
         $this->app->instance(BinariesService::class, $binaries);
 

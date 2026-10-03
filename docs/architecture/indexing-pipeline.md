@@ -414,9 +414,19 @@ by naming groups e.g. `(?<name1>…)`, `(?<name2>…)`.
 
 ### Collection clocks
 
+The group frontier (`usenet_groups.last_record_postdate`) is the newest
+posting date the forward scan has published, capped at the current time.
+A server can list old articles late, so a range's last article may be
+older than posts the range holds; scanning never moves the frontier
+backwards. Operator repair, group reset and secondary cursor
+initialisation set it explicitly.
+
 Ingestion writes `last_seen_at` alongside monotone collection stamps:
-`last_seen_head_postdate` is the forward chunk's newest posting date;
-`last_seen_tail_postdate` is the backfill chunk's oldest posting date.
+provider 1's `last_seen_head_postdate` is the later of the forward
+chunk's newest posting date and the group frontier, so a post listed late
+waits for its last part like a fresh one. A secondary provider's chunk
+stamps its newest posting date. `last_seen_tail_postdate` is the backfill
+chunk's oldest posting date.
 Part repair stamps the current group head, because repaired articles lie
 inside the scanned range. Promotion and stuck deletion share one quiet
 predicate with thresholds `delaytime` and `collection_timeout`: every
