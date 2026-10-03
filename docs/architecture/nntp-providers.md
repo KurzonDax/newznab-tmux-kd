@@ -34,14 +34,18 @@ Article *numbers* are per-server, so each provider keeps its own positions:
   position per group in `usenet_group_provider_cursors`. `groups:update --provider=NAME` records
   its server positions there and finds a starting article for any group it has no position for,
   `secondary_header_start_hours` back (Usenet Ingest → Header download). The binaries pane
-  queues its `articles:get-range --provider=NAME` ranges after all of provider 1's. Parts first
-  stored from a secondary provider keep `parts.number = 0`, because their article number is
-  another server's.
+  queues its `articles:get-range --provider=NAME` ranges after all of provider 1's. Each pass
+  reads a group's newest unread articles first, then works down into its backlog with what is
+  left of `max_headers_iteration`, so a provider that starts far behind covers new posts at once
+  and fills the backlog behind them. A completed range above the position is parked in
+  `usenet_group_provider_ingested_ranges`; the position moves when the backlog below it is
+  complete. Parts first stored from a secondary provider keep `parts.number = 0`, because their
+  article number is another server's.
 
 Release formation waits for a secondary provider that is live and caught up: an incomplete
 collection is not formed until every such provider has scanned past its newest header plus the
-release delay. A provider that has not advanced for an hour, or is more than the delay behind
-provider 1, holds nothing back.
+release delay. A provider that has not completed a range for an hour, or whose position is more
+than the delay behind provider 1, holds nothing back.
 
 The pool itself still has no header API: `NntpProviderPool` and the `ProviderClient` interface
 expose no XOVER, group selection or backfill. A header scan picks its provider explicitly with

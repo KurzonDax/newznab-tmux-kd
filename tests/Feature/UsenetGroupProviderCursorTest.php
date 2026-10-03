@@ -43,7 +43,6 @@ class UsenetGroupProviderCursorTest extends TestCase
     {
         $this->assertSame(0, UsenetGroupProviderCursor::advanceContiguously(1, 'super', 1101, 1200, (int) strtotime('2026-08-17 12:00:00')));
         $this->assertSame(1000, $this->cursor('super')->last_record);
-        $this->assertNull($this->cursor('super')->last_advanced_at);
         $this->assertDatabaseHas('usenet_group_provider_ingested_ranges', [
             'usenet_groups_id' => 1, 'provider' => 'super', 'first_record' => 1101, 'last_record' => 1200,
         ]);
@@ -57,7 +56,7 @@ class UsenetGroupProviderCursorTest extends TestCase
         $this->assertSame(0, DB::table('usenet_group_provider_ingested_ranges')->count());
     }
 
-    public function test_the_cursor_never_moves_backwards_and_only_stamps_an_increase(): void
+    public function test_the_cursor_never_moves_backwards_and_stamps_only_a_completed_range(): void
     {
         UsenetGroupProviderCursor::advanceContiguously(1, 'super', 1001, 1200, (int) strtotime('2026-08-17 12:00:00'));
         Carbon::setTestNow('2026-08-17 15:00:00');
@@ -69,6 +68,19 @@ class UsenetGroupProviderCursorTest extends TestCase
         $this->assertSame(1200, $cursor->last_record);
         $this->assertSame('2026-08-17 12:00:00', $cursor->last_record_postdate);
         $this->assertSame('2026-08-17 14:30:00', $cursor->last_advanced_at);
+    }
+
+    public function test_parking_a_range_stamps_activity_without_moving_the_cursor(): void
+    {
+        Carbon::setTestNow('2026-08-17 15:00:00');
+
+        $this->assertSame(0, UsenetGroupProviderCursor::advanceContiguously(1, 'super', 1101, 1200, (int) strtotime('2026-08-17 12:00:00')));
+
+        $cursor = $this->cursor('super');
+        $this->assertSame(1000, $cursor->last_record);
+        $this->assertSame('2026-08-16 00:00:00', $cursor->last_record_postdate);
+        $this->assertSame('2026-08-17 15:00:00', $cursor->last_advanced_at);
+        $this->assertNull($this->cursor('other')->last_advanced_at);
     }
 
     public function test_a_missing_cursor_row_writes_nothing(): void

@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\DB;
  *
  * Article numbers are per-server, so each secondary provider keeps its own position here,
  * keyed by `(usenet_groups_id, provider)`; provider 1 keeps its position on `usenet_groups`.
+ * A secondary provider reads newest first and fills its backlog behind: completed ranges above
+ * the position are parked in `usenet_group_provider_ingested_ranges`, and the position moves
+ * when the backlog below them is complete.
  *
  * @property int $usenet_groups_id
  * @property string $provider
@@ -73,6 +76,11 @@ class UsenetGroupProviderCursor extends Model
     /**
      * Publish only covered article ranges, as {@see UsenetGroup::advanceLastRecordContiguously()}
      * does for provider 1. A range ahead of the cursor is parked until the gap before it fills.
+     *
+     * The binaries pass reads a secondary provider newest first, so the cursor moves only when
+     * the lowest backlog range completes. `last_advanced_at` therefore stamps any completed
+     * range, parked or not: the release wait and the header health probe read it as "still
+     * scanning".
      */
     public static function advanceContiguously(int $groupId, string $provider, int $first, int $last, ?int $lastPostdate): int
     {
@@ -91,6 +99,8 @@ class UsenetGroupProviderCursor extends Model
                     'usenet_groups_id' => $groupId, 'provider' => $provider, 'first_record' => $first,
                     'last_record' => $last, 'last_record_postdate' => $postdate,
                 ]);
+                self::query()->where('usenet_groups_id', $groupId)->where('provider', $provider)
+                    ->update(['last_advanced_at' => now()]);
 
                 return 0;
             }
