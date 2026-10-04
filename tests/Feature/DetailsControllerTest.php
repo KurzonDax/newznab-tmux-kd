@@ -24,7 +24,7 @@ use Tests\TestCase;
 
 /**
  * Today's details page, which releases outside TV and Movies keep (TV and Movies have their own
- * pages: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest). Its releases are Audio > MP3.
+ * pages: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest). Its releases are Other > Misc.
  */
 final class DetailsControllerTest extends TestCase
 {
@@ -35,6 +35,8 @@ final class DetailsControllerTest extends TestCase
     use IsolatedSqliteDatabase;
 
     private const AUDIO_MP3 = 3010;
+
+    private const OTHER_MISC = 10;
 
     private const BOOKS_EBOOK = 7020;
 
@@ -53,6 +55,9 @@ final class DetailsControllerTest extends TestCase
         });
         DB::table('root_categories')->insert(['id' => 3000, 'title' => 'Audio']);
         DB::table('categories')->insert(['id' => self::AUDIO_MP3, 'title' => 'MP3', 'root_categories_id' => 3000]);
+        // The admin list page support already seeds root 1 (as "General"); it becomes the Other root.
+        DB::table('root_categories')->updateOrInsert(['id' => 1], ['title' => 'Other']);
+        DB::table('categories')->insert(['id' => self::OTHER_MISC, 'title' => 'Misc', 'root_categories_id' => 1]);
         foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table', '2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
@@ -79,7 +84,7 @@ final class DetailsControllerTest extends TestCase
 
     public function test_details_header_uses_the_shared_release_data_and_renders_each_tab(): void
     {
-        $this->release('Raw.Release', ['categories_id' => self::AUDIO_MP3, 'guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
+        $this->release('Raw.Release', ['categories_id' => self::OTHER_MISC, 'guid' => 'details-http', 'display_name' => 'Readable release', 'size' => 41943040, 'nfostatus' => 0,
             'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null, 'gamesinfo_id' => null,
             'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null]);
         $response = $this->actingAs($this->browserUser())->get('/details/details-http')->assertOk()->assertViewIs('details.index');
@@ -87,22 +92,28 @@ final class DetailsControllerTest extends TestCase
             ->assertSee('No media info for this release.')->assertSee('No NFO for this release.')
             ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
-        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-audio"\s+aria-current="true"/', (string) $response->getContent());
+        $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-other"\s+aria-current="true"/', (string) $response->getContent());
     }
 
-    public function test_an_audio_release_page_links_its_audio_browse_and_title_pages(): void
+    public function test_an_audio_release_page_links_the_audio_list_and_not_the_old_album_match(): void
     {
         ProductionTables::fromAuthority()->create('musicinfo');
         $this->createGenresTable();
+        foreach (['audio_genres', 'release_audio_genres', 'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
         DB::table('musicinfo')->insert(['id' => 12, 'title' => 'An Album', 'artist' => 'The Artist', 'year' => '2021']);
-        $this->detailRelease('Album.Release', ['musicinfo_id' => 12]);
+        $this->detailRelease('Album.Release', ['musicinfo_id' => 12, 'categories_id' => self::AUDIO_MP3]);
 
-        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Album.Release'))->assertOk()->assertViewIs('details.index');
+        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Album.Release'))->assertOk()->assertViewIs('details.shelf.index');
 
-        $crumbs = (string) preg_replace('/>\s+</', '><', $this->between((string) $response->getContent(), '<nav class="title-breadcrumb" aria-label="Breadcrumb">', '</nav>'));
-        $this->assertStringContainsString('<a href="'.url('/browse/audio').'">Audio</a>', $crumbs);
-        $this->assertStringContainsString('<a href="'.route('title', ['root' => 'audio', 'id' => 12]).'">An Album</a>', $crumbs);
-        $this->assertNoRetiredAddress((string) $response->getContent(), 'Audio release page');
+        $html = (string) $response->getContent();
+        $crumbs = (string) preg_replace('/>\s+</', '><', $this->between($html, '<nav class="tv-crumbs" aria-label="Breadcrumb">', '</nav>'));
+        $this->assertStringContainsString('<a href="'.route('audio.releases').'">Audio releases</a>', $crumbs);
+        $this->assertStringNotContainsString('href="'.url('/browse/audio').'"', $html);
+        $this->assertStringNotContainsString('href="'.route('title', ['root' => 'audio', 'id' => 12]).'"', $html);
+        $this->assertStringNotContainsString('An Album', $html);
+        $this->assertNoRetiredAddress($html, 'Audio release page');
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void
@@ -164,7 +175,7 @@ final class DetailsControllerTest extends TestCase
     {
         $current = $this->detailRelease('Some.Game.v1.0-GRP');
         $same = $this->detailRelease('Some.Game.v1.1-GRP', ['display_name' => 'Some Game update']);
-        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 3040, 'display_name' => 'Some Game disc image']);
+        $sibling = $this->detailRelease('Some.Game.Soundtrack.ISO', ['categories_id' => 20, 'display_name' => 'Some Game disc image']);
         $book = $this->detailRelease('Some.Game.Strategy.Guide', ['categories_id' => self::BOOKS_EBOOK, 'display_name' => 'Some Game strategy guide']);
         $user = $this->browserUser();
         DB::table('categories')->insert(['id' => 3020, 'title' => '0day', 'root_categories_id' => 3000]);
@@ -192,15 +203,15 @@ final class DetailsControllerTest extends TestCase
         $this->assertSame(['searchname' => getSimilarName('Some.Game.v1.0-GRP')], $phrases);
         $this->assertSame((int) config('nntmux.items_per_page'), $limit);
         $this->assertContains(3020, array_map('intval', $excludedCategories));
-        $this->assertSame([3000], $categories);
+        $this->assertSame([1], $categories);
     }
 
     /** @return array<string, array{string, string}> */
     public static function hidingModes(): array
     {
         return [
-            'the whole root switched off' => ['root', 'Audio'],
-            'only the sub-category unticked' => ['sub', 'Audio - MP3'],
+            'the whole root switched off' => ['root', 'Other'],
+            'only the sub-category unticked' => ['sub', 'Other - Misc'],
         ];
     }
 
@@ -213,11 +224,11 @@ final class DetailsControllerTest extends TestCase
         $this->detailRelease('Visible.Book-GRP', ['categories_id' => self::BOOKS_EBOOK]);
         $user = $this->browserUser();
         if ($mode === 'root') {
-            $user->revokePermissionTo('view audio');
+            $user->revokePermissionTo('view other');
             app(PermissionRegistrar::class)->forgetCachedPermissions();
             $user = $user->fresh();
         } else {
-            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::AUDIO_MP3]);
+            DB::table('user_excluded_categories')->insert(['users_id' => $user->id, 'categories_id' => self::OTHER_MISC]);
         }
         $hidden = '/details/'.md5('Hidden.Game-GRP');
 
@@ -247,7 +258,7 @@ final class DetailsControllerTest extends TestCase
     /** @param array<string, mixed> $attributes */
     private function detailRelease(string $name, array $attributes = []): int
     {
-        return $this->release($name, ['categories_id' => self::AUDIO_MP3, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
+        return $this->release($name, ['categories_id' => self::OTHER_MISC, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
             'gamesinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, ...$attributes]);
     }
 }

@@ -85,6 +85,11 @@ test('another page of "All N" keeps the open tab; a URL naming a page without a 
     assert.equal(detailsPage().releases.scrolled, 0);
 });
 
+test('another page of "All N releases of this album" keeps the Tracks tab; a URL naming the Tracks tab does not open at the table', () => {
+    assert.equal(tablePageUrl('https://nntmux.test/details/abc?page=2#releases', 'https://nntmux.test/details/abc#tracks').toString(), 'https://nntmux.test/details/abc?page=2#tracks');
+    assert.equal(opensAtTable('https://nntmux.test/details/abc?page=2#tracks'), false);
+});
+
 test('a page link loads the table in place, on the same tab, into view, with the page in the history', async () => {
     const { requests, pushed } = browser('https://nntmux.test/details/abc#files');
     const { component, releases } = detailsPage();

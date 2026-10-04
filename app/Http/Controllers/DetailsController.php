@@ -23,6 +23,7 @@ use App\Services\MovieService;
 use App\Services\MusicService;
 use App\Services\PopulateAniListService;
 use App\Services\Releases\AdultReleaseDetails;
+use App\Services\Releases\AudioReleaseDetails;
 use App\Services\Releases\ConsoleGameReleaseDetails;
 use App\Services\Releases\MovieReleaseDetails;
 use App\Services\Releases\RelatedReleaseBrowser;
@@ -87,6 +88,9 @@ class DetailsController extends BasePageController
         }
         if ($root === BrowseRoot::Books || $root === BrowseRoot::Games || $root === BrowseRoot::Console) {
             return $this->showShelf($data, $comments);
+        }
+        if ($root === BrowseRoot::Audio) {
+            return $this->showAudio($request, $data, $comments);
         }
         $similars = $this->releaseSearchService->searchSimilar($data['id'], $data['searchname'], (array) $this->userdata->categoryexclusions);
         $failed = DnzbFailure::getFailedCount($data['id']);
@@ -307,6 +311,38 @@ class DetailsController extends BasePageController
         }
 
         return view('details.console.index', array_merge($this->viewData, $details->forRelease($release, $row->category, $exclusions, $table, $pageNamed), $shared, [
+            'comments' => $comments,
+            'meta_title' => 'View NZB',
+            'meta_keywords' => 'view,nzb,description,details',
+            'meta_description' => 'View NZB for '.$release['searchname'],
+        ]));
+    }
+
+    /**
+     * Audio releases get their own pages (docs/proposals/audio-redesign/SPEC.md 5A and 5B): a release
+     * whose tags name an album gets the album page, any other the release-only page; comments post
+     * back here as before. `?sort=` and `?page=` belong to "All N releases of this album", and
+     * `?_fragment=releases` returns that section alone for a sort change or another page.
+     */
+    private function showAudio(Request $request, Release $release, mixed $comments): View
+    {
+        $this->releaseBrowseService->loadReleaseRows([$release]);
+        /** @var ReleaseRowData $row */
+        $row = $release->getAttribute('row_data');
+        $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
+        $table = ConsoleGamePageFilters::fromRequest($request);
+        $pageNamed = $request->query('page') !== null;
+        $details = app(AudioReleaseDetails::class);
+        $shared = ['release' => $release, 'nzbLinkBase' => url('/api/v1/api'), 'apiToken' => (string) $this->userdata->api_token];
+        if ($request->query('_fragment') === 'releases') {
+            $section = $details->releasesTable($release, $exclusions, $table, $pageNamed);
+            abort_if($section['table'] === null, 404);
+
+            return view('details.audio.releases', [...$shared, ...$section]);
+        }
+        $page = $details->forRelease($release, $row->category, $exclusions, $table, $pageNamed);
+
+        return view($page['album'] ? 'details.audio.index' : 'details.shelf.index', array_merge($this->viewData, $page, $shared, [
             'comments' => $comments,
             'meta_title' => 'View NZB',
             'meta_keywords' => 'view,nzb,description,details',

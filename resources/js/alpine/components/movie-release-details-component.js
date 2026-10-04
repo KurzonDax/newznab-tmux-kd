@@ -1,4 +1,4 @@
-import { tvReleaseDetails, TABS } from './tv-release-details-component.js';
+import { isTab, tvReleaseDetails } from './tv-release-details-component.js';
 import { currentSort, nextSort, offeredSorts, sortUrl } from './movie-film-component.js';
 import { sortRows } from './tv-episode-list-component.js';
 import { fetchList } from './tv-list.js';
@@ -10,7 +10,7 @@ import { fetchList } from './tv-list.js';
 export function tablePageUrl(href, current) {
     const url = new URL(href);
     const tab = new URL(current).hash.slice(1);
-    url.hash = TABS.includes(tab) && tab !== 'overview' ? tab : '';
+    url.hash = isTab(tab) && tab !== 'overview' ? tab : '';
     return url;
 }
 
@@ -28,7 +28,7 @@ export function sortSimilarRows(rows, sort) {
 /** Whether a URL names a page of the table without naming a tab, so the page opens at the table. */
 export function opensAtTable(href) {
     const url = new URL(href);
-    return url.searchParams.has('page') && !TABS.includes(url.hash.slice(1));
+    return url.searchParams.has('page') && !isTab(url.hash.slice(1));
 }
 
 /**

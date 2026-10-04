@@ -87,7 +87,8 @@ model casts through `casts()`, explicit relationship keys; `database/schema/mari
    algorithm_version)`); states `accepted_release_group` (release group id), `accepted_edition` (release and release
    group ids), `accepted_recording` (recording id only), and the unaccepted ones
    (`app/Services/MusicIdentity/Enums/IdentificationStatus.php:9-16`). The worker's current row is the one for the newest
-   evidence's hash (`app/Services/MusicIdentity/MusicIdentityCandidateQuery.php:141-150`). Nothing reads them for display.
+   evidence's hash and the configured `music-identity.algorithm_version`
+   (`app/Services/MusicIdentity/MusicIdentityCandidateQuery.php:141-150`). Nothing reads them for display.
 10. **Media info.** `MediaInfoPresentationService::forRelease()` (`app/Services/MediaInfo/MediaInfoPresentationService.php:28`)
     returns the streams with `language_name` and, for a release with tags, `music_tags` with `track_title` (from the
     snapshot or `release_audio_tags.track_name`, `:86-100`, `:185-201`). The tab and the dialog render the audio table
@@ -271,10 +272,11 @@ search alone: the tag side adds about 85-110 ms, one pass over the tag rows. `EX
   (`ReleasePreviewDataLoader`, `ReleaseMediaInfoAvailabilityLoader`).
 - **Details**: the tag row with its genres 0.1 ms; the newest evidence revision (`ORDER BY revision DESC LIMIT 1` on the
   `(releases_id, revision)` key) 0.0 ms and its tracks by `release_audio_evidence_id` in `source_kind, source_ordinal`
-  order (no sort) 0.1 ms; **the tracks shown are one source**: the archive listing when the revision has one, else the
-  NZB's files, else release files, else the sampled file (`SPEC.md` 5C.2); the MusicBrainz release group: the release's
-  row for the newest evidence's `evidence_hash` in state `accepted_release_group` or `accepted_edition` with a release
-  group id, the newest by id, 0.1 ms.
+  order (no sort) 0.1 ms; **the tracks shown are one complete source**: the archive listing when the revision's
+  `archive_manifest_complete` is true, else the NZB's files; no list otherwise (`SPEC.md` 5C.2); the MusicBrainz release
+  group: the release's row for the newest evidence's `evidence_hash` in state `accepted_release_group` or
+  `accepted_edition` with a release group id, for the configured `music-identity.algorithm_version`, the newest by id,
+  0.1 ms.
 - **All releases of this album**: `album = ? AND COALESCE(album_performer, performer) = ?` on the existing
   `release_audio_tags_album_index` (the table's `utf8mb4_unicode_ci` makes both case-insensitive) `STRAIGHT_JOIN
   releases`, band 3000 only and visible, newest posted first, 50 a page: 0.1 ms for the biggest stress album (31

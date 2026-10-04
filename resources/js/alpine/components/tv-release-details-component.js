@@ -5,10 +5,18 @@ import { rowActions } from './tv-row-actions.js';
 
 export const TABS = ['overview', 'files', 'media', 'nfo', 'comments'];
 
+/** Tabs only some pages show: an Audio release's Tracks, when it has a complete track list. */
+export const OPTIONAL_TABS = ['tracks'];
+
+/** Whether a name is a details page tab: one of the five, or one some pages show. */
+export function isTab(tab) {
+    return TABS.includes(tab) || OPTIONAL_TABS.includes(tab);
+}
+
 /** The tab a URL hash names, else Overview. */
 export function tabFromHash(hash) {
     const tab = String(hash || '').replace(/^#/, '');
-    return TABS.includes(tab) ? tab : 'overview';
+    return isTab(tab) ? tab : 'overview';
 }
 
 /**
@@ -47,9 +55,9 @@ export function tvReleaseDetails() {
             return undefined;
         },
 
-        /** The tab buttons this page shows, in order: a page may leave one out (Media info without media info). With no tab buttons found, all five. */
+        /** The tab buttons this page shows, in order: a page may leave one out (Media info without media info) or add one (Tracks). With no tab buttons found, all five. */
         pageTabs() {
-            const shown = Array.from(this.screen.querySelectorAll('[data-tab]'), button => button.dataset.tab).filter(tab => TABS.includes(tab));
+            const shown = Array.from(this.screen.querySelectorAll('[data-tab]'), button => button.dataset.tab).filter(isTab);
             return shown.length > 0 ? shown : TABS;
         },
 
@@ -64,7 +72,11 @@ export function tvReleaseDetails() {
             this.screen.querySelector('[data-tab="' + this.activeTab + '"]')?.focus();
         },
 
-        /** Opens a tab; one the page does not show (a remembered or linked Media info tab) opens Overview. */
+        /**
+         * Opens a tab; one the page does not show (a remembered or linked Media info or Tracks tab) opens
+         * Overview. A preview playing in a panel the tab change hides is paused: a hidden player keeps
+         * playing with no control on screen.
+         */
         selectTab(tab, remember) {
             this.activeTab = this.pageTabs().includes(tab) ? tab : 'overview';
             if (remember) {
@@ -78,6 +90,7 @@ export function tvReleaseDetails() {
                 button.setAttribute('tabindex', current ? '0' : '-1');
             });
             this.screen.querySelectorAll('[data-details-panel]').forEach(panel => { panel.hidden = panel.id !== this.activeTab; });
+            this.screen.querySelectorAll('[data-details-panel][hidden] audio').forEach(player => player.pause());
             return this.load(this.activeTab);
         },
 

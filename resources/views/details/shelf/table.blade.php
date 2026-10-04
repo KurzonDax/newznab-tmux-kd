@@ -1,14 +1,15 @@
 @php
     /**
-     * The Books, Console and PC details pages' release table (docs/proposals/books-console-pc-redesign/SPEC.md
-     * 5A and 5B): the Adult details page's table with Category in place of Resolution (Release with
-     * the game line on Console and the chip line, Category, Size, Files, Posted and the 2 × 2 buttons
-     * without Follow). $current is the guid of the release on the page: its row is marked and not a
+     * The Books, Console, PC and Audio details pages' release table (docs/proposals/books-console-pc-redesign/SPEC.md
+     * 5A and 5B, docs/proposals/audio-redesign/SPEC.md 5A and 5B): the Adult details page's table with
+     * Category in place of Resolution (Release with the game line on Console, the music line on Audio
+     * and the chip line, an Audio row's ending with Listen; Category, Size, Files, Posted and the 2 × 2
+     * buttons without Follow). $current is the guid of the release on the page: its row is marked and not a
      * link to itself. $sortable names the headings' sort attribute: data-similar-sort sorts in the
      * browser, data-sort on the server. Each row carries its sub-category's place in the list's
      * Category menu order (data-category) and its id (data-id) for that sort's ties.
      *
-     * @var list<\App\Data\ShelfReleaseRow>|list<\App\Data\ConsoleReleaseRow> $rows
+     * @var list<\App\Data\ShelfReleaseRow>|list<\App\Data\ConsoleReleaseRow>|list<\App\Data\AudioReleaseRow> $rows
      */
     $headings = ['category' => 'Category', 'size' => 'Size', 'posted' => 'Posted'];
     $heading = static fn (string $key): string => '<button type="button" '.$sortable.'="'.$key.'">'.e($headings[$key]).'<i class="fas fa-sort" aria-hidden="true"></i></button>';
@@ -42,10 +43,15 @@
                     @endif
                     @if($row instanceof \App\Data\ConsoleReleaseRow && $row->hasGame())
                         <span class="tv-game-line">{{ $row->gameLine() }}</span>
+                    @elseif($row instanceof \App\Data\AudioReleaseRow && $row->musicLine() !== '')
+                        @include('shelf.releases.music-line')
                     @endif
                     @if($row->hasChips())
                         <div class="tv-chips">
                             @include('tv.partials.release-chip-list')
+                            @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
+                                @include('shelf.releases.listen-chip')
+                            @endif
                         </div>
                     @endif
                 </td>

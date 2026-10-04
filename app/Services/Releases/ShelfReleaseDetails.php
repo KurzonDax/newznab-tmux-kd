@@ -56,8 +56,9 @@ final class ShelfReleaseDetails
 
     /**
      * A sub-category's place in its list's Category menu order (BookReleaseList, PcReleaseList,
-     * ConsoleReleaseList::CATEGORY_ORDER), the Similar table's Category sort key; one the order does
-     * not list (an admin's own) comes after the last listed one, as the menu lists it.
+     * ConsoleReleaseList, AudioReleaseList::CATEGORY_ORDER), the Similar table's Category sort key;
+     * one the order does not list (an admin's own) comes after the last listed one, as the menu
+     * lists it.
      */
     public static function categoryPosition(int $categoryId): int
     {
@@ -65,6 +66,7 @@ final class ShelfReleaseDetails
             BrowseRoot::Books => BookReleaseList::CATEGORY_ORDER,
             BrowseRoot::Games => PcReleaseList::CATEGORY_ORDER,
             BrowseRoot::Console => ConsoleReleaseList::CATEGORY_ORDER,
+            BrowseRoot::Audio => AudioReleaseList::CATEGORY_ORDER,
             default => [],
         };
         $position = array_search($categoryId, $order, true);
