@@ -92,12 +92,12 @@ export function releaseBrowser() {
             return response.json();
         },
 
-        navigateFilter(name, value, clearLetter = false, preservePage = false) {
+        navigateFilter(name, value, clearLetter = false) {
             const url = new URL(window.location.href);
             if (name === 'q') ['search', 'subject', 'id', 'searchadvr'].forEach(key => url.searchParams.delete(key));
             if (value === '') url.searchParams.delete(name);
             else url.searchParams.set(name, value);
-            if (!preservePage) url.searchParams.delete('page');
+            url.searchParams.delete('page');
             if (clearLetter) {
                 url.searchParams.delete('letter');
                 url.searchParams.delete('ob');
