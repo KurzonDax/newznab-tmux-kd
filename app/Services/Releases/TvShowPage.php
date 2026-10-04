@@ -26,7 +26,7 @@ final class TvShowPage
     /** The Starring line names at most this many people, in TMDB's order. */
     public const STARRING_LIMIT = 8;
 
-    /** Outside links' URL prefixes, the show ones TitleMetadataLoader uses: label => prefix, in the header's order. */
+    /** Outside links' URL prefixes for a show: label => prefix, in the header's order. */
     private const LINKS = ['IMDb' => 'https://www.imdb.com/title/tt', 'TMDB' => 'https://www.themoviedb.org/tv/', 'TVDB' => 'https://thetvdb.com/?tab=series&id=',
         'TVMaze' => 'https://www.tvmaze.com/shows/', 'Trakt' => 'https://trakt.tv/shows/'];
 

@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -30,6 +31,7 @@ use Tests\TestCase;
 final class AudioReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -551,17 +553,30 @@ final class AudioReleasesPageTest extends TestCase
         $this->assertSame([], $this->remembered($user, 'audio') ?? []);
     }
 
-    public function test_the_list_needs_the_audio_permission_and_the_old_audio_pages_still_answer(): void
+    public function test_the_list_needs_the_audio_permission_and_the_old_audio_pages_are_not_found(): void
     {
         $user = $this->browserUser();
         $user->revokePermissionTo('view audio');
         $this->page('/audio', $user)->assertForbidden()->assertSee('Audio is hidden in your account preferences.');
+        $this->page('/browse/audio', $user)->assertForbidden()->assertSee('Audio is hidden in your account preferences.');
 
-        $this->page('/Audio')->assertRedirect();
-        $this->assertSame('Audio', app('router')->getRoutes()->match(request()->create('/Audio'))->getName());
+        $this->flushSession();
+        $this->page('/Audio')->assertNotFound();
+        $this->page('/browse/audio')->assertNotFound();
         $this->assertSame('browse', app('router')->getRoutes()->match(request()->create('/browse/audio'))->getName());
         $this->assertSame('browse', app('router')->getRoutes()->match(request()->create('/browse/music'))->getName());
         $this->assertSame('audio.releases', app('router')->getRoutes()->match(request()->create('/audio'))->getName());
+    }
+
+    public function test_the_audio_list_renders_no_retired_address(): void
+    {
+        ProductionTables::fromAuthority()->create('musicinfo');
+        DB::table('musicinfo')->insert(['id' => 12, 'title' => 'An Album', 'artist' => 'The Artist', 'year' => '2021', 'cover' => 1]);
+        $this->genre(self::ROCK, 'Rock');
+        $this->tag($this->audio('Tagged.Album', ['musicinfo_id' => 12]), ['album' => 'Night Drive', 'album_performer' => 'The Midnight', 'recorded_year' => 1999, 'genre' => 'Rock'], [self::ROCK]);
+
+        $html = (string) $this->page('/audio')->assertOk()->assertSee('Tagged.Album')->getContent();
+        $this->assertNoRetiredAddress($html, 'The Audio releases list');
     }
 
     public function test_the_header_sends_audio_to_the_new_list_and_marks_it_current(): void

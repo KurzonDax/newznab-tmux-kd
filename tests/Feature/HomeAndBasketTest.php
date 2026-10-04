@@ -71,6 +71,37 @@ final class HomeAndBasketTest extends TestCase
         $this->get('/')->assertOk()->assertSee('Site announcement')->assertSee('Latest releases');
     }
 
+    public function test_home_cards_show_only_finished_releases_with_their_fields_and_actions(): void
+    {
+        $cases = [
+            'Found NFO' => [1, 0, null], 'No NFO' => [0, 0, null],
+            'Failed NFO' => [-9, 0, null], 'Skipped NFO' => [-10, 0, null],
+            'First retry' => [-1, 0, null], 'Last retry' => [-8, 0, null],
+            'Password unchecked' => [1, -1, null], 'Empty claim' => [1, 0, ''],
+        ];
+        foreach ($cases as $name => [$nfo, $password, $claim]) {
+            $this->release($name, ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim]);
+        }
+        $this->release('Original name', ['categories_id' => 3030, 'isrenamed' => 0, 'nfostatus' => 1, 'passwordstatus' => 0]);
+        $this->release('Claimed release', ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => 1, 'passwordstatus' => 0, 'additional_pp_claim_token' => 'active-claim']);
+
+        $response = $this->actingAs($this->browserUser())->get('/')->assertOk();
+        $this->assertEqualsCanonicalizing(['Found NFO', 'No NFO', 'Failed NFO', 'Skipped NFO'], $response->viewData('latest')->getCollection()->map(static fn ($release) => $release->row_data->name)->all());
+        $document = new \DOMDocument;
+        @$document->loadHTML((string) $response->getContent());
+        $xpath = new \DOMXPath($document);
+        $cards = $xpath->query('//*[@data-release-cards]//*[contains(concat(" ", normalize-space(@class), " "), " release-browser-card ")]');
+        $this->assertSame(4, $cards->length);
+        foreach ($cards as $card) {
+            $this->assertSame(1, $xpath->query('.//*[@data-release-select]', $card)->length);
+            $this->assertSame(4, $xpath->query('.//*[@data-row-action]', $card)->length);
+            $this->assertSame(0, $xpath->query('.//*[contains(@class,"filelist-badge")]', $card)->length);
+            $labels = array_map(static fn (\DOMNode $node): string => trim($node->textContent), iterator_to_array($xpath->query('.//*[contains(@class,"release-browser-card-value")]/span', $card)));
+            $this->assertSame(['Size', 'Added', 'Posted', 'Grabs'], $labels);
+            $this->assertSame('square', $xpath->query('.//*[@data-shape]/@data-shape', $card)->item(0)->nodeValue);
+        }
+    }
+
     public function test_home_and_basket_show_no_title_chip_for_books_or_pc_and_link_console_to_details(): void
     {
         foreach ([1000 => 'Console', 4000 => 'PC', 7000 => 'Books'] as $id => $title) {

@@ -72,6 +72,11 @@ class ReleaseChipViewTest extends TestCase
         $this->assertStringNotContainsString('Hidden entity', $html);
     }
 
+    public function test_entity_chip_hides_audio_titles(): void
+    {
+        $this->assertSame('', trim(Blade::render('<x-entity-chip root="audio" title="An Album" year="2021" href="/details/audio-guid" />')));
+    }
+
     public function test_entity_chip_hides_books_and_pc_titles_and_keeps_the_console_link(): void
     {
         $this->assertSame('', trim(Blade::render('<x-entity-chip root="books" title="A Printed Book" year="2022" href="/details/book-guid" />')));

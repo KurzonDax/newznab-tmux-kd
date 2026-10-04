@@ -273,6 +273,15 @@ final class AudioReleasePageTest extends TestCase
         $this->assertNoRetiredAddress((string) $response->getContent(), 'Audio release-only page');
     }
 
+    public function test_audio_release_pages_render_no_retired_address(): void
+    {
+        $album = $this->album('Tagged.Album.Release-MP3');
+        $untagged = $this->audio('Untagged.Release-MP3');
+
+        $this->assertNoRetiredAddress((string) $this->details($album)->assertOk()->assertViewIs('details.audio.index')->getContent(), 'Audio album page');
+        $this->assertNoRetiredAddress((string) $this->details($untagged)->assertOk()->assertViewIs('details.shelf.index')->getContent(), 'Audio page of a release with no tag row');
+    }
+
     public function test_the_overview_opens_with_the_preview_player_above_the_spectrogram_and_before_the_facts(): void
     {
         $id = $this->album('Nama-Fibir-2021-MP3', ['track_name' => 'Badarzefol', ...$this->preview()]);

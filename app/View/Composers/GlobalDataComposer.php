@@ -140,7 +140,6 @@ class GlobalDataComposer
             $request->is('audio') => BrowseRoot::Audio,
             $request->is('browsegroup', 'browse/all', 'browse/All', 'browse/group') => BrowseRoot::All,
             $request->routeIs('browse') => BrowseRoot::fromRoute((string) $request->route('parentCategory')),
-            $request->routeIs('title') => BrowseRoot::fromRoute((string) $request->route('root')),
             $request->routeIs('details') && $releaseCategoryId !== null => self::categoryRoot($releaseCategoryId),
             default => null,
         };

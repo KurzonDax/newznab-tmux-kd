@@ -703,12 +703,6 @@ parameters:
 			path: app/Services/LogViewerService.php
 
 		-
-			message: '#^Strict comparison using \!\=\= between non\-empty\-array\<mixed, mixed\> and array\{\} will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 1
-			path: app/Services/MusicService.php
-
-		-
 			message: '#^Method App\\Services\\NfoService\:\:extractAllMediaIds\(\) should return array\<string, mixed\> but returns list\<array\<string, string\>\>\.$#'
 			identifier: return.type
 			count: 1

@@ -30,7 +30,7 @@
         </div>
     @endif
 
-    <x-release-browser :rows="$results" :state="$browserState" :filter-options="$filterOptions ?? []" />
+    <x-release-browser :rows="$results" :state="$browserState" />
 </div>
 
 @if($blacklistPreview)

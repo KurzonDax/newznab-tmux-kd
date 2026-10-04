@@ -29,7 +29,7 @@ enum ReleaseSort: string
     }
 
     /** @return array{string, string} */
-    public function order(bool $grouped = false): array
+    public function order(): array
     {
         $column = match ($this) {
             self::PostedNewest, self::PostedOldest => 'r.postdate',
@@ -38,9 +38,6 @@ enum ReleaseSort: string
             self::Grabs => 'r.grabs',
         };
         $ascending = in_array($this, [self::PostedOldest, self::AddedOldest, self::Name], true);
-        if ($grouped) {
-            $column = ($ascending ? 'MIN' : 'MAX').'('.$column.')';
-        }
 
         return [$column, $ascending ? 'asc' : 'desc'];
     }

@@ -14,6 +14,6 @@
             @endif
         </x-slot:actions>
     </x-page-header>
-    <x-release-browser :rows="$results" :state="$browserState" :filter-options="$filterOptions" :sort-options="$sortOptions" />
+    <x-release-browser :rows="$results" :state="$browserState" :sort-options="$sortOptions" />
 </div>
 @endsection

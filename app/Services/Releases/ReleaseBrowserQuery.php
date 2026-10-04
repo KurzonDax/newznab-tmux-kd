@@ -21,13 +21,11 @@ final class ReleaseBrowserQuery
     {
         $query = $this->matchingQuery($state, $user);
         $displayName = $this->displayName();
-        $totalBeforeEligibility = $query->count();
-        $total = $totalBeforeEligibility;
         if ($state->view === 'cards') {
             app(ReleaseRowDataLoader::class)->postProcessed($query, 'r.');
             $query->where('r.isrenamed', 1);
-            $total = $query->count();
         }
+        $total = $query->count();
         $page = min($state->page, max(1, (int) ceil($total / $state->per)));
         [$column, $direction] = ReleaseSort::resolve($state->sort)->order();
         $query->orderByRaw($column.' '.$direction);
@@ -37,13 +35,7 @@ final class ReleaseBrowserQuery
 
         return new ReleaseBrowserPage($rows, $total, $state->per, $page, [
             'path' => request()->url(), 'query' => $state->queryParameters(request()),
-        ], hiddenCount: $totalBeforeEligibility - $total);
-    }
-
-    /** @return array<string, list<string>> */
-    public function filterOptions(ReleaseBrowserState $state, User $user): array
-    {
-        return $this->metadata->options($this->baseQuery($state, $user), $state->root);
+        ]);
     }
 
     /** @return array<string, string> */
@@ -114,16 +106,7 @@ final class ReleaseBrowserQuery
         $displayName = $this->displayName();
         if ($state->query !== '') {
             $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $state->query).'%';
-            if ($state->view === 'covers') {
-                $query->where(function (Builder $titles) use ($state, $pattern): void {
-                    $titles->whereRaw("m.title LIKE ? ESCAPE '!'", [$pattern]);
-                    if ($state->root === BrowseRoot::Audio) {
-                        $titles->orWhereRaw("m.artist LIKE ? ESCAPE '!'", [$pattern]);
-                    }
-                });
-            } else {
-                $query->whereRaw($displayName." LIKE ? ESCAPE '!'", [$pattern]);
-            }
+            $query->whereRaw($displayName." LIKE ? ESCAPE '!'", [$pattern]);
         }
         $this->metadata->join($query, $state->root);
 

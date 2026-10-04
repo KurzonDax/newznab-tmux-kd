@@ -1,15 +1,11 @@
-import { releaseCoverBrowser } from './release-cover-browser.js';
-
 export function releaseBrowser() {
     return {
-        ...releaseCoverBrowser(),
         selectedCount: 0,
         browserRoot: null,
 
         init() {
             this.browserRoot = this.$el;
             this.selectionChanged();
-            this.initCovers();
         },
 
         selectAll(event) {
@@ -77,7 +73,7 @@ export function releaseBrowser() {
             const storedValue = preference === 'per' ? Number(value) : preference === 'thumbs' ? value === '1' : value;
             try {
                 await this.post('/profile/update-view', { root: this.browserRoot.dataset.root, [preference]: storedValue });
-                this.navigateFilter(preference, value, false, preference === 'size');
+                this.navigateFilter(preference, value);
             } catch {
                 window.showToast('Could not save your view preference. Please try again.', 'error');
             }
@@ -96,12 +92,12 @@ export function releaseBrowser() {
             return response.json();
         },
 
-        navigateFilter(name, value, clearLetter = false, preservePage = false) {
+        navigateFilter(name, value, clearLetter = false) {
             const url = new URL(window.location.href);
             if (name === 'q') ['search', 'subject', 'id', 'searchadvr'].forEach(key => url.searchParams.delete(key));
             if (value === '') url.searchParams.delete(name);
             else url.searchParams.set(name, value);
-            if (!preservePage) url.searchParams.delete('page');
+            url.searchParams.delete('page');
             if (clearLetter) {
                 url.searchParams.delete('letter');
                 url.searchParams.delete('ob');
@@ -111,20 +107,6 @@ export function releaseBrowser() {
 
         searchListing(event) {
             this.navigateFilter('q', event.target.value);
-        },
-
-        jumpLetter(event) {
-            const url = new URL(window.location.href);
-            const letter = event.currentTarget.dataset.letter;
-            if (url.searchParams.get('letter') === letter) url.searchParams.delete('letter');
-            else url.searchParams.set('letter', letter);
-            url.searchParams.set('sort', 'title');
-            url.searchParams.delete('page');
-            window.location.assign(url.toString());
-        },
-
-        filterListing(event) {
-            this.navigateFilter(event.target.name, event.target.value);
         },
 
         sortListing(event) {

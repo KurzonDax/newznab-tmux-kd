@@ -78,7 +78,6 @@ use App\Http\Controllers\MediaInfoController;
 use App\Http\Controllers\MovieFilmController;
 use App\Http\Controllers\MovieFilmsController;
 use App\Http\Controllers\MovieReleasesController;
-use App\Http\Controllers\MusicController;
 use App\Http\Controllers\MyShowsController;
 use App\Http\Controllers\NfoController;
 use App\Http\Controllers\PasswordSecurityController;
@@ -96,7 +95,6 @@ use App\Http\Controllers\SearchSuggestController;
 use App\Http\Controllers\ShelfReleasesController;
 use App\Http\Controllers\StatusPageController;
 use App\Http\Controllers\TermsController;
-use App\Http\Controllers\TitleController;
 use App\Http\Controllers\TvReleasesController;
 use App\Http\Controllers\TvShowController;
 use App\Http\Controllers\TvShowsController;
@@ -211,7 +209,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::match(['GET', 'POST'], 'delete/{id}', [CartController::class, 'destroy'])->name('cart.delete');
     });
 
-    Route::get('title/{root}/{id}', [TitleController::class, 'show'])->name('title');
     Route::get('watchlist/{root}/{id}', [WatchlistController::class, 'picker'])->name('watchlist.picker');
     Route::post('watchlist/{root}/{id}', [WatchlistController::class, 'save'])->name('watchlist.save');
     Route::delete('watchlist/{root}/{id}', [WatchlistController::class, 'remove'])->name('watchlist.remove');
@@ -231,7 +228,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         ->name('failed');
 
     Route::middleware('clearance')->group(function () {
-        Route::match(['GET', 'POST'], 'Audio/{id?}', [MusicController::class, 'show'])->name('Audio');
         // TV-related routes
         Route::get('tv', [TvReleasesController::class, 'index'])->name('tv.releases');
         Route::get('tv/shows', [TvShowsController::class, 'index'])->name('tv.shows');
@@ -251,7 +247,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');
         // Console (SPEC 1): paths are case-sensitive
         Route::get('console', [ConsoleReleasesController::class, 'index'])->name('console.releases');
-        // Audio (docs/proposals/audio-redesign/SPEC.md 1): /audio, not the capitalised Audio/{id?} above, since paths are case-sensitive
+        // Audio (docs/proposals/audio-redesign/SPEC.md 1): paths are case-sensitive
         Route::get('audio', [AudioReleasesController::class, 'index'])->name('audio.releases');
     });
 

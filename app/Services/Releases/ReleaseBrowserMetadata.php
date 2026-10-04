@@ -19,7 +19,6 @@ final class ReleaseBrowserMetadata
         return match (true) {
             $root === BrowseRoot::Movies && Schema::hasTable('movieinfo') => ['year' => 'm.year', 'genre' => 'm.genre'],
             $root === BrowseRoot::Tv && Schema::hasTable('videos') => ['year' => 'SUBSTR(m.started, 1, 4)', ...(Schema::hasTable('tv_info') ? ['network' => 'tv_info.publisher'] : [])],
-            $root === BrowseRoot::Audio && Schema::hasTable('musicinfo') => ['year' => 'm.year', 'genre' => 'genres.title', 'label' => 'm.publisher', 'artist' => 'm.artist'],
             default => [],
         };
     }
@@ -32,17 +31,6 @@ final class ReleaseBrowserMetadata
             $query->leftJoin('videos as m', 'm.id', '=', 'r.videos_id');
             if (Schema::hasTable('tv_info')) {
                 $query->leftJoin('tv_info', 'tv_info.videos_id', '=', 'm.id');
-            }
-        } elseif ($this->fields($root) !== []) {
-            $source = match ($root) {
-                BrowseRoot::Audio => ['musicinfo', 'musicinfo_id'],
-                default => null,
-            };
-            if ($source !== null) {
-                $query->leftJoin($source[0].' as m', 'm.id', '=', 'r.'.$source[1]);
-                if ($root === BrowseRoot::Audio) {
-                    $query->leftJoin('genres', 'genres.id', '=', 'm.genres_id');
-                }
             }
         }
     }
@@ -76,29 +64,6 @@ final class ReleaseBrowserMetadata
                 $query->whereRaw($column.' = ?', [$filters[$key]]);
             }
         }
-    }
-
-    /** @return array<string, list<string>> */
-    public function options(Builder $query, BrowseRoot $root): array
-    {
-        $options = [];
-        foreach ($this->fields($root) as $key => $column) {
-            if ($key === 'artist') {
-                continue;
-            }
-            if ($key === 'year') {
-                $options[$key] = YearRange::years();
-
-                continue;
-            }
-            $source = clone $query;
-            $values = $source->selectRaw($column.' as value')->distinct()->pluck('value');
-            $options[$key] = $values->flatMap(static fn ($value): array => $key === 'genre'
-                ? preg_split('/[,|]/', (string) $value) ?: [] : [(string) $value])
-                ->map(static fn (string $value): string => trim($value))->filter()->unique()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values()->all();
-        }
-
-        return $options;
     }
 
     /** @return array<string, string> */

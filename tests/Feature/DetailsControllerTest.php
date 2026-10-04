@@ -90,7 +90,7 @@ final class DetailsControllerTest extends TestCase
         $response = $this->actingAs($this->browserUser())->get('/details/details-http')->assertOk()->assertViewIs('details.index');
         $response->assertSee('Readable release')->assertSee('40.00 MB')->assertSee('data-details-header', false)
             ->assertSee('No media info for this release.')->assertSee('No NFO for this release.')
-            ->assertSee('href="#comments"', false)->assertSee('None.')->assertDontSee('Similar releases');
+            ->assertSee('href="#comments"', false)->assertDontSee('Similar releases');
         $this->assertSame('Readable release', $response->viewData('release')->row_data->name);
         $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-other"\s+aria-current="true"/', (string) $response->getContent());
     }
@@ -111,9 +111,29 @@ final class DetailsControllerTest extends TestCase
         $crumbs = (string) preg_replace('/>\s+</', '><', $this->between($html, '<nav class="tv-crumbs" aria-label="Breadcrumb">', '</nav>'));
         $this->assertStringContainsString('<a href="'.route('audio.releases').'">Audio releases</a>', $crumbs);
         $this->assertStringNotContainsString('href="'.url('/browse/audio').'"', $html);
-        $this->assertStringNotContainsString('href="'.route('title', ['root' => 'audio', 'id' => 12]).'"', $html);
+        $this->assertStringNotContainsString('/title/audio/12', $html);
         $this->assertStringNotContainsString('An Album', $html);
         $this->assertNoRetiredAddress($html, 'Audio release page');
+    }
+
+    public function test_an_other_release_page_has_no_album_or_book_block_and_no_other_releases_aside(): void
+    {
+        ProductionTables::fromAuthority()->create('musicinfo');
+        ProductionTables::fromAuthority()->create('bookinfo');
+        DB::table('musicinfo')->insert(['id' => 12, 'title' => 'An Album', 'artist' => 'The Artist', 'year' => '2021']);
+        DB::table('bookinfo')->insert(['id' => 12, 'title' => 'A Book', 'author' => 'An Author', 'publishdate' => '2022-01-01']);
+        $this->detailRelease('Other.Release', ['musicinfo_id' => 12, 'bookinfo_id' => 12]);
+
+        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Other.Release'))->assertOk()->assertViewIs('details.index')
+            ->assertViewMissing('music')->assertViewMissing('book')->assertViewMissing('otherReleases');
+
+        $html = (string) $response->getContent();
+        $crumbs = (string) preg_replace('/>\s+</', '><', $this->between($html, '<nav class="title-breadcrumb" aria-label="Breadcrumb">', '</nav>'));
+        $this->assertSame('<a href="'.url('/browse/other').'">Other</a><span aria-hidden="true">›</span><span>Misc</span>', trim($crumbs));
+        foreach (['Music Information', 'Book Information', 'Other releases of this title', 'id="other-releases"'] as $absent) {
+            $this->assertStringNotContainsString($absent, $html);
+        }
+        $this->assertNoRetiredAddress($html, 'Other release page');
     }
 
     public function test_comment_posts_return_to_the_comments_tab_and_blank_posts_do_not_change_the_count(): void

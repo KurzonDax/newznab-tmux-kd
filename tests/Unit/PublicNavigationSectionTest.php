@@ -27,7 +27,6 @@ final class PublicNavigationSectionTest extends TestCase
         yield 'console list' => ['/console', null, BrowseRoot::Console];
         yield 'audio list' => ['/audio', null, BrowseRoot::Audio];
         yield 'music browse' => ['/browse/music', null, BrowseRoot::Audio];
-        yield 'audio title page' => ['/title/audio/12', null, BrowseRoot::Audio];
         yield 'groups' => ['/browsegroup', null, BrowseRoot::All];
         yield 'all releases' => ['/browse/all', null, BrowseRoot::All];
         yield 'all releases, capitalised' => ['/browse/All', null, BrowseRoot::All];

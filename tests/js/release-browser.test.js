@@ -157,29 +157,6 @@ test('event handlers keep the browser scope when Alpine exposes the clicked cont
     assert.equal(navigations.length, 0);
 });
 
-test('cover size preserves the page and initial jumps toggle off while retaining filters', async () => {
-    const navigations = [];
-    globalThis.document = { querySelector: () => ({ content: 'csrf-token' }) };
-    globalThis.window = {
-        location: { href: 'https://nntmux.test/browse/audio?view=covers&per=24&page=3&letter=A&year=2024', assign: value => navigations.push(value) },
-        showToast: () => {},
-    };
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ success: true }) });
-    const { component } = browser();
-    await component.changePreference({ currentTarget: { dataset: { preference: 'size', value: 'xl' } } });
-    const resized = new URL(navigations.pop());
-    assert.equal(resized.searchParams.get('page'), '3');
-    assert.equal(resized.searchParams.get('size'), 'xl');
-    component.jumpLetter({ currentTarget: { dataset: { letter: 'Z' } } });
-    const jumped = new URL(navigations.pop());
-    assert.equal(jumped.searchParams.get('letter'), 'Z');
-    assert.equal(jumped.searchParams.get('sort'), 'title');
-    assert.equal(jumped.searchParams.get('year'), '2024');
-    assert.equal(jumped.searchParams.has('page'), false);
-    component.jumpLetter({ currentTarget: { dataset: { letter: 'A' } } });
-    assert.equal(new URL(navigations.pop()).searchParams.has('letter'), false);
-});
-
 test('selection counts checked page rows, sends the same GUIDs to the basket and download, and clears', async () => {
     const { component, rows, header } = browser('visible-a', 'visible-b');
     const otherPage = browser('next-page');
@@ -228,4 +205,22 @@ test('100 checked rows download through POST without putting GUIDs in the URL', 
     assert.equal(fields.zip, '1');
     assert.deepEqual(fields.id.split(','), guids);
     assert.equal(component.selectedCount, 0);
+});
+
+const location = 'https://nntmux.test/browse/tv?year=custom&year_from=1960&year_to=1990&page=3&network=Harbor&group=test&poster=A%2BB&watching=1&view=covers&size=l&per=24&sort=posted';
+
+test('sort, unrelated filters, view, cover size and pagination preserve the complete year range', () => {
+    const navigations = [];
+    globalThis.window = { location: { href: location, assign: value => navigations.push(new URL(value)) } };
+    const component = releaseBrowser();
+    for (const [key, value] of [['sort', 'title'], ['network', 'Other'], ['view', 'table'], ['size', 'xl'], ['per', '48']]) {
+        component.navigateFilter(key, value);
+    }
+    component.browserRoot = { dataset: { lastPage: '4' } };
+    component.goToPage({ target: { value: '2' } });
+    for (const url of navigations) {
+        assert.equal(url.searchParams.get('year'), 'custom');
+        assert.equal(url.searchParams.get('year_from'), '1960');
+        assert.equal(url.searchParams.get('year_to'), '1990');
+    }
 });
