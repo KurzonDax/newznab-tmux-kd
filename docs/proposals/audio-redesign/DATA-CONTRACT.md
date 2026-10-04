@@ -109,24 +109,34 @@ model casts through `casts()`, explicit relationship keys; `database/schema/mari
 
 ## 2. New storage
 
-### 2.1 `release_audio_genres` (a release's tag genres, one row per genre)
+### 2.1 `audio_genres` and `release_audio_genres` (a release's tag genres, one row per genre)
 
 ```sql
+CREATE TABLE `audio_genres` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag writes it',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_audio_genres_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
 CREATE TABLE `release_audio_genres` (
   `releases_id` int(10) unsigned NOT NULL,
-  `genres_id` int(10) unsigned NOT NULL,
+  `audio_genres_id` int(10) unsigned NOT NULL,
   `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the tag value',
-  PRIMARY KEY (`genres_id`,`releases_id`),
+  PRIMARY KEY (`audio_genres_id`,`releases_id`),
   KEY `ix_release_audio_genres_release` (`releases_id`,`position`),
-  CONSTRAINT `fk_release_audio_genres_genres_id` FOREIGN KEY (`genres_id`) REFERENCES `genres` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_release_audio_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_release_audio_genres_releases_id` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 ```
 
 - Styled as `release_audio_languages` (#828) and `console_genres` (#917). A row per genre of the release's tag value,
   for **every release with audio tags, whatever its category** (the tag table is not per category either).
-- The genres are `genres` rows of type 3000 (fact 6), a name resolved case-insensitively to the lowest-id genre of that
-  title, created when none exists.
+- The names are `audio_genres` rows (unique on `name` under the table's `utf8mb4_unicode_ci`), one per name; a name
+  resolves case-insensitively to its row, created when none exists. Names that differ only by case or accent share one
+  row (`house`/`House`, `Opera`/`Opéra`), and screens show the row's name, the first one stored; the prototype's menu,
+  which lists both spellings, is overridden on this point only. The names are kept out of `genres`, so the frozen API
+  capabilities genre list and the admin music form never list them (the #826 rule).
 - **"Unknown" stores nothing.** A tag value of `Unknown` (any case) is dropped, so Unknown on the list is one test, "no
   `release_audio_genres` row", which covers no tag row, a tag row without a genre and a genre of only "Unknown" alike
   (evidence: conclusions 4).
@@ -155,25 +165,32 @@ Year read). Not required for correctness; proposed because it is cheap and cuts 
 ### 3.1 The tag genres: `AudioReleaseProcessor::recordTags()`
 
 When `recordTags()` writes the tag row (fact 5), the release's `release_audio_genres` rows are replaced in the same
-transaction, through a class beside `ConsoleGenres` (`App\Services\AudioProcessing\AudioGenres`, the same `ids()` /
-`replace()` / `stored()` shape): the tag's `genre` split on `;`, each part trimmed, empty parts and `Unknown` (any case)
-dropped, a name repeated in one value kept once (case-insensitively), each resolved to its type-3000 genre (created under
-the same kind of lock `ConsoleGenres` uses), positions 0, 1, 2 in the value's order, written with `ChildRows::replace()`
-keyed on `releases_id` (parent table `releases`), the tag row's `updateOrCreate` passed as the `alsoWrite` closure so
-both commit together. A tag value with no genre writes no rows (and removes stored ones). When the extractor returns no
-tags (`$tags === null`) nothing is written, as today. `recordPreview()` and `RequeueAudioPreviews` never touch the genres.
+transaction, through a class with the `ConsoleGenres` method shape (`App\Services\AudioProcessing\AudioGenres`, the same
+`ids()` / `replace()` / `stored()` shape): the tag's `genre` split on `;` and on ` / ` (a slash with a space on each
+side), each part trimmed, empty parts and `Unknown` (any case) dropped, a name repeated in one value kept once
+(case-insensitively), each resolved to its `audio_genres` row (inserted with insert-or-ignore on the unique name and
+read back, as `ReleaseDerivedFacts::languageId()` does), positions 0, 1, 2 in the value's order, written with
+`ChildRows::replace()` keyed on `releases_id` (parent table `releases`), the tag row's `updateOrCreate` passed as the
+`alsoWrite` closure so both commit together. A tag value with no genre writes no rows (and removes stored ones). When
+the extractor returns no tags (`$tags === null`) nothing is written, as today. `recordPreview()` and
+`RequeueAudioPreviews` never touch the genres.
 
-The `;` rule is the only split (`SPEC.md` 5.8): on the lab's 548 real tag rows none holds a `;`, 12 hold a comma and 6 a
-slash (`Synth-pop, Disco`, `Pop/Rock`); each of those is one genre, as written. The real fill also creates `Hip Hop`
-beside an existing `Hip-Hop` and a few junk values (`www.mp3-ogg.ru`, one base64 string): genres are taken as written.
+The `;` and ` / ` rule is the only split (`SPEC.md` 5.8; the maintainer's decision of 2026-10-04): on the lab's 548 real
+tag rows (backup of 2026-09-20) none holds a `;`, 12 hold a comma and 6 an unspaced slash (`Synth-pop, Disco`,
+`Pop/Rock`), and each of those is one genre, as written. Production has since gained tag values that hold several
+genres: 8 joined with ` / ` (`Pop / Rock`, `Rock / Folk Rock / Psychedelic Rock / Classic Rock`) and 1 with `;`; those
+are split. The real fill also creates `Hip Hop` beside `Hip-Hop` (both are tag values) and a few junk values
+(`www.mp3-ogg.ru`, one base64 string): genres are taken as written.
 
 ### 3.2 Fill for existing rows (migration)
 
 A second migration after the table's (the #917 pair: create, then fill) reads `release_audio_tags` rows with a genre in
 primary-key chunks and writes each release's rows through `AudioGenres` (3.1), leaving a release whose stored rows
-already match, so a failed run can be re-run. No Artisan command. On production it reads 874 tag rows today; the
-lab's set-based form of the same fill (two `INSERT … SELECT`, join order forced) wrote 225,247 links in 5.6 s at stress,
-so the fill is bounded by the tag table, which grows only with previewed audio releases.
+already match, so a failed run can be re-run. No Artisan command. On production 680 of the 865 tag rows on audio
+releases have a genre; the fill reads those and any genre on the 9 tag rows of releases filed elsewhere (874 tag rows in
+all, `DATA-NOTES.md`); the lab's set-based form of the same fill (two `INSERT … SELECT`, join order forced) wrote
+225,247 links in 5.6 s at stress, so the fill is bounded by the tag table, which grows only with previewed audio
+releases.
 
 ### 3.3 The Year index
 
@@ -213,10 +230,12 @@ search alone: the tag side adds about 85-110 ms, one pass over the tag rows. `EX
   cached). The Console two-part `UNION ALL` is not used (274 ms on the middle page).
 - **Genres + Unknown**: release-led, `(EXISTS genre OR no position-0 row)`: 5.2-36.9 ms page 1, 152 ms middle page,
   200-280 ms count.
-- **Genre menu**: `SELECT DISTINCT genres_id FROM release_audio_genres` (a loose scan of the primary key) joined to
-  `genres` of type 3000, keeping a genre only while a band-3000 release has it (one `LIMIT 1` probe per genre), A to Z,
+- **Genre menu**: `SELECT DISTINCT audio_genres_id FROM release_audio_genres` (a loose scan of the primary key) joined
+  to `audio_genres`, keeping a genre only while a band-3000 release has it (one `LIMIT 1` probe per genre), A to Z,
   then Unknown when `release_audio_genres` has no row for some band release (`LEFT JOIN … IS NULL LIMIT 1`): 0.2 +
   0.6 + 0.1 ms. Cached for an hour as Console's. (`EXISTS` forms are materialised by MariaDB: 24-130 ms; not used.)
+  The figures were measured with the links pointing at `genres`, where the join is likewise one primary-key lookup per
+  genre (`genres` primary key, `mariadb-schema.sql`).
 
 ### 4.4 Year
 
@@ -261,8 +280,7 @@ release, the audio table's first column after # as **Title**: the stream's `titl
 
 ## 6. Tests the build issues add
 
-Built on `ProductionTables::fromAuthority()` with the new table; on SQLite and the registered MariaDB fixtures as the
-repository's other list tests: the genre write (split, order, dedupe, Unknown dropped, a value changing to none removing
-the rows, the tag row and the genres in one transaction); the fill (idempotent, re-runnable); the list's filters and
-search against hand-built tag rows; the release page's tracks, release group and album siblings; the media info Title
-column for an Audio release and Language for any other.
+Built on `ProductionTables::fromAuthority()` with the new table; on SQLite: the genre write (split, order, dedupe,
+Unknown dropped, a value changing to none removing the rows, the tag row and the genres in one transaction); the fill
+(idempotent, re-runnable); the list's filters and search against hand-built tag rows; the release page's tracks, release
+group and album siblings; the media info Title column for an Audio release and Language for any other.

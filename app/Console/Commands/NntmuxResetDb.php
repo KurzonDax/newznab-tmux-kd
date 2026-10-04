@@ -18,7 +18,7 @@ class NntmuxResetDb extends Command
     /**
      * Tables emptied by a reset, with foreign-key checks off. Truncation restarts ids, so a
      * link table left off this list would re-attach to new rows. The shared name tables
-     * (`genres`, `people`, `languages`) are kept.
+     * (`genres`, `people`, `languages`, `audio_genres`) are kept.
      */
     public const array TRUNCATE_TABLES = [
         'binaries',
@@ -51,6 +51,7 @@ class NntmuxResetDb extends Command
         'release_subtitles',
         'release_tv_episodes',
         'release_audio_languages',
+        'release_audio_genres',
         'video_data',
         'media_infos',
         'releases',

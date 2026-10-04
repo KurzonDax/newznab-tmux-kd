@@ -169,8 +169,9 @@ tags' album, album artist or performer**, as typed (today's Covers search matche
 
 - **Genre column**: the release's tag genres as one comma list (dim, wrapping, at most four lines, the full list on
   hover); "—" when the tags give none.
-- A tag genre is taken **as written**; a multi-value tag ("Rock; Pop", the separator ID3 and Vorbis comments use) is
-  several genres; no other cleaning (the maintainer's rule for display values: one structural rule, no junk filters).
+- A tag genre is taken **as written**; a tag holding several genres, joined with `;` or with ` / ` (a slash with a space
+  on each side, as the tag values on production join them), is several genres; an unspaced slash (`Pop/Rock`) is part of
+  one genre's name; no other cleaning (the maintainer's rule for display values: one structural rule, no junk filters).
 - **Genre menu**: the genres the band's releases have, A to Z ignoring case, then **Unknown** for releases with no genre
   tag. A tag that literally reads "Unknown" is that item, not a genre of its own. OR within the menu; it searches inside
   itself (over ten options); each option sits on one line.
@@ -354,7 +355,7 @@ public cover route, without login or the hidden-category check that the audio pr
 - The cover is square: 88 × 88 in a 110 px column on the list, 200 × 200 on the album page; without a cover the list
   shows the Adult dashed tile and the album page the film page's placeholder tile with a disc icon.
 - The music line's artist is the album artist tag, else the performer; parts missing from the tags are left out.
-- A multi-value genre tag splits on ";"; a tag reading "Unknown" is the Unknown item.
+- A multi-value genre tag splits on ";" and on " / " (spaced); a tag reading "Unknown" is the Unknown item.
 - The Year menu's decades run 2020s to 1940s; its range bounds stay 1900 to the current year.
 - Listen is not on the release page's own chip line; rows in the release page's tables keep it.
 - The embedded player is as wide as the spectrogram under it and does not autoplay; the Listen dialog's player does.

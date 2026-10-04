@@ -54,6 +54,7 @@ final class AudioReleaseProcessor
         private readonly PreviewGenerationPolicy $previewPolicy,
         private readonly AudioEvidenceRecorder $evidenceRecorder,
         private readonly ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
+        private readonly AudioGenres $audioGenres = new AudioGenres,
     ) {}
 
     public function process(Release $release, string $tmpPath, string $groupName): AudioProcessingResult
@@ -282,8 +283,13 @@ final class AudioReleaseProcessor
             }
 
             // Written before the rename, so the row survives even where renaming
-            // is switched off or the release already has a predb name.
-            ReleaseAudioTag::query()->updateOrCreate(['releases_id' => $releaseId], $tags);
+            // is switched off or the release already has a predb name. The tag
+            // genres' rows commit with the tag row or not at all.
+            $genre = $tags['genre'] ?? null;
+            $genreIds = $this->audioGenres->ids(AudioGenres::split(is_string($genre) ? $genre : null));
+            $this->audioGenres->replace($releaseId, $genreIds, static function () use ($releaseId, $tags): void {
+                ReleaseAudioTag::query()->updateOrCreate(['releases_id' => $releaseId], $tags);
+            });
             $this->renamer->rename($release, $tags, $extension);
             $this->releaseExtra->addFromXml($releaseId, $container);
             $this->mediaInfoRefinement->refine($releaseId);
