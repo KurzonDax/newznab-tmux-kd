@@ -236,6 +236,14 @@ search alone: the tag side adds about 85-110 ms, one pass over the tag rows. `EX
   0.6 + 0.1 ms. Cached for an hour as Console's. (`EXISTS` forms are materialised by MariaDB: 24-130 ms; not used.)
   The figures were measured with the links pointing at `genres`, where the join is likewise one primary-key lookup per
   genre (`genres` primary key, `mariadb-schema.sql`).
+- **Combined with the name search** (measured for the list build, issue #962; best of three warm on the stress copy,
+  578,754 Audio releases and 231,757 synthetic tag rows, MariaDB 11.4.13; page / count). Release-led reads keep the IN
+  list of 4.2 beside the anti-join: Unknown + a word 156.9 / 514.8 ms (a word nothing contains: 470.7 ms count); Rock +
+  Unknown + a word 109.2 / 524.2 ms. The release-led counts read `ix_releases_band_count`: Unknown alone 238.0 ms
+  (242.9 ms on `ix_releases_band_posted`), Rock + Unknown 267.2 ms. Genres without Unknown are genre first: `g` is the
+  `DISTINCT releases_id` of the genres' links, the tag row joined after `g` only while a Year or the name search reads
+  it, and the word tested on that tag row: Rock + a word 102.1 ms; Rock or Metal + a word 154.9 / 156.5 ms (`DISTINCT`
+  over the tag columns inside `g` instead: 267.7 ms, not used). Real-size copy: Unknown + a word count 4.7 ms.
 
 ### 4.4 Year
 
@@ -246,6 +254,14 @@ search alone: the tag side adds about 85-110 ms, one pass over the tag rows. `EX
 - **Unknown + Year: year first** on the Year index with the `LEFT JOIN` anti-join: 37.8-39.2 ms.
 - **The search with a tag-led filter** tests the joined tag row's columns instead of a second pass: everything set
   (Lossless + 95%+ + Rock + 2020s + a word) 60.8 ms; Rock + a word 97.8 ms; the 2020s + a word 158.3 ms.
+- **Combined reads** (issue #962, measured as in 4.3; page / count). Genre first, `DISTINCT` ids then the tag row with
+  the year tested on it: Rock + 2020s 64.8 / 64.5 ms; Rock or Metal + 2020s 112.7 ms; Lossless + 95%+ + Rock + 2020s +
+  a word 66.0 ms. Year first with Unknown, the anti-join on the position-0 genre row inside `g` on the Year index: Rock
+  + Unknown + 2020s 128.6 / 126.7 ms (the genres as an `EXISTS` beside the anti-join); Unknown + 2020s + a word 102.2 /
+  106.6 ms, the word tested on the tag columns `g` carries. Real-size copy: Rock + Unknown + 2020s count 0.5 ms. Every
+  tag-led read (a Year, or genres without Unknown) joins `releases` on `PRIMARY` and costs the same on every page, so it
+  is never mirrored; the release-led reads (no Year, with Unknown or no Genre) keep the release indexes and mirror past
+  the middle as every list.
 
 ### 4.5 Per row, details and album
 

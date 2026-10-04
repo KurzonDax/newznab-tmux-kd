@@ -346,6 +346,14 @@
 .tv-feed.is-shelf th.tv-genre { padding-left: 12px; }
 .tv-feed.is-shelf tbody td.tv-genre { color: var(--tv-dim); line-height: 1.4; white-space: normal; }
 .tv-feed.is-shelf tbody td.tv-genre span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+/*
+ * Audio releases (docs/proposals/audio-redesign/SPEC.md 5.4, 5.7): the Console list with a square
+ * cover slot, 88 x 88 in a 110 px column (album art is square); with no cover stored, every row
+ * shows Adult's dashed "No cover" tile.
+ */
+.tv-col-cover { width: 110px; }
+.tv-feed td.tv-art.is-square { width: 88px; }
+.tv-art.is-square a { width: 88px; height: 88px; }
 
 /* TV shows wall */
 .tv-person { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 16px; border-radius: 19px; background: var(--tv-accent); color: var(--tv-accent-on); font-size: 13.5px; font-weight: 600; line-height: 1.5; }
@@ -623,3 +631,9 @@ a.tv-tag:hover { background: var(--tv-line); }
 /* A picture opening at full size (data-open-full) shows only once it is measured and laid out so. */
 .tv-image-dialog.is-measuring .tv-image-bar, .tv-image-dialog.is-measuring .tv-image-frame { visibility: hidden; }
 .tv-image-player video { display: block; width: 100%; max-height: 70vh; margin: 12px auto 0; border-radius: 10px; background: var(--tv-ground); }
+/* Listen (audio-redesign SPEC 5.10): 560 px, the track title in ink over the artist in dim, then the browser's own player in the page's theme. */
+.tv-dialog.is-listen { width: min(560px, 100%); }
+.tv-listen { padding-top: 16px; }
+.tv-listen-track { color: var(--tv-ink); font-size: 16px; font-weight: 700; line-height: 1.3; }
+.tv-listen-track small { display: block; margin-top: 2px; color: var(--tv-dim); font-size: 14px; font-weight: 500; }
+.tv-listen-player audio { display: block; width: 100%; height: 44px; margin-top: 14px; }

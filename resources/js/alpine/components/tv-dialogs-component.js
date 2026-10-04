@@ -1,6 +1,6 @@
 /**
- * The TV screens' own dialogs (tv/partials/dialogs.blade.php): the file list and the preview /
- * sample image. The media info and NFO dialogs reuse the site's mediainfoModal and nfoModal
+ * The TV screens' own dialogs (tv/partials/dialogs.blade.php): the file list, the preview /
+ * sample image and Listen. The media info and NFO dialogs reuse the site's mediainfoModal and nfoModal
  * components in the TV dialog frame. Every dialog closes with X, Escape and a click outside and
  * returns focus to what opened it (modalLifecycle).
  */
@@ -207,6 +207,87 @@ export function tvImageDialog() {
             event.preventDefault();
             chip.focus();
             this.show(chip);
+        },
+
+        destroy() {
+            this._modalTeardown?.();
+            this.removePlayer();
+            document.removeEventListener('click', this._click);
+        },
+    };
+}
+
+/**
+ * The Listen dialog (docs/proposals/audio-redesign/SPEC.md 5.10), opened by an Audio row's Listen
+ * chip (`.listen-badge`): the track title with the artist under it, then the browser's own audio
+ * player, built here as the image dialog builds its video player and played at once. Closing
+ * pauses, empties and removes the player, so the sound stops.
+ */
+export function tvListenDialog() {
+    return {
+        ...modalLifecycle(),
+        open: false,
+        releaseName: '',
+        trackTitle: '',
+        artist: '',
+
+        show(trigger) {
+            const data = trigger.dataset;
+            this.removePlayer();
+            this.releaseName = data.releaseDisplayName || '';
+            this.trackTitle = data.audioTitle || '';
+            this.artist = data.audioArtist || '';
+            this.open = true;
+            this.$nextTick(() => this.addPlayer(data.audioUrl || '', data.audioType || '', data.audioSeconds || ''));
+        },
+
+        addPlayer(url, type, seconds) {
+            const player = document.createElement('audio');
+            player.controls = true;
+            player.preload = 'auto';
+            player.tabIndex = 0;
+            player.setAttribute('aria-label', (seconds ? seconds + '-second preview of ' : 'Preview of ') + this.releaseName);
+            const source = document.createElement('source');
+            source.src = url;
+            if (type) source.type = type;
+            player.append(source);
+            this.$refs.player?.replaceChildren(player);
+            // A browser may refuse to start the sound; the player then waits for its own play button.
+            player.play?.()?.catch?.(() => {});
+        },
+
+        removePlayer() {
+            const player = this.$refs.player?.querySelector('audio');
+            if (!player) return;
+            player.pause();
+            player.replaceChildren();
+            player.load();
+            this.$refs.player.replaceChildren();
+        },
+
+        /** The track title, else nothing: the artist shows only under a title. */
+        showTrack() {
+            return this.trackTitle !== '';
+        },
+
+        showArtist() {
+            return this.trackTitle !== '' && this.artist !== '';
+        },
+
+        close() {
+            this.open = false;
+            this.removePlayer();
+        },
+
+        init() {
+            this.initModal();
+            this._click = event => {
+                const trigger = event.target.closest('.listen-badge');
+                if (!trigger) return undefined;
+                event.preventDefault();
+                return this.show(trigger);
+            };
+            document.addEventListener('click', this._click);
         },
 
         destroy() {

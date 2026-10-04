@@ -47,6 +47,7 @@ final class ConsoleReleasesController extends BasePageController
             'meta_title' => 'Console releases',
             'heading' => 'Console releases',
             'listRoute' => 'console.releases',
+            'listKind' => 'console',
             'preferenceRoot' => BrowseRoot::Console->value,
             'emptyText' => 'There are no console releases yet.',
             'filters' => $filters,

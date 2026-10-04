@@ -1,4 +1,4 @@
-{{-- The TV screens' dialogs (docs/proposals/tv-redesign/SPEC.md 3.5): media info, NFO, file list and the preview / sample image. --}}
+{{-- The TV screens' dialogs (docs/proposals/tv-redesign/SPEC.md 3.5): media info, NFO, file list, the preview / sample image and Listen. --}}
 <div x-data="mediainfoModal" data-media-info-block>
     <x-tv-dialog name="mediainfo">
         <x-slot:title>Media info</x-slot:title>
@@ -48,5 +48,16 @@
             <a class="tv-details-button is-secondary" x-bind:href="detailsUrl()"><i class="fas fa-circle-info" aria-hidden="true"></i>Details</a>
             <a class="tv-details-button download-nzb" x-bind:href="downloadUrl()"><i class="fas fa-download" aria-hidden="true"></i>Download NZB</a>
         </x-slot:footer>
+    </x-tv-dialog>
+</div>
+{{-- Listen (docs/proposals/audio-redesign/SPEC.md 5.10): the track title and artist, then the browser's own audio player, which the component builds and plays at once; no footer. --}}
+<div x-data="tvListenDialog">
+    <x-tv-dialog name="listen" class="is-listen">
+        <x-slot:title>Listen</x-slot:title>
+        <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
+        <div class="tv-listen">
+            <div class="tv-listen-track" x-show="showTrack()"><span x-text="trackTitle"></span><small x-show="showArtist()" x-text="artist"></small></div>
+            <div class="tv-listen-player" x-ref="player"></div>
+        </div>
     </x-tv-dialog>
 </div>
