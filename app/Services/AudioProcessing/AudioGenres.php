@@ -22,6 +22,9 @@ class AudioGenres
     /** The tag value that names no genre; dropped in any case. */
     private const string UNKNOWN = 'unknown';
 
+    /** Where a tag's genre value splits: `;`, and a slash with a space on each side. */
+    private const string SEPARATORS = '~;| / ~';
+
     /**
      * The genre names in a tag's genre value, in order and each once: split on `;` and on a
      * slash with a space on each side, trimmed, with empty parts and `Unknown` (any case) left
@@ -38,7 +41,7 @@ class AudioGenres
 
         $names = [];
         $seen = [];
-        foreach (preg_split('~;| / ~', $value) ?: [] as $part) {
+        foreach (preg_split(self::SEPARATORS, $value) ?: [] as $part) {
             $name = trim($part);
             $key = mb_strtolower($name);
             if ($name === '' || $key === self::UNKNOWN || isset($seen[$key])) {
@@ -49,6 +52,21 @@ class AudioGenres
         }
 
         return $names;
+    }
+
+    /**
+     * Whether a tag's genre value has a part reading `Unknown` (any case, trimmed), split as
+     * split() splits it; split() drops that part, so the Audio list's Genre cell reads it here.
+     */
+    public static function readsUnknown(?string $value): bool
+    {
+        foreach ($value === null ? [] : (preg_split(self::SEPARATORS, $value) ?: []) as $part) {
+            if (mb_strtolower(trim($part)) === self::UNKNOWN) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

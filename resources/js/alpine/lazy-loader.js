@@ -68,6 +68,7 @@ const lazyComponentMap = {
     'movieReleaseDetails': () => import('./components/movie-release-details.js'),
     'tvFilesDialog':   () => import('./components/tv-dialogs.js'),
     'tvImageDialog':   () => import('./components/tv-dialogs.js'),  // same file
+    'tvListenDialog':  () => import('./components/tv-dialogs.js'),  // same file
     'authPage':        () => import('./components/auth-page.js'),
     'loginMode':       () => import('./components/login-mode.js'),
     'passkeyLogin':    () => import('./components/passkey-login.js'),

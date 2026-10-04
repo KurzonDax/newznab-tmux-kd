@@ -2,18 +2,19 @@
     $pageUrl = fn (int $page): string => route($listRoute, $filters->query($page));
     $byAdded = $filters->sortsByAdded();
     $chipBaseId = collect($rows)->first(fn ($row): bool => $row->hasChips())?->id;
-    // Console (genreMenu set): a cover column under the Release heading and a Genre column after Category.
-    $games = isset($genreMenu);
+    // Console and Audio ($listKind): a cover column under the Release heading and a Genre column after Category; Audio's cover is square.
+    $kind = $listKind ?? null;
+    $games = $kind !== null;
 @endphp
 <x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\ReleaseListFilters::PER_PAGE" noun="release" :url="$pageUrl"
               :clear-all="route($listRoute, [\App\Services\Releases\RememberedListFilters::CLEAR => 1])" :filtered="$filters->any()" />
 @if($rows === [])
     <p class="tv-empty">{{ $matching === '' ? $emptyText : 'No releases match '.$matching.'.' }}</p>
 @else
-    {{-- No picture, Files or Grabs column (SPEC 5.4): is-shelf colours the Category, Size and date cells by class; Console adds the cover and Genre. --}}
+    {{-- No picture, Files or Grabs column (SPEC 5.4): is-shelf colours the Category, Size and date cells by class; Console and Audio add the cover and Genre. --}}
     <table class="tv-feed is-shelf" data-list-page="{{ $filters->page }}">
         @if($games)
-            <colgroup><col class="tv-col-select"><col class="tv-col-art"><col><col class="tv-col-category"><col class="tv-col-genre"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
+            <colgroup><col class="tv-col-select"><col class="{{ $kind === 'audio' ? 'tv-col-cover' : 'tv-col-art' }}"><col><col class="tv-col-category"><col class="tv-col-genre"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
         @else
             <colgroup><col class="tv-col-select"><col><col class="tv-col-category"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
         @endif

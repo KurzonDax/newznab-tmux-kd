@@ -110,3 +110,28 @@ test('the Console table: cover 116 px, Category 128 px, Genre 150 px dim in up t
     assert.match(css, /\.tv-bar-list\.is-shelf \.filter-bar\.is-game \{ flex: 0 0 calc\(\(\(100% - 12px\) \/ 2 - 8px\) \* 2 \/ 5 \+ 8px\); \}/, 'the game panel as wide as the release panel');
     assert.match(css, /\.tv-art a \{ position: relative; display: block; width: 88px; height: 132px;/, 'the 88 x 132 cover slot');
 });
+
+test('the Audio list remembers its sort under audio', async () => {
+    const { component, posts } = screen('https://nntmux.test/audio?genre%5B%5D=11&decade%5B%5D=1990&page=2', 'audio');
+    await component.changeSort({ target: { value: 'added_oldest' } });
+    assert.deepEqual(posts, [{ root: 'audio', sort: 'added_oldest' }]);
+    const url = new URL(window.location.href);
+    assert.deepEqual([url.pathname, url.searchParams.getAll('genre[]'), url.searchParams.getAll('decade[]'), url.searchParams.has('page')], ['/audio', ['11'], ['1990'], false],
+        'a new sort keeps the music menus and opens page 1');
+});
+
+test('the Audio table: a square 88 x 88 cover in a 110 px column, Category 128 px, Genre 150 px dim in up to four lines; the music panel two cells; Console keeps 116 px', () => {
+    const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
+    assert.match(css, /\.tv-col-cover \{ width: 110px; \}/, 'the Audio cover column');
+    assert.match(css, /\.tv-feed td\.tv-art\.is-square \{ width: 88px; \}/);
+    assert.match(css, /\.tv-art\.is-square a \{ width: 88px; height: 88px; \}/, 'the square tile');
+    assert.match(css, /\.tv-art a\.is-no-picture \{ gap: 6px; background: transparent; box-shadow: none; border-style: dashed; \}/, "Adult's dashed tile: no fill, no shadow");
+    assert.match(css, /\.tv-col-art \{ width: 116px; \}/, "Console's cover column stays 116 px");
+    assert.match(css, /\.tv-col-category \{ width: 128px; \}/);
+    assert.match(css, /\.tv-col-genre \{ width: 150px; \}/);
+    assert.match(css, /\.tv-feed\.is-shelf tbody td\.tv-genre \{ color: var\(--tv-dim\); line-height: 1\.4; white-space: normal; \}/, 'dim and wrapping');
+    assert.match(css, /\.tv-feed\.is-shelf tbody td\.tv-genre span \{ display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4; \}/, 'at most four lines');
+    assert.match(css, /\.tv-bar-list\.is-shelf \.filter-bar\.is-game \{ flex: 0 0 calc\(\(\(100% - 12px\) \/ 2 - 8px\) \* 2 \/ 5 \+ 8px\); \}/, 'the music panel two Movies release-bar cells');
+    assert.match(css, /\.tv-dialog\.is-listen \{ width: min\(560px, 100%\); \}/, 'the Listen dialog 560 px');
+    assert.match(css, /\.tv-listen-player audio \{ display: block; width: 100%; height: 44px;/, 'the player full width, 44 px high');
+});

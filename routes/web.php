@@ -54,6 +54,7 @@ use App\Http\Controllers\AjaxController;
 use App\Http\Controllers\Api\FileListApiController;
 use App\Http\Controllers\ApiHelpController;
 use App\Http\Controllers\AudioPreviewController;
+use App\Http\Controllers\AudioReleasesController;
 use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
@@ -250,6 +251,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');
         // Console (SPEC 1): paths are case-sensitive
         Route::get('console', [ConsoleReleasesController::class, 'index'])->name('console.releases');
+        // Audio (docs/proposals/audio-redesign/SPEC.md 1): /audio, not the capitalised Audio/{id?} above, since paths are case-sensitive
+        Route::get('audio', [AudioReleasesController::class, 'index'])->name('audio.releases');
     });
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');

@@ -229,7 +229,7 @@ final class TvReleasesPageTest extends TestCase
         }
         $this->assertSame('posted', User::query()->findOrFail($user->id)->releaseViewPreferences('tv')['sort']);
         $this->postJson('/profile/update-view', ['root' => 'tv', 'sort' => 'grabs'])->assertUnprocessable();
-        $this->postJson('/profile/update-view', ['root' => 'audio', 'sort' => 'posted'])->assertUnprocessable();
+        $this->postJson('/profile/update-view', ['root' => 'other', 'sort' => 'posted'])->assertUnprocessable();
     }
 
     public function test_a_same_show_batch_longer_than_four_collapses_to_three_rows_and_an_expander(): void
