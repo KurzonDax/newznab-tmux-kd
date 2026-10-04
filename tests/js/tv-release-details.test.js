@@ -41,7 +41,7 @@ function browser({ hash = '', responses = {} } = {}) {
     return { requests, history, listeners };
 }
 
-function detailsPage({ media = '1', nfo = '1', table = null, shown = TABS } = {}) {
+function detailsPage({ media = '1', nfo = '1', table = null, shown = TABS, players = {} } = {}) {
     const tabs = shown.map(tab => ({ dataset: { tab }, ...attributes({ 'aria-selected': tab === 'overview' ? 'true' : 'false' }), focus() { this.focused = true; } }));
     const panels = shown.map(id => ({ id, hidden: id !== 'overview' }));
     const contents = Object.fromEntries(['files', 'media', 'nfo'].map(tab => [tab, { innerHTML: '' }]));
@@ -50,6 +50,7 @@ function detailsPage({ media = '1', nfo = '1', table = null, shown = TABS } = {}
         querySelectorAll(selector) {
             if (selector === '[data-tab]') return tabs;
             if (selector === '[data-details-panel]') return panels;
+            if (selector === '[data-details-panel][hidden] audio') return panels.filter(panel => panel.hidden).flatMap(panel => players[panel.id] ?? []);
             if (selector === '.tv-release-table') return table ? [table] : [];
             return [];
         },
@@ -131,6 +132,40 @@ test('arrow keys move between the tabs and keep focus on the tab row', () => {
     assert.equal(tabs[4].focused, true);
     component.tabKey(key('Home'));
     assert.equal(component.activeTab, 'overview');
+});
+
+test('an Audio page with a Tracks tab opens it for #tracks and the arrow keys reach it; a page without one opens Overview for #tracks', () => {
+    const audioTabs = ['overview', 'tracks', 'files', 'media', 'nfo', 'comments'];
+    browser({ hash: '#tracks' });
+    const { component, tabs, panels } = detailsPage({ shown: audioTabs });
+    assert.equal(tabFromHash('#tracks'), 'tracks');
+    assert.equal(component.activeTab, 'tracks');
+    assert.equal(tabs[1].getAttribute('aria-selected'), 'true');
+    assert.deepEqual(panels.filter(panel => !panel.hidden).map(panel => panel.id), ['tracks']);
+    const key = name => ({ key: name, preventDefault() {} });
+    component.tabKey(key('Home'));
+    component.tabKey(key('ArrowRight'));
+    assert.equal(component.activeTab, 'tracks');
+    assert.equal(tabs[1].focused, true);
+    component.tabKey(key('ArrowRight'));
+    assert.equal(component.activeTab, 'files');
+
+    browser({ hash: '#tracks' });
+    const other = detailsPage();
+    assert.equal(other.component.activeTab, 'overview');
+    assert.deepEqual(other.panels.filter(panel => !panel.hidden).map(panel => panel.id), ['overview']);
+    assert.deepEqual(TABS, ['overview', 'files', 'media', 'nfo', 'comments']);
+});
+
+test('leaving Overview pauses the preview playing in it; selecting Overview does not', async () => {
+    browser();
+    const player = { paused: 0, pause() { this.paused += 1; } };
+    const { component } = detailsPage({ shown: ['overview', 'tracks', 'files', 'nfo', 'comments'], players: { overview: [player] } });
+    assert.equal(player.paused, 0, 'opening on Overview pauses nothing');
+    await component.selectTab('overview', true);
+    assert.equal(player.paused, 0);
+    await component.selectTab('tracks', true);
+    assert.equal(player.paused, 1);
 });
 
 test('a page without the Media info tab (Books, Console and PC without media info) opens Overview for #media, and the arrow keys skip the absent tab', async () => {

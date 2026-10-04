@@ -489,6 +489,26 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-show-head .tv-game-line b { color: var(--tv-ink); font-weight: 600; }
 .tv-show-head p.tv-storyline b { color: var(--tv-dim); font-weight: 400; }
 .tv-starring .tv-starring-value { color: var(--tv-ink); }
+/* Audio release pages (audio-redesign SPEC 5B, 5C.1 and 5C.2): the album page's square cover slot; the preview
+   the Overview opens with, a column as wide as the spectrogram (the player as wide, the spectrogram 10 px under
+   it on the picture's black ground, labelled top-left), the facts 24 px below; the Tracks tab's table, 760 px at
+   most, the number and the length dim and right-aligned, a dim disc row before each disc. */
+.tv-show-art.is-square { aspect-ratio: 1 / 1; }
+.tv-audio-preview { display: inline-flex; flex-direction: column; gap: 10px; margin-bottom: 24px; min-width: min(560px, 100%); }
+.tv-audio-preview-line { display: flex; align-items: baseline; gap: 8px; color: var(--tv-dim); font-size: 14px; }
+.tv-audio-preview-line b { color: var(--tv-ink); font-weight: 600; }
+.tv-audio-preview-line b + span::before { content: "·"; margin-right: 8px; }
+.tv-audio-preview audio { display: block; width: 100%; height: 44px; }
+.tv-audio-preview .tv-details-preview { position: relative; margin: 0; background: #000; }
+.tv-audio-preview .tv-details-preview img { display: block; height: 220px; width: auto; max-width: none; max-height: none; }
+.tv-details-picture-label.is-top { top: 8px; bottom: auto; }
+.tv-audio-preview + .tv-details-facts { margin-top: 0; }
+.tv-tracks { table-layout: fixed; max-width: 760px; }
+.tv-tracks td { padding: 9px 10px; }
+.tv-tracks .tv-track-number { width: 56px; padding-right: 18px; color: var(--tv-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.tv-tracks .tv-track-length { width: 90px; color: var(--tv-dim); text-align: right; }
+.tv-tracks .tv-track-disc td { padding: 18px 10px 6px; border-bottom: 1px solid var(--tv-line); color: var(--tv-dim); font-size: 13px; font-weight: 700; }
+.tv-tracks-total { max-width: 760px; margin: 4px 0 10px; color: var(--tv-dim); font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .tv-film-releases { margin-top: 40px; scroll-margin-top: 84px; }
 .tv-film-releases > h2 { margin: 0; color: var(--tv-ink); font-size: 21px; font-weight: 800; line-height: 1.1; letter-spacing: -0.015em; }
 .tv-film-bar .filter-bar { flex: 0 0 calc(((100% - 12px) / 2 - 8px) * 2 / 5 + 8px); }

@@ -41,17 +41,14 @@
         @if($row instanceof \App\Data\ConsoleReleaseRow && $row->hasGame())
             <span class="tv-game-line">{{ $row->gameLine() }}</span>
         @elseif($row instanceof \App\Data\AudioReleaseRow && $row->musicLine() !== '')
-            <span class="tv-game-line">{{ $row->musicLine() }}</span>
+            @include('shelf.releases.music-line')
         @endif
         {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
                 @include('tv.partials.release-chip-list')
                 @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
-                    {{-- Listen (SPEC 5.10), last where Adult's Clip sits: opens the Listen dialog, which plays the preview at once. --}}
-                    <x-chip variant="clip" action class="listen-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-audio-url="$row->listen['url']"
-                            :data-audio-type="$row->listen['type']" :data-audio-title="$row->listen['title']" :data-audio-artist="$row->listen['artist']"
-                            :data-audio-seconds="$row->listen['seconds']" :data-part="$chipPart('Listen chip')" :title="$row->listenTitle()">Listen</x-chip>
+                    @include('shelf.releases.listen-chip')
                 @endif
                 @include('tv.partials.release-origin')
             </div>

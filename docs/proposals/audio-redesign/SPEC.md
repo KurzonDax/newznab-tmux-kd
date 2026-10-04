@@ -227,10 +227,11 @@ Console's game release page (Books / Console / PC `SPEC.md` 5B) with the album i
    that are links, each opening the list on **that genre alone** (the other dropdown filters and the name search
    cleared); then an outlined **format tag** (the tags' audio format: FLAC, WavPack, DSD, …) only when it adds to what the
    sub-category and the media info chip already say. Then an info line in the film page's "Directed by" style: **Tracks**
-   `N · <total length>` (the length only when every track's length is stored) when a track list is stored. Then **one
-   button row**: Download NZB (coral), Copy NZB link, Add to cart, then **MusicBrainz** (`btn sec ext`, external-link
-   icon, new tab, `noopener noreferrer`, "(opens in a new tab)" for screen readers) to the identified release group, only
-   when the release has an accepted MusicBrainz identity.
+   `N · <total length>` (the length only when every track's length is stored) when a track list is stored. Then a second
+   info line, **Performed by** `<performer>`, when the tags hold both an album artist and a performer and the two differ.
+   Then **one button row**: Download NZB (coral), Copy NZB link, Add to cart, then **MusicBrainz** (`btn sec ext`,
+   external-link icon, new tab, `noopener noreferrer`, "(opens in a new tab)" for screen readers) to the identified
+   release group, only when the release has an accepted MusicBrainz identity.
 5. **The tabs and facts** straight after, with no heading: as 5A, without the Genre fact (the genres are in the tags).
 6. **"All N releases of this album"** after the facts: Console's "All N releases of this game" (Movies `SPEC.md` 5C.4):
    every release of the band whose tags name the same album and the same artist (case-insensitive), newest posted
@@ -262,9 +263,10 @@ not preferred."
 
 ### 5C.2 The Tracks tab
 
-- Shown only when the release has a stored track list: the newest audio evidence revision's tracks, from one source in
-  this order of preference: the archive listing, else the NZB's audio files, else the release's files, else the one
-  sampled file (the order the prototype reads them).
+- Shown only when the release has a complete stored track list in its newest audio evidence revision: the archive
+  listing when the revision marks it complete, else the NZB's audio files. A partial list (an archive listing not marked
+  complete, the release's files, the one sampled file) is not shown: the preview step reads only the archive volumes it
+  needs for one playable file, so those lists hold a few tracks of the album (the maintainer's decision, 2026-10-04).
 - A dim line with the total length when every track's length is stored; then a table **#, Title, Length** (Length only
   when lengths are stored), 760 px at most, the number right-aligned in tabular figures; a dim disc row ("Disc 2") before
   each disc when the tracks span more than one disc.
