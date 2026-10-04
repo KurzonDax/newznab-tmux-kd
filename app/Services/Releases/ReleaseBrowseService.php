@@ -36,31 +36,6 @@ class ReleaseBrowseService
     ) {}
 
     /**
-     * Refresh release artifacts for an entity cover page, including cached pages.
-     *
-     * @param  iterable<int, object>  $entities
-     */
-    public function loadCoverReleaseData(iterable $entities): void
-    {
-        $releases = [];
-        foreach ($entities as $entity) {
-            foreach (($entity->releases ?? []) as $release) {
-                $releases[] = $release;
-            }
-        }
-
-        $releases = $this->loadReleaseRows($releases);
-        $retained = array_fill_keys(array_column($releases, 'id'), true);
-        foreach ($entities as $entity) {
-            /** @var iterable<int, object> $entityReleases */
-            $entityReleases = $entity->releases ?? [];
-            $entity->releases = collect($entityReleases)->filter(
-                static fn (object $release): bool => isset($retained[$release->id]),
-            )->values()->all();
-        }
-    }
-
-    /**
      * Hydrate in place and remove unresolved rows from mutable result containers.
      * Array callers use the returned rows to retain that filtering.
      *

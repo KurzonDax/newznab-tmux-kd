@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Enums\BrowseRoot;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
@@ -75,126 +73,6 @@ final class ReleaseBrowserControllerTest extends TestCase
             ->assertSee('1080p · x264');
     }
 
-    public function test_year_picker_offers_complete_choices_even_without_matching_metadata(): void
-    {
-        $this->createCoverCatalogSchema('musicinfo');
-        $response = $this->actingAs($this->browserUser())->get('/browse/audio?year=custom&year_from=1970&year_to=1975')->assertOk();
-        $response->assertSee('All Years')->assertSee('Decades')->assertSee('Custom Range')->assertSee('Individual Years')
-            ->assertSee('value="1900"', false)->assertSee('value="'.(date('Y') + 1).'"', false)
-            ->assertSee('value="1975"', false)->assertSee('name="year_from"', false)->assertSee('name="year_to"', false)
-            ->assertSee('Apply year');
-        $this->assertSame(0, $response->viewData('results')->total());
-    }
-
-    #[DataProvider('yearContexts')]
-    public function test_every_year_capable_category_uses_its_own_year_in_every_supported_view(string $root, string $table, string $foreignKey, int $category): void
-    {
-        if ($table !== '') {
-            $this->createCoverCatalogSchema($table);
-        }
-        DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.year.test'], ['id' => 2, 'name' => 'alt.year.other']]);
-        $years = [1969, 1970, 1975, 1979, 1980];
-        foreach ($years as $year) {
-            if ($table !== '') {
-                $this->insertTitles($table, ['id' => $year, 'imdbid' => (string) $year, 'title' => 'Year fixture '.$year,
-                    'year' => (string) $year, 'started' => $year.'-06-15', 'releasedate' => $year.'-06-15', 'publishdate' => $year.'-06-15']);
-            }
-            $this->release('Year fixture '.$year, ['categories_id' => $category, 'isrenamed' => 1, 'nfostatus' => 1,
-                'postdate' => '2001-06-15', 'adddate' => '2020-01-01', 'groups_id' => 1, 'fromname' => 'Year poster',
-                ...($foreignKey !== '' ? [$foreignKey => $year] : [])]);
-        }
-        $user = $this->browserUser();
-        $this->actingAs($user);
-        $cases = [
-            'year=1970s' => [1970, 1975, 1979], 'year=1975' => [1975],
-            'year=custom&year_from=1970&year_to=1975' => [1970, 1975],
-            'year=custom&year_from=1975' => [1975, 1979, 1980],
-            'year=custom&year_to=1975' => [1969, 1970, 1975],
-            'year=custom&year_from=1980&year_to=1970' => [1970, 1975, 1979, 1980],
-            'year=custom&year_from=&year_to=' => $years,
-            'year=broken' => $years, 'year[]=1970' => $years,
-            'year=custom&year_from[]=1970&year_to=1975' => [1969, 1970, 1975],
-            'year=1900' => [], 'year='.(date('Y') + 1) => [],
-        ];
-        $views = BrowseRoot::fromRoute($root)->views();
-        foreach (['/browse/'.$root, '/browse/'.$root.'/'.$category] as $path) {
-            foreach ($views as $view) {
-                foreach ($cases as $query => $expected) {
-                    $response = $this->get($path.'?view='.$view.'&'.$query)->assertOk();
-                    $this->assertSame(count($expected), $response->viewData('results')->total(), $path.' '.$view.' '.$query);
-                    foreach ($years as $year) {
-                        if (in_array($year, $expected, true)) {
-                            $response->assertSee('Year fixture '.$year);
-                        } else {
-                            $response->assertDontSee('Year fixture '.$year);
-                        }
-                    }
-                    $response->assertSee('All Years')->assertSee('Decades')->assertSee('Individual Years')->assertSee('Custom Range');
-                }
-            }
-        }
-        $this->release('Outside identity', ['categories_id' => $category, 'postdate' => '1975-06-15',
-            'groups_id' => 2, 'fromname' => 'Another poster', ...($foreignKey !== '' ? [$foreignKey => 1975] : [])]);
-        foreach (['group=alt.year.test', 'poster=Year%20poster'] as $restriction) {
-            $page = $this->get('/browse/'.$root.'?view=covers&year=custom&year_from=1970&year_to=1975&'.$restriction)->assertOk();
-            $page->assertSee('Custom Range')->assertSee('Apply year')->assertDontSee('Outside identity');
-            $this->assertSame('table', $page->viewData('browserState')->view);
-            $this->assertSame(2, $page->viewData('results')->total());
-        }
-    }
-
-    public function test_custom_year_range_survives_pagination_sort_views_and_legacy_cover_entry(): void
-    {
-        $this->createCoverCatalogSchema('musicinfo');
-        $genre = DB::table('genres')->insertGetId(['title' => 'Drama']);
-        for ($id = 1; $id <= 26; $id++) {
-            DB::table('musicinfo')->insert(['id' => $id, 'title' => 'Paged year '.$id, 'year' => $id <= 25 ? '1975' : '1980', 'genres_id' => $genre]);
-            $this->release('Paged year '.$id, ['categories_id' => 3030, 'musicinfo_id' => $id, 'isrenamed' => 1, 'nfostatus' => 1]);
-        }
-        $this->actingAs($this->browserUser());
-        $query = 'year=custom&year_from=1970&year_to=1975&genre=Drama&per=24&page=2';
-        $legacy = $this->get('/Audio?'.$query)->assertRedirect();
-        $this->get($legacy->headers->get('Location'))->assertOk()->assertSee('Apply year');
-        foreach (['table', 'cards', 'covers'] as $view) {
-            $response = $this->get('/browse/audio?'.$query.'&view='.$view.'&size=l&sort=posted')->assertOk();
-            $this->assertSame(25, $response->viewData('results')->total());
-            $this->assertCount(1, $response->viewData('results')->items());
-            $document = new \DOMDocument;
-            @$document->loadHTML($response->getContent());
-            $xpath = new \DOMXPath($document);
-            $this->assertSame('1970', $xpath->query('//*[@name="year_from"]/@value')->item(0)->nodeValue);
-            $this->assertSame('1975', $xpath->query('//*[@name="year_to"]/@value')->item(0)->nodeValue);
-            $clear = $xpath->query('//*[@data-year-clear]/@href')->item(0)->nodeValue;
-            parse_str(parse_url($clear, PHP_URL_QUERY), $parameters);
-            $this->assertSame(['genre' => 'Drama', 'per' => '24', 'view' => $view, 'size' => 'l', 'sort' => 'posted'], $parameters);
-            $this->get($clear)->assertOk()->assertViewHas('results', static fn ($rows): bool => $rows->total() === 26);
-            $this->assertStringContainsString('year_from=1970', $response->viewData('results')->url(1));
-            $this->assertStringContainsString('year_to=1975', $response->viewData('results')->url(1));
-        }
-    }
-
-    public static function yearContexts(): iterable
-    {
-        yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030];
-    }
-
-    public function test_long_cover_metadata_preserves_complete_values_and_actions(): void
-    {
-        $this->createCoverCatalogSchema('musicinfo');
-        $publisher = str_repeat('Harbor Records copyright and publishing rights worldwide. ', 12).str_repeat('X', 180);
-        foreach ([1, 2] as $id) {
-            DB::table('musicinfo')->insert(['id' => $id, 'title' => 'Album '.$id, 'publisher' => $publisher, 'artist' => 'A fictional artist']);
-            $this->release('Album.'.$id.'.'.str_repeat('Long.Release.Name.', 15), ['categories_id' => 3030, 'musicinfo_id' => $id, 'nfostatus' => 1]);
-        }
-        $this->actingAs($this->browserUser());
-        foreach (['s', 'l', 'xl'] as $size) {
-            $response = $this->get('/browse/audio?view=covers&size='.$size)->assertOk();
-            if ($size === 'xl') {
-                $response->assertSee($publisher)->assertSee('data-row-action="download"', false)->assertSee('data-row-action="basket"', false);
-            }
-        }
-    }
-
     public function test_release_facts_are_a_separate_block_after_the_complete_name(): void
     {
         $this->release('A short name', ['nfostatus' => 1]);
@@ -258,7 +136,7 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_canonical_roots_and_numeric_subcategories_never_fall_back_to_all_releases(): void
     {
-        $roots = ['audio' => 3030, 'other' => 31];
+        $roots = ['other' => 31];
         foreach ($roots as $root => $categoryId) {
             $this->release($root.' release', ['categories_id' => $categoryId]);
         }
@@ -270,7 +148,7 @@ final class ReleaseBrowserControllerTest extends TestCase
                 $response->assertSee($root.' release');
             }
         }
-        foreach (['/browse/console', '/browse/console/1030', '/browse/games', '/browse/games/4030', '/browse/pc', '/browse/books', '/browse/books/7030'] as $url) {
+        foreach (['/browse/console', '/browse/console/1030', '/browse/games', '/browse/games/4030', '/browse/pc', '/browse/books', '/browse/books/7030', '/browse/audio', '/browse/audio/3030', '/browse/music'] as $url) {
             $this->get($url)->assertNotFound();
         }
         $this->get('/browse/tv')->assertRedirect(route('tv.releases'));
@@ -314,7 +192,26 @@ final class ReleaseBrowserControllerTest extends TestCase
         ] as $path) {
             $this->get($path)->assertNotFound();
         }
-        $this->get('/Audio')->assertRedirect();
+    }
+
+    public function test_retired_audio_pages_are_not_found(): void
+    {
+        $this->release('Other release', ['categories_id' => 31]);
+        $this->actingAs($this->browserUser());
+        foreach ([
+            '/Audio', '/Audio/HD', '/browse/audio', '/browse/audio/3030', '/browse/audio/HD', '/browse/audio/All',
+            '/browse/music', '/browse/Music/3030', '/title/audio/12',
+            '/browse/audio?view=covers&letter=A', '/browse/audio?view=covers&_fragment=cover&cover=12',
+        ] as $path) {
+            $this->get($path)->assertNotFound();
+        }
+        foreach (['/browse/other', '/browse/other/31'] as $path) {
+            $this->get($path)->assertOk()->assertSee('data-release-table', false);
+        }
+        $this->get('/browse/other?view=covers&letter=A&year=1975&label=X')->assertOk()
+            ->assertSee('data-release-table', false)->assertDontSee('aria-label="Jump by initial"', false)
+            ->assertDontSee('data-cover-tile', false)->assertDontSee('data-year-picker', false);
+        $this->get('/browse/other?_fragment=cover&cover=12')->assertOk()->assertSee('data-release-table', false);
     }
 
     public function test_retired_browse_pages_still_show_the_denied_page_to_a_user_without_the_root(): void
@@ -444,33 +341,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         }
     }
 
-    #[DataProvider('metadataRoots')]
-    public function test_other_root_filters_apply_to_metadata(string $root, int $categoryId, string $table, string $foreignKey, array $first, array $second, string $filters): void
-    {
-        $this->createGenresTable();
-        $this->createMusicInfoTable();
-        DB::table('genres')->insert(['id' => 1, 'title' => 'Adventure', 'type' => 1]);
-        if ($table !== '') {
-            DB::table($table)->insert(['id' => 1, 'title' => 'First title', ...$first]);
-            DB::table($table)->insert(['id' => 2, 'title' => 'Second title', ...$second]);
-        }
-        $this->release('Matching release', ['categories_id' => $categoryId, $foreignKey => 1]);
-        $this->release('Nonmatching release', ['categories_id' => $categoryId, $foreignKey => 2]);
-        $response = $this->actingAs($this->browserUser())->get('/browse/'.$root.'?'.$filters)->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('Matching release')->assertDontSee('Nonmatching release');
-        if ($root === 'audio') {
-            $sorted = $this->get('/browse/audio?sort=artist')->assertOk();
-            $this->assertSame('Nonmatching release', $sorted->viewData('results')->items()[0]->row_data->name);
-        }
-    }
-
-    /** @return iterable<string, array{string, int, string, string, array<string, mixed>, array<string, mixed>, string}> */
-    public static function metadataRoots(): iterable
-    {
-        yield 'audio label and year' => ['audio', 3030, 'musicinfo', 'musicinfo_id', ['year' => '2026', 'publisher' => 'Label A', 'artist' => 'Zebra', 'genres_id' => 1], ['year' => '2020', 'publisher' => 'Label B', 'artist' => 'Alpha'], 'year=2026&label=Label%20A&genre=Adventure'];
-    }
-
     public function test_legacy_group_link_redirects_to_the_canonical_exact_filter(): void
     {
         $this->actingAs($this->browserUser())->get('/browse/group?g=alt.binaries.movies&per=24&page=2')
@@ -588,6 +458,33 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->assertSame(0, $xpath->query('//table[@data-release-table]//img')->length);
     }
 
+    public function test_audio_thumbnails_never_show_the_old_album_cover(): void
+    {
+        $covers = $this->makeTempDirectory('browser-covers');
+        mkdir($covers.'/music');
+        file_put_contents($covers.'/music/42.jpg', 'cover');
+        config(['nntmux_settings.covers_path' => $covers]);
+        foreach (['genres', 'musicinfo', 'movieinfo', 'videos'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
+        ProductionTables::fromAuthority()->create('tv_info', ['videos_id', 'publisher', 'image']);
+        DB::table('musicinfo')->insert(['id' => 42, 'title' => 'Old Album Match', 'artist' => 'An artist', 'year' => '2021', 'cover' => 1]);
+        $this->release('Matched album release', ['categories_id' => 3030, 'musicinfo_id' => 42, 'isrenamed' => 1, 'nfostatus' => 1]);
+        $this->actingAs($this->browserUser());
+        foreach (['/browse/all?thumbs=1' => '//table[@data-release-table]', '/' => '//*[@data-release-cards]'] as $path => $list) {
+            $html = (string) $this->get($path)->assertOk()->assertSee('Matched album release')->getContent();
+            $document = new \DOMDocument;
+            @$document->loadHTML($html);
+            $xpath = new \DOMXPath($document);
+            $tiles = $xpath->query($list.'//*[@data-shape]');
+            $this->assertSame(1, $tiles->length, $path);
+            $this->assertSame('square', $tiles->item(0)->getAttribute('data-shape'), $path);
+            $this->assertSame(0, $xpath->query('.//img', $tiles->item(0))->length, $path);
+            $this->assertSame(1, $xpath->query('.//i[contains(@class, "fa-music")]', $tiles->item(0))->length, $path);
+            $this->assertStringNotContainsString('/covers/music/42', $html, $path);
+        }
+    }
+
     public function test_table_sizes_use_megabytes_below_one_gigabyte(): void
     {
         $this->release('Small release', ['size' => 524288000]);
@@ -635,330 +532,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->get('/browse/tv?q=Followed&watching=1')->assertRedirect(route('tv.releases'));
     }
 
-    #[DataProvider('cardsRoots')]
-    public function test_cards_only_include_renamed_releases_that_finished_processing(string $root, int $categoryId): void
-    {
-        $done = ['categories_id' => $categoryId, 'isrenamed' => 1, 'passwordstatus' => 0, 'nfostatus' => 1, 'additional_pp_claim_token' => null];
-        $this->release('Eligible release', $done);
-        $this->release('Original name', [...$done, 'isrenamed' => 0]);
-        $this->release('Password pending', [...$done, 'passwordstatus' => -1]);
-        $this->release('NFO pending', [...$done, 'nfostatus' => -1]);
-        $this->release('Claimed release', [...$done, 'additional_pp_claim_token' => 'active-claim']);
-        $response = $this->actingAs($this->browserUser())->get('/browse/'.$root.'?view=cards')->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('data-release-cards', false)->assertSee('Eligible release')->assertDontSee('Original name')
-            ->assertDontSee('Password pending')->assertDontSee('NFO pending')->assertDontSee('Claimed release')
-            ->assertSee('renamed and post-processed only')->assertSee('(4 not shown)');
-        $this->assertSame(4, $response->viewData('results')->hiddenCount);
-        $document = new \DOMDocument;
-        @$document->loadHTML($response->getContent());
-        $xpath = new \DOMXPath($document);
-        $this->assertSame(1, $xpath->query('//*[@data-release-cards]//*[@data-release-select]')->length);
-        $this->assertSame(4, $xpath->query('//*[@data-release-cards]//*[@data-row-action]')->length);
-        $this->assertSame(0, $xpath->query('//*[@data-release-cards]//*[contains(@class,"filelist-badge")]')->length);
-        $labels = array_map(static fn (\DOMNode $node): string => trim($node->textContent), iterator_to_array($xpath->query('//*[@data-release-cards]//*[contains(@class,"release-browser-card-value")]/span')));
-        $this->assertSame(['Size', 'Added', 'Posted', 'Grabs'], $labels);
-        $this->assertSame('square', $xpath->query('//*[@data-release-cards]//*[@data-shape]/@data-shape')->item(0)->nodeValue);
-        $this->assertSame(1, $xpath->query('//button[@data-value="cards" and @aria-pressed="true"]')->length);
-        $response->assertDontSee('aria-label="Thumbnails"', false);
-        $table = $this->get('/browse/'.$root.'?view=table')->assertOk();
-        $this->assertSame(5, $table->viewData('results')->total());
-        $table->assertSee('Original name')->assertSee('data-release-table', false)->assertDontSee('renamed and post-processed only');
-    }
-
-    public static function cardsRoots(): iterable
-    {
-        yield 'audio' => ['audio', 3030];
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_covers_group_releases_into_titles_and_keep_titles_without_artwork(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        $this->insertTitles($table,
-            ['id' => 1234567, 'imdbid' => '1234567', 'title' => 'A title without artwork', 'year' => '2024', 'rating' => '8.7'],
-            ['id' => 1234568, 'imdbid' => '1234568', 'title' => 'Another title', 'year' => '2025', 'rating' => '7.1'],
-        );
-        $this->release('First encoding', [$foreignKey => '1234567', 'categories_id' => $categoryId, 'isrenamed' => 0, 'nfostatus' => -1]);
-        $this->release('Second encoding', [$foreignKey => '1234567', 'categories_id' => $categoryId]);
-        $this->release('Third encoding', [$foreignKey => '1234568', 'categories_id' => $categoryId]);
-        $this->release('Unmatched release', ['categories_id' => $categoryId]);
-
-        $response = $this->actingAs($this->browserUser())->get('/browse/'.$root.'?view=covers&sort=title')->assertOk();
-        $this->assertSame(2, $response->viewData('results')->total());
-        $response->assertSee('A title without artwork')->assertSee('Another title')->assertSee('2 '.$unit)
-            ->assertDontSee('Unmatched release')->assertDontSee('First encoding')->assertDontSee('Second encoding');
-        $document = new \DOMDocument;
-        @$document->loadHTML($response->getContent());
-        $xpath = new \DOMXPath($document);
-        $this->assertSame(2, $xpath->query('//*[@data-cover-tile]')->length);
-        $this->assertSame('2', $xpath->evaluate('string(//*[@data-cover-tile="1234567"]//*[@data-cover-count])'));
-        $this->assertSame(0, $xpath->query('//*[@data-cover-tile]//*[@data-row-action]')->length);
-        $this->assertSame(2, $xpath->query('//*[@data-cover-tile]//*[@data-no-artwork]')->length);
-    }
-
-    #[DataProvider('coverArtworkCases')]
-    public function test_cover_artwork_uses_the_entity_id_and_existing_extension(string $root, string $table, string $foreignKey, int $categoryId, string $type, int $id, string $extension): void
-    {
-        $this->createCoverCatalogSchema($table);
-        $covers = $this->makeTempDirectory('catalog-artwork');
-        config(['nntmux_settings.covers_path' => $covers]);
-        mkdir($covers.'/'.$type);
-        file_put_contents($covers.'/'.$type.'/'.$id.'.'.$extension, 'image fixture');
-        DB::table($table)->insert(['id' => $id, 'title' => 'Artwork title', 'cover' => 1]);
-        $this->release('Artwork encoding', [$foreignKey => $id, 'categories_id' => $categoryId]);
-
-        $this->actingAs($this->browserUser())->get('/browse/'.$root.'?view=covers')->assertOk()
-            ->assertSee('src="'.url('/covers/'.$type.'/'.$id.'.'.$extension).'"', false)
-            ->assertDontSee('src="'.url('/covers/'.$type.'/1').'"', false);
-    }
-
-    public static function coverArtworkCases(): iterable
-    {
-        yield 'audio album id' => ['audio', 'musicinfo', 'musicinfo_id', 3030, 'music', 42, 'webp'];
-    }
-
-    public static function entityCoverRoots(): iterable
-    {
-        yield 'audio' => ['audio', 'musicinfo', 'musicinfo_id', 3030, 'albums'];
-    }
-
-    public function test_cover_size_changes_layout_without_changing_title_pagination_and_saved_preferences_apply(): void
-    {
-        $this->createCoverCatalogSchema('musicinfo');
-        for ($id = 1; $id <= 26; $id++) {
-            DB::table('musicinfo')->insert(['id' => $id, 'title' => sprintf('Movie %02d', $id)]);
-            $this->release(sprintf('Encoding %02d', $id), ['categories_id' => 3030, 'musicinfo_id' => $id]);
-        }
-        $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'audio', 'view' => 'covers', 'size' => 'l', 'per' => 24])->assertOk();
-        foreach (['s', 'l', 'xl'] as $size) {
-            $response = $this->get('/browse/audio?size='.$size.'&sort=title&page=2')->assertOk();
-            $this->assertSame(26, $response->viewData('results')->total());
-            $this->assertCount(2, $response->viewData('results')->items());
-            $response->assertSee('Movie 25')->assertSee('Movie 26')->assertDontSee('Movie 24')
-                ->assertSee('aria-label="Cover size"', false)->assertDontSee('aria-label="Thumbnails"', false);
-            $this->assertSame('covers', $response->viewData('browserState')->view);
-        }
-        $saved = $this->get('/browse/audio')->assertOk();
-        $this->assertSame('l', $saved->viewData('browserState')->size);
-        $this->assertCount(24, $saved->viewData('results')->items());
-        $this->get('/browse/audio?per=48')->assertOk()->assertSee('26 albums');
-        $this->get('/browse/audio?per=24&page=999')->assertRedirect('/browse/audio?per=24&page=2');
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_cover_search_and_metadata_filters_apply_before_counting_titles(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        foreach ([1 => ['Wanted title', '2024'], 2 => ['Wanted older title', '2023'], 3 => ['Outside title', '2024']] as $id => [$title, $year]) {
-            $this->insertTitles($table, [
-                'id' => $id, 'imdbid' => (string) $id, 'title' => $title, 'year' => $year,
-                'releasedate' => $year.'-01-01', 'publishdate' => $year.'-01-01', 'started' => $year.'-01-01',
-            ]);
-            $this->release('Encoding '.$id, [$foreignKey => (string) $id, 'categories_id' => $categoryId]);
-        }
-        $this->release('Another encoding', [$foreignKey => '1', 'categories_id' => $categoryId]);
-        $this->actingAs($this->browserUser());
-        $response = $this->get('/browse/'.$root.'?view=covers&q=Wanted&year=2024')->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('Wanted title')->assertDontSee('Wanted older title')->assertDontSee('Outside title');
-        $this->assertSame(2, $response->viewData('results')->items()[0]->releaseCount);
-        $changed = $this->get('/browse/'.$root.'?view=covers&q=Outside&year=2024')->assertOk();
-        $this->assertSame(1, $changed->viewData('results')->total());
-        $changed->assertSee('Outside title')->assertDontSee('Wanted title');
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_expanding_a_cover_returns_every_allowed_release_with_shared_table_actions(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        $this->insertTitles($table, ['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title']);
-        DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded quality', 'root_categories_id' => $categoryId - 30]);
-        $user = $this->browserUser();
-        $user->syncExcludedCategories([$categoryId + 10]);
-        for ($id = 1; $id <= 5; $id++) {
-            $this->release('Encoding '.$id, [$foreignKey => '1', 'categories_id' => $categoryId, 'nfostatus' => 1]);
-        }
-        $this->release('Excluded encoding', [$foreignKey => '1', 'categories_id' => $categoryId + 10]);
-        $this->release('Unmatched encoding', ['categories_id' => $categoryId]);
-        $this->actingAs($user);
-        $page = $this->get('/browse/'.$root.'?view=covers&q=Wanted')->assertOk();
-        $this->assertSame(5, $page->viewData('results')->items()[0]->releaseCount);
-        $page->assertDontSee('Encoding 5');
-        $expanded = $this->get('/browse/'.$root.'?view=covers&q=Wanted&_fragment=cover&cover=1')->assertOk();
-        $expanded->assertSee('Wanted title')->assertSee('Encoding 1')->assertSee('Encoding 5')
-            ->assertDontSee('Excluded encoding')->assertDontSee('Unmatched encoding')
-            ->assertSee('data-release-table', false)->assertSee('Title page')->assertSee('Download selected');
-        $document = new \DOMDocument;
-        @$document->loadHTML($expanded->getContent());
-        $xpath = new \DOMXPath($document);
-        $this->assertSame(5, $xpath->query('//*[@data-release-select]')->length);
-        $this->assertSame(20, $xpath->query('//*[@data-row-action]')->length);
-        $this->assertSame(5, $xpath->query('//*[contains(@class,"nfo-badge")]')->length);
-        $this->get('/browse/'.$root.'?view=covers&_fragment=cover&cover=999')->assertNotFound();
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_cover_expansion_paginates_matching_encodings_without_changing_the_outer_page(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        $this->insertTitles($table,
-            ['id' => 1, 'imdbid' => '1', 'title' => 'Wanted title'],
-            ['id' => 2, 'imdbid' => '2', 'title' => 'Wanted title'],
-        );
-        DB::table('categories')->insert(['id' => $categoryId + 10, 'title' => 'Excluded', 'root_categories_id' => $categoryId - 30]);
-        $user = $this->browserUser();
-        $user->syncExcludedCategories([$categoryId + 10]);
-        $attributes = [$foreignKey => '1', 'categories_id' => $categoryId];
-        for ($id = 1; $id <= 251; $id++) {
-            $this->release(sprintf('Encoding %03d', $id), $attributes);
-        }
-        $this->release('Different identity', [...$attributes, $foreignKey => '2']);
-        $this->release('Excluded encoding', [...$attributes, 'categories_id' => $categoryId + 10]);
-        $this->release('Passworded encoding', [...$attributes, 'passwordstatus' => 2]);
-        $this->release('Incomplete encoding', [...$attributes, 'completion' => 20]);
-        $this->actingAs($user);
-        $url = '/browse/'.$root.'?view=covers&q=Wanted&minc=95&sort=title&page=3&per=48&_fragment=cover&cover=1';
-        foreach ([[null, 1, 24, 1, 251, 228], [24, 2, 24, 2, 227, 204], [48, 2, 48, 2, 203, 156], [100, 2, 100, 2, 151, 52], [100, 999, 51, 3, 51, 1], [24, 0, 24, 1, 251, 228], [500, 1, 24, 1, 251, 228]] as [$per, $page, $count, $current, $first, $last]) {
-            DB::enableQueryLog();
-            $response = $this->get($url.'&release_page='.$page.($per === null ? '' : '&release_per='.$per))->assertOk();
-            $queries = DB::getQueryLog();
-            DB::disableQueryLog();
-            DB::flushQueryLog();
-            $rowQueries = array_values(array_filter($queries, static fn (array $query): bool => str_starts_with($query['query'], 'select "r".*')));
-            $this->assertCount(1, $rowQueries);
-            $this->assertStringContainsString('limit '.(in_array($per, [24, 48, 100], true) ? $per : 24), $rowQueries[0]['query']);
-            $rows = $response->viewData('rows');
-            $this->assertInstanceOf(LengthAwarePaginator::class, $rows);
-            $this->assertSame(251, $rows->total());
-            $this->assertSame($current, $rows->currentPage());
-            $this->assertCount($count, $rows->items());
-            $this->assertSame(sprintf('Encoding %03d', $first), $rows->first()->row_data->name);
-            $this->assertSame(sprintf('Encoding %03d', $last), $rows->last()->row_data->name);
-            $this->assertSame(3, $response->viewData('state')->page);
-            $this->assertSame(48, $response->viewData('state')->per);
-            $this->assertSame($count, substr_count($response->getContent(), 'data-release-select'));
-            $response->assertSee('251 releases')->assertSee('Releases per page')->assertSee('changeCoverPage')
-                ->assertDontSee('Different identity')->assertDontSee('Excluded encoding')->assertDontSee('Passworded encoding')->assertDontSee('Incomplete encoding');
-        }
-        $this->get(str_replace('q=Wanted', 'q=Missing', $url))->assertNotFound();
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_cover_sorting_uses_title_and_newest_added_release_before_pagination(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        foreach ([1 => ['Zulu', '2024', '9.2', 'Alpha artist'], 2 => ['Alpha', '2025', '8.1', 'Zulu artist']] as $id => [$title, $year, $rating, $artist]) {
-            $this->insertTitles($table, [
-                'id' => $id, 'imdbid' => (string) $id, 'title' => $title, 'year' => $year,
-                'rating' => $rating, 'artist' => $artist, 'started' => $year.'-01-01',
-            ]);
-            $this->release('Encoding '.$id, [$foreignKey => (string) $id, 'categories_id' => $categoryId,
-                'postdate' => $id === 1 ? '2026-09-13 12:00:00' : '2026-09-12 12:00:00',
-                'adddate' => $id === 1 ? '2026-09-12 12:00:00' : '2026-09-13 12:00:00', 'grabs' => $id === 1 ? 50 : 100]);
-        }
-        $this->actingAs($this->browserUser());
-        foreach (['title' => 'Zulu', 'newest' => 'Alpha', 'oldest' => 'Zulu', 'posted' => 'Zulu', 'posted_oldest' => 'Alpha', 'grabs' => 'Alpha'] as $sort => $first) {
-            $response = $this->get('/browse/'.$root.'?view=covers&sort='.$sort)->assertOk();
-            $this->assertSame($first, $response->viewData('results')->items()[0]->title, $root.' '.$sort);
-        }
-    }
-
-    public static function letterCoverRoots(): array
-    {
-        return array_filter(iterator_to_array(self::entityCoverRoots()), static fn (array $case): bool => in_array($case[0], ['audio'], true));
-    }
-
-    #[DataProvider('letterCoverRoots')]
-    public function test_cover_letters_jump_to_the_first_matching_title_page_without_filtering_the_catalog(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        for ($id = 1; $id <= 27; $id++) {
-            $title = $id === 1 ? '123 title' : ($id <= 25 ? sprintf('Alpha %02d', $id) : 'Zulu '.$id);
-            DB::table($table)->insert(['id' => $id, 'title' => $title]);
-            $this->release('Encoding '.$id, [$foreignKey => $id, 'categories_id' => $categoryId]);
-        }
-        $this->actingAs($this->browserUser());
-        $url = '/browse/'.$root.'?view=covers&per=24&letter=Z';
-        $this->get($url)->assertRedirect($url.'&sort=title&page=2');
-        $page = $this->get($url.'&sort=title&page=2')->assertOk();
-        $this->assertSame(27, $page->viewData('results')->total());
-        $page->assertSee('Alpha 25')->assertSee('Zulu 26')->assertDontSee('Alpha 24')
-            ->assertSee('aria-label="Jump by initial"', false)->assertSee('data-letter="Z" aria-pressed="true"', false);
-        $manual = $this->get($url.'&sort=title&page=1')->assertOk();
-        $manual->assertSee('123 title')->assertDontSee('Zulu 26');
-        $this->get('/browse/'.$root.'?view=covers&per=24&letter=%23')->assertRedirect('/browse/'.$root.'?view=covers&per=24&letter=%23&sort=title&page=1');
-        $this->get('/browse/'.$root.'?view=covers&per=24&letter=Q')->assertRedirect('/browse/'.$root.'?view=covers&per=24&letter=Q&sort=title&page=1');
-    }
-
-    #[DataProvider('entityCoverRoots')]
-    public function test_large_covers_render_entity_metadata_and_extra_large_covers_offer_all_encodings(string $root, string $table, string $foreignKey, int $categoryId, string $unit): void
-    {
-        $this->createCoverCatalogSchema($table);
-        $this->insertTitles($table, ['id' => 1, 'imdbid' => '1', 'title' => 'Metadata title', 'year' => '2024', 'rating' => '8.7',
-            'genre' => 'Mystery', 'artist' => 'An artist', 'author' => 'An author', 'publisher' => 'A publisher',
-            'platform' => 'PS5', 'esrb' => 'T', 'releasedate' => '2024-01-01', 'publishdate' => '2024-01-01', 'genres_id' => 1]);
-        DB::table('genres')->insert(['id' => 1, 'title' => 'Mystery']);
-        for ($id = 1; $id <= 5; $id++) {
-            $this->release('Encoding '.$id, [$foreignKey => '1', 'categories_id' => $categoryId, 'nfostatus' => 1]);
-        }
-        $this->actingAs($this->browserUser());
-        $large = $this->get('/browse/'.$root.'?view=covers&size=l')->assertOk();
-        $large->assertSee('5 releases')->assertDontSee('Encoding 1')->assertSee('Mystery');
-        $xl = $this->get('/browse/'.$root.'?view=covers&size=xl')->assertOk();
-        $xl->assertSee('Metadata title')->assertSee('data-cover-release', false)->assertSee('View all 5 releases');
-        $this->assertSame(2, substr_count($xl->getContent(), 'data-cover-release='));
-        $this->assertSame(2, substr_count($xl->getContent(), 'data-row-action="download"'));
-        $this->assertSame(0, preg_match_all('/\sdata-cover-watch(?:=|\s|>)/', $large->getContent()));
-    }
-
-    public function test_legacy_cover_pages_redirect_to_the_shared_browser_with_filters_and_category_preserved(): void
-    {
-        $this->actingAs($this->browserUser());
-        foreach (['Audio' => ['audio', 3030]] as $legacy => [$root, $category]) {
-            $response = $this->get('/'.$legacy.'?t='.$category.'&title=Wanted&ob=title_asc&page=2&per=24')->assertRedirect();
-            $location = $response->headers->get('Location');
-            $this->assertSame('/browse/'.$root.'/'.$category, parse_url($location, PHP_URL_PATH));
-            parse_str(parse_url($location, PHP_URL_QUERY), $query);
-            $this->assertEquals(['page' => '2', 'per' => '24', 'q' => 'Wanted', 'sort' => 'title', 'view' => 'covers'], $query);
-            $this->get('/'.$legacy.'?t=9999')->assertNotFound();
-        }
-    }
-
-    public function test_legacy_cover_pages_reject_array_categories_without_a_server_error(): void
-    {
-        $this->actingAs($this->browserUser());
-        foreach (['Audio'] as $path) {
-            $this->get('/'.$path.'?t[]=2030')->assertNotFound();
-        }
-    }
-
-    private function createCoverCatalogSchema(string $entityTable): void
-    {
-        config(['search.default' => 'cover-test']);
-        $driver = Mockery::mock(SearchDriverInterface::class);
-        $driver->shouldReceive('isAvailable')->andReturn(false);
-        $driver->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false]);
-        app(SearchService::class)->extend('cover-test', static fn () => $driver);
-        $this->registerSqliteFunction('YEAR', static fn (?string $date): ?string => $date === null ? null : substr($date, 0, 4));
-        ProductionTables::fromAuthority()->create($entityTable);
-        $this->createGenresTable();
-        ProductionTables::fromAuthority()->create('release_nfos', ['releases_id']);
-        ProductionTables::fromAuthority()->create('dnzb_failures', ['release_id', 'failed']);
-    }
-
-    /**
-     * Insert title rows shared by several catalog tables, keeping the columns this table has.
-     *
-     * @param  array<string, mixed>  ...$rows
-     */
-    private function insertTitles(string $table, array ...$rows): void
-    {
-        $columns = array_flip(Schema::getColumnListing($table));
-        DB::table($table)->insert(array_map(static fn (array $row): array => array_intersect_key($row, $columns), $rows));
-    }
-
-    public function test_cards_share_the_dto_processing_decisions_and_exclude_empty_outstanding_claims(): void
+    public function test_the_table_shares_the_dto_processing_decisions(): void
     {
         $cases = [
             'Found NFO' => [1, 0, null, true], 'No NFO' => [0, 0, null, true],
@@ -969,55 +543,19 @@ final class ReleaseBrowserControllerTest extends TestCase
         foreach ($cases as $name => [$nfo, $password, $claim, $done]) {
             $this->release($name, ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim]);
         }
-        $table = $this->actingAs($this->browserUser())->get('/browse/audio?view=table')->assertOk();
+        $table = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
         foreach ($table->viewData('results') as $release) {
             $this->assertSame($cases[$release->row_data->name][3], $release->row_data->pp_done, $release->row_data->name);
         }
-        $cards = $this->get('/browse/audio?view=cards')->assertOk();
-        $this->assertEqualsCanonicalizing(['Found NFO', 'No NFO', 'Failed NFO', 'Skipped NFO'], $cards->viewData('results')->getCollection()->map(static fn ($release) => $release->row_data->name)->all());
-        $this->assertSame(4, $cards->viewData('results')->hiddenCount);
-    }
-
-    public function test_cards_count_and_filter_before_pagination_and_remember_the_view(): void
-    {
-        for ($index = 0; $index < 34; $index++) {
-            $this->release('Wanted '.$index, ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => $index < 29 ? 1 : -1]);
-        }
-        $this->release('Outside search', ['categories_id' => 3030, 'isrenamed' => 0]);
-        $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'audio', 'view' => 'cards', 'per' => 24])->assertOk();
-        $response = $this->get('/browse/audio?q=Wanted&page=2')->assertOk();
-        $this->assertSame(29, $response->viewData('results')->total());
-        $this->assertSame(5, $response->viewData('results')->hiddenCount);
-        $this->assertCount(5, $response->viewData('results')->items());
-        $response->assertSee('data-release-cards', false)->assertDontSee('Outside search')->assertSee('(5 not shown)');
-        $this->get('/browse/audio?q=Wanted&page=999')->assertRedirect('/browse/audio?q=Wanted&page=2');
-        $table = $this->get('/browse/audio?q=Wanted&view=table')->assertOk();
-        $this->assertSame(34, $table->viewData('results')->total());
     }
 
     public function test_cards_are_not_offered_for_all_other_group_or_poster_lists(): void
     {
         $this->actingAs($this->browserUser());
-        foreach (['/browse/all', '/browse/other', '/browse/audio?group=example', '/browse/audio?poster=example'] as $path) {
+        foreach (['/browse/all', '/browse/other', '/browse/all?group=example', '/browse/all?poster=example'] as $path) {
             $this->get($path.(str_contains($path, '?') ? '&' : '?').'view=cards')->assertOk()
                 ->assertSee('data-release-table', false)->assertDontSee('data-release-cards', false)
                 ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
         }
-    }
-
-    public function test_empty_cards_keep_both_pagers_and_show_the_hidden_count_and_clear_action(): void
-    {
-        $this->release('Wanted pending release', ['categories_id' => 3030, 'nfostatus' => -1]);
-        $response = $this->actingAs($this->browserUser())->get('/browse/audio?view=cards&q=Wanted')->assertOk();
-        $this->assertSame(0, $response->viewData('results')->total());
-        $this->assertSame(1, $response->viewData('results')->hiddenCount);
-        $response->assertSee('No releases match.')->assertSee('(1 not shown)')->assertSee('Clear filters');
-        $document = new \DOMDocument;
-        @$document->loadHTML($response->getContent());
-        $xpath = new \DOMXPath($document);
-        $this->assertSame(2, $xpath->query('//nav[@aria-label="Release pages"]')->length);
-        $this->assertSame(4, $xpath->query('//nav[@aria-label="Release pages"]//button[@disabled]')->length);
-        $this->assertSame(1, $xpath->query('//*[@data-browser-empty]//button')->length);
-        $this->get('/browse/audio?view=cards&q=Wanted&page=999')->assertRedirect('/browse/audio?view=cards&q=Wanted&page=1');
     }
 }

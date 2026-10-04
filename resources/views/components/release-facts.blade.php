@@ -57,7 +57,7 @@
             :data-audio-meta="$hasAudioPreview ? $audioPreviewMeta : null"
             :data-audio-title="$hasAudioPreview ? ($release->audio_preview_title ?? $loadedAudioTags?->track_name ?? $loadedAudioTags?->album ?? release_display_name($release)) : null"
             :data-audio-artist="$hasAudioPreview ? ($release->audio_preview_artist ?? $loadedAudioTags?->performer ?? $loadedAudioTags?->album_performer) : null"
-            :data-audio-artwork="$hasAudioPreview ? getReleaseCover($release) : null"
+            :data-audio-artwork="$hasAudioPreview && \App\Enums\BrowseRoot::fromCategoryId((int) ($release->categories_id ?? 0)) !== \App\Enums\BrowseRoot::Audio ? getReleaseCover($release) : null"
             :data-video-url="$hasVideoPreview ? route('preview.video', $release->guid) : null"
             :data-video-type="$hasVideoPreview ? $videoPreviewMime : null"
             :title="$hasAudioPreview ? 'Listen to audio preview' : ($hasVideoPreview ? 'Watch video preview' : 'View preview image')">{{ $hasAudioPreview ? 'Listen' : ($hasVideoPreview ? 'Clip' : 'Preview') }}</x-chip>

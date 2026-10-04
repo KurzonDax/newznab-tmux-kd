@@ -9,7 +9,6 @@ use App\Data\ReleaseRowData;
 use App\Models\Content;
 use App\Models\Release;
 use App\View\Composers\GlobalDataComposer;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Cache;
 use ReflectionProperty;
 use Tests\Support\Admin\InteractsWithAdminListPages;
@@ -72,7 +71,7 @@ class DetailsDocumentViewTest extends TestCase
         $html = view('details.index', ['release' => $release,
             'titleEntity' => new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
         ])->render();
-        $this->assertStringContainsString('href="'.route('movies.film', ['movieinfoId' => 21]).'"', $html);
+        $this->assertStringNotContainsString('href="'.route('movies.film', ['movieinfoId' => 21]).'"', $html);
         $this->assertStringNotContainsString('/title/movies/', $html);
 
         $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($html));
@@ -93,7 +92,7 @@ class DetailsDocumentViewTest extends TestCase
         }
         $this->assertSame(1, $xpath->query('//*[@data-details-header]//a[@href="#nfo"]')->length);
         $this->assertStringContainsString('No media info for this release.', $html);
-        $this->assertStringContainsString('Other releases of this title', $html);
+        $this->assertStringNotContainsString('Other releases of this title', $html);
         $dialogs = $xpath->query('//*[@data-modal-dialog]');
         $this->assertCount(8, $dialogs);
         $this->assertSame(1, $xpath->query('//*[@aria-labelledby="watchlist-modal-title"]')->length);
@@ -139,22 +138,6 @@ class DetailsDocumentViewTest extends TestCase
         $this->assertSameTabLink($html, url('/inside-help/'), 'The footer');
         $this->assertSameTabLink($html, route('browse.all', ['group' => 'alt.binaries.example']), 'The details page');
         $this->assertSameTabLink($html, route('browse.all', ['poster' => 'A Poster']), 'The details page');
-    }
-
-    public function test_anime_related_releases_paginate_when_no_title_overview_exists(): void
-    {
-        $related = (object) ['guid' => 'another-episode', 'searchname' => 'Anime.S01E02.1080p.WEB', 'related_label' => '1080p · WEB',
-            'completion' => 100, 'row_data' => (object) ['size' => '40.00 MB']];
-        $pages = new LengthAwarePaginator([$related], 101, 10, 1, [
-            'path' => route('details', 'current-episode'), 'pageName' => 'other_page',
-        ]);
-        $pages->fragment('other-releases');
-        $html = view('details.partials.related', ['entity' => new ReleaseEntityData('anime', '12', 'An Anime', null, null),
-            'otherReleases' => $pages, 'otherReleaseCount' => 101])->render();
-        $this->assertStringNotContainsString('href=""', $html);
-        $this->assertStringContainsString('other_page=2#other-releases', $html);
-        $this->assertStringContainsString('1080p · WEB', $html);
-        $this->assertStringContainsString('40.00 MB', $html);
     }
 
     public function test_nfo_modal_response_preserves_plain_text_and_release_identity(): void

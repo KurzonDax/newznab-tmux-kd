@@ -22,7 +22,6 @@ final readonly class ReleaseEntityData
         return match (true) {
             $this->root === 'tv' => route('tv.show', ['videosId' => $this->id]),
             $this->root === 'movies' => $this->filmId === null ? null : route('movies.film', ['movieinfoId' => $this->filmId]),
-            $this->root === 'audio' => route('title', ['root' => $this->root, 'id' => $this->id]),
             default => null,
         };
     }

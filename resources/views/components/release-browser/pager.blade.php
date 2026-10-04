@@ -4,14 +4,7 @@
     $pageNumbers = range(max(1, $current - 2), min($last, $current + 2));
 @endphp
 <nav class="release-browser-pager" aria-label="Release pages">
-    <span class="tabular-nums">Page {{ number_format($current) }} of {{ number_format($last) }} · {{ number_format($rows->total()) }} {{ $state->countUnit() }}
-        @if($state->view === 'cards')
-            · renamed and post-processed only
-            @if(($rows->hiddenCount ?? 0) > 0)
-                ({{ number_format($rows->hiddenCount) }} not shown)
-            @endif
-        @endif
-    </span>
+    <span class="tabular-nums">Page {{ number_format($current) }} of {{ number_format($last) }} · {{ number_format($rows->total()) }} releases</span>
     <div class="release-browser-segment" aria-label="Per page">
         <span>Per page</span>
         @foreach([24, 48, 100] as $perPage)

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
-use App\Data\ReleaseEntityData;
-use App\Data\TitleOverviewData;
 use App\Enums\BrowseRoot;
-use Illuminate\Support\Facades\DB;
 
 final class TitleMetadataLoader
 {
@@ -25,85 +22,6 @@ final class TitleMetadataLoader
         };
 
         return compact('table', 'key', 'releaseKey', 'art');
-    }
-
-    public function load(BrowseRoot $root, string $id): TitleOverviewData
-    {
-        $source = $this->source($root);
-        $record = DB::table($source['table'])->where($source['key'], $id)->first();
-        abort_if($record === null, 404);
-        $info = $root === BrowseRoot::Tv ? DB::table('tv_info')->where('videos_id', $id)->first() : null;
-        $genre = match (true) {
-            $root === BrowseRoot::Audio => DB::table('genres')->where('id', $record->genres_id ?? 0)->value('title'),
-            default => $record->genre ?? null,
-        };
-        $tracks = $root === BrowseRoot::Audio ? $this->tracks((string) ($record->tracks ?? '')) : [];
-        $date = collect([$record->year ?? null, $record->started ?? null, $record->releasedate ?? null, $record->publishdate ?? null])
-            ->first(static fn ($value): bool => trim((string) $value) !== '' && (int) $value > 0);
-        $year = substr((string) $date, 0, 4);
-        $metadata = match ($root) {
-            BrowseRoot::Tv => ['Network' => $info->publisher ?? null, 'First aired' => $record->started ?? null],
-            BrowseRoot::Audio => ['Artist' => $record->artist ?? null, 'Year' => $year, 'Label' => $record->publisher ?? null,
-                'Genre' => $genre, 'Tracks' => $tracks === [] ? ($record->tracks ?? null) : count($tracks)],
-            default => [],
-        };
-        $metadata = array_filter(array_map(static fn ($value): string => trim(strip_tags((string) $value)), $metadata),
-            static fn (string $value): bool => $value !== '' && $value !== '0' && ! str_starts_with($value, '0000-'));
-        $overview = match ($root) {
-            BrowseRoot::Tv => $info->summary ?? '',
-            default => '',
-        };
-
-        return new TitleOverviewData(
-            root: $root,
-            entity: new ReleaseEntityData($root->value, $id, (string) $record->title, $year === '' ? null : $year,
-                getImageAssetUrl($source['art'], $id)),
-            subtitle: $root === BrowseRoot::Audio ? (string) ($record->artist ?? '') : ($root === BrowseRoot::Tv ? '' : $year),
-            metadata: $metadata, links: $this->links($root, $id, $record),
-            overview: trim(html_entity_decode(strip_tags((string) $overview))), tracks: $tracks,
-        );
-    }
-
-    /** @return list<string> */
-    private function tracks(string $value): array
-    {
-        if (is_numeric(trim($value))) {
-            return [];
-        }
-        $text = html_entity_decode(strip_tags(preg_replace('/<br\s*\/?\s*>/i', "\n", $value) ?? $value));
-
-        return array_values(array_filter(array_map(static fn (string $track): string => trim(preg_replace('/^\s*\d+[.)]\s*/', '', $track) ?? $track),
-            preg_split('/[\r\n|]+/', $text) ?: [])));
-    }
-
-    /** @return array<string, string> */
-    private function links(BrowseRoot $root, string $id, object $record): array
-    {
-        $links = [];
-        $identities = match ($root) {
-            BrowseRoot::Tv => ['TVDB' => [$record->tvdb ?? null, 'https://thetvdb.com/?tab=series&id='],
-                'TVMaze' => [$record->tvmaze ?? null, 'https://www.tvmaze.com/shows/'], 'Trakt' => [$record->trakt ?? null, 'https://trakt.tv/shows/'],
-                'IMDb' => [$record->imdb ?? null, 'https://www.imdb.com/title/tt', true], 'TMDB' => [$record->tmdb ?? null, 'https://www.themoviedb.org/tv/']],
-            default => [],
-        };
-        foreach ($identities as $label => $identity) {
-            $value = preg_replace('/^tt/', '', (string) $identity[0]) ?? '';
-            if (ctype_digit($value) && (int) $value > 0) {
-                $links[$label] = $identity[1].(($identity[2] ?? false) ? str_pad($value, 7, '0', STR_PAD_LEFT) : $value);
-            }
-        }
-        if (($url = $this->webUrl((string) ($record->url ?? ''))) !== null) {
-            $host = (string) parse_url($url, PHP_URL_HOST);
-            $label = match (true) {
-                str_ends_with($host, 'musicbrainz.org') => 'MusicBrainz', str_ends_with($host, 'apple.com') => 'iTunes',
-                str_ends_with($host, 'goodreads.com') => 'Goodreads', str_ends_with($host, 'isbndb.com') => 'ISBNdb',
-                str_ends_with($host, 'igdb.com') => 'IGDB', str_ends_with($host, 'steampowered.com') => 'Steam',
-                str_ends_with($host, 'deezer.com') => 'Deezer', default => 'Website',
-            };
-            $links[$label] = $url;
-        }
-
-        return $links;
     }
 
     public function trailerUrl(string $trailer): ?string

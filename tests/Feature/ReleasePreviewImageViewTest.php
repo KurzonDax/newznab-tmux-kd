@@ -49,7 +49,7 @@ class ReleasePreviewImageViewTest extends TestCase
         $this->assertStringContainsString('data-audio-meta="30s · MP3 · stream copy"', $html);
         $this->assertStringContainsString('data-audio-title="Opening Track"', $html);
         $this->assertStringContainsString('data-audio-artist="Example Artist"', $html);
-        $this->assertStringContainsString('data-audio-artwork="'.e(getReleaseCover((object) ['musicinfo_id' => 42])).'"', $html);
+        $this->assertStringNotContainsString('data-audio-artwork', $html);
         $this->assertStringContainsString('/covers/audiosample/audio-guid_spectrum.png', $html);
         $this->assertStringContainsString('data-image-title="Audio Preview"', $html);
         $this->assertStringContainsString('fas fa-headphones', $html);

@@ -30,7 +30,7 @@ final class MovieFilmPage
 
     public const ROLE_CAST = 1;
 
-    /** Outside links as today's title page builds them (TitleMetadataLoader): label => URL prefix. */
+    /** Outside links for a film: label => URL prefix. */
     private const LINKS = ['IMDb' => 'https://www.imdb.com/title/tt', 'TMDB' => 'https://www.themoviedb.org/movie/', 'Trakt' => 'https://trakt.tv/movies/'];
 
     public function __construct(private readonly ReleaseBrowseService $releases) {}

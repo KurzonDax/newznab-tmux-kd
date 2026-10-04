@@ -18,15 +18,12 @@ use App\Models\ReleaseRegex;
 use App\Models\Settings;
 use App\Models\Video;
 use App\Services\AnidbService;
-use App\Services\BookService;
 use App\Services\MovieService;
-use App\Services\MusicService;
 use App\Services\PopulateAniListService;
 use App\Services\Releases\AdultReleaseDetails;
 use App\Services\Releases\AudioReleaseDetails;
 use App\Services\Releases\ConsoleGameReleaseDetails;
 use App\Services\Releases\MovieReleaseDetails;
-use App\Services\Releases\RelatedReleaseBrowser;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseReportPresentation;
 use App\Services\Releases\ReleaseSearchService;
@@ -122,16 +119,6 @@ class DetailsController extends BasePageController
             }
         }
 
-        $mus = '';
-        if ((int) $data['musicinfo_id'] > 0) {
-            $mus = (new MusicService)->getMusicInfo($data['musicinfo_id']);
-        }
-
-        $book = '';
-        if ((int) $data['bookinfo_id'] > 0) {
-            $book = (new BookService)->getBookInfo($data['bookinfo_id']);
-        }
-
         $AniDBAPIArray = '';
         if ($data['anidbid'] > 0) {
             $AniDBAPIArray = (new AnidbService)->getAnimeInfo($data['anidbid']);
@@ -171,7 +158,7 @@ class DetailsController extends BasePageController
 
         $this->releaseBrowseService->loadReleaseRows([$data]);
 
-        $this->viewData = array_merge($this->viewData, app(RelatedReleaseBrowser::class)->forRelease($data, $this->userdata), [
+        $this->viewData = array_merge($this->viewData, [
             'release' => $data,
             'show' => $showInfo,
             'movie' => $mov,
@@ -179,8 +166,6 @@ class DetailsController extends BasePageController
             'anidb' => $AniDBAPIArray,
             'anidbCountryModel' => $anidbCountryModel,
             'anidbCountryName' => $anidbCountryName,
-            'music' => $mus,
-            'book' => $book,
             'predb' => $pre,
             'comments' => $comments,
             'searchname' => getSimilarName($data['searchname']),

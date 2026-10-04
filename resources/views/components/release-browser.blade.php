@@ -1,4 +1,4 @@
-@props(['rows', 'state', 'toolbar' => true, 'pager' => true, 'filterOptions' => [], 'sortOptions' => ['newest' => 'Newest release', 'title' => 'Title A–Z'], 'emptyTitle' => 'No releases match.', 'emptyIcon' => null, 'emptyMessage' => null, 'clearUrl' => null])
+@props(['rows', 'state', 'toolbar' => true, 'pager' => true, 'sortOptions' => ['newest' => 'Newest release', 'title' => 'Title A–Z'], 'emptyTitle' => 'No releases match.', 'emptyIcon' => null, 'emptyMessage' => null, 'clearUrl' => null])
 
 <section {{ $attributes->class(['release-browser card']) }} x-data="releaseBrowser"
          data-basket-only="{{ $state->basketOnly ? '1' : '0' }}" data-root="{{ $state->root->value }}" data-per="{{ $state->per }}"
@@ -8,20 +8,10 @@
     @endif
     {{ $beforePager ?? '' }}
     @if($pager)
-        @if($state->hasLetters())
-            <nav class="release-cover-letters" aria-label="Jump by initial">
-                @foreach(['#', ...range('A', 'Z')] as $letter)
-                    <button type="button" data-letter="{{ $letter }}" aria-pressed="{{ $state->letter === $letter ? 'true' : 'false' }}" @click="jumpLetter">{{ $letter }}</button>
-                @endforeach
-                <span class="text-muted ml-auto">Jump by initial · sorts by title</span>
-            </nav>
-        @endif
         @include('components.release-browser.pager')
     @endif
     {{ $heading ?? '' }}
-    @if($state->view === 'covers')
-        @include('components.release-browser.covers')
-    @elseif($state->view === 'cards')
+    @if($state->view === 'cards')
         <div class="release-browser-cards" data-release-cards role="list">
             @foreach($rows as $release)
                 @include('components.release-browser.card', ['row' => $release->row_data])

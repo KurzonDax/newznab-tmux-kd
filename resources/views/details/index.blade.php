@@ -3,14 +3,12 @@
 @section('content')
 @php
     $row = $release->row_data;
-    $entity = $row->entity;
     $root = \App\Enums\BrowseRoot::fromCategoryId((int) $release->categories_id);
     $commentCount = isset($comments) ? $comments->total() : $row->comments;
 @endphp
 <div class="release-detail-page" x-data="releaseDetails" x-on:click="retryTab" x-on:error.capture="artworkFailed" data-guid="{{ $row->guid }}" data-release-id="{{ $row->id }}">
     <nav class="title-breadcrumb" aria-label="Breadcrumb">
         <a href="{{ url('/browse/'.$root->value) }}">{{ $root->label() }}</a><span aria-hidden="true">›</span>
-        @if($entity?->titleUrl())<a href="{{ $entity->titleUrl() }}">{{ $entity->title }}</a><span aria-hidden="true">›</span>@endif
         <span>{{ $release->sub_category ?? $row->category }}</span>
     </nav>
     @include('details.partials.header')
@@ -26,8 +24,6 @@
                 @include('details.partials.audio-preview')
                 @include('details.partials.movie-info')
                 @include('details.partials.tv-info')
-                @include('details.partials.music-info')
-                @include('details.partials.book-info')
                 @include('details.partials.anime-info')
                 @include('details.partials.predb-info')
                 @include('details.partials.password-info')

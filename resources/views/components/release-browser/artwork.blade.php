@@ -5,6 +5,9 @@
         $artwork = ($release->haspreview == 1 ? getImageAssetUrl('preview', $row->guid.'_thumb', null) : null)
             ?? ($release->jpgstatus == 1 ? getImageAssetUrl('sample', $row->guid.'_thumb', null) : null);
     }
+    if ($releaseRoot === \App\Enums\BrowseRoot::Audio) {
+        $artwork = null;
+    }
     if ($artwork && str_ends_with($artwork, '/no-cover.png')) {
         $artwork = null;
     }
