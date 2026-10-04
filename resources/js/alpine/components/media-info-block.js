@@ -170,21 +170,35 @@ function videoSection(stream, number, count, resolution) {
         facts.map(([name, value]) => '<div><dt>' + name + '</dt><dd>' + value + '</dd></div>').join('') + '</dl>';
 }
 
-function audioSection(tracks) {
-    const withTitle = tracks.some(track => hasValue(track.title) && track.title !== track.language_name);
+/** An Audio release's title cell: the stream's title, else the track title tag for a lone stream, else a dash. */
+function audioTitle(track, trackCount, tagTitle) {
+    if (hasValue(track.title)) return track.title;
+    return trackCount === 1 && hasValue(tagTitle) ? tagTitle : '—';
+}
+
+/**
+ * The audio table. An Audio release (`inAudioBand`) leads with each stream's title, else the file's
+ * track title tag when there is exactly one stream, else a dash (audio-redesign SPEC.md 5C.3);
+ * every other release leads with the language and puts the stream's title under it.
+ */
+function audioSection(tracks, inAudioBand = false, tagTitle = null) {
+    const withTitle = !inAudioBand && tracks.some(track => hasValue(track.title) && track.title !== track.language_name);
     const withRate = tracks.some(track => hasValue(bitRate(track.bitrate_bps, track.bitrate_display)));
     const rows = tracks.map((track, index) => {
         const title = withTitle && hasValue(track.title) && track.title !== track.language_name ? '<span class="mi-sub">' + escapeHtml(track.title) + '</span>' : '';
         const name = audioName(track);
         const format = (name ? '<span class="mi-chips">' + escapeHtml(name) + (track.atmos ? hue('Atmos', 'atmos') : '') + '</span>' : '') +
             (hasValue(track.format) && track.format !== name ? '<span class="mi-sub">' + escapeHtml(track.format) + '</span>' : '');
-        return '<tr><td class="mi-n"' + part('media info table cell') + '>' + (index + 1) + '</td><td class="mi-lead">' + escapeHtml(track.language_name || 'Not stated') + title + '</td><td>' + format +
+        const lead = inAudioBand
+            ? escapeHtml(audioTitle(track, tracks.length, tagTitle))
+            : escapeHtml(track.language_name || 'Not stated') + title;
+        return '<tr><td class="mi-n"' + part('media info table cell') + '>' + (index + 1) + '</td><td class="mi-lead">' + lead + '</td><td>' + format +
             '</td><td>' + channelChip(track) + '</td>' + (withRate ? '<td class="mi-num">' + escapeHtml(bitRate(track.bitrate_bps, track.bitrate_display) || '') + '</td>' : '') +
             '<td class="mi-num">' + escapeHtml(sampleRate(track)) + '</td></tr>';
     }).join('');
 
     return '<h3>' + sectionChip('Audio') + '<small>' + plural(tracks.length, 'track') + '</small></h3><table class="mi-table mi-table-audio"><thead><tr><th class="mi-n"' + part('media info table header') + '>#</th>' +
-        '<th class="mi-col-language">Language</th><th>Format</th><th class="mi-col-channels">Channels</th>' + (withRate ? '<th class="mi-num mi-col-rate">Bit rate</th>' : '') +
+        (inAudioBand ? '<th class="mi-col-title">Title</th>' : '<th class="mi-col-language">Language</th>') + '<th>Format</th><th class="mi-col-channels">Channels</th>' + (withRate ? '<th class="mi-num mi-col-rate">Bit rate</th>' : '') +
         '<th class="mi-num mi-col-rate">Sample rate</th></tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -237,7 +251,7 @@ export function renderMediaInfo(media, resolution = null) {
     let html = '<div class="mi-block">' + glance(block, resolution);
     html += musicSection(media.music_tags);
     streams.video.forEach((stream, index) => { html += videoSection(stream, index + 1, streams.video.length, resolution); });
-    if (streams.audio.length) html += audioSection(streams.audio);
+    if (streams.audio.length) html += audioSection(streams.audio, media.in_audio_band === true, media.music_tags?.track_title);
     if (streams.subtitle.length) html += subtitleSection(streams.subtitle);
     return html + '</div>';
 }

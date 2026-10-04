@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\MediaInfo;
 
+use App\Enums\BrowseRoot;
 use App\Enums\ReleaseResolution;
 use App\Models\AudioData;
 use App\Models\MediaInfo;
@@ -21,7 +22,8 @@ final class MediaInfoPresentationService
 
     /**
      * The media info block's data: the stored streams plus their plain names (MediaInfoNames),
-     * and the release's own resolution (null when unknown or not loaded).
+     * the release's own resolution (null when unknown or not loaded), and whether the release is in
+     * the Audio band, which leads the audio table with Title instead of Language.
      *
      * @return array{release_name: string, resolution: string|null, media: array<string, mixed>|null}
      */
@@ -34,6 +36,7 @@ final class MediaInfoPresentationService
             : $this->snapshotMedia($snapshot->container, $snapshot->streams);
         if ($media !== null) {
             $media['streams'] = $this->named($media['streams']);
+            $media['in_audio_band'] = BrowseRoot::fromCategoryId((int) $release->getAttribute('categories_id')) === BrowseRoot::Audio;
         }
         $resolution = ReleaseResolution::tryFrom((int) $release->getAttribute('resolution')) ?? ReleaseResolution::Unknown;
 
