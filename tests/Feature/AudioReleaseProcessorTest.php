@@ -23,6 +23,7 @@ use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\AudioDecodableLengthProbe;
 use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\AudioProcessing\AudioFetcher;
+use App\Services\AudioProcessing\AudioGenres;
 use App\Services\AudioProcessing\AudioPreviewEncoder;
 use App\Services\AudioProcessing\AudioProcessingConfiguration;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
@@ -60,6 +61,7 @@ use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use ReflectionProperty;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class AudioReleaseProcessorTest extends TestCase
@@ -183,6 +185,8 @@ class AudioReleaseProcessorTest extends TestCase
         $evidenceMigrations = glob(database_path('migrations/*_create_release_audio_evidence_tables.php')) ?: [];
         $this->assertCount(1, $evidenceMigrations);
         (require $evidenceMigrations[0])->up();
+        ProductionTables::fromAuthority()->create('audio_genres');
+        ProductionTables::fromAuthority()->create('release_audio_genres');
 
         // The search driver is unreachable in tests and the refinement/rename
         // paths sync through it; swap it out rather than log a page of failures.
@@ -860,6 +864,75 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
+    public function test_tag_genres_are_stored_one_row_per_genre_beside_the_raw_value(): void
+    {
+        ProductionTables::fromAuthority()->create('genres');
+        DB::table('genres')->insert(['id' => 5, 'title' => 'Rock', 'type' => Category::MUSIC_ROOT, 'disabled' => 0]);
+        $release = $this->makeRelease();
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Rock; Pop; rock; Unknown');
+
+        $this->makeProcessor($container)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame('Rock; Pop; rock; Unknown', ReleaseAudioTag::query()->where('releases_id', $release->id)->value('genre'));
+        $this->assertSame([[0, 'Rock'], [1, 'Pop']], $this->storedGenres((int) $release->id));
+        $this->assertSame([[5, 'Rock']], DB::table('genres')->get(['id', 'title'])
+            ->map(static fn (object $row): array => [(int) $row->id, $row->title])->all());
+
+        // The preview was written after the genres, and clearing it leaves them alone.
+        $this->assertSame(1, (int) ReleaseAudioTag::query()->where('releases_id', $release->id)->value('has_preview'));
+        ReleaseAudioTag::clearPreviews([(int) $release->id]);
+        $this->assertSame([[0, 'Rock'], [1, 'Pop']], $this->storedGenres((int) $release->id));
+    }
+
+    public function test_reprocessing_a_release_replaces_its_genre_rows(): void
+    {
+        $release = $this->makeRelease();
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Rock; Pop');
+        $this->makeProcessor($container)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Jazz');
+        $this->makeProcessor($container)->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->assertSame([[0, 'Jazz']], $this->storedGenres((int) $release->id));
+
+        $this->makeProcessor($this->taggedContainer())->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->assertSame([], $this->storedGenres((int) $release->id));
+        $this->assertNull(ReleaseAudioTag::query()->where('releases_id', $release->id)->value('genre'));
+    }
+
+    public function test_a_failed_genre_write_leaves_no_tag_values_and_no_genre_rows(): void
+    {
+        $release = $this->makeRelease();
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Rock');
+        $repeating = new class extends AudioGenres
+        {
+            public function ids(array $names): array
+            {
+                return [1, 1];
+            }
+        };
+
+        $this->makeProcessor($container, expectsExtraXml: false, audioGenres: $repeating)
+            ->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertDatabaseMissing('release_audio_tags', ['album' => 'Test Album']);
+        $this->assertSame(0, DB::table('release_audio_genres')->where('releases_id', $release->id)->count());
+    }
+
+    /**
+     * @return list<array{int, string}>
+     */
+    private function storedGenres(int $releaseId): array
+    {
+        return DB::table('release_audio_genres')
+            ->join('audio_genres', 'audio_genres.id', '=', 'release_audio_genres.audio_genres_id')
+            ->where('releases_id', $releaseId)->orderBy('position')->get(['position', 'name'])
+            ->map(static fn (object $row): array => [(int) $row->position, (string) $row->name])->all();
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -895,6 +968,7 @@ class AudioReleaseProcessorTest extends TestCase
         ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
         ?MediaInfoContainer $completeContainer = null,
         bool $completeProbeThrows = false,
+        ?AudioGenres $audioGenres = null,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -1003,6 +1077,7 @@ class AudioReleaseProcessorTest extends TestCase
             $previewPolicy,
             new AudioEvidenceRecorder,
             $mediaInfoSnapshots,
+            $audioGenres ?? new AudioGenres,
         );
     }
 

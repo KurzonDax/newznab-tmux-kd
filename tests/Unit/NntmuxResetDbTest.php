@@ -43,6 +43,7 @@ final class NntmuxResetDbTest extends TestCase
             'release_subtitles',
             'release_tv_episodes',
             'release_audio_languages',
+            'release_audio_genres',
             'video_data',
             'media_infos',
             'releases',

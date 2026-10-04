@@ -70,6 +70,16 @@ CREATE TABLE `audio_data` (
   CONSTRAINT `FK_ad_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `audio_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `audio_genres` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag writes it',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_audio_genres_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `binaries`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -2574,6 +2584,19 @@ CREATE TABLE `release_audio_evidence_tracks` (
   CONSTRAINT `release_audio_evidence_tracks_release_audio_evidence_id_foreign` FOREIGN KEY (`release_audio_evidence_id`) REFERENCES `release_audio_evidence` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `release_audio_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `release_audio_genres` (
+  `releases_id` int(10) unsigned NOT NULL,
+  `audio_genres_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the tag value',
+  PRIMARY KEY (`audio_genres_id`,`releases_id`),
+  KEY `ix_release_audio_genres_release` (`releases_id`,`position`),
+  CONSTRAINT `fk_release_audio_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_release_audio_genres_releases_id` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_audio_languages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -2620,6 +2643,7 @@ CREATE TABLE `release_audio_tags` (
   UNIQUE KEY `release_audio_tags_releases_id_unique` (`releases_id`),
   KEY `release_audio_tags_album_index` (`album`),
   KEY `release_audio_tags_musicbrainz_album_id_index` (`musicbrainz_album_id`),
+  KEY `ix_release_audio_tags_recorded_year` (`recorded_year`,`releases_id`),
   CONSTRAINT `release_audio_tags_releases_id_foreign` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -4175,3 +4199,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (308,'2026_10_01_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (309,'2026_10_01_000300_add_releases_consoleinfo_cat_index',21);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (310,'2026_10_02_000000_create_usenet_group_provider_cursors',22);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (311,'2026_10_02_000100_create_nntp_listing_coverage',22);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (312,'2026_10_04_000000_add_release_audio_genres',23);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (313,'2026_10_04_000100_fill_release_audio_genres',23);
