@@ -106,6 +106,20 @@ test("the TV screens' dialog renders the redesigned block", () => {
   assert.match(component._buildHtml({ container: {}, streams: { video: [], audio: [], subtitle: [] } }, null), /class="mi-block"/);
 });
 
+test("the TV screens' dialog leads an Audio release's audio table with Title", () => {
+  const component = mediainfoModal();
+  component.$el = { hasAttribute: (name) => name === "data-media-info-block", querySelector: () => null };
+  component.$watch = () => {};
+  globalThis.document = { addEventListener() {}, removeEventListener() {} };
+  globalThis.window = globalThis.window || {};
+  component.init();
+  const html = component._buildHtml({ in_audio_band: true, container: {}, music_tags: { track_title: "After the Rain" }, streams: { video: [], audio: [{ format: "FLAC", format_name: "FLAC", language_name: "English" }], subtitle: [] } }, null);
+
+  assert.match(html, /<th class="mi-col-title">Title<\/th>/);
+  assert.match(html, /<td class="mi-lead">After the Rain<\/td>/);
+  assert.doesNotMatch(html, /mi-col-language/);
+});
+
 test("rapid switching ignores a late response and updates heading with the matching release", async () => {
   const pending = [];
   globalThis.fetch = (url) =>

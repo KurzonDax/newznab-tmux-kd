@@ -110,6 +110,16 @@ test('media info and the NFO load once, with the shared renderer and as monospac
     assert.match(contents.nfo.innerHTML, /^<pre class="tv-nfo">/);
 });
 
+test('the Media info tab of an Audio release leads its audio table with the stream title', async () => {
+    const media = { in_audio_band: true, container: { format: 'FLAC' }, music_tags: { track_title: 'Tag title' }, streams: { video: [], audio: [{ title: 'Night Drive', language_name: 'English', format: 'FLAC', format_name: 'FLAC', channels_name: 'Stereo' }], subtitle: [] } };
+    browser({ responses: { '/release/42/mediainfo': { media, resolution: null } } });
+    const { component, contents } = detailsPage();
+    await component.selectTab('media', true);
+    assert.match(contents.media.innerHTML, /<th class="mi-col-title">Title<\/th>/);
+    assert.match(contents.media.innerHTML, /<td class="mi-lead">Night Drive<\/td>/);
+    assert.doesNotMatch(contents.media.innerHTML, /mi-col-language/);
+});
+
 test('a release without media info or NFO asks for neither; a failed load can be retried', async () => {
     const { requests } = browser();
     const { component, contents } = detailsPage({ media: '0', nfo: '0' });

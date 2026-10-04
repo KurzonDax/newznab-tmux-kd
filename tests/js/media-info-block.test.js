@@ -120,3 +120,71 @@ test("the Bit rate and Sample rate headings are right-aligned over their numbers
   assert.match(css, /\.mi-block \.mi-table th\.mi-num \{ padding-right: 0; text-align: right; \}/);
   assert.match(css, /\.mi-block \.mi-table th \{[^}]*text-align: left;/, "other headings stay left-aligned");
 });
+
+/** An Audio release's payload (media.in_audio_band) with the given audio streams and music tags. */
+function audioRelease(audio, musicTags = null, subtitle = []) {
+  return { container: { format: "FLAC" }, music_tags: musicTags, in_audio_band: true, streams: { video: [], audio, subtitle } };
+}
+
+const flac = { type: "audio", format: "FLAC", format_name: "FLAC", format_short: "FLAC", atmos: false, channels: 2, channels_name: "Stereo", sample_rate_hz: 44100 };
+
+function table(html, kind) {
+  return (html.match(new RegExp('<table class="mi-table mi-table-' + kind + '">.*?</table>')) || [""])[0];
+}
+
+function headings(html) {
+  return [...html.matchAll(/<th(?:\s[^>]*)?>(.*?)<\/th>/g)].map((match) => match[1]);
+}
+
+function leadCells(html) {
+  return [...html.matchAll(/<td class="mi-lead">(.*?)<\/td>/g)].map((match) => match[1]);
+}
+
+test("an Audio release's audio table leads with the stream's title instead of its language", () => {
+  const audio = table(renderMediaInfo(audioRelease([{ ...flac, index: 0, title: "Stream <b>title</b>", language_name: "English" }], { track_title: "Tag title" })), "audio");
+
+  assert.deepEqual(headings(audio), ["#", "Title", "Format", "Channels", "Sample rate"]);
+  assert.match(audio, /<th class="mi-col-title">Title<\/th>/);
+  assert.deepEqual(leadCells(audio), ["Stream &lt;b&gt;title&lt;/b&gt;"]);
+  assert.doesNotMatch(audio, /Language|Not stated|English/);
+});
+
+test("an untitled single stream on an Audio release reads the file's track title tag", () => {
+  const audio = table(renderMediaInfo(audioRelease([{ ...flac, index: 0 }], { track_title: "After the Rain" })), "audio");
+
+  assert.deepEqual(leadCells(audio), ["After the Rain"]);
+});
+
+test("untitled streams on an Audio release with more than one stream read a dash, not the tag", () => {
+  const audio = table(renderMediaInfo(audioRelease([{ ...flac, index: 0 }, { ...flac, index: 1 }], { track_title: "After the Rain" })), "audio");
+
+  assert.deepEqual(leadCells(audio), ["—", "—"]);
+});
+
+test("an untitled single stream on an Audio release without music tags reads a dash", () => {
+  const audio = table(renderMediaInfo(audioRelease([{ ...flac, index: 0 }])), "audio");
+
+  assert.deepEqual(leadCells(audio), ["—"]);
+});
+
+test("an Audio release's subtitles table keeps Language", () => {
+  const html = renderMediaInfo(audioRelease([{ ...flac, index: 0 }], null, [{ type: "subtitle", index: 0, language_name: "English", format_name: "SRT" }]));
+
+  assert.ok(headings(table(html, "subtitles")).includes("Language"));
+  assert.ok(!headings(table(html, "audio")).includes("Language"));
+});
+
+test("every other release keeps Language with the stream's title under it", () => {
+  const other = { ...media, in_audio_band: false, streams: { ...media.streams, audio: [media.streams.audio[0], { ...media.streams.audio[1], title: "Commentary" }] } };
+  const audio = table(renderMediaInfo(other, "4K"), "audio");
+
+  assert.match(audio, /mi-col-language">Language</);
+  assert.match(audio, /&lt;i&gt;Korean&lt;\/i&gt;<span class="mi-sub">Commentary<\/span>/);
+  assert.ok(!headings(audio).includes("Title"));
+});
+
+test("the Title heading is as wide as the Language heading", () => {
+  const css = readFileSync(new URL("../../resources/css/media-info.css", import.meta.url), "utf8");
+
+  assert.match(css, /\.mi-col-language, \.mi-col-title \{ width: 24%; \}/);
+});
