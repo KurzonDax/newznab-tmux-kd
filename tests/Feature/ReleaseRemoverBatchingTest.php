@@ -20,7 +20,6 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Psr\Log\LoggerInterface;
 use Tests\Support\IsolatedSqliteDatabase;
-use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ReleaseRemoverBatchingTest extends TestCase
@@ -47,6 +46,7 @@ class ReleaseRemoverBatchingTest extends TestCase
 
         config()->set('nntmux.echocli', false);
 
+        Schema::dropIfExists('kept_releases');
         Schema::dropIfExists('release_files');
         Schema::dropIfExists('releases');
         Schema::dropIfExists('binaryblacklist');
@@ -171,7 +171,7 @@ class ReleaseRemoverBatchingTest extends TestCase
 
     public function test_a_kept_release_survives_remove_crap_with_a_blacklist_rule_matching_its_poster(): void
     {
-        ProductionTables::fromAuthority()->create('kept_releases');
+        (require database_path('migrations/2026_10_05_000000_create_kept_releases.php'))->up();
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
         DB::table('binaryblacklist')->insert([
             'groupname' => 'alt.binaries.*',
@@ -198,7 +198,7 @@ class ReleaseRemoverBatchingTest extends TestCase
 
     public function test_the_deletion_recheck_skips_kept_releases_unless_they_are_explicitly_included(): void
     {
-        ProductionTables::fromAuthority()->create('kept_releases');
+        (require database_path('migrations/2026_10_05_000000_create_kept_releases.php'))->up();
         DB::table('releases')->insert([$this->releaseRow(1), $this->releaseRow(2)]);
         KeptReleases::mark(1);
         $selected = DB::table('releases')->orderBy('id')->get(['id', 'guid']);

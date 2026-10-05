@@ -52,7 +52,7 @@ class Par2SidecarMariaDbTest extends Par2SidecarWorkflowTest
 
     private function dropFixtureTables(): void
     {
-        foreach (['par2_sidecar_inventories', 'par2_file_descriptors', 'payload_prefix_hashes', 'par2_sidecar_operations',
+        foreach (['kept_releases', 'par2_sidecar_inventories', 'par2_file_descriptors', 'payload_prefix_hashes', 'par2_sidecar_operations',
             'release_files', 'par_hashes', 'predb', 'releases', 'usenet_groups', 'categories', 'root_categories', 'settings'] as $table) {
             Schema::dropIfExists($table);
         }

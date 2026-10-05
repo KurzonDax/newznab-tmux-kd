@@ -47,7 +47,6 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
-use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\Par2Fixture;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
@@ -300,7 +299,7 @@ class Par2SidecarWorkflowTest extends TestCase
     {
         Search::spy();
         Event::fake([ReleaseNameFixed::class]);
-        ProductionTables::fromAuthority()->create('kept_releases');
+        (require database_path('migrations/2026_10_05_000000_create_kept_releases.php'))->up();
         $this->seedPostingPair();
         KeptReleases::mark(2);
 
@@ -315,7 +314,7 @@ class Par2SidecarWorkflowTest extends TestCase
     {
         Search::spy();
         Event::fake([ReleaseNameFixed::class]);
-        ProductionTables::fromAuthority()->create('kept_releases');
+        (require database_path('migrations/2026_10_05_000000_create_kept_releases.php'))->up();
         $this->seedPostingPair();
         KeptReleases::mark(1);
 
@@ -330,7 +329,7 @@ class Par2SidecarWorkflowTest extends TestCase
     {
         Search::spy();
         Event::fake([ReleaseNameFixed::class]);
-        ProductionTables::fromAuthority()->create('kept_releases');
+        (require database_path('migrations/2026_10_05_000000_create_kept_releases.php'))->up();
         $this->seedPostingPair();
         $combiner = app(InterruptingSidecarCombiner::class);
         $combiner->onPhase = static function (string $phase): void {
