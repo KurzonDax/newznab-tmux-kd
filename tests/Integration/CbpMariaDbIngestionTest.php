@@ -946,6 +946,34 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame(1, (int) $collections[13]->totalfiles);
     }
 
+    public function test_a_late_collection_is_promoted_after_fifteen_quiet_minutes(): void
+    {
+        DB::statement('DROP TABLE IF EXISTS releases');
+        DB::statement('CREATE TABLE releases (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, collectionhash BINARY(20) NULL,
+            UNIQUE KEY ux_releases_collectionhash (collectionhash)) ENGINE=InnoDB');
+        try {
+            $frontier = '2026-09-02 12:00:00';
+            DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => $frontier]);
+            $this->insertCollectionTree(20, now()->subHours(3), now()->subMinutes(16), 0);
+            $this->insertCollectionTree(21, now()->subHours(3), now()->subMinutes(14), 0);
+            $this->insertCollectionTree(22, now()->subHours(3), now()->subMinutes(16), 0);
+            DB::table('collections')->whereIn('id', [20, 21, 22])->update(['last_seen_head_postdate' => $frontier]);
+            foreach ([20, 21] as $late) {
+                DB::table('releases')->insert(['collectionhash' => DB::table('collections')->where('id', $late)->value('collectionhash')]);
+            }
+
+            app(ReleaseProcessingService::class)->setEchoCLI(false)->processIncompleteCollections(1);
+
+            $collections = DB::table('collections')->whereIn('id', [20, 21, 22])->get()->keyBy('id');
+            $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collections[20]->filecheck);
+            $this->assertSame(1, (int) $collections[20]->totalfiles);
+            $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collections[21]->filecheck);
+            $this->assertSame(CollectionFileCheckStatus::Default->value, (int) $collections[22]->filecheck);
+        } finally {
+            DB::statement('DROP TABLE IF EXISTS releases');
+        }
+    }
+
     private function insertCollectionTree(
         int $id,
         \DateTimeInterface $dateAdded,

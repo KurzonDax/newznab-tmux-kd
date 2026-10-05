@@ -207,6 +207,8 @@ The per-group sequence:
    complete. After every contributing ingestion frontier has moved
    `delaytime` hours of posting time beyond the last part, collections are
    *force-completed* with whatever files they hold (see Collection clocks).
+   A late collection, whose `collectionhash` already has a release, is
+   force-completed 15 minutes after its last stored header instead.
 2. **`processCollectionSizes()`** — promotes `2 → 3` (sizes were already
    aggregated in step 1).
 3. **`deleteUnwantedCollections()`** — drops sized collections that fail
@@ -432,6 +434,12 @@ inside the scanned range. Promotion and stuck deletion share one quiet
 predicate with thresholds `delaytime` and `collection_timeout`: every
 stamped direction must have moved that many posting hours away from its
 stamp. Collections with a real complete file count can form immediately.
+Formation makes one exception: a late collection, whose `collectionhash`
+already has a release, is ready once no header has been stored into it for
+15 minutes by wall clock (`last_seen_at`). The frontier wait keeps a new
+post from forming before its last part; a late collection's release
+already exists, and every header it receives would restart that wait.
+Stuck deletion and split-posting reconciliation keep the shared predicate.
 
 An active frontier that stops moving freezes its collections indefinitely.
 Operators can hand a direction back to wall-clock silence by disabling
