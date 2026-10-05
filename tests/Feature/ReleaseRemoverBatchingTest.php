@@ -11,6 +11,7 @@ use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRemoverService;
+use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Psr\Log\LoggerInterface;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ReleaseRemoverBatchingTest extends TestCase
@@ -165,6 +167,54 @@ class ReleaseRemoverBatchingTest extends TestCase
         );
 
         self::assertTrue($service->removeCrap(true, 'full', 'blacklist'));
+    }
+
+    public function test_a_kept_release_survives_remove_crap_with_a_blacklist_rule_matching_its_poster(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        DB::table('binaryblacklist')->insert([
+            'groupname' => 'alt.binaries.*',
+            'regex' => '^obfuscated-poster',
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'optype' => BlacklistConstants::OPTYPE_BLACKLIST,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_FROM,
+        ]);
+        DB::table('releases')->insert([
+            [...$this->releaseRow(1), 'searchname' => 'Hand.Picked.Release', 'fromname' => 'obfuscated-poster@example.test'],
+            [...$this->releaseRow(2), 'searchname' => 'Ordinary.Release', 'fromname' => 'obfuscated-poster@example.test'],
+        ]);
+        KeptReleases::mark(1);
+
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldReceive('deleteNzb')->once()->with($this->releaseRow(2)['guid']);
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldReceive('delete')->once()->with($this->releaseRow(2)['guid']);
+        Search::shouldReceive('deleteReleases')->once()->with([2]);
+
+        self::assertTrue((new ReleaseRemoverService(new ReleaseManagementService, $nzb, $images))->removeCrap(true, 'full', 'blacklist'));
+        self::assertSame([1], DB::table('releases')->pluck('id')->map(intval(...))->all());
+    }
+
+    public function test_the_deletion_recheck_skips_kept_releases_unless_they_are_explicitly_included(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        DB::table('releases')->insert([$this->releaseRow(1), $this->releaseRow(2)]);
+        KeptReleases::mark(1);
+        $selected = DB::table('releases')->orderBy('id')->get(['id', 'guid']);
+
+        $nzb = Mockery::mock(NzbService::class);
+        $nzb->shouldReceive('deleteNzb')->twice();
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldReceive('delete')->twice();
+        Search::shouldReceive('deleteReleases')->once()->with([2]);
+        Search::shouldReceive('deleteReleases')->once()->with([1]);
+        $management = new ReleaseManagementService;
+
+        self::assertSame(1, $management->deleteBatchIfUnclaimed($selected, $nzb, $images));
+        self::assertSame([1], DB::table('releases')->pluck('id')->map(intval(...))->all());
+        self::assertSame(1, $management->deleteBatchIfUnclaimed($selected, $nzb, $images, includeKept: true));
+        self::assertSame(0, DB::table('releases')->count());
     }
 
     public function test_invalid_blacklist_regex_does_not_prevent_valid_rules_from_running(): void

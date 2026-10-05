@@ -136,8 +136,8 @@ class ReleaseFileManager
 
         // Executable check runs against every file name seen, before support-file
         // skipping and before the recorded-file cap, so nothing can bypass it.
-        if ($this->discardService->shouldDiscard((string) $file['name'], (int) $context->release->categories_id)) {
-            $this->discardService->discard($context->release, (string) $file['name']);
+        if ($this->discardService->shouldDiscard((string) $file['name'], (int) $context->release->categories_id)
+            && $this->discardService->discard($context->release, (string) $file['name'])) {
             $context->releaseDiscarded = true;
 
             return false;
@@ -650,8 +650,7 @@ class ReleaseFileManager
             (int) $context->release->categories_id
         );
 
-        if ($discardableFileName !== null) {
-            $this->discardService->discard($context->release, $discardableFileName);
+        if ($discardableFileName !== null && $this->discardService->discard($context->release, $discardableFileName)) {
             $context->releaseDiscarded = true;
 
             return false;

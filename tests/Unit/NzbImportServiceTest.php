@@ -4,20 +4,27 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Enums\BlacklistConstants;
 use App\Enums\NzbImportStatus;
 use App\Facades\Search;
 use App\Models\Category;
+use App\Services\BlacklistService;
 use App\Services\Nzb\NzbImportService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
+use App\Support\Data\DuplicateAbsorbResult;
+use App\Support\ReleaseNameNormalizer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
 use Tests\Support\PhantomTrailingSets;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class NzbImportServiceTest extends TestCase
@@ -363,6 +370,389 @@ final class NzbImportServiceTest extends TestCase
 
         $this->assertEqualsWithDelta(12 / 13 * 100, $details['completion'], 0.0001);
         $this->assertSame(PhantomTrailingSets::DECLARED, $details['declaredFiles']);
+    }
+
+    public function test_an_explicit_release_name_overrides_the_filename_derivation(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            /** @var list<string> */
+            public array $names = [];
+
+            protected function getAllGroups(): bool
+            {
+                return true;
+            }
+
+            protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
+            {
+                $this->names[] = $nzbFileName;
+
+                return NzbImportStatus::Failed;
+            }
+        };
+
+        $name = 'Show: The "Title" / Part 1?';
+        $service->beginImport([$this->makeNzbFile('derived-name.mkv')], useNzbName: true, releaseName: $name);
+
+        $this->assertSame([$name], $service->names);
+    }
+
+    /**
+     * @return array<string, array{0: int, 1: string}>
+     */
+    public static function refusingRuleProvider(): array
+    {
+        return [
+            'blacklist rule matching the subject' => [BlacklistConstants::OPTYPE_BLACKLIST, 'Hand\.Picked'],
+            'group whitelist that does not match' => [BlacklistConstants::OPTYPE_WHITELIST, '^never-matches$'],
+        ];
+    }
+
+    #[DataProvider('refusingRuleProvider')]
+    public function test_skip_blacklist_bypasses_the_blacklist_and_whitelist_check(int $opType, string $regex): void
+    {
+        $this->createBlacklistTables();
+        DB::table('binaryblacklist')->insert([
+            'groupname' => 'alt.test',
+            'regex' => $regex,
+            'msgcol' => BlacklistConstants::BLACKLIST_FIELD_SUBJECT,
+            'optype' => $opType,
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+        ]);
+        $file = $this->makeImportableNzbFile('Hand.Picked.Release yEnc (1/1)');
+
+        $skipped = $this->recordingImporter(new BlacklistService);
+        $skipped->beginImport([$file], resultCallback: $this->collectResults($skippedResults), skipBlacklist: true);
+        $this->assertNull(DB::table('binaryblacklist')->value('last_activity'), 'A skipped check records no usage.');
+
+        $refused = $this->recordingImporter(new BlacklistService);
+        $refused->beginImport([$file], resultCallback: $this->collectResults($refusedResults));
+
+        $this->assertSame(NzbImportStatus::Failed, $skippedResults[0]['status']);
+        $this->assertCount(1, $skipped->inserted);
+        $this->assertSame(NzbImportStatus::Blacklisted, $refusedResults[0]['status']);
+        $this->assertSame([], $refused->inserted);
+    }
+
+    public function test_skip_blacklist_never_consults_the_blacklist_service(): void
+    {
+        $blacklist = new class extends BlacklistService
+        {
+            public int $calls = 0;
+
+            public function isBlackListed(array $msg, string $groupName): bool
+            {
+                $this->calls++;
+
+                return true;
+            }
+        };
+        $service = $this->recordingImporter($blacklist);
+
+        $service->beginImport([$this->makeImportableNzbFile('Any.Release yEnc (1/1)')], skipBlacklist: true);
+
+        $this->assertSame(0, $blacklist->calls);
+        $this->assertCount(1, $service->inserted);
+    }
+
+    /**
+     * @return array<string, array{0: DuplicateAbsorbResult|null, 1: bool, 2: string|null}>
+     */
+    public static function absorbOutcomeProvider(): array
+    {
+        return [
+            'absorbed' => [DuplicateAbsorbResult::absorbed(), true, 'absorbed'],
+            'not better' => [DuplicateAbsorbResult::notBetter(), false, 'not_better'],
+            'deferred' => [DuplicateAbsorbResult::deferred(), false, 'deferred'],
+            'failed' => [DuplicateAbsorbResult::failed('No stored NZB'), false, 'failed'],
+            'unsupported reason' => [null, false, null],
+        ];
+    }
+
+    #[DataProvider('absorbOutcomeProvider')]
+    public function test_the_callback_reports_the_matched_duplicate_and_its_absorb_outcome(
+        ?DuplicateAbsorbResult $absorb,
+        bool $absorbed,
+        ?string $outcome,
+    ): void {
+        $this->createDuplicateTables();
+        $this->bindAbsorber($absorb);
+
+        $service = $this->duplicateImporter();
+        $service->beginImport(
+            [$this->makeImportableNzbFile('Existing.Release yEnc (1/1)')],
+            resultCallback: $this->collectResults($results),
+            releaseName: 'Existing.Release',
+        );
+
+        $this->assertCount(1, $results);
+        $this->assertSame(NzbImportStatus::Duplicate, $results[0]['status']);
+        $this->assertSame(41, $results[0]['release_id']);
+        $this->assertSame(str_repeat('e', 40), $results[0]['release_guid']);
+        $this->assertSame($absorbed, $results[0]['absorbed']);
+        $this->assertSame($outcome, $results[0]['absorb_outcome']);
+        $this->assertNull($results[0]['error']);
+    }
+
+    public function test_the_callback_carries_the_error_for_blacklisted_no_group_and_failed_imports(): void
+    {
+        $blacklist = new class extends BlacklistService
+        {
+            public function isBlackListed(array $msg, string $groupName): bool
+            {
+                return true;
+            }
+        };
+        $blacklisted = $this->makeImportableNzbFile('Blocked.Release yEnc (1/1)');
+        $noGroup = $this->makeImportableNzbFile('Lost.Release yEnc (1/1)', 'not a group');
+        $unparsable = $this->makeNzbFile('unparsable');
+        file_put_contents($unparsable, 'not xml at all');
+
+        $service = $this->recordingImporter($blacklist);
+        $service->beginImport([$blacklisted, $noGroup, $unparsable], resultCallback: $this->collectResults($results));
+
+        $this->assertSame(
+            [
+                [NzbImportStatus::Blacklisted, 'Subject is blacklisted: Blocked.Release yEnc (1/1)'],
+                // An invalid group name is listed as empty, as the importer always printed it.
+                [NzbImportStatus::NoGroup, 'No group found for Lost.Release yEnc (1/1) (one of  are missing'],
+                [NzbImportStatus::Failed, 'ERROR: Unable to load NZB XML data: '.$unparsable],
+            ],
+            array_map(static fn (array $result): array => [$result['status'], $result['error']], $results),
+        );
+        foreach ($results as $result) {
+            $this->assertNull($result['release_id']);
+            $this->assertNull($result['release_guid']);
+            $this->assertFalse($result['absorbed']);
+            $this->assertNull($result['absorb_outcome']);
+        }
+    }
+
+    public function test_an_exception_while_inserting_is_reported_as_the_error(): void
+    {
+        config(['nntmux.echocli' => false]);
+        $service = new class extends NzbImportService
+        {
+            protected function getAllGroups(): bool
+            {
+                return true;
+            }
+
+            protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
+            {
+                throw new \RuntimeException('database went away');
+            }
+        };
+        $file = $this->makeNzbFile('throws');
+
+        $service->beginImport([$file], resultCallback: $this->collectResults($results));
+
+        $this->assertSame(NzbImportStatus::Failed, $results[0]['status']);
+        $this->assertSame('ERROR: Problem inserting: '.$file.': database went away', $results[0]['error']);
+    }
+
+    public function test_keep_release_marks_an_inserted_release(): void
+    {
+        $this->createKeptReleaseTables();
+
+        $this->insertingImporter()->beginImport([$this->makeNzbFile('kept-insert')], keepRelease: true);
+
+        $this->assertSame([7], DB::table('kept_releases')->pluck('releases_id')->map(intval(...))->all());
+    }
+
+    public function test_keep_release_marks_the_matched_release_of_a_duplicate(): void
+    {
+        $this->createDuplicateTables();
+        $this->createKeptReleaseTables(withReleases: false);
+        $this->bindAbsorber(DuplicateAbsorbResult::deferred());
+
+        $this->duplicateImporter()->beginImport(
+            [$this->makeImportableNzbFile('Existing.Release yEnc (1/1)')],
+            releaseName: 'Existing.Release',
+            keepRelease: true,
+        );
+
+        $this->assertSame([41], DB::table('kept_releases')->pluck('releases_id')->map(intval(...))->all());
+    }
+
+    public function test_without_keep_release_nothing_is_marked(): void
+    {
+        $this->createDuplicateTables();
+        $this->createKeptReleaseTables(withReleases: false);
+        $this->bindAbsorber(DuplicateAbsorbResult::notBetter());
+
+        $this->insertingImporter()->beginImport([$this->makeNzbFile('unkept-insert')]);
+        $this->duplicateImporter()->beginImport(
+            [$this->makeImportableNzbFile('Existing.Release yEnc (1/1)')],
+            releaseName: 'Existing.Release',
+        );
+
+        $this->assertSame(0, DB::table('kept_releases')->count());
+    }
+
+    /**
+     * @param  list<array<string, mixed>>|null  $results
+     * @return \Closure(array<string, mixed>): void
+     */
+    private function collectResults(?array &$results): \Closure
+    {
+        $results = [];
+
+        return static function (array $result) use (&$results): void {
+            $results[] = $result;
+        };
+    }
+
+    /**
+     * An importer that scans for real and records what reaches `insertNZB()`.
+     */
+    private function recordingImporter(BlacklistService $blacklist): NzbImportService
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            /** @var list<array<string, mixed>> */
+            public array $inserted = [];
+
+            public function useBlacklist(BlacklistService $blacklist): void
+            {
+                $this->blacklistService = $blacklist;
+            }
+
+            protected function getAllGroups(): bool
+            {
+                $this->allGroups = ['alt.test' => 1];
+
+                return true;
+            }
+
+            protected function insertNZB(mixed $nzbDetails): NzbImportStatus
+            {
+                $this->inserted[] = $nzbDetails;
+
+                return NzbImportStatus::Failed;
+            }
+        };
+        $service->useBlacklist($blacklist);
+
+        return $service;
+    }
+
+    /**
+     * An importer that scans and inserts for real, so the duplicate finder runs.
+     */
+    private function duplicateImporter(): NzbImportService
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function getAllGroups(): bool
+            {
+                $this->allGroups = ['alt.test' => 1];
+                $this->blacklistService = new NeverBlacklistedService;
+
+                return true;
+            }
+        };
+
+        return $service;
+    }
+
+    /**
+     * An importer whose scan inserts release 7 and whose compressed store succeeds.
+     */
+    private function insertingImporter(): NzbImportService
+    {
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('kept-import-nzb').'/']);
+
+        return new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function getAllGroups(): bool
+            {
+                return true;
+            }
+
+            protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
+            {
+                $this->relGuid = str_repeat('7', 40);
+                $this->relId = 7;
+
+                return NzbImportStatus::Inserted;
+            }
+
+            protected function writeCompressedNzb(string $path, string $contents): bool
+            {
+                return true;
+            }
+        };
+    }
+
+    private function bindAbsorber(?DuplicateAbsorbResult $result): void
+    {
+        $absorber = Mockery::mock(ReleaseDuplicateAbsorber::class);
+        $absorber->shouldReceive('supportsReason')->andReturn($result !== null);
+        if ($result !== null) {
+            $absorber->shouldReceive('absorbXml')->once()->andReturn($result);
+        } else {
+            $absorber->shouldNotReceive('absorbXml');
+        }
+        $this->app->instance(ReleaseDuplicateAbsorber::class, $absorber);
+    }
+
+    private function createDuplicateTables(): void
+    {
+        ProductionTables::fromAuthority()->create('releases', [
+            'id', 'guid', 'name', 'searchname', 'searchname_normalized', 'fromname', 'size', 'predb_id',
+            'completion', 'totalpart', 'declaredfiles', 'nzbstatus',
+        ]);
+        ProductionTables::fromAuthority()->create('predb', ['id', 'title', 'filename']);
+        DB::table('releases')->insert([
+            'id' => 41,
+            'guid' => str_repeat('e', 40),
+            'name' => 'Existing.Release yEnc',
+            'searchname' => 'Existing.Release',
+            'searchname_normalized' => ReleaseNameNormalizer::normalize('Existing.Release'),
+            'fromname' => 'poster@example.test',
+            'size' => 1000,
+            'predb_id' => 0,
+            'completion' => 100,
+            'totalpart' => 1,
+            'declaredfiles' => 1,
+            'nzbstatus' => 1,
+        ]);
+    }
+
+    private function createKeptReleaseTables(bool $withReleases = true): void
+    {
+        if ($withReleases) {
+            ProductionTables::fromAuthority()->create('releases', ['id', 'guid']);
+            DB::table('releases')->insert(['id' => 7, 'guid' => str_repeat('7', 40)]);
+        }
+        ProductionTables::fromAuthority()->create('kept_releases');
+    }
+
+    private function createBlacklistTables(): void
+    {
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id', 'name']);
+        ProductionTables::fromAuthority()->create('binaryblacklist', ['id', 'groupname', 'regex', 'msgcol', 'optype', 'status', 'description', 'last_activity']);
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
+        $this->registerSqliteFunction(
+            'REGEXP',
+            static fn (?string $pattern, ?string $subject): int => $pattern !== null && $subject !== null
+                && preg_match('/'.str_replace('/', '\/', $pattern).'/i', $subject) === 1 ? 1 : 0,
+            2
+        );
+    }
+
+    private function makeImportableNzbFile(string $subject, string $group = 'alt.test'): string
+    {
+        $path = $this->makeTempPath('importable', '.nzb');
+        file_put_contents($path, '<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'
+            .'<file poster="poster@example.test" date="1700000000" subject="'.htmlspecialchars($subject, ENT_QUOTES).'">'
+            .'<groups><group>'.htmlspecialchars($group, ENT_QUOTES).'</group></groups>'
+            .'<segments><segment bytes="1000" number="1">'.bin2hex(random_bytes(6)).'@example.test</segment></segments>'
+            .'</file></nzb>');
+
+        return $path;
     }
 
     /**

@@ -37,6 +37,7 @@ use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\Par2Sidecar\SidecarWork;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\KeptReleases;
 use App\Services\TempWorkspaceService;
 use App\Services\YencService;
 use dariusiii\rarinfo\Par2Info;
@@ -46,6 +47,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\Par2Fixture;
 use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
@@ -292,6 +294,56 @@ class Par2SidecarWorkflowTest extends TestCase
         $worker->run();
         $this->assertNull(Release::query()->find(2));
         $this->assertSame(2200000, (int) Release::query()->findOrFail(1)->size);
+    }
+
+    public function test_a_kept_source_is_never_selected_to_be_merged_away(): void
+    {
+        Search::spy();
+        Event::fake([ReleaseNameFixed::class]);
+        ProductionTables::fromAuthority()->create('kept_releases');
+        $this->seedPostingPair();
+        KeptReleases::mark(2);
+
+        app(SidecarWork::class)->run();
+
+        $this->assertSame(0, DB::table('par2_sidecar_operations')->count());
+        $this->assertNotNull(Release::query()->find(2));
+        $this->assertSame(2100000, (int) Release::query()->findOrFail(1)->size);
+    }
+
+    public function test_a_kept_target_still_absorbs_its_sidecar(): void
+    {
+        Search::spy();
+        Event::fake([ReleaseNameFixed::class]);
+        ProductionTables::fromAuthority()->create('kept_releases');
+        $this->seedPostingPair();
+        KeptReleases::mark(1);
+
+        app(SidecarWork::class)->run();
+
+        $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'));
+        $this->assertNull(Release::query()->find(2));
+        $this->assertSame(2200000, (int) Release::query()->findOrFail(1)->size);
+    }
+
+    public function test_a_source_kept_after_selection_is_still_deleted_by_its_operation(): void
+    {
+        Search::spy();
+        Event::fake([ReleaseNameFixed::class]);
+        ProductionTables::fromAuthority()->create('kept_releases');
+        $this->seedPostingPair();
+        $combiner = app(InterruptingSidecarCombiner::class);
+        $combiner->onPhase = static function (string $phase): void {
+            if ($phase === 'selected') {
+                KeptReleases::mark(2);
+            }
+        };
+        $this->app->instance(SidecarCombiner::class, $combiner);
+
+        app(SidecarWork::class)->run();
+
+        $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'), (string) DB::table('par2_sidecar_operations')->value('reason'));
+        $this->assertNull(Release::query()->find(2));
     }
 
     public function test_disabled_absorption_names_only_and_expires_only_unselected_evidence(): void

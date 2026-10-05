@@ -15,6 +15,7 @@ use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\CollectionDeletionSelection;
+use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Support\ReleaseNameNormalizer;
@@ -26,6 +27,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Termwind\Termwind;
 use Tests\Support\CollectionFrontierAssertions;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class CbpCleanupServiceTest extends TestCase
@@ -397,6 +399,51 @@ class CbpCleanupServiceTest extends TestCase
         app(ReleaseProcessingService::class)->setEchoCLI(false)->deletedReleasesByGroup();
 
         $this->assertDatabaseMissing('releases', ['id' => 140]);
+    }
+
+    public function test_a_kept_release_survives_the_per_group_size_sweep(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        DB::table('usenet_groups')->insert([
+            'id' => 2,
+            'name' => 'alt.small',
+            'active' => 1,
+            'minsizetoformrelease' => 5000,
+            'minfilestoformrelease' => 0,
+        ]);
+        $this->insertRelease(140, 'Kept.Undersized.Release', 1000, groupId: 2);
+        $this->insertRelease(141, 'Ordinary.Undersized.Release', 1000, groupId: 2);
+        DB::table('releases')->whereIn('id', [140, 141])->update(['nzbstatus' => NzbService::NZB_ADDED]);
+        KeptReleases::mark(140);
+        Search::shouldReceive('deleteReleases')->once()->with([141]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deletedReleasesByGroup();
+
+        $this->assertDatabaseHas('releases', ['id' => 140]);
+        $this->assertDatabaseMissing('releases', ['id' => 141]);
+    }
+
+    public function test_release_retention_still_deletes_a_kept_release(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        ProductionTables::fromAuthority()->create('root_categories', ['id', 'discard_executables']);
+        ProductionTables::fromAuthority()->create('genres', ['id', 'disabled']);
+        DB::table('settings')->insert(['name' => 'releaseretentiondays', 'value' => '30']);
+        $this->insertRelease(140, 'Kept.Expired.Release', 1000);
+        $this->insertRelease(141, 'Ordinary.Expired.Release', 1000);
+        $this->insertRelease(142, 'Kept.Fresh.Release', 1000);
+        DB::table('releases')->whereIn('id', [140, 141, 142])->update(['nzbstatus' => NzbService::NZB_ADDED]);
+        DB::table('releases')->whereIn('id', [140, 141])->update(['postdate' => now()->subDays(31)->format('Y-m-d H:i:s')]);
+        KeptReleases::mark(140);
+        KeptReleases::mark(142);
+        Search::shouldReceive('deleteReleases')->once()->with([140]);
+        Search::shouldReceive('deleteReleases')->once()->with([141]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteReleases();
+
+        $this->assertDatabaseMissing('releases', ['id' => 140]);
+        $this->assertDatabaseMissing('releases', ['id' => 141]);
+        $this->assertDatabaseHas('releases', ['id' => 142]);
     }
 
     public function test_nzb_creation_cleans_up_collection_binary_and_parts_explicitly(): void

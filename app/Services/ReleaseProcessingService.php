@@ -1431,12 +1431,13 @@ final class ReleaseProcessingService
 
         $cutoff = now()->subDays($this->settings->releaseRetentionDays);
 
-        $this->releaseSweepQuery()
+        // Retention is the one sweep that also removes kept releases.
+        $this->releaseSweepQuery(includeKept: true)
             ->where('postdate', '<', $cutoff)
             ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
                 foreach ($releases as $release) {
-                    if ($this->deleteSingleRelease($release, 'deleteReleasesOverRetention')) {
+                    if ($this->deleteSingleRelease($release, 'deleteReleasesOverRetention', includeKept: true)) {
                         $stats = $stats->increment('retention');
                     }
                 }
@@ -1673,7 +1674,7 @@ final class ReleaseProcessingService
         return $stats;
     }
 
-    private function deleteSingleRelease(Release $release, string $reason): bool
+    private function deleteSingleRelease(Release $release, string $reason, bool $includeKept = false): bool
     {
         return $this->releaseManagement->deleteSingleIfUnclaimed(
             ['g' => $release->guid, 'i' => $release->id],
@@ -1690,15 +1691,16 @@ final class ReleaseProcessingService
 
                 return ['eligible' => $unchanged, 'reason' => 'release_evidence_changed', 'predicate' => $reason];
             },
+            includeKept: $includeKept,
         );
     }
 
     /**
      * @return EloquentBuilder<Release>
      */
-    private function releaseSweepQuery(): EloquentBuilder
+    private function releaseSweepQuery(bool $includeKept = false): EloquentBuilder
     {
-        return ReleaseDeletionProtection::apply(Release::query());
+        return ReleaseDeletionProtection::apply(Release::query(), includeKept: $includeKept);
     }
 
     // ========================================================================

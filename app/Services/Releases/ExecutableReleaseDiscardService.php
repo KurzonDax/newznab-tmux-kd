@@ -111,10 +111,16 @@ class ExecutableReleaseDiscardService
      *
      * Delegates to the existing complete-delete entry point, which removes the
      * NZB file, preview/cover images, the search-index document and the release
-     * row (file rows follow by foreign-key cascade).
+     * row (file rows follow by foreign-key cascade). A kept release is left in place.
+     *
+     * @return bool True when the release was discarded; false for a kept release.
      */
-    public function discard(Release $release, string $matchedFileName): void
+    public function discard(Release $release, string $matchedFileName): bool
     {
+        if (KeptReleases::isKept((int) $release->id)) {
+            return false;
+        }
+
         $this->logDiscard($release, $matchedFileName);
 
         $this->releaseManagement->deleteSingle(
@@ -122,12 +128,14 @@ class ExecutableReleaseDiscardService
             app(NzbService::class),
             new ReleaseImageService,
         );
+
+        return true;
     }
 
     /**
      * Discard a release by ID, loading the columns needed for the audit log.
      *
-     * @return bool True when the release existed and was discarded.
+     * @return bool True when the release existed, was not kept, and was discarded.
      */
     public function discardById(int $releaseId, string $matchedFileName): bool
     {
@@ -139,9 +147,7 @@ class ExecutableReleaseDiscardService
             return false;
         }
 
-        $this->discard($release, $matchedFileName);
-
-        return true;
+        return $this->discard($release, $matchedFileName);
     }
 
     /**

@@ -160,10 +160,11 @@ class ReleaseManagementService
         ReleaseImageService $releaseImage,
         string $reason = 'routine_cleanup',
         ?Closure $evidence = null,
+        bool $includeKept = false,
     ): bool {
         return $this->deleteBatchIfUnclaimed([
             ['id' => $identifiers['i'], 'guid' => $identifiers['g']],
-        ], $nzb, $releaseImage, $reason, $evidence) === 1;
+        ], $nzb, $releaseImage, $reason, $evidence, includeKept: $includeKept) === 1;
     }
 
     /**
@@ -171,6 +172,7 @@ class ReleaseManagementService
      *
      * Database rows are deleted before artifact cleanup. A concurrent AP or recovery claimant
      * therefore either commits first and excludes the row, or waits for the lock and finds no row.
+     * Kept releases are skipped unless `$includeKept` is set.
      *
      * @param  iterable<int, object|array<string, mixed>>  $releases
      */
@@ -181,6 +183,7 @@ class ReleaseManagementService
         string $reason = 'routine_cleanup',
         ?Closure $evidence = null,
         bool $dryRun = false,
+        bool $includeKept = false,
     ): int {
         $candidates = $this->normalizeReleaseRows($releases);
         // An enclosing transaction may already have an obsolete consistent-read snapshot.
@@ -197,7 +200,7 @@ class ReleaseManagementService
         }
         $committed = collect();
         try {
-            return $this->deleteUnclaimedRows($candidates, $reason, $evidence, $dryRun, $committed)->count();
+            return $this->deleteUnclaimedRows($candidates, $reason, $evidence, $dryRun, $committed, $includeKept)->count();
         } finally {
             if (! $dryRun) {
                 DB::afterCommit(fn () => $this->cleanupDeletedRows($committed, $nzb, $releaseImage));
@@ -229,12 +232,12 @@ class ReleaseManagementService
      * @param  Collection<int, array{id: int, guid: string}>  $committed
      * @return Collection<int, array{id: int, guid: string}>
      */
-    private function deleteUnclaimedRows(Collection $candidates, string $reason, ?Closure $evidence, bool $dryRun, Collection $committed): Collection
+    private function deleteUnclaimedRows(Collection $candidates, string $reason, ?Closure $evidence, bool $dryRun, Collection $committed, bool $includeKept): Collection
     {
         $accepted = collect();
         $deferredReasons = [];
         foreach ($candidates->sortBy('id') as $candidate) {
-            $row = DB::transaction(function () use ($candidate, $reason, $evidence, $dryRun, $committed, &$deferredReasons): ?array {
+            $row = DB::transaction(function () use ($candidate, $reason, $evidence, $dryRun, $committed, $includeKept, &$deferredReasons): ?array {
                 $release = Release::query()->whereKey($candidate['id'])->lockForUpdate()->first();
                 if ($release === null || $release->guid !== $candidate['guid']) {
                     $deferredReasons['lifecycle'] = ($deferredReasons['lifecycle'] ?? 0) + 1;
@@ -251,7 +254,7 @@ class ReleaseManagementService
                     }
                 }
                 // Establish the consistent-read snapshot only after all evidence locks are held.
-                if (! ReleaseDeletionProtection::apply(Release::query())->whereKey($release->id)->exists()) {
+                if (! ReleaseDeletionProtection::apply(Release::query(), includeKept: $includeKept)->whereKey($release->id)->exists()) {
                     $deferredReasons['lifecycle'] = ($deferredReasons['lifecycle'] ?? 0) + 1;
 
                     return null;

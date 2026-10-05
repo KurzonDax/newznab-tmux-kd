@@ -11,6 +11,7 @@ use App\Services\NameFixing\NameFixingService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -33,7 +34,8 @@ class SidecarCombiner
                 $source = $rows[$decision->sourceId];
                 $this->assertXml($target, hash('sha256', $targetXml));
                 $this->assertXml($source, hash('sha256', $sourceXml));
-                if ((int) $target->isrenamed !== 0 || DB::table('par2_sidecar_operations')->where('target_id', $targetId)->exists()) {
+                if ((int) $target->isrenamed !== 0 || KeptReleases::isKept((int) $source->id)
+                    || DB::table('par2_sidecar_operations')->where('target_id', $targetId)->exists()) {
                     return null;
                 }
                 if (DB::table('payload_prefix_hashes')->where('releases_id', $targetId)->where('state', 'pending')
@@ -174,7 +176,7 @@ class SidecarCombiner
                                 && hash('sha256', $this->read($source->guid)) === $operation->source_fingerprint;
 
                             return ['eligible' => $valid, 'reason' => 'sidecar_identity_changed'];
-                        });
+                        }, includeKept: true);
                     if (! $deleted) {
                         throw new RuntimeException('protected_deletion_deferred');
                     }

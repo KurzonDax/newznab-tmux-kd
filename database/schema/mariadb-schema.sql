@@ -747,6 +747,16 @@ CREATE TABLE `jobs` (
   KEY `jobs_queue_index` (`queue`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `kept_releases`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `kept_releases` (
+  `releases_id` int(10) unsigned NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`releases_id`),
+  CONSTRAINT `kept_releases_releases_id_foreign` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `languages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4201,3 +4211,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (310,'2026_10_02_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (311,'2026_10_02_000100_create_nntp_listing_coverage',22);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (312,'2026_10_04_000000_add_release_audio_genres',23);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (313,'2026_10_04_000100_fill_release_audio_genres',23);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (314,'2026_10_05_000000_create_kept_releases',24);

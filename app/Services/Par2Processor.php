@@ -143,9 +143,7 @@ class Par2Processor
         // recording caps, so a payload buried past the cap is still caught.
         $discardableFileName = $this->discardService->firstDiscardableFileName($files, (int) $query['categories_id']);
 
-        if ($discardableFileName !== null) {
-            $this->discardService->discardById($relID, $discardableFileName);
-
+        if ($discardableFileName !== null && $this->discardService->discardById($relID, $discardableFileName)) {
             return false;
         }
 
