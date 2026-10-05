@@ -36,6 +36,9 @@ class LateHeaderMergeTest extends TestCase
 
     private const string POSTER = 'Fixture Poster <poster@example.invalid>';
 
+    /** The group frontier once the release is formed: a day past the post. */
+    private const string FRONTIER = '2026-09-02 12:00:00';
+
     /** @var list<string> */
     private array $duplicateReasons = [];
 
@@ -250,6 +253,67 @@ class LateHeaderMergeTest extends TestCase
         $this->assertSame($before, app(NzbService::class)->readNzbContents($release->guid));
     }
 
+    public function test_a_late_collection_is_merged_after_fifteen_quiet_minutes(): void
+    {
+        $release = $this->publishRelease(missing: [1 => [3, 7]]);
+        $lateId = $this->ingestLateWaiting([1 => range(1, self::SEGMENTS)], quietMinutes: 16);
+
+        $result = $this->formReleases();
+
+        $this->assertSame(range(1, self::SEGMENTS), array_keys($this->storedDocument($release)->segments()[0]));
+        $this->assertLateCollectionGone($lateId);
+        $this->assertSame(0, $result['dupes']);
+    }
+
+    public function test_a_late_collection_is_not_merged_before_fifteen_quiet_minutes(): void
+    {
+        $release = $this->publishRelease(missing: [1 => [3, 7]]);
+        $before = app(NzbService::class)->readNzbContents($release->guid);
+        $lateId = $this->ingestLateWaiting([1 => range(1, self::SEGMENTS)], quietMinutes: 14);
+
+        $this->formReleases();
+
+        $this->assertSame($before, app(NzbService::class)->readNzbContents($release->guid));
+        $this->assertNotNull(DB::table('collections')->where('id', $lateId)->first());
+        $this->assertSame(self::SEGMENTS, $this->lateParts($lateId));
+    }
+
+    public function test_a_late_duplicate_is_deleted_after_fifteen_quiet_minutes(): void
+    {
+        $this->publishRelease(missing: []);
+        $lateId = $this->ingestLateWaiting([1 => range(1, self::SEGMENTS)], quietMinutes: 16);
+
+        $result = $this->formReleases();
+
+        $this->assertLateCollectionGone($lateId);
+        $this->assertSame(1, $result['dupes']);
+        $this->assertSame(['collectionhash_match'], $this->duplicateReasons);
+        $this->assertSame(1, DB::table('releases')->count());
+    }
+
+    public function test_a_late_duplicate_is_kept_before_fifteen_quiet_minutes(): void
+    {
+        $this->publishRelease(missing: []);
+        $lateId = $this->ingestLateWaiting([1 => range(1, self::SEGMENTS)], quietMinutes: 14);
+
+        $this->formReleases();
+
+        $this->assertNotNull(DB::table('collections')->where('id', $lateId)->first());
+        $this->assertSame(self::SEGMENTS, $this->lateParts($lateId));
+        $this->assertSame(1, DB::table('releases')->count());
+    }
+
+    public function test_a_new_post_keeps_the_frontier_wait(): void
+    {
+        $this->ingest(array_map(fn (int $segment): array => $this->header(1, $segment), range(1, self::SEGMENTS)));
+        $collectionId = $this->holdAtFrontier(quietMinutes: 180);
+
+        $this->formReleases();
+
+        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) DB::table('collections')->where('id', $collectionId)->value('filecheck'));
+        $this->assertSame(0, DB::table('releases')->count());
+    }
+
     /**
      * Ingest the post less the given segments, form its release and write its NZB.
      *
@@ -268,7 +332,7 @@ class LateHeaderMergeTest extends TestCase
         $this->ingest($headers);
         $this->assertSame(1, DB::table('collections')->count());
 
-        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-09-02 12:00:00']);
+        DB::table('usenet_groups')->update(['last_record_postdate' => self::FRONTIER]);
         $processor = app(ReleaseProcessingService::class)->setEchoCLI(false);
         $processor->processIncompleteCollections(1);
         $processor->processCollectionSizes(1);
@@ -289,6 +353,32 @@ class LateHeaderMergeTest extends TestCase
      */
     private function ingestLate(array $segments, array $otherMessageIds = []): int
     {
+        $this->ingest($this->lateHeaders($segments, $otherMessageIds));
+        $this->assertSame(1, DB::table('collections')->count());
+        DB::table('collections')->update(['filecheck' => CollectionFileCheckStatus::Sized->value]);
+
+        return (int) DB::table('collections')->value('id');
+    }
+
+    /**
+     * Ingest late headers for the same post and leave their collection waiting at the group frontier.
+     *
+     * @param  array<int, list<int>>  $segments  File index => segment numbers.
+     */
+    private function ingestLateWaiting(array $segments, int $quietMinutes): int
+    {
+        $this->ingest($this->lateHeaders($segments));
+
+        return $this->holdAtFrontier($quietMinutes);
+    }
+
+    /**
+     * @param  array<int, list<int>>  $segments  File index => segment numbers.
+     * @param  array<int, list<int>>  $otherMessageIds  File index => segments carrying another post's message-ID.
+     * @return list<array<string, mixed>>
+     */
+    private function lateHeaders(array $segments, array $otherMessageIds = []): array
+    {
         $headers = [];
         foreach ($segments as $file => $numbers) {
             foreach ($numbers as $segment) {
@@ -299,9 +389,23 @@ class LateHeaderMergeTest extends TestCase
                 $headers[] = $header;
             }
         }
-        $this->ingest($headers);
+
+        return $headers;
+    }
+
+    /**
+     * Stamp the only collection's head at the group frontier, so the frontier wait still holds it,
+     * and its last stored header the given minutes ago.
+     */
+    private function holdAtFrontier(int $quietMinutes): int
+    {
         $this->assertSame(1, DB::table('collections')->count());
-        DB::table('collections')->update(['filecheck' => CollectionFileCheckStatus::Sized->value]);
+        $this->assertSame(CollectionFileCheckStatus::Default->value, (int) DB::table('collections')->value('filecheck'));
+        DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => self::FRONTIER]);
+        DB::table('collections')->update([
+            'last_seen_head_postdate' => self::FRONTIER,
+            'last_seen_at' => now()->subMinutes($quietMinutes)->format('Y-m-d H:i:s'),
+        ]);
 
         return (int) DB::table('collections')->value('id');
     }

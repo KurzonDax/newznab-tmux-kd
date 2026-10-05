@@ -43,6 +43,7 @@ use App\Support\Data\NzbCreationResult;
 use App\Support\Data\ProcessReleasesSettings;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
+use App\Support\DatabaseClock;
 use App\Support\ReleaseSearchIndexSync;
 use App\Support\SchemaCapabilities;
 use DateTimeInterface;
@@ -74,6 +75,9 @@ final class ReleaseProcessingService
     private const int NZB_CREATION_MAX_ATTEMPTS = 3;
 
     private const int FORMATION_SECONDS_PER_GROUP = 60;
+
+    /** Minutes without a stored header before formation takes a late collection. */
+    private const int LATE_COLLECTION_QUIET_MINUTES = 15;
 
     private const array INCOMPLETE_COLLECTION_STATUSES = [
         CollectionFileCheckStatus::Default->value,
@@ -533,6 +537,34 @@ final class ReleaseProcessingService
     }
 
     /**
+     * Formation's quiet test: the shared frontier predicate, or a late collection -- one whose
+     * release already exists -- with no header stored for LATE_COLLECTION_QUIET_MINUTES.
+     *
+     * The frontier wait keeps a new post from forming before its last part arrives. A late
+     * collection's release already exists, and every stored header restarts that wait, so it
+     * waits only long enough for one header scan's trickle to land in a single merge.
+     *
+     * @return array{sql: string, bindings: list<int|string>}
+     */
+    private function formationQuietPredicate(string $alias = 'collections'): array
+    {
+        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime, $alias);
+        if (! SchemaCapabilities::hasColumn('collections', 'last_seen_at')
+            || ! SchemaCapabilities::hasColumn('releases', 'collectionhash')) {
+            return $quiet;
+        }
+        $cutoff = DatabaseClock::cutoff(now()->subMinutes(self::LATE_COLLECTION_QUIET_MINUTES));
+        $releases = DB::connection()->getQueryGrammar()->wrapTable('releases');
+
+        return [
+            'sql' => "(({$quiet['sql']})
+                OR (COALESCE({$alias}.last_seen_at, {$alias}.dateadded, {$alias}.added) < {$cutoff['sql']}
+                    AND EXISTS (SELECT 1 FROM {$releases} late_release WHERE late_release.collectionhash = {$alias}.collectionhash)))",
+            'bindings' => [...$quiet['bindings'], ...$cutoff['bindings']],
+        ];
+    }
+
+    /**
      * Reconcile only a bounded keyset page at a time. Stored parts are the
      * authority for binary counts/sizes; binary aggregates are then the
      * authority for collection readiness and filesize.
@@ -561,7 +593,7 @@ final class ReleaseProcessingService
     private function incompleteCollectionCandidates(?int $groupId, ?array $collectionIds = null): EloquentBuilder
     {
         $hasLastSeenAt = SchemaCapabilities::hasColumn('collections', 'last_seen_at');
-        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
+        $quiet = $this->formationQuietPredicate();
         $statuses = self::INCOMPLETE_COLLECTION_STATUSES;
 
         return Collection::query()->tap(static fn ($query) => RecoveryCollectionOwnership::exclude($query))->tap(static fn ($query) => CollectionOwnership::exclude($query))
@@ -617,7 +649,7 @@ final class ReleaseProcessingService
         }
 
         $statusPlaceholders = implode(',', array_fill(0, \count($statuses), '?'));
-        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime, 'c');
+        $quiet = $this->formationQuietPredicate('c');
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses, $statusPlaceholders): void {
             if (! app(CollectionAdmission::class)->lockAndScreen($collectionIds, $this->settings->collectionDelayTime)) {
@@ -692,7 +724,7 @@ final class ReleaseProcessingService
         array $collectionIds,
         array $statuses,
     ): void {
-        $quiet = CollectionQuietPredicate::build($this->settings->collectionDelayTime);
+        $quiet = $this->formationQuietPredicate();
 
         DB::transaction(function () use ($collectionIds, $quiet, $statuses): void {
             foreach ($collectionIds as $collectionId) {
