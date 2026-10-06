@@ -32,11 +32,9 @@ final class RecoveryFrontierEvidence
         }
         foreach ($components as $component) {
             if ($component['first'] <= $position && $component['last'] >= $position) {
-                $coverage = $connection->table('obfuscation_recovery_coverage')->where('source_epoch', $bundle->source_epoch)
-                    ->where('groups_id', $bundle->groups_id)->where('capture_generation', $bundle->capture_generation)
-                    ->where('kind', $sealed ? 'retained' : 'captured')->where('direction', 'Head')
-                    ->where('first_article', '<=', $component['last'])->where('last_article', '>=', $component['first'])
-                    ->orderBy('first_article')->limit(1001)->get();
+                $coverage = (new RecoveryPositiveCoverage)->intersecting($connection,
+                    RecoveryPositiveCoverage::scope($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation),
+                    $sealed ? 'retained' : 'captured', 'Head', $component['first'], $component['last'], 1001);
                 if ($coverage->count() > 1000) {
                     return null;
                 }
@@ -141,9 +139,7 @@ final class RecoveryFrontierEvidence
             return false;
         }
         $scope = RecoveryPositiveCoverage::scope($bundle->source_epoch, (int) $bundle->groups_id, (int) $bundle->capture_generation);
-        $ranges = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)->where('kind', $sealed ? 'retained' : 'captured')
-            ->where('direction', 'Head')->where('first_article', '<=', $last)->where('last_article', '>=', $first)
-            ->orderBy('first_article')->limit(1001)->get();
+        $ranges = (new RecoveryPositiveCoverage)->intersecting($connection, $scope, $sealed ? 'retained' : 'captured', 'Head', $first, $last, 1001);
 
         return $ranges->count() <= 1000 && RecoveryCoverage::holes($first, $last, $ranges->map(
             static fn (object $row): array => [(int) $row->first_article, (int) $row->last_article])->all()) === [];

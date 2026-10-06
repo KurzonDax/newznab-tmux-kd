@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Enums\HeaderScanDirection;
 use Illuminate\Database\Connection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -80,10 +81,10 @@ final class RecoverySettlement
         $start = $left === null ? $firstArticle : (int) $left;
         $end = $right === null ? $lastArticle : (int) $right;
         $islands = [];
-        $ranges = $connection->table('obfuscation_recovery_coverage')->where('source_epoch', $epoch)->where('groups_id', $group)
-            ->where('capture_generation', $generation)->where('kind', $retainedPlan ? 'retained' : 'captured')
-            ->where('first_article', '<=', $end)->where('last_article', '>=', $start)
-            ->orderBy('first_article')->orderBy('last_article')->limit(10001)->get();
+        $ranges = collect(HeaderScanDirection::cases())->flatMap(fn (HeaderScanDirection $direction) => (new RecoveryPositiveCoverage)
+            ->intersecting($connection, $scopeDigest, $retainedPlan ? 'retained' : 'captured', $direction->name, $start, $end, 10001))
+            ->sort(static fn (object $a, object $b): int => [(int) $a->first_article, (int) $a->last_article]
+                <=> [(int) $b->first_article, (int) $b->last_article])->take(10001)->values();
         if ($ranges->count() > 10000) {
             return ['left' => $left, 'right' => $right, 'start' => $start, 'end' => $end, 'containing' => null, 'limited' => true];
         }
