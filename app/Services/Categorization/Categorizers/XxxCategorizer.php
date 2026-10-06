@@ -132,14 +132,16 @@ class XxxCategorizer extends AbstractCategorizer
             return true;
         }
 
-        // VR device combined with HD/UHD video markers
-        if (preg_match('/\b(?:'.self::VR_DEVICES.')\b/i', $name) &&
+        // VR device combined with HD/UHD video markers, outside ordinary releases
+        if (! $context->hasOrdinaryReleaseTag() &&
+            preg_match('/\b(?:'.self::VR_DEVICES.')\b/i', $name) &&
             preg_match('/\b(720p|1080p|2160p|4K|VR180|VR360)\b/i', $name)) {
             return true;
         }
 
-        // Check for adult content indicators combined with video markers
-        if (ReleaseContext::hasIndependentAdultKeyword($name) &&
+        // Check for adult content indicators combined with video markers, outside ordinary releases
+        if (! $context->hasOrdinaryReleaseTag() &&
+            ReleaseContext::hasIndependentAdultKeyword($name) &&
             preg_match('/\b(720p|1080p|2160p|4k|mp4|mkv|avi|wmv)\b/i', $name)) {
             return true;
         }

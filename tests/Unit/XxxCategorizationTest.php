@@ -227,6 +227,15 @@ class XxxCategorizationTest extends TestCase
             'keyword after episode title' => ['Vixen.S01E01.Anal.Title.1080p.Hardcore.mp4'],
             'hard trigger in episode title' => ['First.Wave.S02E02.Deepthroat.480p.SDTV'],
             'adult studio with parenthesized episode' => ['Brazzers - Episode Title (S03E05) 1080p'],
+            // Ordinary-release tags do not hide real adult evidence (#984)
+            'trailing xxx group without ordinary tags' => ['Teensexmovs.izi.izi-14.07.16-720p-wmv-XXX'],
+            'common word clip with trailing xxx group' => ['Anal-beauty.dila.dila-13.11.28-1080p-wmv-XXX'],
+            'common word clip without ordinary tags' => ['Pussy And Ass.avi'],
+            'explicit xxx with ordinary tag' => ['Nasty Black Amateurs 7 XXX WEBRIP WMV-GUSH'],
+            'explicit xxx with ordinary tag and release group' => ['Bubble.Butt.Babysitters.4.XXX.720p.WEBRip.MP4-VSEX'],
+            'hard trigger with ordinary tag' => ['Cum On Baby Bite My Black Wire 2 720P WEBRIP MP4-GUSH'],
+            'ambiguous studio corroborated by adult newsgroup with ordinary tag' => ['Penthouse.Assrageous.2011.HDTV.720p.X264-SHDXXX', 'alt.binaries.town.xxx'],
+            'xxx in episode title without ordinary tags' => ['Some.Series.S01E02.Scene.Title.XXX.1080p.mp4'],
         ];
     }
 
@@ -281,6 +290,43 @@ class XxxCategorizationTest extends TestCase
             Category::XXX_ROOT,
             Category::rootCategoryFor($categoryId),
             "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    /**
+     * Ordinary movie and TV releases whose only adult signal is a common word
+     * or a release-group name (#984).
+     *
+     * @return array<string, array{0: string, 1: int}>
+     */
+    public static function ordinaryReleaseWithAdultWordProvider(): array
+    {
+        return [
+            'independent keyword in a uhd web-dl film' => ['Teenage.Sex.and.Death.at.Camp.Miasma.2026.2160p.AMZN.WEB-DL.DDP5.1.H.265-Kitsune', Category::MOVIE_ROOT],
+            'weak keyword as the title' => ['MILF.2018.1080p.NF.WEB-DL.AAC5.1.H.264-Rizuzu', Category::MOVIE_ROOT],
+            'weak keyword inside the title' => ["So.My.Grandma's.a.Lesbian.2020.1080p.NF.WEB-DL.DDP5.1.x264-SiGLA", Category::MOVIE_ROOT],
+            'dick as a name' => ['Fun.with.Dick.&.Jane.2005.1080p.NF.WEB-DL.DDP5.1.AV1-Saon', Category::MOVIE_ROOT],
+            'hardcore as the title' => ['Hardcore.1979.720p.Bluray.x264.950MB-Pahe.in', Category::MOVIE_ROOT],
+            'threesome release group' => ['Harry.Potter.And.The.Sorcerers.Stone.2001.MULTi.2160p.UHD.BluRay.x265-THREESOME', Category::MOVIE_ROOT],
+            'handjob release group' => ['O.Ritual.2017.1080p.BluRay.DTS-HD.MA5.1.x264-HANDJOB.DUAL-UPD', Category::MOVIE_ROOT],
+            'vr device word in a documentary title' => ['Never.Surrender.A.Galaxy.Quest.Documentary.2019.1080p.WEB-DL.h264-NTb', Category::MOVIE_ROOT],
+            'weak keyword with a bare web tag' => ['The.Threesome.2025.German.Dubbed.DL.2160p.WEB.H265-NEXUS', Category::MOVIE_ROOT],
+            'xxx release group on a tv episode' => ['Flex.x.Cop.S01E13.1080p.DSNP.WEB-DL.AAC2.0.H.264-XXX', Category::TV_ROOT],
+            'xxx in a tv episode title' => ['The.Simpsons.(1989).-.S31E04.-.Treehouse.Of.Horror.XXX.[DSNP][WEBDL-1080p][EAC3.5.1][h264]-HONE', Category::TV_ROOT],
+        ];
+    }
+
+    #[DataProvider('ordinaryReleaseWithAdultWordProvider')]
+    public function test_ordinary_releases_with_an_adult_word_leave_xxx(string $releaseName, int $expectedRoot): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0, groupName: 'alt.binaries.multimedia');
+        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+
+        $this->assertFalse($context->hasAdultMarkers(), "Adult markers detected for: {$releaseName}");
+        $this->assertSame(
+            $expectedRoot,
+            Category::rootCategoryFor($passable->bestResult->categoryId),
+            "'{$releaseName}' resolved to {$passable->bestResult->categoryId} via {$passable->bestResult->matchedBy}"
         );
     }
 
