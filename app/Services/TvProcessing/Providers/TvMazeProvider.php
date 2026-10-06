@@ -18,8 +18,6 @@ use DariusIII\TVMaze\TVMaze as Client;
  */
 class TvMazeProvider extends AbstractTvProvider
 {
-    private const MATCH_PROBABILITY = 75;
-
     /**
      * Client for TVMaze API.
      */
@@ -329,59 +327,38 @@ class TvMazeProvider extends AbstractTvProvider
     private function matchShowInfo(array $shows, string $cleanName, ?int $releaseYear): false|array
     {
         $return = false;
-        $highestMatch = 0;
-        $highest = null;
 
-        foreach ($shows as $show) {
-            if ($this->checkRequiredAttr($show, 'tvmazeS')) {
-                if (! $this->isPremiereYearPlausible($show->premiered, $releaseYear)) {
-                    continue;
-                }
-
-                // Exact title match
-                if (strcasecmp($show->name, $cleanName) === 0) {
-                    $highest = $show;
-                    $highestMatch = 100;
-                    break;
-                }
-
-                // Title similarity
-                $matchPercent = $this->checkMatch(strtolower($show->name), strtolower($cleanName), self::MATCH_PROBABILITY);
-                if ($matchPercent > $highestMatch) {
-                    $highestMatch = $matchPercent;
-                    $highest = $show;
-                }
-
-                // Alias matches
-                if (is_array($show->akas) && ! empty($show->akas)) {
-                    foreach ($show->akas as $aka) {
-                        if (! isset($aka['name'])) {
-                            continue;
-                        }
-
-                        // Exact alias match
-                        if (strcasecmp($aka['name'], $cleanName) === 0) {
-                            $highest = $show;
-                            $highestMatch = 100;
-                            break 2;
-                        }
-
-                        // Alias similarity
-                        $aliasPercent = $this->checkMatch(strtolower($aka['name']), strtolower($cleanName), self::MATCH_PROBABILITY);
-                        if ($aliasPercent > $highestMatch) {
-                            $highestMatch = $aliasPercent;
-                            $highest = $show;
-                        }
-                    }
-                }
-            }
-        }
+        $shows = array_filter(
+            $shows,
+            fn (mixed $show): bool => $this->checkRequiredAttr($show, 'tvmazeS')
+                && $this->isPremiereYearPlausible($show->premiered, $releaseYear),
+        );
+        $highest = $this->chooseShowByName($shows, $cleanName, $this->tvMazeShowNames(...));
 
         if ($highest !== null) {
             $return = $this->formatShowInfo($highest);
         }
 
         return $return;
+    }
+
+    /**
+     * The names a TVMaze show is known by: its name and its AKAs.
+     *
+     * @return list<string>
+     */
+    private function tvMazeShowNames(object $show): array
+    {
+        $names = [(string) $show->name];
+        if (isset($show->akas) && is_array($show->akas)) {
+            foreach ($show->akas as $aka) {
+                if (is_array($aka) && isset($aka['name']) && is_string($aka['name'])) {
+                    $names[] = $aka['name'];
+                }
+            }
+        }
+
+        return $names;
     }
 
     /**

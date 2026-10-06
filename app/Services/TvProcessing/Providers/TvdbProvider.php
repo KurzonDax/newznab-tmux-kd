@@ -22,8 +22,6 @@ use Symfony\Component\Serializer\Exception\ExceptionInterface;
  */
 class TvdbProvider extends AbstractTvProvider
 {
-    private const MATCH_PROBABILITY = 75;
-
     public TheTVDbAPI $client;
 
     /**
@@ -279,7 +277,6 @@ class TvdbProvider extends AbstractTvProvider
     public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
     {
         $return = $response = false;
-        $highestMatch = 0;
         $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
         try {
             $response = $this->client->search()->search($name, ['type' => 'series']);
@@ -297,37 +294,14 @@ class TvdbProvider extends AbstractTvProvider
         sleep(1);
 
         if (\is_array($response)) {
-            foreach ($response as $show) {
-                if ($this->checkRequiredAttr($show, 'tvdbS')) {
-                    if (! $this->isPremiereYearPlausible($show->first_air_time, $releaseYear)) {
-                        continue;
-                    }
-
-                    if (strtolower($show->name) === strtolower($name)) {
-                        $highest = $show;
-                        break;
-                    }
-
-                    $matchPercent = $this->checkMatch(strtolower($show->name), strtolower($name), self::MATCH_PROBABILITY);
-
-                    if ($matchPercent > $highestMatch) {
-                        $highestMatch = $matchPercent;
-                        $highest = $show;
-                    }
-
-                    if (! empty($show->aliases)) {
-                        foreach ($show->aliases as $akaIndex => $akaName) {
-                            $aliasPercent = $this->checkMatch(strtolower($akaName), strtolower($name), self::MATCH_PROBABILITY);
-                            if ($aliasPercent > $highestMatch) {
-                                $highestMatch = $aliasPercent;
-                                $highest = $show;
-                            }
-                        }
-                    }
-                }
-            }
-            if (! empty($highest)) {
-                $return = $this->formatShowInfo($highest);
+            $shows = array_filter(
+                $response,
+                fn (mixed $show): bool => $this->checkRequiredAttr($show, 'tvdbS')
+                    && $this->isPremiereYearPlausible($show->first_air_time, $releaseYear),
+            );
+            $chosen = $this->chooseShowByName($shows, $name, $this->tvdbShowNames(...));
+            if ($chosen !== null) {
+                $return = $this->formatShowInfo($chosen);
             }
         }
 
@@ -459,9 +433,36 @@ class TvdbProvider extends AbstractTvProvider
             'tvrage' => 0,
             'tvmaze' => 0,
             'tmdb' => $externalIds['tmdb'],
-            'aliases' => ! empty($show->aliases) ? $show->aliases : '',
+            'aliases' => $this->tvdbShowAliases($show),
             'localzone' => "''",
         ];
+    }
+
+    /**
+     * The names a TVDB search result is known by: its name, aliases and translated names, de-duplicated.
+     *
+     * @return list<string>
+     */
+    protected function tvdbShowNames(object $show): array
+    {
+        $names = [];
+        foreach ([$show->name ?? null, ...(array) ($show->aliases ?? []), ...array_values((array) ($show->translations ?? []))] as $name) {
+            if (\is_string($name) && $name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    /**
+     * @return list<string>|string the show's other names, or '' when it has none
+     */
+    private function tvdbShowAliases(object $show): array|string
+    {
+        $aliases = array_values(array_diff($this->tvdbShowNames($show), [$show->name]));
+
+        return $aliases !== [] ? $aliases : '';
     }
 
     /**

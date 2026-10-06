@@ -941,44 +941,29 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     }
 
     /**
-     * Simple function that compares two strings of text
+     * The first show named identically to the release's show name, else the first whose name differs
+     * only by a trailing parenthetical, else null. Shows are taken in the order the provider returned them.
+     *
+     * @template TShow
+     *
+     * @param  iterable<TShow>  $shows  search results that passed the caller's attribute and year checks
+     * @param  callable(TShow): array<array-key, string>  $namesOf  the names a show is known by
+     * @return TShow|null
      */
-    public function checkMatch(mixed $ourName, mixed $scrapeName, mixed $probability): float
+    protected function chooseShowByName(iterable $shows, string $releaseTitle, callable $namesOf): mixed
     {
-        $normalizedOurName = $this->normalizeComparableValue($ourName);
-        $normalizedScrapeName = $this->normalizeComparableValue($scrapeName);
-
-        if ($normalizedOurName === null || $normalizedScrapeName === null) {
-            return 0.0;
+        $sibling = null;
+        foreach ($shows as $show) {
+            $tier = $this->showTitleMatchTier($releaseTitle, $namesOf($show));
+            if ($tier === 0) {
+                return $show;
+            }
+            if ($tier === 1 && $sibling === null) {
+                $sibling = $show;
+            }
         }
 
-        $requiredProbability = is_numeric($probability) ? (float) $probability : 0.0;
-        $matchpct = 0.0;
-
-        similar_text($normalizedOurName, $normalizedScrapeName, $matchpct);
-
-        if ($matchpct >= $requiredProbability) {
-            return $matchpct;
-        }
-
-        return 0.0;
-    }
-
-    protected function normalizeComparableValue(mixed $value): ?string
-    {
-        if (is_string($value)) {
-            return $value;
-        }
-
-        if (is_int($value) || is_float($value)) {
-            return (string) $value;
-        }
-
-        if ($value instanceof \Stringable) {
-            return (string) $value;
-        }
-
-        return null;
+        return $sibling;
     }
 
     /**

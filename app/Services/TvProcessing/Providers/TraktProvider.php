@@ -19,8 +19,6 @@ use Illuminate\Support\Carbon;
  */
 class TraktProvider extends AbstractTvProvider
 {
-    private const MATCH_PROBABILITY = 75;
-
     public TraktService $client;
 
     public int $time;
@@ -377,8 +375,6 @@ class TraktProvider extends AbstractTvProvider
     public function getShowInfo(string $name, ?int $releaseYear = null): array|bool
     {
         $return = $response = false;
-        $highestMatch = 0;
-        $highest = null;
         $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
 
         // Trakt does NOT like shows with the year in them even without the parentheses
@@ -389,43 +385,24 @@ class TraktProvider extends AbstractTvProvider
 
         sleep(1);
 
-        $candidates = [];
-        foreach ($response as $index => $show) {
-            if (is_array($show) && isset($show['show']) && is_array($show['show'])) {
-                $showTitle = (string) ($show['show']['title'] ?? '');
-                if ($showTitle === '') {
-                    continue;
-                }
-
-                // Check for exact title match first and then terminate if found
-                if (strcasecmp($showTitle, $name) === 0) {
-                    if ($releaseYear !== null) {
-                        $candidates[] = ['match' => 100.0, 'index' => $index, 'show' => $show];
-
-                        continue;
-                    }
-
-                    $highest = $show;
-                    break;
-                }
-
-                // Check each show title for similarity and then find the highest similar value
-                $matchPercent = $this->checkMatch($showTitle, $name, self::MATCH_PROBABILITY);
-
-                // If new match has a higher percentage, set as new matched title
-                if ($matchPercent > $highestMatch) {
-                    $highestMatch = $matchPercent;
-                    $highest = $show;
-                }
-
-                if ($releaseYear !== null && $matchPercent > 0) {
-                    $candidates[] = ['match' => $matchPercent, 'index' => $index, 'show' => $show];
-                }
-            }
-        }
+        $shows = array_values(array_filter(
+            $response,
+            static fn (mixed $show): bool => is_array($show)
+                && isset($show['show'])
+                && is_array($show['show'])
+                && (string) ($show['show']['title'] ?? '') !== '',
+        ));
+        $showNames = static fn (array $show): array => [(string) $show['show']['title']];
 
         if ($releaseYear !== null) {
-            usort($candidates, static fn (array $left, array $right): int => [$right['match'], $left['index']] <=> [$left['match'], $right['index']]);
+            $candidates = [];
+            foreach ($shows as $index => $show) {
+                $tier = $this->showTitleMatchTier($name, $showNames($show));
+                if ($tier !== null) {
+                    $candidates[] = ['tier' => $tier, 'index' => $index, 'show' => $show];
+                }
+            }
+            usort($candidates, static fn (array $left, array $right): int => [$left['tier'], $left['index']] <=> [$right['tier'], $right['index']]);
 
             foreach ($candidates as $candidate) {
                 $traktId = (int) ($candidate['show']['show']['ids']['trakt'] ?? 0);
@@ -443,6 +420,7 @@ class TraktProvider extends AbstractTvProvider
             return false;
         }
 
+        $highest = $this->chooseShowByName($shows, $name, $showNames);
         if ($highest !== null && ! empty($highest['show']['ids']['trakt'])) {
             $fullShow = $this->client->getShowSummary($highest['show']['ids']['trakt']);
             if ($this->checkRequiredAttr($fullShow, 'traktS')) {

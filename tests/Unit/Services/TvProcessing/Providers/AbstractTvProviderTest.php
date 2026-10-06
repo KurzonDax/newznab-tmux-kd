@@ -43,27 +43,6 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
     }
 
     #[Test]
-    public function it_accepts_numeric_values_in_check_match(): void
-    {
-        Cache::flush();
-
-        $provider = $this->makeProvider();
-
-        $this->assertSame(100.0, $provider->checkMatch('2024', 2024, 80));
-        $this->assertSame(0.0, $provider->checkMatch('2024', 2023, 100));
-    }
-
-    #[Test]
-    public function it_returns_zero_for_non_comparable_values(): void
-    {
-        Cache::flush();
-
-        $provider = $this->makeProvider();
-
-        $this->assertSame(0.0, $provider->checkMatch('Example Show', ['bad'], 75));
-    }
-
-    #[Test]
     public function it_skips_imdb_updates_when_the_new_value_is_empty(): void
     {
         Cache::flush();

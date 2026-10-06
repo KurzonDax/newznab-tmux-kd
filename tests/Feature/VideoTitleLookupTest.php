@@ -9,6 +9,7 @@ use Database\Factories\VideoFactory;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -151,12 +152,12 @@ final class VideoTitleLookupTest extends TestCase
     }
 
     #[Test]
-    public function it_loosely_matches_the_year_stripped_title_variant(): void
+    public function it_declines_a_title_with_an_extra_word(): void
     {
-        $videoId = $this->createVideo('Batman: The Caped Crusader');
+        $this->createVideo('Batman: The Caped Crusader');
 
         $this->assertSame(
-            $videoId,
+            0,
             (new LocalDbProvider)->getByTitle('Batman Caped Crusader (2024)', 0),
         );
     }
@@ -170,6 +171,55 @@ final class VideoTitleLookupTest extends TestCase
             0,
             (new LocalDbProvider)->getByTitle('Unrelated Show (2024)', 0),
         );
+    }
+
+    /**
+     * @return iterable<string, array{string, string, bool}>
+     */
+    public static function releaseShowNames(): iterable
+    {
+        yield 'show name inside a longer title' => ['9-1-1: Nashville', 'Nashville.S01E01.720p.HDTV.x264', false];
+        yield 'show words inside other words' => ['Another Life', 'Ano, fe! - S07E15', false];
+        yield 'possessive and initials' => ["Marvel's Agents of S.H.I.E.L.D.", 'Marvels.Agents.of.SHIELD.S01E01.720p', true];
+        yield 'words run together' => ['BLUELOCK', 'Blue.Lock.S01E01.1080p', true];
+    }
+
+    #[DataProvider('releaseShowNames')]
+    #[Test]
+    public function a_release_links_only_to_a_show_with_the_same_name(string $show, string $release, bool $links): void
+    {
+        $videoId = $this->createVideo($show);
+        $provider = new LocalDbProvider;
+
+        $this->assertSame(
+            $links ? $videoId : 0,
+            $provider->getByRelease($provider->parseInfo($release), 0),
+        );
+    }
+
+    #[Test]
+    public function it_stores_every_distinct_alias_of_a_show(): void
+    {
+        Schema::drop('videos_aliases');
+        ProductionTables::fromAuthority()->create('videos_aliases');
+        $videoId = $this->createVideo('Fixture Show');
+        $provider = new LocalDbProvider;
+
+        $provider->addAliases($videoId, ['A', 'B', ['name' => 'C'], 'A', '', str_repeat('x', 181)]);
+
+        $this->assertSame(['A', 'B', 'C'], $this->aliasesOf($videoId));
+
+        $provider->addAliases($videoId, ['B', 'D']);
+
+        $this->assertSame(['A', 'B', 'C', 'D'], $this->aliasesOf($videoId));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function aliasesOf(int $videoId): array
+    {
+        return DB::table('videos_aliases')->where('videos_id', $videoId)->orderBy('title')->pluck('title')->all();
     }
 
     private function createVideo(string $title, string $started = '2024-01-01'): int
