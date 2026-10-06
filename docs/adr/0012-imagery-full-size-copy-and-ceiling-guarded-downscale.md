@@ -11,4 +11,4 @@ Deliberate choices a future reader may be tempted to "fix":
 - **A hard ceiling still exists.** Resizing requires decoding (~4–8 bytes per pixel in RAM with Imagick), and a kilobyte-sized file can claim gigapixel dimensions — the classic decompression bomb. The header check before decode is the bomb defense; removing the ceiling entirely re-opens it.
 - **New releases only, permanently.** The back catalog keeps its thumbs; regeneration would mean re-downloading sample articles per release, and the maintainer explicitly decided it will not be done — this is not a deferred decision awaiting tooling. The Fullscreen control hides itself where no Full-size copy exists, so the catalog split is invisible in the UI.
 
-Settled in a grilling session on 2026-08-28 (issue #294). See `CONTEXT.md` for **Extracted Sample Image**, **Generated Preview**, **Full-size copy**, and **Fullscreen view**.
+Settled in a grilling session on 2026-08-28 (issue #294). See `GLOSSARY.md` for **Extracted Sample Image**, **Generated Preview**, **Full-size copy**, and **Fullscreen view**.

@@ -21,4 +21,4 @@ Audio routing and categorization must use that same selected Forced root. They m
 
 The cross-post-aware implementation is tracked by issue #227. The existing forced-root guard already implements the lock for the primary group and remains intentional.
 
-Settled in a triage session on 2026-08-23. See `CONTEXT.md` for **Forced root**, **Routed floor**, and **Cross-posted release** vocabulary.
+Settled in a triage session on 2026-08-23. See `GLOSSARY.md` for **Forced root**, **Routed floor**, and **Cross-posted release** vocabulary.

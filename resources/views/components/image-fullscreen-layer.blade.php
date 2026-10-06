@@ -1,7 +1,7 @@
 @props(['titleProperty' => 'title'])
 
 {{--
-    The Fullscreen view (CONTEXT.md): the release's Full-size copy fitted
+    The Fullscreen view (GLOSSARY.md): the release's Full-size copy fitted
     entirely inside the viewport, entered from the corner control on the modal
     image and exited back to the modal it came from.
 

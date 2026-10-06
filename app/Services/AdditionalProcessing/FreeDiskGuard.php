@@ -8,7 +8,7 @@ use App\Services\StatusProbes\DiskProbe;
 use Closure;
 
 /**
- * The Free-disk guard (see CONTEXT.md and ADR 0013): one threshold shared by
+ * The Free-disk guard (see GLOSSARY.md and ADR 0013): one threshold shared by
  * every disk-hungry producer writing to the covers volume. Each producer
  * decides its own response -- a guarded Clip is skipped (no video artifact is
  * stored), release imagery is skipped entirely and recorded on the Imagery

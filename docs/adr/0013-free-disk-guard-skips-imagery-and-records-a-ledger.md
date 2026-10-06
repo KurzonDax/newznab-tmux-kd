@@ -11,4 +11,4 @@ Deliberate choices a future reader may be tempted to "fix":
 - **The release still settles as processed.** Leaving it pending would have the workers re-claiming and re-skipping it every cycle for the duration of the squeeze. Durability lives in the ledger, not in pending state.
 - **The guard runs at the start of the imagery stage, so the ledger is optimistic.** Skipping before downloading means we usually cannot know whether the release truly contained a sample; a row means "suppressed", and the requeued run — not the ledger — determines what the release yields. Rows that yield nothing on requeue are the accepted cost of not burning bandwidth during a squeeze.
 
-Settled in a grilling session on 2026-08-28 (issue #294). See `CONTEXT.md` for **Free-disk guard** and **Imagery disk skip**.
+Settled in a grilling session on 2026-08-28 (issue #294). See `GLOSSARY.md` for **Free-disk guard** and **Imagery disk skip**.

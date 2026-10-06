@@ -279,7 +279,7 @@ Chips carry eight tones — `neutral`, `origin`, `entity`, `primary`, `success`,
 
 Badges are the pill form: five tones, three sizes, always `rounded-full`.
 
-The domain vocabulary these express — Completion chip, Preview chip, Discard versus Hide — is defined in `CONTEXT.md`. Match those meanings; do not coin new chip semantics in a view.
+The domain vocabulary these express — Completion chip, Preview chip, Discard versus Hide — is defined in `GLOSSARY.md`. Match those meanings; do not coin new chip semantics in a view.
 
 ### Surfaces
 

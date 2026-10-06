@@ -10,7 +10,7 @@ use App\Models\RootCategory;
 /**
  * Per-root-category Dynamic segment budget policy.
  *
- * The dynamic segment budget (see CONTEXT.md) sizes the fetched head of a
+ * The dynamic segment budget (see GLOSSARY.md) sizes the fetched head of a
  * release's main video file by target duration instead of a fixed segment
  * count. It is opt-in per root category and only the Movies, TV, and XXX
  * roots are eligible; every other root — and any eligible root with the

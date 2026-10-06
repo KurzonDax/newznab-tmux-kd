@@ -1,7 +1,7 @@
 # Domain documentation
 
 For changes to domain terminology, ownership, or architecture, consult the relevant
-sections of [CONTEXT.md](../../CONTEXT.md) and decisions under [docs/adr/](../adr/).
+sections of [GLOSSARY.md](../../GLOSSARY.md) and decisions under [docs/adr/](../adr/).
 Routine mechanical edits do not require reading the glossary or all ADRs.
 
 Use the glossary's terms for concepts involved in the task. Read only decisions

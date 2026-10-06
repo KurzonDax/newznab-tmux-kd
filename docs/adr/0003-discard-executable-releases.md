@@ -11,4 +11,4 @@ Four deliberate choices a future reader may be tempted to "fix":
 - **Per-root toggles; Other is exempt by default.** Executables are never legitimate in Movies, Audio, TV, XXX, and Books, so those roots ship with `root_categories.discard_executables` on. PC and Console ship off because executables are expected there. Other ships off because obfuscated releases awaiting name-fixing live there — discarding them would destroy releases before they can be identified. `.dll` is deliberately in the default list: in the roots where discarding is on, a DLL is as conclusive a payload signal as an EXE.
 - **No block-list wiring, no tombstones.** A discard writes a log line (release name, category, poster, matching file) and nothing else. No rows are auto-inserted into the binary blacklist (header-time regex rules carry false-positive risk with shared poster names), and there is no tombstone table — the feature must reduce database footprint, not add to it. A release re-formed by backfill is simply discarded again on its next post-processing cycle.
 
-See `CONTEXT.md` for the **Discard** / **Hide** vocabulary.
+See `GLOSSARY.md` for the **Discard** / **Hide** vocabulary.

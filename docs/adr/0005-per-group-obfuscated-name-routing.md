@@ -12,4 +12,4 @@ Deliberate choices a future reader may be tempted to "fix":
 - **The group default is a floor, not a lock.** Downstream content pipes may still produce a more specific category inside the pipeline run. `MiscSafetyNetPipe` must not downgrade the routed result, but nothing else is suppressed.
 - **No seeding.** Pre-populating erotica/xxx → XXX and anime → Anime was considered and declined: an operator turning the feature on should do it knowingly, per group.
 
-Settled in a triage session on 2026-08-15. See `CONTEXT.md` for **Obfuscated-name routing** and **Edit Selected** vocabulary.
+Settled in a triage session on 2026-08-15. See `GLOSSARY.md` for **Obfuscated-name routing** and **Edit Selected** vocabulary.

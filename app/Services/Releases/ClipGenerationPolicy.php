@@ -8,7 +8,7 @@ use App\Models\Category;
 use App\Models\RootCategory;
 
 /**
- * Per-root-category Clip policy (see CONTEXT.md).
+ * Per-root-category Clip policy (see GLOSSARY.md).
  *
  * When enabled for a release's root and the source streams are browser-safe,
  * the video artifact is a full-resolution stream-copy Clip; otherwise no

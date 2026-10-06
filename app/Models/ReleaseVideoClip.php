@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * Metadata for the Clip stored as a release's video artifact (see CONTEXT.md).
+ * Metadata for the Clip stored as a release's video artifact (see GLOSSARY.md).
  *
  * One row per release: a release has exactly one video artifact slot. A row
  * exists for stream-copy and fallback-transcoded Clips — releases whose
