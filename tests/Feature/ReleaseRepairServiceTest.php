@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\SumsNzbSegmentBytes;
 use Tests\TestCase;
 
 /**
@@ -28,6 +29,7 @@ use Tests\TestCase;
 class ReleaseRepairServiceTest extends TestCase
 {
     use IsolatedSqliteDatabase;
+    use SumsNzbSegmentBytes;
 
     private string $nzbRoot = '';
 
@@ -77,6 +79,8 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_evaluated_target_completion'));
         $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
         $this->assertStringContainsString('part5of5.Tok@host', $this->storedNzb($release));
+        $this->assertSame(5 * 900, $this->nzbSegmentBytes($this->storedNzb($release)));
+        $this->assertSame($this->nzbSegmentBytes($this->storedNzb($release)), (int) DB::table('releases')->where('id', 1)->value('size'));
     }
 
     #[Test]

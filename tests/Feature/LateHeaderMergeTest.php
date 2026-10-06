@@ -24,11 +24,13 @@ use Illuminate\Support\Facades\Event;
 use Tests\Support\NeverBlacklistedService;
 use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
+use Tests\Support\SumsNzbSegmentBytes;
 use Tests\TestCase;
 
 class LateHeaderMergeTest extends TestCase
 {
     use CreatesPostingSchema;
+    use SumsNzbSegmentBytes;
 
     private const int FILES = 5;
 
@@ -89,6 +91,7 @@ class LateHeaderMergeTest extends TestCase
     {
         $release = $this->publishRelease(missing: [1 => [3, 7]]);
         $this->assertLessThan(100.0, (float) $release->completion);
+        $formedSize = (int) $release->size;
         $lateId = $this->ingestLate([1 => range(1, self::SEGMENTS)]);
 
         $result = $this->formReleases();
@@ -103,6 +106,8 @@ class LateHeaderMergeTest extends TestCase
         $this->assertSame($document->measure($declared)->percentage(), (float) $release->completion);
         $this->assertSame(100.0, (float) $release->completion);
         $this->assertSame($document->fileCount(), (int) $release->totalpart);
+        $this->assertSame($this->nzbSegmentBytes((string) app(NzbService::class)->readNzbContents($release->guid)), (int) $release->size);
+        $this->assertGreaterThan($formedSize, (int) $release->size);
         $this->assertLateCollectionGone($lateId);
         $this->assertSame(1, DB::table('releases')->count());
         $this->assertSame(0, $result['dupes']);
@@ -111,6 +116,7 @@ class LateHeaderMergeTest extends TestCase
     public function test_a_missing_whole_file_is_appended(): void
     {
         $release = $this->publishRelease(missing: [4 => range(1, self::SEGMENTS)]);
+        $formedSize = (int) $release->size;
         $lateId = $this->ingestLate([4 => range(1, self::SEGMENTS)]);
 
         $this->formReleases();
@@ -120,7 +126,10 @@ class LateHeaderMergeTest extends TestCase
         $this->assertContains($this->subject(4), $document->subjects());
         $appended = array_search($this->subject(4), $document->subjects(), true);
         $this->assertSame(range(1, self::SEGMENTS), array_keys($document->segments()[$appended]));
-        $this->assertSame(100.0, (float) $release->fresh()->completion);
+        $release->refresh();
+        $this->assertSame(100.0, (float) $release->completion);
+        $this->assertSame($this->nzbSegmentBytes((string) app(NzbService::class)->readNzbContents($release->guid)), (int) $release->size);
+        $this->assertGreaterThan($formedSize, (int) $release->size);
         $this->assertLateCollectionGone($lateId);
     }
 

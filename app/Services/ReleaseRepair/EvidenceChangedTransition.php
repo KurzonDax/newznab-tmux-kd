@@ -40,6 +40,7 @@ final class EvidenceChangedTransition
         $values = [
             'totalpart' => $document->fileCount(),
             'completion' => $document->measure($declaredFiles)->percentage(),
+            'size' => $document->bytes(),
         ];
 
         foreach (self::NAME_SOURCE_STATUS_COLUMNS as $column) {

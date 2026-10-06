@@ -64,6 +64,26 @@ final class NzbRepairDocument
     }
 
     /**
+     * Sum of every segment's `bytes` attribute, read from the live document.
+     *
+     * A missing or non-numeric `bytes` counts as 0, the same rule NZB import sizes a release by.
+     */
+    public function bytes(): int
+    {
+        $bytes = 0;
+
+        foreach ($this->files as $file) {
+            foreach ($file->getElementsByTagNameNS('*', 'segment') as $segment) {
+                if ($segment instanceof DOMElement) {
+                    $bytes += (int) $segment->getAttribute('bytes');
+                }
+            }
+        }
+
+        return $bytes;
+    }
+
+    /**
      * File index => `subject` attribute, document order.
      *
      * @return array<int, string>

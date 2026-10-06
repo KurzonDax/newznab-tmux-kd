@@ -49,6 +49,7 @@ final class ElasticsearchReleaseIndexFailureTest extends TestCase
             $table->string('guid')->unique();
             $table->integer('totalpart')->default(0);
             $table->double('completion')->default(0);
+            $table->unsignedBigInteger('size')->default(0);
             $table->integer('haspreview')->default(0);
             $table->integer('passwordstatus')->default(0);
             $table->integer('nfostatus')->default(0);
