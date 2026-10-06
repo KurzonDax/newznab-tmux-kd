@@ -21,7 +21,7 @@ use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 
 /**
- * Backend branching for the Clip (see CONTEXT.md): stream-copy storage when
+ * Backend branching for the Clip (see GLOSSARY.md): stream-copy storage when
  * the toggle, codec safety, and disk headroom all allow it; no video artifact
  * at all in every other case (Clip-or-nothing); artifact deletion.
  */

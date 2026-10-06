@@ -37,7 +37,7 @@ NNTmux downloads NNTP headers, assembles them into releases, enriches them with 
 - External API and RSS surfaces are frozen. New release data belongs in the web frontend only.
 - The database may change to serve a design, but every query a screen needs is proven against real data before it is built.
 - Show details (genres, cast, original language, US rating, running/ended, network) are not stored today; the TV redesign specifies them (`docs/proposals/tv-redesign/DATA-CONTRACT.md`). They are fetched when a show is first matched and refreshed only when a new release arrives for it, never on a schedule: the app is not an authoritative source of show information.
-- Domain vocabulary (Completion chip, Preview chip, Discard, Hide) is defined in `CONTEXT.md`.
+- Domain vocabulary (Completion chip, Preview chip, Discard, Hide) is defined in `GLOSSARY.md`.
 - Schema rules (maintainer, 2026-09-21): normalize; nothing about releases may be specific to one category; downtime is not a design concern.
 
 ## Brand Commitments

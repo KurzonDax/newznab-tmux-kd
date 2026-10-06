@@ -15,7 +15,7 @@ use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
- * Produces the Clip (see CONTEXT.md): a browser-safe remux where possible,
+ * Produces the Clip (see GLOSSARY.md): a browser-safe remux where possible,
  * otherwise a capped MP4 transcode of the downloaded head window.
  *
  * H.264 with AAC or no audio remuxes into MP4; VP8/VP9 with Vorbis/Opus or no

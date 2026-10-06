@@ -846,7 +846,7 @@ class ReleaseProcessor
     }
 
     /**
-     * Dynamic segment budget (see CONTEXT.md): probe the fetched head for the
+     * Dynamic segment budget (see GLOSSARY.md): probe the fetched head for the
      * overall bitrate, then fetch just enough additional head segments to
      * reach the target duration, under the hard byte ceiling covering the
      * total fetched for this file. Returns the fetched top-up bytes, or null
@@ -1046,7 +1046,7 @@ class ReleaseProcessor
     }
 
     /**
-     * Dynamic segment budget for archive-wrapped video (see CONTEXT.md):
+     * Dynamic segment budget for archive-wrapped video (see GLOSSARY.md):
      * after the fixed head fetch of an archive part has been extracted, probe
      * the partial video fragment for bitrate and keep fetching further
      * archive segments — the rest of this part, then subsequent parts in

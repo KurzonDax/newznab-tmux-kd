@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * The Imagery disk skip ledger (see CONTEXT.md and ADR 0013): one row per
+ * The Imagery disk skip ledger (see GLOSSARY.md and ADR 0013): one row per
  * release whose sample/preview imagery the Free-disk guard suppressed, kept
  * until an operator requeues it with `releases:requeue-imagery-disk-skips`.
  *

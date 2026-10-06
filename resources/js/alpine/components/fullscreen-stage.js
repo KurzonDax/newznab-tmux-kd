@@ -2,7 +2,7 @@
  * The Fullscreen view stage shared by both image modals.
  *
  * Not an Alpine component itself: spread the returned object into a component's
- * data to add the second layer described in CONTEXT.md -- the release's
+ * data to add the second layer described in GLOSSARY.md -- the release's
  * Full-size copy fitted inside the viewport, entered from a corner control and
  * exited back to the modal it came from. The control appears only when a
  * trigger supplied a full URL, so releases whose only stored rendering is the
