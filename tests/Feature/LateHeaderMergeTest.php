@@ -24,11 +24,13 @@ use Illuminate\Support\Facades\Event;
 use Tests\Support\NeverBlacklistedService;
 use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
+use Tests\Support\SumsNzbSegmentBytes;
 use Tests\TestCase;
 
 class LateHeaderMergeTest extends TestCase
 {
     use CreatesPostingSchema;
+    use SumsNzbSegmentBytes;
 
     private const int FILES = 5;
 
@@ -104,7 +106,7 @@ class LateHeaderMergeTest extends TestCase
         $this->assertSame($document->measure($declared)->percentage(), (float) $release->completion);
         $this->assertSame(100.0, (float) $release->completion);
         $this->assertSame($document->fileCount(), (int) $release->totalpart);
-        $this->assertSame($this->storedSegmentBytes($release), (int) $release->size);
+        $this->assertSame($this->nzbSegmentBytes((string) app(NzbService::class)->readNzbContents($release->guid)), (int) $release->size);
         $this->assertGreaterThan($formedSize, (int) $release->size);
         $this->assertLateCollectionGone($lateId);
         $this->assertSame(1, DB::table('releases')->count());
@@ -126,7 +128,7 @@ class LateHeaderMergeTest extends TestCase
         $this->assertSame(range(1, self::SEGMENTS), array_keys($document->segments()[$appended]));
         $release->refresh();
         $this->assertSame(100.0, (float) $release->completion);
-        $this->assertSame($this->storedSegmentBytes($release), (int) $release->size);
+        $this->assertSame($this->nzbSegmentBytes((string) app(NzbService::class)->readNzbContents($release->guid)), (int) $release->size);
         $this->assertGreaterThan($formedSize, (int) $release->size);
         $this->assertLateCollectionGone($lateId);
     }
@@ -498,21 +500,6 @@ class LateHeaderMergeTest extends TestCase
         }
 
         return $numbers;
-    }
-
-    /** Sum of every segment `bytes` attribute in the stored NZB, read independently of the repair document. */
-    private function storedSegmentBytes(Release $release): int
-    {
-        $xml = simplexml_load_string((string) app(NzbService::class)->readNzbContents($release->guid));
-        $this->assertNotFalse($xml);
-        $bytes = 0;
-        foreach ($xml->file as $file) {
-            foreach ($file->segments->segment as $segment) {
-                $bytes += (int) $segment['bytes'];
-            }
-        }
-
-        return $bytes;
     }
 
     private function lateParts(int $collectionId): int

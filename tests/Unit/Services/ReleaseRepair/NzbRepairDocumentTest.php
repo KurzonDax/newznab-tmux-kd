@@ -153,6 +153,7 @@ final class NzbRepairDocumentTest extends TestCase
             ], 'bytes' => 1000],
         ]));
 
+        $this->assertNotNull($document);
         $this->assertSame(2000, $document->bytes());
 
         $document->addSegments([0 => $document->plan()->files[0]->synthesized]);

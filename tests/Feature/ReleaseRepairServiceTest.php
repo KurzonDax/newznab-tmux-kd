@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\SumsNzbSegmentBytes;
 use Tests\TestCase;
 
 /**
@@ -28,6 +29,7 @@ use Tests\TestCase;
 class ReleaseRepairServiceTest extends TestCase
 {
     use IsolatedSqliteDatabase;
+    use SumsNzbSegmentBytes;
 
     private string $nzbRoot = '';
 
@@ -77,8 +79,8 @@ class ReleaseRepairServiceTest extends TestCase
         $this->assertSame(95.0, (float) DB::table('releases')->where('id', 1)->value('repair_evaluated_target_completion'));
         $this->assertSame(100.0, (float) DB::table('releases')->where('id', 1)->value('completion'));
         $this->assertStringContainsString('part5of5.Tok@host', $this->storedNzb($release));
-        $this->assertSame(5 * 900, $this->storedSegmentBytes($release));
-        $this->assertSame($this->storedSegmentBytes($release), (int) DB::table('releases')->where('id', 1)->value('size'));
+        $this->assertSame(5 * 900, $this->nzbSegmentBytes($this->storedNzb($release)));
+        $this->assertSame($this->nzbSegmentBytes($this->storedNzb($release)), (int) DB::table('releases')->where('id', 1)->value('size'));
     }
 
     #[Test]
@@ -622,22 +624,6 @@ class ReleaseRepairServiceTest extends TestCase
     private function storedNzb(Release $release): string
     {
         return (string) app(NzbService::class)->readNzbContents((string) $release->guid);
-    }
-
-    /** Sum of every segment `bytes` attribute in the stored NZB. */
-    private function storedSegmentBytes(Release $release): int
-    {
-        $xml = simplexml_load_string($this->storedNzb($release));
-        $this->assertNotFalse($xml);
-        $bytes = 0;
-
-        foreach ($xml->file as $file) {
-            foreach ($file->segments->segment as $segment) {
-                $bytes += (int) $segment['bytes'];
-            }
-        }
-
-        return $bytes;
     }
 
     private function storedOutcome(int $id): ?string
