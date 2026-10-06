@@ -44,6 +44,9 @@ class ReleaseContext
     /** Video markers that make an ambiguous adult keyword count, including sub-HD clips. */
     private const string VIDEO_RESOLUTION_REGEX = '/\b(360p|480p|540p|576p|720p|1080p|2160p|4k|mp4)\b/i';
 
+    /** Source and streaming-service tags that mark an ordinary movie or TV release. */
+    private const string ORDINARY_RELEASE_TAG_REGEX = '/\b(?:WEB|WEB-?DL|WEB-?Rip|Blu-?Ray|BDRip|BRRip|HDTV|Remux|DVDRip|AMZN|NF|DSNP|HMAX|ATVP|HULU|PCOK|PMTP|MUBI|iP|ZEE5|CRAV|STAN)\b/i';
+
     public function __construct(
         public readonly string $releaseName,
         public readonly int|string $groupId,
@@ -106,6 +109,15 @@ class ReleaseContext
     }
 
     /**
+     * Check whether the release name carries a source or streaming-service tag
+     * of an ordinary movie or TV release (WEB-DL, BluRay, NF, DSNP …).
+     */
+    public function hasOrdinaryReleaseTag(): bool
+    {
+        return preg_match(self::ORDINARY_RELEASE_TAG_REGEX, $this->releaseName) === 1;
+    }
+
+    /**
      * Check a name for an unambiguous adult trigger word.
      *
      * Exposed so the XXX categorizer can share the one definition without the
@@ -136,7 +148,10 @@ class ReleaseContext
      * Explicit markers (XXX tags, studio names) always win. Weak keywords
      * ("Anal", or "Teen"/"Hardcore"/… next to a resolution) are ambiguous in
      * ordinary titles, so they do not count when the name carries a clear
-     * TV structure (season+episode or standalone season token).
+     * TV structure (season+episode or standalone season token) or an
+     * ordinary-release tag. On a name with an ordinary-release tag, an XXX
+     * inside the episode title or as the trailing release group is not a
+     * marker either.
      */
     public function hasAdultMarkers(): bool
     {
@@ -149,6 +164,12 @@ class ReleaseContext
                 continue;
             }
 
+            if (strcasecmp($marker, 'XXX') === 0 && $this->hasOrdinaryReleaseTag()
+                && (($slot !== null && $offset >= $slot[0] && $offset + strlen($marker) <= $slot[1])
+                    || ($offset > 0 && $this->releaseName[$offset - 1] === '-' && $offset + strlen($marker) === strlen($this->releaseName)))) {
+                continue;
+            }
+
             return true;
         }
 
@@ -158,6 +179,10 @@ class ReleaseContext
 
         if ($this->hasCorroboratedAmbiguousAdultTerm()) {
             return true;
+        }
+
+        if ($this->hasOrdinaryReleaseTag()) {
+            return false;
         }
 
         $hasWeakMarker = preg_match('/\bAnal\b/i', $this->releaseName)
