@@ -15,6 +15,7 @@ use App\Services\BlacklistService;
 use App\Services\Categorization\CategorizationService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use App\Services\Releases\ReleaseManagementService;
@@ -75,6 +76,33 @@ class NzbImportService
 
     protected ?int $relId = null;
 
+    /**
+     * Skip the blacklist and whitelist check for this run.
+     */
+    protected bool $skipBlacklist = false;
+
+    /**
+     * Keep the release each file creates or matches as a duplicate.
+     */
+    protected bool $keepRelease = false;
+
+    /**
+     * The message reported for the current file's failure, if any.
+     */
+    protected ?string $importError = null;
+
+    /**
+     * How the current file's duplicate absorb ended, when one was attempted.
+     */
+    protected ?DuplicateAbsorbOutcome $absorbOutcome = null;
+
+    /**
+     * The existing release the current file matched as a duplicate.
+     */
+    protected ?int $duplicateReleaseId = null;
+
+    protected ?string $duplicateReleaseGuid = null;
+
     public mixed $echoCLI;
 
     public NzbService $nzb;
@@ -107,7 +135,10 @@ class NzbImportService
     /**
      * Begin importing NZB files.
      *
-     * @param  null|callable(array{path:string,status:NzbImportStatus,release_id:int|null,release_guid:string|null}):void  $resultCallback
+     * `$releaseName`, when given, is the release name for every file. `$keepRelease` keeps each
+     * release a file creates or matches as a duplicate (see {@see KeptReleases}).
+     *
+     * @param  null|callable(array{path:string,status:NzbImportStatus,release_id:int|null,release_guid:string|null,absorbed:bool,absorb_outcome:string|null,error:string|null}):void  $resultCallback
      *
      * @throws FileNotFoundException
      */
@@ -118,7 +149,13 @@ class NzbImportService
         bool $deleteFailed = false,
         int $source = 1,
         ?callable $resultCallback = null,
+        ?string $releaseName = null,
+        bool $skipBlacklist = false,
+        bool $keepRelease = false,
     ): bool|string {
+        $this->skipBlacklist = $skipBlacklist;
+        $this->keepRelease = $keepRelease;
+
         // Get all the groups in the DB.
         if (! $this->getAllGroups()) {
             if ($this->browser) {
@@ -155,7 +192,7 @@ class NzbImportService
             $this->echoOut("Filtered out {$totalFilesFiltered} non-NZB files. Processing ".count($nzbFiles).' NZB files.');
         }
 
-        $reportResult = static function (
+        $reportResult = function (
             string $path,
             NzbImportStatus $status,
             ?int $releaseId = null,
@@ -165,21 +202,33 @@ class NzbImportService
                 return;
             }
 
+            $duplicate = $status === NzbImportStatus::Duplicate;
+            [$releaseId, $releaseGuid] = match ($status) {
+                NzbImportStatus::Inserted => [$releaseId, $releaseGuid],
+                NzbImportStatus::Duplicate => [$this->duplicateReleaseId, $this->duplicateReleaseGuid],
+                default => [null, null],
+            };
             $resultCallback([
                 'path' => $path,
                 'status' => $status,
-                'release_id' => $status === NzbImportStatus::Inserted ? $releaseId : null,
-                'release_guid' => $status === NzbImportStatus::Inserted ? $releaseGuid : null,
+                'release_id' => $releaseId,
+                'release_guid' => $releaseGuid,
+                'absorbed' => $duplicate && $this->absorbOutcome === DuplicateAbsorbOutcome::Absorbed,
+                'absorb_outcome' => $duplicate && $this->absorbOutcome !== null
+                    ? self::absorbOutcomeName($this->absorbOutcome)
+                    : null,
+                'error' => in_array($status, [NzbImportStatus::Blacklisted, NzbImportStatus::NoGroup, NzbImportStatus::Failed], true)
+                    ? $this->importError
+                    : null,
             ]);
         };
 
         // Loop over the NZB file names only.
         foreach ($nzbFiles as $nzbFilePath) {
+            $this->resetFileResult();
+
             // Check if the file is really there.
             if (File::isFile($nzbFilePath)) {
-                $this->relGuid = '';
-                $this->relId = null;
-
                 // Get the contents of the NZB file as a string.
                 if (Str::endsWith(strtolower($nzbFilePath), '.nzb.gz')) {
                     $nzbString = unzipGzipFile($nzbFilePath);
@@ -188,7 +237,7 @@ class NzbImportService
                 }
 
                 if ($nzbString === false) {
-                    $this->echoOut('ERROR: Unable to read: '.$nzbFilePath);
+                    $this->reportError('ERROR: Unable to read: '.$nzbFilePath);
                     $reportResult($nzbFilePath, NzbImportStatus::Failed);
 
                     if ($deleteFailed) {
@@ -202,7 +251,7 @@ class NzbImportService
                 // Load it as an XML object.
                 $nzbXML = @simplexml_load_string($nzbString);
                 if ($nzbXML === false || strtolower($nzbXML->getName()) !== 'nzb') {
-                    $this->echoOut('ERROR: Unable to load NZB XML data: '.$nzbFilePath);
+                    $this->reportError('ERROR: Unable to load NZB XML data: '.$nzbFilePath);
                     $reportResult($nzbFilePath, NzbImportStatus::Failed);
 
                     if ($deleteFailed) {
@@ -214,7 +263,8 @@ class NzbImportService
                 }
 
                 // Try to insert the NZB details into the DB.
-                $nzbFileName = $useNzbName === true ? $this->deriveReleaseNameFromNzbPath($nzbFilePath) : '';
+                $nzbFileName = $releaseName
+                    ?? ($useNzbName === true ? $this->deriveReleaseNameFromNzbPath($nzbFilePath) : '');
                 try {
                     $importStatus = $this->scanNZBFile($nzbXML, $nzbFileName, $source);
                 } catch (\Throwable $exception) {
@@ -228,7 +278,7 @@ class NzbImportService
                         $message .= ': '.$exception->getMessage();
                     }
 
-                    $this->echoOut($message);
+                    $this->reportError($message);
                     $importStatus = NzbImportStatus::Failed;
                 }
 
@@ -248,7 +298,7 @@ class NzbImportService
 
                     if (! $stored) {
                         $destination = $path ?? $this->relGuid;
-                        $this->echoOut('ERROR: Problem compressing NZB file to: '.$destination);
+                        $this->reportError('ERROR: Problem compressing NZB file to: '.$destination);
 
                         $this->deleteImportedRelease();
                         $reportResult($nzbFilePath, NzbImportStatus::Failed);
@@ -258,6 +308,9 @@ class NzbImportService
                         }
                         $nzbsSkipped++;
                     } else {
+                        if ($this->keepRelease && $this->relId !== null) {
+                            KeptReleases::mark($this->relId);
+                        }
                         $reportResult($nzbFilePath, NzbImportStatus::Inserted, $this->relId, $this->relGuid);
 
                         if ($delete) {
@@ -292,7 +345,7 @@ class NzbImportService
                     }
                 }
             } else {
-                $this->echoOut('ERROR: Unable to fetch: '.$nzbFilePath);
+                $this->reportError('ERROR: Unable to fetch: '.$nzbFilePath);
                 $reportResult($nzbFilePath, NzbImportStatus::Failed);
                 $nzbsSkipped++;
             }
@@ -313,6 +366,48 @@ class NzbImportService
         }
 
         return true;
+    }
+
+    private function resetFileResult(): void
+    {
+        $this->relGuid = '';
+        $this->relId = null;
+        $this->importError = null;
+        $this->absorbOutcome = null;
+        $this->duplicateReleaseId = null;
+        $this->duplicateReleaseGuid = null;
+    }
+
+    /**
+     * Print a failure for the current file and remember it as the file's reported error.
+     */
+    protected function reportError(string $message): void
+    {
+        $this->importError = $message;
+        $this->echoOut($message);
+    }
+
+    /**
+     * Remember the existing release the current file matched, and keep it when asked to.
+     */
+    private function recordDuplicate(Release $existing): void
+    {
+        $this->duplicateReleaseId = (int) $existing->id;
+        $this->duplicateReleaseGuid = (string) $existing->guid;
+
+        if ($this->keepRelease) {
+            KeptReleases::mark($this->duplicateReleaseId);
+        }
+    }
+
+    private static function absorbOutcomeName(DuplicateAbsorbOutcome $outcome): string
+    {
+        return match ($outcome) {
+            DuplicateAbsorbOutcome::Absorbed => 'absorbed',
+            DuplicateAbsorbOutcome::NotBetter => 'not_better',
+            DuplicateAbsorbOutcome::Deferred => 'deferred',
+            DuplicateAbsorbOutcome::Failed => 'failed',
+        };
     }
 
     private function deleteImportedRelease(): void
@@ -462,8 +557,8 @@ class NzbImportService
                 // Add all the found groups to an array.
                 $groupArr[] = $group;
 
-                // Check if this NZB is blacklisted (only if group is valid).
-                if ($group !== false && $this->blacklistService->isBlackListed($msg, $group)) {
+                // Check if this NZB is blacklisted (only if group is valid and the run checks it).
+                if ($group !== false && ! $this->skipBlacklist && $this->blacklistService->isBlackListed($msg, $group)) {
                     $isBlackListed = true;
                     break;
                 }
@@ -497,7 +592,7 @@ class NzbImportService
                 } else {
                     $errorMessage = 'No group found for '.$firstName.' (one of '.implode(', ', $groupArr).' are missing';
                 }
-                $this->echoOut($errorMessage);
+                $this->reportError($errorMessage);
 
                 // Persist blacklist usage stats if we matched any rule during this NZB processing
                 $this->blacklistService->updateBlacklistUsage($this->blacklistService->getAndClearIdsToUpdate());
@@ -666,6 +761,7 @@ class NzbImportService
                 );
                 $absorbed = $absorbResult->wasAbsorbed();
                 $absorptionOperationId = $absorbResult->operationId;
+                $this->absorbOutcome = $absorbResult->outcome;
 
                 // A deferred or failed absorb still records the import as an
                 // ordinary duplicate; the run never aborts over it. There is
@@ -692,6 +788,7 @@ class NzbImportService
                 'new_name' => $escapedSubject,
                 'existing_name' => $dupeCheck->name,
             ]);
+            $this->recordDuplicate($dupeCheck);
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
             return NzbImportStatus::Duplicate;
@@ -731,7 +828,7 @@ class NzbImportService
                 ? null
                 : Release::query()
                     ->where('collectionhash', $importHash)
-                    ->first(['id', 'searchname', 'fromname', 'size', 'name']);
+                    ->first(['id', 'guid', 'searchname', 'fromname', 'size', 'name']);
 
             if ($existing === null) {
                 throw $exception;
@@ -750,13 +847,14 @@ class NzbImportService
                 'new_name' => $escapedSubject,
                 'existing_name' => $existing->name,
             ]);
+            $this->recordDuplicate($existing);
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
             return NzbImportStatus::Duplicate;
         }
 
         if ($relID === null) {
-            $this->echoOut('ERROR: Problem inserting: '.$subject);
+            $this->reportError('ERROR: Problem inserting: '.$subject);
 
             return NzbImportStatus::Failed;
         }

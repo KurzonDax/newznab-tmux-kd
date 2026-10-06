@@ -25,10 +25,12 @@ use Illuminate\Support\Facades\Schema;
 final class ReleaseDeletionProtection
 {
     /**
+     * Kept releases are excluded unless `$includeKept` is set, which only release retention does.
+     *
      * @param  Builder<Release>  $query
      * @return Builder<Release>
      */
-    public static function apply(Builder $query, string $table = 'releases'): Builder
+    public static function apply(Builder $query, string $table = 'releases', bool $includeKept = false): Builder
     {
         RecoveryReleaseGate::excludePending($query, $table);
         $query->whereRaw(BundleIdentity::availableSql($table));
@@ -50,6 +52,10 @@ final class ReleaseDeletionProtection
                     ->whereNull($column)
                     ->orWhere($column, '<', ReleaseClaimant::claimStaleBefore());
             });
+        }
+
+        if (! $includeKept) {
+            KeptReleases::exclude($query, $table);
         }
 
         SidecarMutationProtection::apply($query, $table);

@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Releases\ExecutableReleaseDiscardService;
+use App\Services\Releases\KeptReleases;
 use Database\Seeders\RootCategoriesTableSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ExecutableReleaseDiscardServiceTest extends TestCase
@@ -185,6 +187,43 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
         $this->assertFalse($service->discardById(42, 'payload.exe'));
     }
 
+    public function test_discard_leaves_a_kept_release_in_place_and_reports_nothing_discarded(): void
+    {
+        $this->insertRelease(1, 'guid-1', 6999, 'Hand.Picked.Release', 'poster@example.com');
+        $this->insertRelease(2, 'guid-2', 6999, 'Ordinary.Release', 'poster@example.com');
+        DB::table('release_files')->insert([
+            ['releases_id' => 1, 'name' => 'Fixer/Fixer.exe', 'size' => 1024],
+            ['releases_id' => 2, 'name' => 'Fixer/Fixer.exe', 'size' => 1024],
+        ]);
+        KeptReleases::mark(1);
+
+        Search::shouldReceive('deleteRelease')->once()->with(2);
+        Log::shouldReceive('warning')->once();
+
+        $service = new ExecutableReleaseDiscardService;
+
+        $this->assertFalse($service->discard(Release::query()->findOrFail(1), 'Fixer/Fixer.exe'));
+        $this->assertTrue($service->discard(Release::query()->findOrFail(2), 'Fixer/Fixer.exe'));
+        $this->assertSame([1], DB::table('releases')->pluck('id')->map(fn ($id) => (int) $id)->all());
+        $this->assertSame(1, DB::table('release_files')->where('releases_id', 1)->count());
+    }
+
+    public function test_discard_by_id_leaves_a_kept_release_in_place_and_reports_nothing_discarded(): void
+    {
+        $this->insertRelease(1, 'guid-1', 6999, 'Hand.Picked.Release', 'poster@example.com');
+        $this->insertRelease(2, 'guid-2', 6999, 'Ordinary.Release', 'poster@example.com');
+        KeptReleases::mark(1);
+
+        Search::shouldReceive('deleteRelease')->once()->with(2);
+        Log::shouldReceive('warning')->once();
+
+        $service = new ExecutableReleaseDiscardService;
+
+        $this->assertFalse($service->discardById(1, 'payload.exe'));
+        $this->assertTrue($service->discardById(2, 'payload.exe'));
+        $this->assertSame([1], DB::table('releases')->pluck('id')->map(fn ($id) => (int) $id)->all());
+    }
+
     public function test_sweep_purges_matching_backlog_only(): void
     {
         // Discarded: executable file, toggled-on root (XXX).
@@ -275,6 +314,7 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
 
         DB::table('settings')->where('name', ExecutableReleaseDiscardService::EXTENSIONS_SETTING)->delete();
 
+        Schema::dropIfExists('kept_releases');
         Schema::dropIfExists('release_files');
         Schema::dropIfExists('releases');
         Schema::dropIfExists('categories');
@@ -315,6 +355,8 @@ class ExecutableReleaseDiscardServiceTest extends TestCase
             $table->primary(['releases_id', 'name']);
             $table->foreign('releases_id')->references('id')->on('releases')->cascadeOnDelete();
         });
+
+        ProductionTables::fromAuthority()->create('kept_releases');
     }
 
     private function seedCategories(): void

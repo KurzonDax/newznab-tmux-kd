@@ -69,7 +69,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
     protected function tearDown(): void
     {
         if (DB::getDefaultConnection() === 'mariadb') {
-            foreach (['categories', 'root_categories', 'parts', 'binaries', 'collections', 'release_files', 'releases', 'binaryblacklist', 'usenet_groups', 'settings'] as $table) {
+            foreach (['kept_releases', 'categories', 'root_categories', 'parts', 'binaries', 'collections', 'release_files', 'releases', 'binaryblacklist', 'usenet_groups', 'settings'] as $table) {
                 Schema::dropIfExists($table);
             }
             DB::disconnect('cleanup_peer');

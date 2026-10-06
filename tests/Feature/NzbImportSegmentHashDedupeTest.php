@@ -13,6 +13,7 @@ use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class NzbImportSegmentHashDedupeTest extends TestCase
@@ -146,6 +147,28 @@ class NzbImportSegmentHashDedupeTest extends TestCase
 
         $this->assertSame(NzbImportStatus::Duplicate, $second);
         $this->assertSame(1, DB::table('releases')->count());
+    }
+
+    public function test_a_collectionhash_duplicate_reports_and_keeps_the_matched_release(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        $first = $this->import($this->makeNzb([
+            ['subject' => 'Original.Hashed.Release', 'segments' => ['h1@example.com', 'h2@example.com']],
+        ]));
+        $this->assertSame(NzbImportStatus::Inserted, $first['status']);
+        $existing = Release::query()->firstOrFail();
+
+        // Rewritten subject: only the segment hash can match it.
+        $second = $this->import($this->makeNzb([
+            ['subject' => 'Rewritten.Hashed.Subject', 'segments' => ['h2@example.com', 'h1@example.com']],
+        ]), keepRelease: true);
+
+        $this->assertSame(NzbImportStatus::Duplicate, $second['status']);
+        $this->assertSame((int) $existing->id, $second['release_id']);
+        $this->assertSame((string) $existing->guid, $second['release_guid']);
+        $this->assertFalse($second['absorbed']);
+        $this->assertNull($second['absorb_outcome'], 'The collectionhash path attempts no absorb.');
+        $this->assertSame([(int) $existing->id], DB::table('kept_releases')->pluck('releases_id')->map(intval(...))->all());
     }
 
     public function test_reimport_of_identical_nzb_is_duplicate(): void
@@ -285,6 +308,29 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         };
 
         return $service->scanForTest($nzbXML);
+    }
+
+    /**
+     * Import the NZB from a file through `beginImport()` and return its reported result.
+     *
+     * @return array<string, mixed>
+     */
+    private function import(\SimpleXMLElement $nzbXML, bool $keepRelease = false): array
+    {
+        $path = $this->makeTempPath('import-dedupe', '.nzb');
+        file_put_contents($path, (string) $nzbXML->asXML());
+        $results = [];
+
+        (new NzbImportService(['Browser' => true]))->beginImport(
+            [$path],
+            resultCallback: static function (array $result) use (&$results): void {
+                $results[] = $result;
+            },
+            keepRelease: $keepRelease,
+        );
+        $this->assertCount(1, $results);
+
+        return $results[0];
     }
 
     /**
