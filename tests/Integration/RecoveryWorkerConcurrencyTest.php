@@ -24,6 +24,7 @@ use App\Services\ObfuscationRecovery\RecoveryEnrichmentResume;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFilePlan;
 use App\Services\ObfuscationRecovery\RecoveryFileRole;
+use App\Services\ObfuscationRecovery\RecoveryFrontierEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryFrontiers;
 use App\Services\ObfuscationRecovery\RecoveryGapPlanner;
@@ -36,7 +37,9 @@ use App\Services\ObfuscationRecovery\RecoveryPublications;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
 use App\Services\ObfuscationRecovery\RecoveryRunRefresh;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
+use App\Services\ObfuscationRecovery\RecoveryScanWindow;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
+use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoverySlots;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryStatus;
@@ -625,6 +628,55 @@ final class RecoveryWorkerConcurrencyTest extends TestCase
         $this->assertLessThan(2000, $reads, 'Scheduler examined irrelevant historical conflict rows.');
         $this->assertSame(0, DB::transactionLevel());
         $this->assertSame(10001, DB::table('obfuscation_recovery_frontier_conflicts')->count());
+    }
+
+    public function test_coverage_lookups_seek_instead_of_scanning_ranges_below_the_window(): void
+    {
+        [$first, $last, $population] = [100001, 100300, 10000];
+        $scope = RecoveryPositiveCoverage::scope('scale', 1, 1);
+        $bundle = (object) ['source_epoch' => 'scale', 'groups_id' => 1, 'capture_generation' => 1];
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'scale', 1, $first, $last, HeaderScanDirection::Head, (string) Str::uuid());
+        DB::transaction(fn () => RecoveryScanWindow::record(DB::connection(), $context, RecoveryConfig::fromValues([])));
+        $measure = function (callable $lookup): array {
+            $before = $this->coverageReads();
+            $result = DB::transaction(fn () => $lookup(DB::connection()));
+
+            return [$this->coverageReads() - $before, $result];
+        };
+        $seeded = 0;
+        $reads = [];
+        foreach ([$population, 2 * $population] as $target) {
+            for (; $seeded < $target; $seeded += 1000) {
+                $rows = [];
+                for ($i = $seeded; $i < $seeded + 1000; $i++) {
+                    $article = $first - 1 - 2 * $i;
+                    $rows[] = ['scope_digest' => $scope, 'source_epoch' => 'scale', 'groups_id' => 1, 'capture_generation' => 1,
+                        'kind' => 'captured', 'direction' => 'Head', 'first_article' => $article, 'last_article' => $article];
+                }
+                DB::table('obfuscation_recovery_coverage')->insert($rows);
+            }
+            [$reads['record'][]] = $measure(fn ($connection) => (new RecoveryPositiveCoverage)->record($connection, $context));
+            $this->assertSame($last, (int) DB::table('obfuscation_recovery_coverage')->where('scope_digest', $scope)
+                ->where('kind', 'captured')->orderByDesc('first_article')->value('last_article'));
+            [$reads['context'][], $settled] = $measure(fn ($connection) => (new RecoverySettlement)->context('scale', 1, 1,
+                $first, $last, '2026-01-01 00:00:00', '2026-01-01 00:00:00', false, $connection));
+            $this->assertNotNull($settled['containing']);
+            [$reads['retainedHead'][], $retained] = $measure(fn ($connection) => (new RecoveryFrontierEvidence)
+                ->retainedHead($connection, $bundle, $first, $last, false));
+            $this->assertTrue($retained);
+            [$reads['interval'][], $interval] = $measure(fn ($connection) => (new RecoveryFrontierEvidence)
+                ->interval($connection, $bundle, $first + 10, false));
+            $this->assertNotNull($interval);
+        }
+        foreach ($reads as $lookup => [$atPopulation, $atDouble]) {
+            $this->assertLessThan(100, $atDouble - $atPopulation, $lookup.' read coverage rows below the window: '.json_encode($reads));
+        }
+    }
+
+    private function coverageReads(): int
+    {
+        return array_sum(array_map(static fn (object $row): int => (int) $row->Value, DB::select('SHOW SESSION STATUS WHERE Variable_name IN '
+            ."('Handler_icp_attempts', 'Handler_read_key', 'Handler_read_next', 'Handler_read_prev', 'Handler_read_rnd_next')")));
     }
 
     private function frontierReads(): int

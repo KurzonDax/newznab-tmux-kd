@@ -6,6 +6,7 @@ namespace App\Services\ObfuscationRecovery;
 
 use App\Enums\HeaderScanDirection;
 use Illuminate\Database\Connection;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 final class RecoveryPositiveCoverage
@@ -16,8 +17,8 @@ final class RecoveryPositiveCoverage
         foreach (['captured', 'retained'] as $kind) {
             $query = $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)
                 ->where('kind', $kind)->where('direction', $context->direction->name);
-            $rows = (clone $query)->where('first_article', '<=', $context->last + 1)->where('last_article', '>=', $context->first - 1)
-                ->orderBy('first_article')->limit(101)->lockForUpdate()->get();
+            $rows = $this->intersecting($connection, $scope, $kind, $context->direction->name,
+                $context->first - 1, $context->last + 1, 101, lock: true);
             if ($rows->count() > 100) {
                 throw new \RuntimeException('coverage_merge_batch_limit');
             }
@@ -35,6 +36,28 @@ final class RecoveryPositiveCoverage
                 (clone $query)->whereIn('id', $rows->pluck('id'))->where('id', '!=', $id)->delete();
             }
         }
+    }
+
+    /**
+     * Ranges intersecting [$first, $last] within one scope/kind/direction, ordered by first_article, at most $limit rows.
+     *
+     * @return Collection<int, \stdClass>
+     */
+    public function intersecting(Connection $connection, string $scope, string $kind, string $direction,
+        int $first, int $last, int $limit, bool $lock = false): Collection
+    {
+        if (! $lock && $connection->transactionLevel() === 0) {
+            // Both seeks must read one snapshot, or a merge committed between them reads as a hole.
+            return $connection->transaction(fn (): Collection => $this->intersecting($connection, $scope, $kind, $direction, $first, $last, $limit));
+        }
+        $query = fn () => $connection->table('obfuscation_recovery_coverage')->where('scope_digest', $scope)
+            ->where('kind', $kind)->where('direction', $direction)->when($lock, fn ($query) => $query->lockForUpdate());
+        // Ranges never overlap, so only the nearest predecessor can start before the window and reach into it.
+        $predecessor = $query()->where('first_article', '<', $first)->orderByDesc('first_article')->limit(1)->first();
+        $inside = $query()->whereBetween('first_article', [$first, $last])->orderBy('first_article')->limit($limit)->get();
+
+        return ($predecessor !== null && (int) $predecessor->last_article >= $first ? collect([$predecessor]) : collect())
+            ->concat($inside)->take($limit)->values();
     }
 
     public function expire(Connection $connection, string $epoch, int $group, int $generation, int $article): void
