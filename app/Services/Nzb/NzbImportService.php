@@ -14,11 +14,9 @@ use App\Models\UsenetGroup;
 use App\Services\BlacklistService;
 use App\Services\Categorization\CategorizationService;
 use App\Services\ReleaseCleaningService;
-use App\Services\ReleaseImageService;
 use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
-use App\Services\Releases\ReleaseManagementService;
 use App\Support\Utf8;
 use Illuminate\Contracts\Filesystem\FileNotFoundException;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -48,10 +46,6 @@ class NzbImportService
 
     protected NzbParserService $parserService;
 
-    protected ReleaseManagementService $releaseManagement;
-
-    protected ReleaseImageService $releaseImage;
-
     /**
      * List of all the group names/ids in the DB.
      *
@@ -75,6 +69,12 @@ class NzbImportService
     protected string $relGuid;
 
     protected ?int $relId = null;
+
+    /**
+     * The raw NZB of the current file, stored before its release row is inserted.
+     * Null when `insertNZB()` runs outside `beginImport()`, which skips the store.
+     */
+    protected ?string $currentNzbString = null;
 
     /**
      * Skip the blacklist and whitelist check for this run.
@@ -110,11 +110,8 @@ class NzbImportService
     /**
      * @param  array<string, mixed>  $options
      */
-    public function __construct(
-        array $options = [],
-        ?ReleaseManagementService $releaseManagement = null,
-        ?ReleaseImageService $releaseImage = null,
-    ) {
+    public function __construct(array $options = [])
+    {
         $this->echoCLI = config('nntmux.echocli');
         $this->blacklistService = new BlacklistService;
         $this->category = new CategorizationService;
@@ -123,8 +120,6 @@ class NzbImportService
         $this->releaseDuplicateFinder = app(ReleaseDuplicateFinder::class);
         $this->releaseDuplicateAbsorber = app(ReleaseDuplicateAbsorber::class);
         $this->parserService = app(NzbParserService::class);
-        $this->releaseManagement = $releaseManagement ?? app(ReleaseManagementService::class);
-        $this->releaseImage = $releaseImage ?? new ReleaseImageService;
         $this->crossPostt = Settings::settingValueOr('crossposttime', 2);
 
         // Set properties from options
@@ -265,6 +260,7 @@ class NzbImportService
                 // Try to insert the NZB details into the DB.
                 $nzbFileName = $releaseName
                     ?? ($useNzbName === true ? $this->deriveReleaseNameFromNzbPath($nzbFilePath) : '');
+                $this->currentNzbString = $nzbString;
                 try {
                     $importStatus = $this->scanNZBFile($nzbXML, $nzbFileName, $source);
                 } catch (\Throwable $exception) {
@@ -283,43 +279,17 @@ class NzbImportService
                 }
 
                 if ($importStatus === NzbImportStatus::Inserted) {
-                    $path = null;
-                    try {
-                        $path = $this->nzb->getNzbPath($this->relGuid, 0, true);
-                        $stored = $this->writeCompressedNzb($path, $nzbString);
-                    } catch (\Throwable $exception) {
-                        Log::error('NZB import failed while storing the compressed file.', [
-                            'guid' => $this->relGuid,
-                            'path' => $path,
-                            'exception' => $exception,
-                        ]);
-                        $stored = false;
+                    if ($this->keepRelease && $this->relId !== null) {
+                        KeptReleases::mark($this->relId);
+                    }
+                    $reportResult($nzbFilePath, NzbImportStatus::Inserted, $this->relId, $this->relGuid);
+
+                    if ($delete) {
+                        // Remove the nzb file.
+                        File::delete($nzbFilePath);
                     }
 
-                    if (! $stored) {
-                        $destination = $path ?? $this->relGuid;
-                        $this->reportError('ERROR: Problem compressing NZB file to: '.$destination);
-
-                        $this->deleteImportedRelease();
-                        $reportResult($nzbFilePath, NzbImportStatus::Failed);
-
-                        if ($deleteFailed) {
-                            File::delete($nzbFilePath);
-                        }
-                        $nzbsSkipped++;
-                    } else {
-                        if ($this->keepRelease && $this->relId !== null) {
-                            KeptReleases::mark($this->relId);
-                        }
-                        $reportResult($nzbFilePath, NzbImportStatus::Inserted, $this->relId, $this->relGuid);
-
-                        if ($delete) {
-                            // Remove the nzb file.
-                            File::delete($nzbFilePath);
-                        }
-
-                        $nzbsImported++;
-                    }
+                    $nzbsImported++;
                 } else {
                     $reportResult($nzbFilePath, $importStatus);
 
@@ -372,6 +342,7 @@ class NzbImportService
     {
         $this->relGuid = '';
         $this->relId = null;
+        $this->currentNzbString = null;
         $this->importError = null;
         $this->absorbOutcome = null;
         $this->duplicateReleaseId = null;
@@ -408,18 +379,6 @@ class NzbImportService
             DuplicateAbsorbOutcome::Deferred => 'deferred',
             DuplicateAbsorbOutcome::Failed => 'failed',
         };
-    }
-
-    private function deleteImportedRelease(): void
-    {
-        $release = Release::query()
-            ->where('guid', $this->relGuid)
-            ->first(['id', 'guid']);
-        if ($release === null) {
-            return;
-        }
-
-        $this->releaseManagement->deleteBatch([$release], $this->nzb, $this->releaseImage);
     }
 
     /**
@@ -802,8 +761,18 @@ class NzbImportService
 
         $importHash = $this->computeSegmentMessageIdHash($nzbDetails['segmentMessageIds'] ?? []);
 
+        // Store the NZB before the row exists, so an interrupted import can leave
+        // only an orphan file, never a release without its NZB.
+        $storedPath = null;
+        if ($this->currentNzbString !== null) {
+            $storedPath = $this->storeCompressedNzb($this->currentNzbString);
+            if ($storedPath === null) {
+                return NzbImportStatus::Failed;
+            }
+        }
+
         try {
-            $relID = Release::insertRelease(
+            $relID = $this->insertReleaseRow(
                 [
                     'name' => $escapedSubject,
                     'searchname' => $escapedSearchName,
@@ -824,6 +793,8 @@ class NzbImportService
                 ]
             );
         } catch (UniqueConstraintViolationException $exception) {
+            $this->deleteStoredNzbWithoutRelease($storedPath);
+
             $existing = $importHash === null
                 ? null
                 : Release::query()
@@ -851,17 +822,82 @@ class NzbImportService
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
             return NzbImportStatus::Duplicate;
+        } catch (\Throwable $exception) {
+            $this->deleteStoredNzbWithoutRelease($storedPath);
+
+            throw $exception;
         }
 
         if ($relID === null) {
+            $this->deleteStoredNzbWithoutRelease($storedPath);
             $this->reportError('ERROR: Problem inserting: '.$subject);
 
             return NzbImportStatus::Failed;
         }
 
-        $this->relId = (int) $relID;
+        $this->relId = $relID;
 
         return NzbImportStatus::Inserted;
+    }
+
+    /**
+     * Insert the release row and return its id. The real insert never returns
+     * null; the null case exists for test overrides.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    protected function insertReleaseRow(array $row): ?int
+    {
+        return (int) Release::insertRelease($row);
+    }
+
+    /**
+     * Store the current release's compressed NZB, returning its path, or null after reporting the failure.
+     */
+    private function storeCompressedNzb(string $nzbString): ?string
+    {
+        $path = null;
+        try {
+            $path = $this->nzb->getNzbPath($this->relGuid, 0, true);
+            $stored = $this->writeCompressedNzb($path, $nzbString);
+        } catch (\Throwable $exception) {
+            Log::error('NZB import failed while storing the compressed file.', [
+                'guid' => $this->relGuid,
+                'path' => $path,
+                'exception' => $exception,
+            ]);
+            $stored = false;
+        }
+
+        if (! $stored) {
+            $this->reportError('ERROR: Problem compressing NZB file to: '.($path ?? $this->relGuid));
+
+            return null;
+        }
+
+        return $path;
+    }
+
+    /**
+     * Remove the NZB stored for an insert that produced no release. The file stays
+     * when a row with its GUID exists; a cleanup failure leaves an orphan for
+     * `nntmux:nzbclean --notindb` and never replaces the insert's own outcome.
+     */
+    private function deleteStoredNzbWithoutRelease(?string $path): void
+    {
+        if ($path === null) {
+            return;
+        }
+
+        try {
+            $this->nzb->deleteOrphanNzb($this->relGuid, $path);
+        } catch (\Throwable $exception) {
+            Log::error('NZB import could not remove the stored NZB of a release that was not created.', [
+                'guid' => $this->relGuid,
+                'path' => $path,
+                'exception' => $exception,
+            ]);
+        }
     }
 
     /**

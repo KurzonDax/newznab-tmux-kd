@@ -12,6 +12,7 @@ use App\Services\Nzb\NzbImportService;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -295,6 +296,159 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         );
     }
 
+    public function test_a_failed_store_creates_no_release(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function writeCompressedNzb(string $path, string $contents): bool
+            {
+                return false;
+            }
+        };
+
+        $result = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Unstorable.Release', 'segments' => ['u1@example.com']],
+        ]))['result'];
+
+        $this->assertSame(NzbImportStatus::Failed, $result['status']);
+        $this->assertStringStartsWith('ERROR: Problem compressing NZB file to: ', (string) $result['error']);
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame([], $this->storedNzbFiles());
+    }
+
+    public function test_the_nzb_is_stored_before_the_release_row_is_inserted(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            public ?bool $storedBeforeInsert = null;
+
+            protected function insertReleaseRow(array $row): ?int
+            {
+                $this->storedBeforeInsert = File::isFile($this->nzb->getNzbPath((string) $row['guid']));
+
+                return parent::insertReleaseRow($row);
+            }
+        };
+
+        $result = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Stored.First.Release', 'segments' => ['sf1@example.com']],
+        ]))['result'];
+
+        $this->assertSame(NzbImportStatus::Inserted, $result['status']);
+        $this->assertTrue($service->storedBeforeInsert);
+        $this->assertFileExists(app(NzbService::class)->getNzbPath((string) $result['release_guid']));
+    }
+
+    public function test_an_insert_that_returns_null_removes_the_stored_nzb(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function insertReleaseRow(array $row): ?int
+            {
+                return null;
+            }
+        };
+
+        $result = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Null.Insert.Release', 'segments' => ['n1@example.com']],
+        ]))['result'];
+
+        $this->assertSame(NzbImportStatus::Failed, $result['status']);
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame([], $this->storedNzbFiles());
+    }
+
+    public function test_an_insert_that_throws_without_a_row_removes_the_stored_nzb(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function insertReleaseRow(array $row): ?int
+            {
+                throw new \RuntimeException('database went away');
+            }
+        };
+
+        $import = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Throwing.Insert.Release', 'segments' => ['t1@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Failed, $import['result']['status']);
+        $this->assertSame('ERROR: Problem inserting: '.$import['source'], $import['result']['error']);
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame([], $this->storedNzbFiles());
+    }
+
+    public function test_an_insert_that_throws_after_writing_the_row_keeps_the_release_and_its_nzb(): void
+    {
+        $service = new class(['Browser' => true]) extends NzbImportService
+        {
+            protected function insertReleaseRow(array $row): ?int
+            {
+                parent::insertReleaseRow($row);
+
+                throw new \RuntimeException('search index went away');
+            }
+        };
+
+        $result = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Late.Throw.Release', 'segments' => ['l1@example.com']],
+        ]))['result'];
+
+        $this->assertSame(NzbImportStatus::Failed, $result['status']);
+        $release = Release::query()->firstOrFail();
+        $this->assertFileExists(app(NzbService::class)->getNzbPath((string) $release->guid));
+        $this->assertCount(1, $this->storedNzbFiles());
+    }
+
+    public function test_a_collectionhash_duplicate_leaves_only_the_matched_release_nzb(): void
+    {
+        $first = $this->import($this->makeNzb([
+            ['subject' => 'Original.Stored.Release', 'segments' => ['c1@example.com', 'c2@example.com']],
+        ]));
+        $this->assertSame(NzbImportStatus::Inserted, $first['status']);
+        $existing = Release::query()->firstOrFail();
+
+        // Rewritten subject: only the segment hash can match it.
+        $second = $this->import($this->makeNzb([
+            ['subject' => 'Rewritten.Stored.Subject', 'segments' => ['c2@example.com', 'c1@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $second['status']);
+        $existingPath = app(NzbService::class)->getNzbPath((string) $existing->guid);
+        $this->assertFileExists($existingPath);
+        $this->assertSame([$existingPath], $this->storedNzbFiles());
+    }
+
+    public function test_a_failed_cleanup_keeps_the_duplicate_outcome(): void
+    {
+        $this->import($this->makeNzb([
+            ['subject' => 'Cleanup.Original.Release', 'segments' => ['k1@example.com']],
+        ]));
+        $service = new NzbImportService(['Browser' => true]);
+        $nzb = \Mockery::mock($service->nzb);
+        $nzb->shouldReceive('deleteOrphanNzb')->once()->andThrow(new \RuntimeException('lock wait timeout'));
+        $service->nzb = $nzb;
+
+        $result = $this->importWith($service, $this->makeNzb([
+            ['subject' => 'Cleanup.Rewritten.Subject', 'segments' => ['k1@example.com']],
+        ]))['result'];
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertCount(2, $this->storedNzbFiles(), 'The undeletable file stays behind as an orphan.');
+    }
+
+    public function test_a_successful_import_deletes_its_source_and_counts_as_processed(): void
+    {
+        $import = $this->importWith(new NzbImportService(['Browser' => true]), $this->makeNzb([
+            ['subject' => 'Counted.Release', 'segments' => ['p1@example.com']],
+        ]), delete: true);
+
+        $this->assertSame(NzbImportStatus::Inserted, $import['result']['status']);
+        $this->assertStringContainsString('Processed 1 NZBs in ', (string) $import['output']);
+        $this->assertFileDoesNotExist($import['source']);
+        $this->assertCount(1, $this->storedNzbFiles());
+    }
+
     private function scan(\SimpleXMLElement $nzbXML): NzbImportStatus
     {
         $service = new class(['Browser' => true]) extends NzbImportService
@@ -317,12 +471,27 @@ class NzbImportSegmentHashDedupeTest extends TestCase
      */
     private function import(\SimpleXMLElement $nzbXML, bool $keepRelease = false): array
     {
+        return $this->importWith(new NzbImportService(['Browser' => true]), $nzbXML, keepRelease: $keepRelease)['result'];
+    }
+
+    /**
+     * Import the NZB from a file through the given service's `beginImport()`.
+     *
+     * @return array{result: array<string, mixed>, output: bool|string, source: string}
+     */
+    private function importWith(
+        NzbImportService $service,
+        \SimpleXMLElement $nzbXML,
+        bool $keepRelease = false,
+        bool $delete = false,
+    ): array {
         $path = $this->makeTempPath('import-dedupe', '.nzb');
         file_put_contents($path, (string) $nzbXML->asXML());
         $results = [];
 
-        (new NzbImportService(['Browser' => true]))->beginImport(
+        $output = $service->beginImport(
             [$path],
+            delete: $delete,
             resultCallback: static function (array $result) use (&$results): void {
                 $results[] = $result;
             },
@@ -330,7 +499,19 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         );
         $this->assertCount(1, $results);
 
-        return $results[0];
+        return ['result' => $results[0], 'output' => $output, 'source' => $path];
+    }
+
+    /**
+     * Every stored `.nzb.gz` under the temporary NZB root.
+     *
+     * @return list<string>
+     */
+    private function storedNzbFiles(): array
+    {
+        $paths = array_map(static fn (\SplFileInfo $file): string => $file->getPathname(), File::allFiles($this->nzbDirectory));
+
+        return array_values(array_filter($paths, static fn (string $path): bool => str_ends_with($path, '.nzb.gz')));
     }
 
     /**
