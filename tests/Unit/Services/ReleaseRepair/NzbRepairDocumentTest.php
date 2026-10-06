@@ -104,6 +104,63 @@ final class NzbRepairDocumentTest extends TestCase
     }
 
     #[Test]
+    public function bytes_sums_every_segment_of_every_file(): void
+    {
+        $document = NzbRepairDocument::load($this->nzb([
+            ['subject' => 'Example.part01.rar yEnc (1/2)', 'segments' => [
+                1 => 'part1of2.Tok@host',
+                2 => 'part2of2.Tok@host',
+            ], 'bytes' => 1000],
+            ['subject' => 'Example.part02.rar yEnc (1/3)', 'segments' => [
+                1 => 'part1of3.Other@host',
+                2 => 'part2of3.Other@host',
+                3 => 'part3of3.Other@host',
+            ], 'bytes' => 250],
+        ]));
+
+        $this->assertNotNull($document);
+        $this->assertSame(2 * 1000 + 3 * 250, $document->bytes());
+    }
+
+    #[Test]
+    public function a_segment_without_usable_bytes_counts_as_zero(): void
+    {
+        $document = NzbRepairDocument::load(
+            '<?xml version="1.0" encoding="UTF-8"?>'."\n"
+            .'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n"
+            .'  <file poster="poster@example.org" date="1700000000" subject="Example.rar yEnc (1/3)">'."\n"
+            .'    <groups><group>alt.binaries.test</group></groups>'."\n"
+            .'    <segments>'."\n"
+            .'      <segment bytes="700" number="1">part1of3.Tok@host</segment>'."\n"
+            .'      <segment number="2">part2of3.Tok@host</segment>'."\n"
+            .'      <segment bytes="unknown" number="3">part3of3.Tok@host</segment>'."\n"
+            .'    </segments>'."\n"
+            .'  </file>'."\n"
+            .'</nzb>'."\n"
+        );
+
+        $this->assertNotNull($document);
+        $this->assertSame(700, $document->bytes());
+    }
+
+    #[Test]
+    public function bytes_counts_added_segments_at_the_files_average_size(): void
+    {
+        $document = NzbRepairDocument::load($this->nzb([
+            ['subject' => 'Example.part01.rar yEnc (1/5)', 'segments' => [
+                1 => 'part1of5.Tok@host',
+                3 => 'part3of5.Tok@host',
+            ], 'bytes' => 1000],
+        ]));
+
+        $this->assertSame(2000, $document->bytes());
+
+        $document->addSegments([0 => $document->plan()->files[0]->synthesized]);
+
+        $this->assertSame(5000, $document->bytes());
+    }
+
+    #[Test]
     public function message_ids_containing_xml_metacharacters_survive_the_round_trip(): void
     {
         $document = NzbRepairDocument::load($this->nzb([

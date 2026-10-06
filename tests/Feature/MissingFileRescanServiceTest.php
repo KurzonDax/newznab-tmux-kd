@@ -79,6 +79,8 @@ class MissingFileRescanServiceTest extends TestCase
         $this->assertStringContainsString('[3/3] - &quot;Example.part03.rar&quot; yEnc (1/2)', $nzb);
         $this->assertStringContainsString('found-3-1@example.local', $nzb);
         $this->assertStringContainsString('found-3-2@example.local', $nzb);
+        $this->assertSame(6 * 768000, $this->storedSegmentBytes($release));
+        $this->assertSame($this->storedSegmentBytes($release), (int) DB::table('releases')->where('id', 1)->value('size'));
     }
 
     #[Test]
@@ -791,6 +793,22 @@ class MissingFileRescanServiceTest extends TestCase
     private function storedNzb(Release $release): string
     {
         return (string) app(NzbService::class)->readNzbContents((string) $release->guid);
+    }
+
+    /** Sum of every segment `bytes` attribute in the stored NZB. */
+    private function storedSegmentBytes(Release $release): int
+    {
+        $xml = simplexml_load_string($this->storedNzb($release));
+        $this->assertNotFalse($xml);
+        $bytes = 0;
+
+        foreach ($xml->file as $file) {
+            foreach ($file->segments->segment as $segment) {
+                $bytes += (int) $segment['bytes'];
+            }
+        }
+
+        return $bytes;
     }
 
     private function storedOutcome(int $id): ?string
