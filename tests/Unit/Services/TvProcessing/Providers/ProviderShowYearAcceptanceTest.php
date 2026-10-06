@@ -265,6 +265,214 @@ final class ProviderShowYearAcceptanceTest extends TestCase
         $this->assertSame(88, $result->result->episodeId);
     }
 
+    /**
+     * @return iterable<string, array{string, string, bool}>
+     */
+    public static function showTitleKeyPairs(): iterable
+    {
+        yield 'accents' => ['Pokémon', 'Pokemon', true];
+        yield 'possessive and initials' => ["Marvel's Agents of S.H.I.E.L.D.", 'Marvels Agents of SHIELD', true];
+        yield 'abbreviation dots' => ['House M.D.', 'House MD', true];
+        yield 'ampersand' => ['Law & Order', 'Law and Order', true];
+        yield 'typographic apostrophe' => ['Tyler Perry’s Bruh', 'Tyler Perrys Bruh', true];
+        yield 'leading the' => ['The Office', 'Office', true];
+        yield 'leading a' => ['A Man in a Veil', 'Man in a Veil', true];
+        yield 'spacing' => ['Heart Beat', 'Heartbeat', true];
+        yield 'near miss' => ['EXchange', 'Seachange', false];
+        yield 'one letter apart' => ['Healer', 'Hvaler', false];
+        yield 'extra leading words' => ['Nashville', '9-1-1: Nashville', false];
+        yield 'words inside other words' => ['Ano fe', 'Another Life', false];
+    }
+
+    #[DataProvider('showTitleKeyPairs')]
+    #[Test]
+    public function show_title_keys_are_equal_only_for_the_same_name(string $left, string $right, bool $equal): void
+    {
+        $provider = new TestableTmdbProvider;
+
+        $this->assertSame($equal, $provider->titleKey($left) === $provider->titleKey($right));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function externalProviders(): iterable
+    {
+        yield 'TVDB' => ['tvdb'];
+        yield 'TVMaze' => ['tvmaze'];
+        yield 'TMDB' => ['tmdb'];
+        yield 'Trakt' => ['trakt'];
+    }
+
+    #[DataProvider('externalProviders')]
+    #[Test]
+    public function a_show_whose_name_only_resembles_the_query_is_not_chosen(string $provider): void
+    {
+        $this->assertFalse($this->chosenShowId($provider, 'EXchange', [['name' => 'Seachange']]));
+    }
+
+    #[DataProvider('externalProviders')]
+    #[Test]
+    public function a_later_identically_named_show_beats_an_earlier_near_miss(string $provider): void
+    {
+        $this->assertSame(
+            2,
+            $this->chosenShowId($provider, 'EXchange', [['name' => 'Seachange'], ['name' => 'EXchange']]),
+        );
+    }
+
+    #[DataProvider('externalProviders')]
+    #[Test]
+    public function an_identically_named_show_beats_an_earlier_bracketed_sibling(string $provider): void
+    {
+        $this->assertSame(
+            2,
+            $this->chosenShowId($provider, 'Castle', [['name' => 'Castle (2009)'], ['name' => 'Castle']]),
+        );
+    }
+
+    #[DataProvider('externalProviders')]
+    #[Test]
+    public function a_bracketed_sibling_is_chosen_when_no_show_is_identically_named(string $provider): void
+    {
+        $this->assertSame(1, $this->chosenShowId($provider, 'Castle', [['name' => 'Castle (2009)']]));
+    }
+
+    #[Test]
+    public function tvdb_matches_a_show_by_its_english_translation(): void
+    {
+        $this->assertSame(1, $this->chosenShowId('tvdb', 'Attack on Titan', [
+            ['name' => '進撃の巨人', 'translations' => ['eng' => 'Attack on Titan']],
+        ]));
+    }
+
+    #[Test]
+    public function tvmaze_matches_a_show_by_its_aka(): void
+    {
+        $this->assertSame(1, $this->chosenShowId('tvmaze', 'Attack on Titan', [
+            ['name' => '進撃の巨人', 'akas' => [['name' => 'Attack on Titan']]],
+        ]));
+    }
+
+    #[Test]
+    public function tmdb_matches_a_show_by_its_original_name(): void
+    {
+        $this->assertSame(1, $this->chosenShowId('tmdb', 'Squid Game', [
+            ['name' => '오징어 게임', 'original_name' => 'Squid Game'],
+        ]));
+    }
+
+    #[Test]
+    public function tvdb_show_names_combine_the_name_aliases_and_translations(): void
+    {
+        $provider = new TestableTvdbProvider(Mockery::mock(TheTVDbAPI::class));
+
+        $this->assertSame(['Seachange', 'Sea Change', 'Mer Change'], $provider->showNames((object) [
+            'name' => 'Seachange',
+            'aliases' => ['Sea Change', 'Seachange', ''],
+            'translations' => ['eng' => 'Seachange', 'fra' => 'Mer Change'],
+        ]));
+        $this->assertSame(['Seachange', 'Sea Change'], $provider->showNames((object) [
+            'name' => 'Seachange',
+            'aliases' => ['Sea Change'],
+        ]));
+    }
+
+    /**
+     * Run one provider's show search against fixture results numbered from 1 in the given order.
+     *
+     * @param  list<array<string, mixed>>  $results  each a name plus provider-specific extra fields
+     */
+    private function chosenShowId(string $provider, string $query, array $results): int|false
+    {
+        $started = '2010-01-01';
+        $info = match ($provider) {
+            'tvdb' => $this->tvdbChoice($query, $results, $started),
+            'tvmaze' => $this->tvMazeChoice($query, $results, $started),
+            'tmdb' => $this->tmdbChoice($query, $results, $started),
+            'trakt' => $this->traktChoice($query, $results, $started),
+        };
+
+        return $info === false ? false : $info[$provider];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return array<string, mixed>|false
+     */
+    private function tvdbChoice(string $query, array $results, string $started): array|false
+    {
+        $shows = [];
+        foreach ($results as $index => $result) {
+            $shows[] = (object) array_merge((array) $this->tvdbShow($index + 1, $started), $result);
+        }
+        $search = Mockery::mock(SearchRoute::class);
+        $search->shouldReceive('search')->once()->with($query, ['type' => 'series'])->andReturn($shows);
+        $client = Mockery::mock(TheTVDbAPI::class);
+        $client->shouldReceive('search')->once()->andReturn($search);
+
+        return (new TestableTvdbProvider($client))->getShowInfo($query);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return array<string, mixed>|false
+     */
+    private function tvMazeChoice(string $query, array $results, string $started): array|false
+    {
+        $shows = [];
+        foreach ($results as $index => $result) {
+            $shows[] = (object) array_merge((array) $this->tvMazeShow($index + 1, $started), $result);
+        }
+        $client = Mockery::mock(TvMazeClient::class);
+        $client->shouldReceive('singleSearchAkas')->with($query)->andReturn($shows);
+        $client->shouldReceive('search')->with($query)->andReturn($shows);
+        $client->shouldReceive('getShowAKAs')->andReturn([]);
+
+        return (new TestableTvMazeProvider($client))->getShowInfo($query);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return array<string, mixed>|false
+     */
+    private function tmdbChoice(string $query, array $results, string $started): array|false
+    {
+        $shows = [];
+        foreach ($results as $index => $result) {
+            $shows[] = array_merge($this->tmdbShow($index + 1, $started), $result);
+        }
+        $client = Mockery::mock(TmdbClient::class);
+        $client->shouldReceive('isConfigured')->andReturnTrue();
+        $client->shouldReceive('searchTv')->once()->with($query)->andReturn(['results' => $shows]);
+        $client->shouldReceive('getTvAlternativeTitles')->andReturn(['results' => []]);
+        $client->shouldReceive('getTvExternalIds')->andReturn([]);
+        $this->app->instance(TmdbClient::class, $client);
+
+        return (new TestableTmdbProvider)->getShowInfo($query);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $results
+     * @return array<string, mixed>|false
+     */
+    private function traktChoice(string $query, array $results, string $started): array|false
+    {
+        $searchResults = [];
+        foreach ($results as $index => $result) {
+            $searchResult = $this->traktSearchResult($index + 1);
+            $searchResult['show']['title'] = $result['name'];
+            $searchResults[] = $searchResult;
+        }
+        $client = Mockery::mock(TraktService::class);
+        $client->shouldReceive('searchShows')->once()->with($query)->andReturn($searchResults);
+        $client->shouldReceive('getShowSummary')->andReturnUsing(
+            fn (int $id): array => $this->traktShow($id, $started.'T20:00:00.000-04:00'),
+        );
+
+        return (new TestableTraktProvider($client))->getShowInfo($query);
+    }
+
     private function tvdbShow(int $id, string $started): object
     {
         return (object) [
@@ -334,6 +542,14 @@ final class TestableTvdbProvider extends TvdbProvider
     {
         return ['tvdb' => (int) $show->tvdb_id, 'started' => $show->first_air_time];
     }
+
+    /**
+     * @return list<string>
+     */
+    public function showNames(object $show): array
+    {
+        return $this->tvdbShowNames($show);
+    }
 }
 
 final class TestableTvMazeProvider extends TvMazeProvider
@@ -354,6 +570,11 @@ final class TestableTmdbProvider extends TmdbProvider
     public function premiereYearIsPlausible(mixed $premiereDate, ?int $releaseYear): bool
     {
         return $this->isPremiereYearPlausible($premiereDate, $releaseYear);
+    }
+
+    public function titleKey(string $title): string
+    {
+        return $this->showTitleKey($title);
     }
 
     public function formatShowInfo(mixed $show): array

@@ -12,8 +12,6 @@ use App\Services\TraktService;
 
 class TmdbProvider extends AbstractTvProvider
 {
-    protected const MATCH_PROBABILITY = 75;
-
     /**
      * @string URL for show poster art
      */
@@ -294,38 +292,19 @@ class TmdbProvider extends AbstractTvProvider
     private function matchShowInfo(array $shows, string $cleanName, ?int $releaseYear): bool|array
     {
         $return = false;
-        $highestMatch = 0;
-        $highest = null;
 
-        foreach ($shows as $show) {
-            if (! is_array($show) || ! $this->checkRequiredAttr($show, 'tmdbS')) {
-                continue;
-            }
-
-            if (! $this->isPremiereYearPlausible($show['first_air_date'], $releaseYear)) {
-                continue;
-            }
-
-            $showName = TmdbClient::getString($show, 'name');
-            if (empty($showName)) {
-                continue;
-            }
-
-            // Check for exact title match first and then terminate if found
-            if (strtolower($showName) === strtolower($cleanName)) {
-                $highest = $show;
-                break;
-            }
-
-            // Check each show title for similarity and then find the highest similar value
-            $matchPercent = $this->checkMatch(strtolower($showName), strtolower($cleanName), self::MATCH_PROBABILITY);
-
-            // If new match has a higher percentage, set as new matched title
-            if ($matchPercent > $highestMatch) {
-                $highestMatch = $matchPercent;
-                $highest = $show;
-            }
-        }
+        $shows = array_filter(
+            $shows,
+            fn (mixed $show): bool => is_array($show)
+                && $this->checkRequiredAttr($show, 'tmdbS')
+                && $this->isPremiereYearPlausible($show['first_air_date'], $releaseYear)
+                && TmdbClient::getString($show, 'name') !== '',
+        );
+        $highest = $this->chooseShowByName(
+            $shows,
+            $cleanName,
+            static fn (array $show): array => [TmdbClient::getString($show, 'name'), TmdbClient::getString($show, 'original_name')],
+        );
 
         if ($highest !== null) {
             $showId = TmdbClient::getInt($highest, 'id');
