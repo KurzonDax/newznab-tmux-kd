@@ -28,6 +28,7 @@ use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWire;
 use App\Services\ObfuscationRecovery\RecoveryWork;
+use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
@@ -127,10 +128,63 @@ final class RecoveryGapDownloadTest extends TestCase
     #[DataProvider('overviewEncodings')]
     public function test_successful_gap_overview_survives_interruption_before_capture_without_redownloading(string $references): void
     {
+        [$provider, $work, $claim, $attempt, $directory] = $this->interruptedGap($references);
+        $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
+        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+        $this->assertSame(0, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
+        $this->assertSame(0, DB::table('obfuscation_recovery_artifacts')->count());
+        $this->assertSame([], preg_grep('/^[a-f0-9]{64}$/D', scandir($directory)));
+        $this->travel(RecoveryCompaction::DETAIL_DAYS + 1)->days();
+        $this->assertSame(0, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+    }
+
+    public function test_finished_gap_keeps_a_listing_another_owner_still_references_until_retention_expires_it(): void
+    {
+        [$provider, $work, , $attempt, $directory] = $this->interruptedGap();
+        $digest = json_decode($attempt->handoff, true, flags: JSON_THROW_ON_ERROR)['artifact'];
+        DB::table('obfuscation_recovery_references')->insert([
+            'identity' => hash('sha256', 'other-owner'), 'owner_type' => 'publication', 'owner_key' => '1',
+            'resource_type' => 'artifact', 'resource_digest' => $digest,
+        ]);
+        $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
+        $this->assertSame(1, DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->count());
+        $this->assertFileExists($directory.'/'.$digest);
+        DB::table('obfuscation_recovery_references')->where('identity', hash('sha256', 'other-owner'))->delete();
+        $this->assertSame(0, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+        $this->assertSame(1, DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->count());
+        $this->assertFileExists($directory.'/'.$digest);
+        $this->travel(RecoveryCompaction::DETAIL_DAYS + 1)->days();
+        $this->assertSame(1, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
+    }
+
+    public function test_listing_cleanup_failure_does_not_change_the_finished_outcome(): void
+    {
+        [$provider, $work, , $attempt, $directory] = $this->interruptedGap();
+        $digest = json_decode($attempt->handoff, true, flags: JSON_THROW_ON_ERROR)['artifact'];
+        $armed = true;
+        DB::listen(function (QueryExecuted $query) use (&$armed): void {
+            if ($armed && str_starts_with($query->sql, 'select * from "obfuscation_recovery_artifacts"')) {
+                $armed = false;
+                throw new \RuntimeException('listing_cleanup_interrupted');
+            }
+        });
+        $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
+        $this->assertFalse($armed);
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+        $this->assertSame(1, DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->count());
+        $this->assertFileExists($directory.'/'.$digest);
+    }
+
+    /** @return array{NntpProvider,RecoveryWork,RecoveryWorkClaim,object,string} */
+    private function interruptedGap(string $references = 'fixture'): array
+    {
         $provider = $this->server('', dialogue: ["GROUP alt.binaries.fixture\r\n" => "211 2 1 2 alt.binaries.fixture\r\n",
             "XOVER 1-2\r\n" => "224 overview\r\n1\t0123456789abcdefghij\tfixture\tTue, 14 Nov 2023 22:13:20 +0000\t<m1-1700000000000@nyuu>\t\t740000\t10\r\n2\tOrdinary subject\tfixture\tTue, 14 Nov 2023 22:13:20 +0000\t<boundary@local>\t{$references}\t100\t1\r\n.\r\n"]);
-        $this->app->instance(RecoveryArtifacts::class,
-            new RecoveryArtifacts($this->makeTempDirectory('gap-receipts')));
+        $directory = $this->makeTempDirectory('gap-receipts');
+        $this->app->instance(RecoveryArtifacts::class, new RecoveryArtifacts($directory));
         (new RecoveryControl)->begin(RecoveryConfig::fromSettings(), $provider, 1, 'alt.binaries.fixture', 1, 2, HeaderScanDirection::Head, 1);
         $this->travel(121)->seconds();
         $this->assertSame(1, app(RecoveryGapPlanner::class)->step());
@@ -156,16 +210,8 @@ final class RecoveryGapDownloadTest extends TestCase
         $this->assertSame('success', $attempt->outcome);
         $this->assertSame(1, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
         $this->travel(61)->seconds();
-        $this->assertSame('captured', app(RecoveryDownload::class)->run($work->claim(RecoveryStage::Download), [$provider]));
-        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
-        $this->assertSame(1, DB::table('obfuscation_recovery_attempts')->count());
-        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
-        $this->assertSame(0, DB::table('obfuscation_recovery_references')->where('owner_type', 'bundle')->where('owner_key', (string) $claim->bundleId)->count());
-        $this->travel(RecoveryCompaction::DETAIL_DAYS + 1)->days();
-        $this->assertSame(1, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
-        $this->assertSame(0, DB::table('obfuscation_recovery_artifacts')->count());
-        $this->assertSame(0, app(RecoveryEvidenceRetention::class)->step()['artifacts']);
-        $this->assertEquals($attempt, DB::table('obfuscation_recovery_attempts')->first());
+
+        return [$provider, $work, $claim, $attempt, $directory];
     }
 
     public static function overviewEncodings(): array

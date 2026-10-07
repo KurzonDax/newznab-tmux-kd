@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -144,21 +145,26 @@ final class RecoveryEvidenceRetention
         }
         $artifacts = $this->page('obfuscation_recovery_artifacts', 'digest', 'artifacts', $limit);
         foreach ($artifacts as $digest) {
-            $report['artifacts'] += DB::transaction(function () use ($digest, $cutoff): int {
-                $row = DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->lockForUpdate()->first();
-                if ($row === null || $row->retained_at > $cutoff || $this->referenced('artifact', $digest)
-                    || ! $this->artifacts->remove(new RecoveryArtifact($digest, (int) $row->bytes))) {
-                    return 0;
-                }
-                DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->delete();
-
-                return 1;
-            }, 1);
+            $report['artifacts'] += (int) $this->discardArtifact($digest, $cutoff);
         }
 
         $report['artifacts'] += $this->artifacts->collectOrphans($limit);
 
         return $report;
+    }
+
+    public function discardArtifact(string $digest, ?CarbonInterface $retainedBefore = null): bool
+    {
+        return DB::transaction(function () use ($digest, $retainedBefore): bool {
+            $row = DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->lockForUpdate()->first();
+            if ($row === null || ($retainedBefore !== null && $row->retained_at > $retainedBefore) || $this->referenced('artifact', $digest)
+                || ! $this->artifacts->remove(new RecoveryArtifact($digest, (int) $row->bytes))) {
+                return false;
+            }
+            DB::table('obfuscation_recovery_artifacts')->where('digest', $digest)->delete();
+
+            return true;
+        }, 1);
     }
 
     /** @return list<string> */
