@@ -221,6 +221,74 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertStringNotContainsString('old-1@example.test', $contents);
     }
 
+    public function test_a_more_complete_predb_id_match_is_absorbed_into_the_existing_release(): void
+    {
+        [$anchorId, $anchorGuid] = $this->importPredbAnchor('Predb.Repost', presentSegments: 19);
+        Log::spy();
+
+        $result = $this->import($this->predbRepostNzb('Predb.Repost', 'new', presentSegments: 20));
+
+        $this->assertDuplicateReason('predb_id_match');
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertTrue($result['absorbed']);
+        $this->assertSame('absorbed', $result['absorb_outcome']);
+        $this->assertSame($anchorId, $result['release_id']);
+
+        $stored = Release::query()->firstOrFail();
+        $this->assertSame(1, Release::query()->count());
+        $this->assertSame($anchorId, (int) $stored->id);
+        $this->assertSame($anchorGuid, (string) $stored->guid);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(20_000, (int) $stored->size);
+
+        $contents = app(NzbService::class)->readNzbContents($anchorGuid);
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('new-20@example.test', $contents);
+        $this->assertStringNotContainsString('old-1@example.test', $contents);
+    }
+
+    public function test_an_equally_complete_predb_id_match_is_not_better_and_leaves_the_release_unchanged(): void
+    {
+        [$anchorId, $anchorGuid] = $this->importPredbAnchor('Predb.Equal', presentSegments: 19);
+        $nzb = app(NzbService::class);
+        $storedXml = $nzb->readNzbContents($anchorGuid);
+        Log::spy();
+
+        $result = $this->import($this->predbRepostNzb('Predb.Equal', 'new', presentSegments: 19));
+
+        $this->assertDuplicateReason('predb_id_match');
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertFalse($result['absorbed']);
+        $this->assertSame('not_better', $result['absorb_outcome']);
+
+        $stored = Release::query()->firstOrFail();
+        $this->assertSame(1, Release::query()->count());
+        $this->assertSame($anchorId, (int) $stored->id);
+        $this->assertSame(95.0, (float) $stored->completion);
+        $this->assertSame(19_000, (int) $stored->size);
+        $this->assertSame($storedXml, $nzb->readNzbContents($anchorGuid));
+    }
+
+    public function test_a_predb_id_match_against_an_anchor_without_a_stored_nzb_reports_deferred(): void
+    {
+        [$anchorId] = $this->importPredbAnchor('Predb.Lagging', presentSegments: 19);
+        DB::table('releases')->update(['nzbstatus' => NzbService::NZB_NONE]);
+        Log::spy();
+
+        $result = $this->import($this->predbRepostNzb('Predb.Lagging', 'new', presentSegments: 20));
+
+        $this->assertDuplicateReason('predb_id_match');
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertFalse($result['absorbed']);
+        $this->assertSame('deferred', $result['absorb_outcome']);
+
+        $stored = Release::query()->firstOrFail();
+        $this->assertSame(1, Release::query()->count());
+        $this->assertSame($anchorId, (int) $stored->id);
+        $this->assertSame(95.0, (float) $stored->completion);
+        $this->assertSame(19_000, (int) $stored->size);
+    }
+
     public function test_zero_segment_nzbs_get_null_hash_and_do_not_collide(): void
     {
         $first = $this->scan($this->makeNzb([['subject' => 'Empty.Segments.One', 'segments' => []]]));
@@ -447,6 +515,41 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertStringContainsString('Processed 1 NZBs in ', (string) $import['output']);
         $this->assertFileDoesNotExist($import['source']);
         $this->assertCount(1, $this->storedNzbFiles());
+    }
+
+    /**
+     * Import a partial anchor, store its NZB, and link it to a PreDB row titled with its cleaned
+     * name, so a later copy of the same post resolves to that PreDB ID on import.
+     *
+     * @return array{0: int, 1: string} The anchor's id and guid.
+     */
+    private function importPredbAnchor(string $title, int $presentSegments): array
+    {
+        $partial = $this->predbRepostNzb($title, 'old', $presentSegments);
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
+
+        $anchor = Release::query()->firstOrFail();
+        file_put_contents(app(NzbService::class)->getNzbPath((string) $anchor->guid, 0, true), gzencode((string) $partial->asXML()));
+        DB::table('predb')->insert(['id' => 77, 'title' => (string) $anchor->searchname, 'filename' => '']);
+        DB::table('releases')->where('id', $anchor->id)->update(['predb_id' => 77]);
+
+        return [(int) $anchor->id, (string) $anchor->guid];
+    }
+
+    private function predbRepostNzb(string $title, string $messageIdPrefix, int $presentSegments): \SimpleXMLElement
+    {
+        return $this->makeNzb([[
+            'subject' => "[1/1] {$title}.part01.rar yEnc (1/20)",
+            'segments' => array_map(static fn (int $part): string => "{$messageIdPrefix}-{$part}@example.test", range(1, $presentSegments)),
+        ]]);
+    }
+
+    private function assertDuplicateReason(string $reason): void
+    {
+        Log::shouldHaveReceived('info')->withArgs(
+            static fn (string $message, array $context = []): bool => $message === 'NZB import skipped as duplicate'
+                && ($context['reason'] ?? null) === $reason
+        )->once();
     }
 
     private function scan(\SimpleXMLElement $nzbXML): NzbImportStatus

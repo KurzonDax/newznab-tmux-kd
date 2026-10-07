@@ -187,6 +187,90 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         }
     }
 
+    public function test_a_predb_id_match_is_an_absorbable_reason_and_unknown_reasons_are_not(): void
+    {
+        $absorber = app(ReleaseDuplicateAbsorber::class);
+
+        $this->assertTrue($absorber->supportsReason('predb_id_match'));
+        $this->assertTrue($absorber->supportsReason('searchname_match'));
+        $this->assertFalse($absorber->supportsReason('unknown_reason'));
+        $this->assertFalse($absorber->supportsReason('collectionhash_match'));
+        $this->assertFalse($absorber->supportsReason(null));
+    }
+
+    public function test_a_never_measured_anchor_is_not_replaced_by_a_measured_copy(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+
+        $anchor = $this->anchor(completion: 0.0);
+        $nzb = app(NzbService::class);
+        $oldXml = $this->nzbXml('old@example.test', 1, 2);
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, $oldXml);
+
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml(
+            $anchor,
+            $this->nzbXml('new@example.test', 2, 2),
+            incomingSize: 2_000,
+            incomingDeclaredFiles: 1,
+            incomingCompletion: 100.0,
+        );
+
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame(1_000, (int) DB::table('releases')->value('size'));
+        $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame($oldXml, $nzb->readNzbContents((string) $anchor->guid));
+    }
+
+    public function test_an_anchor_found_never_measured_under_the_row_lock_is_not_replaced(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+
+        // The caller's copy still reads 50%; the stored row has since been reset to the sentinel.
+        $anchor = $this->anchor();
+        DB::table('releases')->where('id', $anchor->id)->update(['completion' => 0.0]);
+        $nzb = app(NzbService::class);
+        $oldXml = $this->nzbXml('old@example.test', 1, 2);
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, $oldXml);
+
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $this->nzbXml('new@example.test', 2, 2), 2_000, 1, 100.0);
+
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame(1_000, (int) DB::table('releases')->value('size'));
+        $this->assertSame($oldXml, $nzb->readNzbContents((string) $anchor->guid));
+    }
+
+    public function test_a_never_measured_anchor_turns_a_collection_away_unrendered(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+
+        $anchor = $this->anchor(completion: 0.0);
+        $collection = $this->collection(200);
+        $nzb = new StubCollectionNzbService($this->nzbXml('new@example.test', 2, 2), NzbReplaceResult::success());
+
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0);
+
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame([], $nzb->buildCalls);
+        $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(0, (int) DB::table('collections')->where('id', 200)->value('absorb_attempts'));
+    }
+
+    public function test_a_never_measured_anchor_turns_away_a_phantom_trailing_collection(): void
+    {
+        Search::shouldReceive('updateRelease')->never();
+        $this->phantomAnchor();
+        DB::table('releases')->where('id', 1)->update(['completion' => 0.0]);
+        $this->createBinariesTable();
+        $collection = $this->phantomCollection(200, PhantomTrailingSets::baseFiles());
+        $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::base()), NzbReplaceResult::success());
+
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection(Release::query()->findOrFail(1), $collection, (12 / 13) * 100);
+
+        $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
+        $this->assertSame([], $nzb->buildCalls);
+        $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
+    }
+
     public function test_an_anchor_whose_nzb_is_not_written_yet_defers_without_attempting(): void
     {
         Search::shouldReceive('updateRelease')->never();
@@ -529,7 +613,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         ProductionTables::fromAuthority()->create('binaries', ['id', 'collections_id', 'name']);
     }
 
-    private function anchor(int $nzbstatus = NzbService::NZB_ADDED): Release
+    private function anchor(int $nzbstatus = NzbService::NZB_ADDED, float $completion = 50.0): Release
     {
         DB::table('releases')->insert([
             'id' => 1,
@@ -540,7 +624,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             'size' => 1_000,
             'totalpart' => 1,
             'declaredfiles' => 1,
-            'completion' => 50.0,
+            'completion' => $completion,
             'nzbstatus' => $nzbstatus,
         ]);
 

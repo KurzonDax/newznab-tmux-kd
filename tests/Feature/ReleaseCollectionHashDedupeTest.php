@@ -3,16 +3,22 @@
 namespace Tests\Feature;
 
 use App\Enums\CollectionFileCheckStatus;
+use App\Enums\DuplicateAbsorbOutcome;
 use App\Facades\Search;
+use App\Models\Collection;
+use App\Models\Release;
 use App\Services\CollectionCleanupService;
+use App\Services\Nzb\NzbService;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseCreationService;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
+use App\Support\Data\DuplicateAbsorbResult;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ReleaseCollectionHashDedupeTest extends TestCase
@@ -282,6 +288,64 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         Log::shouldNotHaveReceived('error');
     }
 
+    public function test_a_more_complete_predb_id_match_is_absorbed_into_the_anchor(): void
+    {
+        $nzb = $this->storePredbAnchor(completion: 95.0, nzbstatus: NzbService::NZB_ADDED);
+        $this->insertPredbCollection(100, presentParts: 20);
+        $absorber = new RecordingDuplicateAbsorber(app(NzbService::class));
+
+        $result = $this->service($absorber)->createReleases(null, 10, false);
+
+        $this->assertSame(['predb_id_match'], $absorber->reasons);
+        $this->assertSame([DuplicateAbsorbOutcome::Absorbed], $absorber->outcomes);
+        $this->assertSame(['added' => 0, 'dupes' => 1], $result);
+        $this->assertSame(1, DB::table('releases')->count());
+        $stored = DB::table('releases')->first();
+        $this->assertSame(1, (int) $stored->id);
+        $this->assertSame(str_repeat('a', 36), $stored->guid);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(20_000, (int) $stored->size);
+        $this->assertSame(0, DB::table('collections')->count());
+        $this->assertStringContainsString('new-100-20@example.test', (string) $nzb->readNzbContents(str_repeat('a', 36)));
+    }
+
+    public function test_an_equally_complete_predb_id_match_is_turned_away_by_the_absorber(): void
+    {
+        $nzb = $this->storePredbAnchor(completion: 100.0, nzbstatus: NzbService::NZB_ADDED);
+        $storedXml = $nzb->readNzbContents(str_repeat('a', 36));
+        $this->insertPredbCollection(100, presentParts: 20);
+        $absorber = new RecordingDuplicateAbsorber(app(NzbService::class));
+
+        $result = $this->service($absorber)->createReleases(null, 10, false);
+
+        $this->assertSame(['predb_id_match'], $absorber->reasons);
+        $this->assertSame([DuplicateAbsorbOutcome::NotBetter], $absorber->outcomes);
+        $this->assertSame(['added' => 0, 'dupes' => 1], $result);
+        $stored = DB::table('releases')->first();
+        $this->assertSame(1, (int) $stored->id);
+        $this->assertSame(100.0, (float) $stored->completion);
+        $this->assertSame(19_000, (int) $stored->size);
+        $this->assertSame($storedXml, $nzb->readNzbContents(str_repeat('a', 36)));
+        $this->assertSame(0, DB::table('collections')->count());
+    }
+
+    public function test_a_better_predb_id_match_with_a_lagging_anchor_nzb_is_preserved_for_a_later_cycle(): void
+    {
+        $this->storePredbAnchor(completion: 95.0, nzbstatus: NzbService::NZB_NONE);
+        $this->insertPredbCollection(100, presentParts: 20);
+        $absorber = new RecordingDuplicateAbsorber(app(NzbService::class));
+
+        $result = $this->service($absorber)->createReleases(null, 10, false);
+
+        $this->assertSame(['predb_id_match'], $absorber->reasons);
+        $this->assertSame([DuplicateAbsorbOutcome::Deferred], $absorber->outcomes);
+        $this->assertSame(['added' => 0, 'dupes' => 0], $result);
+        $this->assertSame(1, DB::table('collections')->count(), 'The deferred collection must be preserved.');
+        $this->assertSame(0, (int) DB::table('collections')->where('id', 100)->value('absorb_attempts'));
+        $this->assertSame(95.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(19_000, (int) DB::table('releases')->value('size'));
+    }
+
     public function test_absorb_attempts_migration_adds_the_counter_column(): void
     {
         DB::statement('ALTER TABLE collections RENAME TO collections_backup');
@@ -337,15 +401,59 @@ class ReleaseCollectionHashDedupeTest extends TestCase
         }
     }
 
-    private function service(): ReleaseCreationService
+    private function service(?ReleaseDuplicateAbsorber $absorber = null): ReleaseCreationService
     {
         return new ReleaseCreationService(
             app(ReleaseCleaningService::class),
             app(CollectionCleanupService::class),
             app(ReleaseDuplicateFinder::class),
             app(CollectionCompletionMeasurer::class),
-            app(ReleaseDuplicateAbsorber::class),
+            $absorber ?? app(ReleaseDuplicateAbsorber::class),
         );
+    }
+
+    /**
+     * An anchor linked to the PreDB row that {@see self::insertPredbCollection()} resolves to.
+     * Its searchname differs from that title, so only the PreDB ID ties the two together.
+     */
+    private function storePredbAnchor(float $completion, int $nzbstatus): NzbService
+    {
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('absorb-nzbs').DIRECTORY_SEPARATOR]);
+        DB::table('predb')->insert(['id' => 77, 'title' => 'Predb.Absorb.Release', 'filename' => '']);
+        $this->seedAnchorRelease('hash-anchor-predb', completion: $completion, nzbstatus: $nzbstatus, searchname: 'Old.Style.Name', size: 19_000);
+        DB::table('releases')->where('id', 1)->update(['predb_id' => 77, 'declaredfiles' => 1]);
+
+        $nzb = app(NzbService::class);
+        if ($nzbstatus === NzbService::NZB_ADDED) {
+            file_put_contents(
+                $nzb->getNzbPath(str_repeat('a', 36), 0, true),
+                gzencode('<nzb><file subject="old"><segments><segment bytes="1000" number="1">old@example.test</segment></segments></file></nzb>'),
+            );
+        }
+
+        return $nzb;
+    }
+
+    /**
+     * An ordinary one-file collection declaring 20 segments, holding the first `$presentParts`.
+     */
+    private function insertPredbCollection(int $id, int $presentParts): void
+    {
+        $this->insertCollection($id, 'hash-predb-'.$id, '"Predb.Absorb.Release.part001.rar" yEnc', filesize: 20_000, declaredfiles: 1);
+        DB::table('parts')->where('binaries_id', $id * 10)->delete();
+        DB::table('binaries')->where('id', $id * 10)->update([
+            'name' => '"Predb.Absorb.Release.part001.rar" yEnc (1/20)',
+            'totalparts' => 20,
+        ]);
+        foreach (range(1, $presentParts) as $part) {
+            DB::table('parts')->insert([
+                'binaries_id' => $id * 10,
+                'number' => $part,
+                'messageid' => "<new-{$id}-{$part}@example.test>",
+                'partnumber' => $part,
+                'size' => 1_000,
+            ]);
+        }
     }
 
     /**
@@ -460,6 +568,17 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             nfostatus INTEGER,
             nzbstatus INTEGER,
             completion DOUBLE NOT NULL DEFAULT 0,
+            pp_timeout_count INTEGER NOT NULL DEFAULT 0,
+            proc_nfo INTEGER NOT NULL DEFAULT 0,
+            proc_files INTEGER NOT NULL DEFAULT 0,
+            proc_srr INTEGER NOT NULL DEFAULT 0,
+            proc_crc32 INTEGER NOT NULL DEFAULT 0,
+            proc_uid INTEGER NOT NULL DEFAULT 0,
+            proc_hash16k INTEGER NOT NULL DEFAULT 0,
+            proc_par2 INTEGER NOT NULL DEFAULT 0,
+            proc_srrdb INTEGER NOT NULL DEFAULT 0,
+            proc_xxx INTEGER NOT NULL DEFAULT 0,
+            proc_media_movie INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
             iscategorized INTEGER,
@@ -532,7 +651,37 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             title VARCHAR(255) UNIQUE,
             filename VARCHAR(255)
         )');
+        ProductionTables::fromAuthority()->create('video_data', ['releases_id']);
+        ProductionTables::fromAuthority()->create('audio_data', ['id', 'releases_id', 'audioid']);
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
         DB::table('categories')->insert(['id' => 1, 'title' => 'Misc']);
+    }
+}
+
+/**
+ * Records the reasons the creation path offers and the outcomes the absorber returns, so a
+ * turned-away duplicate is distinguishable from one the absorber was never asked about.
+ */
+final class RecordingDuplicateAbsorber extends ReleaseDuplicateAbsorber
+{
+    /** @var list<?string> */
+    public array $reasons = [];
+
+    /** @var list<DuplicateAbsorbOutcome> */
+    public array $outcomes = [];
+
+    public function supportsReason(?string $reason): bool
+    {
+        $this->reasons[] = $reason;
+
+        return parent::supportsReason($reason);
+    }
+
+    public function absorbCollection(Release $anchor, Collection $collection, float $incomingCompletion): DuplicateAbsorbResult
+    {
+        $result = parent::absorbCollection($anchor, $collection, $incomingCompletion);
+        $this->outcomes[] = $result->outcome;
+
+        return $result;
     }
 }

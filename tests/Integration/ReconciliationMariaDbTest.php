@@ -198,7 +198,8 @@ final class ReconciliationMariaDbTest extends TestCase
         $target = str_replace('</segments>', '<segment number="1" bytes="10">one@example.invalid</segment></segments>', $original);
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('mariadb-artifact')]);
         $nzbs = app(NzbService::class);
-        DB::table('releases')->insert(['id' => 1, 'guid' => $guid]);
+        // Measured, so a duplicate contender reaches the lock instead of stopping at the never-measured sentinel.
+        DB::table('releases')->insert(['id' => 1, 'guid' => $guid, 'completion' => 50]);
         DB::table('reconciled_postings')->insert(['release_id' => 1, 'digest' => str_repeat('a', 64),
             'state' => 'published', 'inventory' => '[]', 'decision' => '{}', 'artifact_digest' => hash('sha256', $original)]);
         file_put_contents($nzbs->getNzbPath($guid, $nzbs->getNzbSplitLevel(), true), gzencode($original));
