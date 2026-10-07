@@ -17,6 +17,7 @@ use App\Services\ReleaseRepair\EvidenceChangedTransition;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use App\Services\ReleaseRepair\RecoveryLease;
 use App\Support\Data\DuplicateAbsorbResult;
+use App\Support\ReleaseCompletion;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -56,6 +57,7 @@ class ReleaseDuplicateAbsorber
             'searchname_match',
             'normalized_searchname_match',
             'name_match_fallback',
+            'predb_id_match',
         ], true);
     }
 
@@ -79,7 +81,8 @@ class ReleaseDuplicateAbsorber
         }
         // The creation-time figure is scaled down for a file a phantom-trailing post never posted,
         // so for that shape the decision waits for the rendered copy's own measurement.
-        if ($incomingCompletion <= (float) $anchor->completion && ! $this->isPhantomTrailingCollection($collection)) {
+        if (! ReleaseCompletion::isMeasured($anchor->completion)
+            || ($incomingCompletion <= (float) $anchor->completion && ! $this->isPhantomTrailingCollection($collection))) {
             return DuplicateAbsorbResult::notBetter();
         }
 
@@ -150,7 +153,7 @@ class ReleaseDuplicateAbsorber
             $incomingCompletion = $document->measure()->percentage();
         }
 
-        if ($incomingCompletion <= (float) $anchor->completion) {
+        if (! $this->isBetter($incomingCompletion, $anchor)) {
             return DuplicateAbsorbResult::notBetter();
         }
 
@@ -190,7 +193,7 @@ class ReleaseDuplicateAbsorber
                 return DuplicateAbsorbResult::deferred();
             }
 
-            if ($incomingCompletion <= (float) $locked->completion) {
+            if (! $this->isBetter($incomingCompletion, $locked)) {
                 return DuplicateAbsorbResult::notBetter();
             }
 
@@ -219,6 +222,14 @@ class ReleaseDuplicateAbsorber
 
             return DuplicateAbsorbResult::absorbed();
         }, 3);
+    }
+
+    /**
+     * A never-measured anchor (`completion` `0`, the sentinel) is not comparable, so nothing is better than it.
+     */
+    private function isBetter(float $incomingCompletion, Release $anchor): bool
+    {
+        return ReleaseCompletion::isMeasured($anchor->completion) && $incomingCompletion > (float) $anchor->completion;
     }
 
     /**
