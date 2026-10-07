@@ -16,4 +16,5 @@ enum ClipGenerationDeclineReason: string
     case RemuxFailed = 'clip_remux_failed';
     case EmptyOutput = 'clip_empty_output';
     case OutputUnplayable = 'clip_output_unplayable';
+    case NoUsableFrame = 'clip_no_usable_frame';
 }

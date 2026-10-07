@@ -76,6 +76,7 @@ class ClipStorageTest extends TestCase
             clipEnabled: true,
             diskHasRoom: true,
             encoderRunner: $this->safeH264Runner(),
+            frameRunner: $this->frameRunner(),
         );
 
         $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
@@ -115,6 +116,7 @@ class ClipStorageTest extends TestCase
                 return "Duration: 00:00:24.00, start: 0.000000, bitrate: 2000 kb/s\n  Stream #0:0: Video: h264 (High)";
             },
             previewTargetSeconds: 24,
+            frameRunner: $this->frameRunner(),
         );
 
         $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'transcoded-clip-guid', 6010));
@@ -190,6 +192,7 @@ class ClipStorageTest extends TestCase
             clipEnabled: true,
             diskHasRoom: true,
             encoderRunner: $this->safeH264Runner(),
+            frameRunner: $this->frameRunner(),
         );
         rmdir($this->coversRoot.'/video');
         file_put_contents($this->coversRoot.'/video', 'blocks the video directory');
@@ -289,6 +292,7 @@ class ClipStorageTest extends TestCase
             diskHasRoom: true,
             encoderRunner: $this->safeH264Runner(duration: '00:00:03.00'),
             clipMinimumSeconds: 0,
+            frameRunner: $this->frameRunner(),
         );
 
         $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
@@ -320,6 +324,96 @@ class ClipStorageTest extends TestCase
             ],
         );
         $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+    }
+
+    public function test_a_clip_with_no_usable_frame_stores_nothing_and_removes_its_frame(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
+        $framePaths = [];
+        $rejectedFramesWritten = 0;
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(),
+            frameRunner: $this->frameRunner(
+                usableFromAttempt: null,
+                framePaths: $framePaths,
+                framesWritten: $rejectedFramesWritten,
+            ),
+        );
+
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertNotSame([], $framePaths);
+        $this->assertSame(count($framePaths), $rejectedFramesWritten, 'Every strategy wrote a rejected JPEG.');
+        foreach (array_unique($framePaths) as $framePath) {
+            $this->assertFileDoesNotExist($framePath);
+        }
+        $this->assertNoVideoArtifacts($releaseId);
+        $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_no_usable_frame',
+            ],
+        );
+    }
+
+    public function test_a_clip_with_a_usable_frame_is_stored_and_its_frame_removed(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        $framePaths = [];
+        $framesWritten = 0;
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(),
+            frameRunner: $this->frameRunner(
+                usableFromAttempt: 2,
+                framePaths: $framePaths,
+                framesWritten: $framesWritten,
+            ),
+        );
+
+        $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertCount(2, $framePaths);
+        $this->assertSame(2, $framesWritten);
+        foreach (array_unique($framePaths) as $framePath) {
+            $this->assertFileDoesNotExist($framePath);
+        }
+        $this->assertFileExists($this->coversRoot.'/video/clip-guid.mp4');
+        $this->assertNotNull(ReleaseVideoClip::query()->where('releases_id', $releaseId)->first());
+        $this->assertSame(1, (int) DB::table('releases')->where('id', $releaseId)->value('videostatus'));
+        $this->assertSame([], glob($this->coversRoot.'/preview/*') ?: [], 'The frame is not promoted to the Generated Preview.');
+    }
+
+    public function test_a_clip_below_the_duration_floor_never_runs_frame_extraction(): void
+    {
+        $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
+        $frameCommands = 0;
+        $service = $this->makeService(
+            clipEnabled: true,
+            diskHasRoom: true,
+            encoderRunner: $this->safeH264Runner(duration: '00:00:03.00'),
+            frameRunner: function (array $command, int $timeout) use (&$frameCommands): string {
+                $frameCommands++;
+
+                return '';
+            },
+        );
+
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+
+        $this->assertSame(0, $frameCommands);
+        $this->assertNoVideoArtifacts($releaseId);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            Mockery::on(static fn (array $context): bool => $context['reason'] === 'clip_below_duration_floor'),
+        );
     }
 
     public function test_a_declined_clip_logs_no_error_trace_even_in_debug_mode(): void
@@ -379,6 +473,7 @@ class ClipStorageTest extends TestCase
 
     /**
      * @param  callable(list<string>, int): string  $encoderRunner
+     * @param  (callable(list<string>, int): string)|null  $frameRunner
      */
     private function makeService(
         bool $clipEnabled,
@@ -387,6 +482,7 @@ class ClipStorageTest extends TestCase
         bool $debugMode = false,
         int $clipMinimumSeconds = 5,
         int $previewTargetSeconds = 30,
+        ?callable $frameRunner = null,
     ): MediaExtractionService {
         $config = $this->makeConfig([
             'processVideo' => true,
@@ -400,7 +496,7 @@ class ClipStorageTest extends TestCase
             $config,
             new ReleaseImageService,
             Mockery::mock(ReleaseExtraService::class),
-            new VideoFrameExtractor($config),
+            new VideoFrameExtractor($config, $frameRunner),
             clipPolicy: new StubClipGenerationPolicy($clipEnabled),
             clipEncoder: new VideoClipEncoder($encoderRunner),
             freeDiskGuard: new FreeDiskGuard(
@@ -408,6 +504,41 @@ class ClipStorageTest extends TestCase
                 static fn (string $path): float => 1000.0,
             ),
         );
+    }
+
+    /**
+     * Frame-extractor double: answers the decodable-duration probe and writes
+     * a flat JPEG for each frame command until attempt $usableFromAttempt,
+     * then a non-flat one (null: every frame is flat). Each command's frame
+     * path and each JPEG actually written are recorded.
+     *
+     * @param  list<string>  $framePaths
+     * @return callable(list<string>, int): string
+     */
+    private function frameRunner(?int $usableFromAttempt = 1, array &$framePaths = [], int &$framesWritten = 0): callable
+    {
+        return static function (array $command, int $timeout) use ($usableFromAttempt, &$framePaths, &$framesWritten): string {
+            if (in_array('null', $command, true)) {
+                return 'frame=30 time=00:00:01.20 bitrate=N/A';
+            }
+
+            $framePath = (string) end($command);
+            $framePaths[] = $framePath;
+            $usable = $usableFromAttempt !== null && count($framePaths) >= $usableFromAttempt;
+
+            $image = imagecreatetruecolor(64, 64);
+            if ($usable) {
+                imagefilledrectangle($image, 32, 0, 63, 63, (int) imagecolorallocate($image, 255, 255, 255));
+            } else {
+                imagefilledrectangle($image, 0, 0, 63, 63, (int) imagecolorallocate($image, 12, 12, 12));
+            }
+            imagejpeg($image, $framePath);
+            if (is_file($framePath)) {
+                $framesWritten++;
+            }
+
+            return '';
+        };
     }
 
     /**
