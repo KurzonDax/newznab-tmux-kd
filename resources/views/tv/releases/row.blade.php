@@ -49,7 +49,7 @@
         {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 3.1). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
-                @include('tv.partials.release-chip-list')
+                @include('tv.partials.release-chip-list', ['clip' => null])
                 @include('tv.partials.release-origin')
             </div>
         @endif

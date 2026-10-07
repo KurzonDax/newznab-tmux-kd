@@ -70,7 +70,7 @@ None. What each approved element reads:
 | Completion filter and chip (5.2, 5.5) | `releases.completion` | today |
 | Name search (5.9) | `releases.display_name`, `searchname` | today |
 | Picture: preview, else sample (5.6) | the preview / sample thumbnail file on disk (`ReleaseRowFacts` returns its URL only then) | additional processing (fact 4) |
-| Clip chip, tag and dialog (5.10, 5A.3) | `releases.videostatus`; `release_video_clips.duration_seconds` when present | additional processing (fact 4) |
+| Preview chip's clip, seconds tag, poster and dialog (5.10, 5A.3) | `releases.videostatus`; `release_video_clips.duration_seconds` when present; the poster image files on disk | additional processing (fact 4) |
 | Sample at full size (5A.3) | the full-size file on disk | additional processing; fact 5 |
 | Files "—" (5A.2) | `releases.totalpart` = 0 | today (fact 10) |
 | PreDB (5A.3) | `releases.predb_id` → `predb` | today |
@@ -172,16 +172,17 @@ read); the worst case was also run on the untouched full-width copy (77 columns,
 | clip, preview and sample flags for the page's 50 ids (primary key) | 0.1 | 151 |
 | clip seconds for the details page's release (`release_video_clips`, unique `releases_id`) | 0.3 | 324 |
 
-- The Adult rows add a clip to the shared row facts: present when `videostatus = 1` (today's player plays it, fact 6).
-  The list's and the Similar releases table's Clip chip reads "Clip" (`SPEC.md` 5.10 and the approved prototype), so
-  the lists read no seconds. The details page's tag reads "Clip · N s" with the seconds from
-  `release_video_clips.duration_seconds` when there is a row and a value; otherwise it reads "Clip" and the preview's
-  accessible name "Preview, play the video clip".
+- The Adult rows add a clip to the shared row facts: present when `videostatus = 1` (today's player plays it, fact 6),
+  with its poster (`ReleaseRowFacts::clipPoster()`: the full-size Preview, else the Preview thumbnail, else the Sample
+  thumbnail, each only when its file is on disk, whatever `haspreview` and `jpgstatus` say). The list's and the Similar
+  releases table's Preview chip shows no length (`SPEC.md` 5.10), so the lists read no seconds. The details page's tag
+  reads a play icon and "N s" with the seconds from `release_video_clips.duration_seconds` when there is a row and a
+  value; otherwise there is no tag and the preview's accessible name is "Preview, play the video preview".
 
 ### 4.4 The details page
 
 - The release by guid, its PreDB row, its media info, files and NFO: today's reads, unchanged.
-- The clip marker and the Video clip dialog: `videostatus = 1` and today's player (fact 6).
+- The clip marker and the Video preview dialog: `videostatus = 1` and today's player (fact 6).
 - The sample at full size: only a full-size copy (`getImageAssetUrl('sample', $guid)` not null, fact 5) can be larger
   than the dialog; the dialog opens in its Full size state when the loaded image's natural size is larger than the
   dialog's, a browser-side check (thumbnails are 650 px wide and never are).
@@ -212,9 +213,9 @@ resolution or no audio language read "Unknown", as TV and Movies do.
    again the list opens with it applied.
 4. The name search keeps only releases whose `display_name`, or `searchname` when that is empty, contains the text,
    with `%`, `_` and `!` taken literally; it combines with the filters; its count matches the rows.
-5. A release with `videostatus = 1` shows a list Clip chip reading "Clip"; its details tag reads "Clip · N s" when it has
-   a `release_video_clips` row with seconds, and "Clip" with no row or no seconds; with `videostatus = 0` there is no
-   chip, tag or play button.
+5. A release with `videostatus = 1` shows a list Preview chip with a play icon; its details tag reads a play icon and
+   "N s" when it has a `release_video_clips` row with seconds, and is absent with no row or no seconds; with
+   `videostatus = 0` there is no play icon, tag or play button.
 6. A row's picture is the preview thumbnail when its URL is not null, else the sample thumbnail, else the "No picture"
    tile.
 7. The details page: a release with a clip has the preview's clip marker and its preview opens the clip dialog; a

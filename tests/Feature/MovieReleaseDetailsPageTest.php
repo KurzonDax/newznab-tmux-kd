@@ -342,16 +342,66 @@ final class MovieReleaseDetailsPageTest extends TestCase
         $this->page('/details/'.$this->guid($id).'?_fragment=releases')->assertNotFound();
     }
 
-    public function test_a_release_with_a_video_clip_has_the_clip_chip_opening_the_image_dialog_with_the_player(): void
+    public function test_a_release_with_a_video_clip_has_one_preview_chip_with_a_play_icon_opening_the_player_with_its_poster(): void
     {
         $id = $this->movie(self::FILM);
-        $this->details($id)->assertDontSee('clip-badge', false);
+        $guid = $this->guid($id);
+        DB::table('releases')->where('id', $id)->update(['haspreview' => 1]);
+        $this->image('preview', $guid.'_thumb');
+        $this->image('preview', $guid);
+        $image = $this->between($this->details($id), '<div class="tv-chips tv-details-chips">', '</div>');
+        $this->assertMatchesRegularExpression('/<button[^>]*preview-badge[^>]*data-image-url="'.preg_quote($this->url('preview', $guid.'_thumb'), '/').'"[^>]*data-image-title="Image preview"[^>]*title="View the image preview"[^>]*>\s*Preview\s*<\/button>/', $image);
+        $this->assertStringNotContainsString('data-video-url', $image);
 
         DB::table('releases')->where('id', $id)->update(['videostatus' => 1, 'jpgstatus' => 1]);
         DB::table('release_video_clips')->insert(['releases_id' => $id, 'extension' => 'webm', 'mime' => 'video/webm']);
-        $chips = $this->between($this->details($id), '<div class="tv-chips tv-details-chips">', '</div>');
-        $this->assertSeeOrder($chips, ['sample-badge', 'clip-badge']);
-        $this->assertMatchesRegularExpression('/<button[^>]*class="[^"]*clip-badge[^"]*"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($id)), '/').'"[^>]*data-video-type="video\/webm"[^>]*data-image-title="Video preview"[^>]*title="Watch video preview"[^>]*>\s*Clip\s*<\/button>/', $chips);
+        $response = $this->details($id)->assertDontSee('clip-badge', false);
+        $chips = $this->between($response, '<div class="tv-chips tv-details-chips">', '</div>');
+        $this->assertSeeOrder($chips, ['preview-badge', 'sample-badge']);
+        $this->assertSame(1, substr_count($chips, 'preview-badge'));
+        $this->assertMatchesRegularExpression('/<button[^>]*class="[^"]*chip-tone-preview[^"]*preview-badge[^"]*"[^>]*data-video-url="'.preg_quote(route('preview.video', $guid), '/').'"[^>]*data-video-type="video\/webm"'
+            .'[^>]*data-poster-url="'.preg_quote($this->url('preview', $guid), '/').'"[^>]*data-image-title="Video preview"[^>]*title="Play the video preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>/', $chips);
+        $this->assertStringNotContainsString('data-image-url="'.$this->url('preview', $guid.'_thumb'), $chips, 'The clip chip offers no separate still.');
+    }
+
+    /**
+     * Blade includes inherit their caller's variables: the page's clip must never reach the film
+     * table's or Similar releases' rows, on the page or in the releases fragment.
+     */
+    public function test_the_page_s_clip_never_reaches_another_row_s_preview_chip(): void
+    {
+        $a = $this->movie(self::FILM, '2026-09-22 10:00:00', name: 'Heat.1995.1080p.Clip');
+        $b = $this->movie(self::FILM, '2026-09-21 10:00:00', name: 'Heat.1995.720p.Image');
+        $c = $this->movie(self::OTHER_FILM, '2026-09-20 10:00:00', name: 'Heat.Wave.2022.Image');
+        DB::table('releases')->whereIn('id', [$a, $b, $c])->update(['haspreview' => 1]);
+        DB::table('releases')->where('id', $a)->update(['videostatus' => 1]);
+        DB::table('release_video_clips')->insert(['releases_id' => $a, 'extension' => 'mp4', 'mime' => 'video/mp4']);
+        foreach ([$a, $b, $c] as $id) {
+            $this->image('preview', $this->guid($id).'_thumb');
+            $this->image('preview', $this->guid($id));
+        }
+        $this->similarIds = [$c];
+
+        $response = $this->details($a)->assertOk();
+        $html = (string) $response->getContent();
+        $this->assertSame(1, substr_count($html, 'data-video-url'), 'only the page\'s own chip plays the clip');
+        $this->assertStringContainsString('data-poster-url="'.$this->url('preview', $this->guid($a)).'"', $this->between($response, '<div class="tv-chips tv-details-chips">', '</div>'));
+        $table = $this->between($response, 'data-film-releases>', '</section>');
+        $similar = $this->between($response, 'data-similar-releases>', '</section>');
+        foreach ([[$b, 'Heat.1995.720p.Image', $table], [$c, 'Heat.Wave.2022.Image', $similar]] as [$id, $name, $section]) {
+            $chip = $this->rowChip($section, $id);
+            $this->assertStringContainsString('data-release-display-name="'.$name.'" data-image-url="'.$this->url('preview', $this->guid($id).'_thumb').'" data-full-url="'.$this->url('preview', $this->guid($id)).'"', $chip);
+            $this->assertStringContainsString('data-image-title="Image preview"', $chip);
+            foreach (['data-video-url', 'data-poster-url', 'fa-play', 'Video preview', route('preview.video', $this->guid($a)), $this->guid($a)] as $absent) {
+                $this->assertStringNotContainsString($absent, $chip, $name);
+            }
+        }
+        $this->assertStringNotContainsString('data-video-url', $table.$similar);
+        $this->assertStringNotContainsString('data-poster-url', $table.$similar);
+
+        $fragment = (string) $this->page('/details/'.$this->guid($a).'?_fragment=releases')->assertOk()->getContent();
+        $this->assertSame($this->rowChip($table, $b), $this->rowChip($fragment, $b));
+        $this->assertStringNotContainsString('data-video-url', $fragment);
     }
 
     public function test_the_search_passes_the_film_left_out_to_the_index_and_the_fallback_sql_leaves_it_out(): void
@@ -432,6 +482,27 @@ final class MovieReleaseDetailsPageTest extends TestCase
     {
         File::ensureDirectoryExists($this->covers.'/movies');
         File::put($this->covers.'/movies/'.$imdbId.'-cover.jpg', 'jpg');
+    }
+
+    private function image(string $type, string $basename): void
+    {
+        File::ensureDirectoryExists($this->covers.'/'.$type);
+        File::put($this->covers.'/'.$type.'/'.$basename.'.jpg', 'jpg');
+    }
+
+    private function url(string $type, string $basename): string
+    {
+        return url('/covers/'.$type.'/'.$basename.'.jpg');
+    }
+
+    /** The one Preview chip of the release's row in the given table. */
+    private function rowChip(string $html, int $id): string
+    {
+        preg_match_all('/<button [^>]*preview-badge[^>]*>.*?<\/button>/s', $html, $matches);
+        $chips = array_values(array_filter($matches[0], fn (string $chip): bool => str_contains($chip, 'data-guid="'.$this->guid($id).'"')));
+        $this->assertCount(1, $chips, 'one Preview chip for release '.$id);
+
+        return $chips[0];
     }
 
     private function excludeForUser(int $category): void

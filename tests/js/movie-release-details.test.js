@@ -3,7 +3,7 @@ import test from 'node:test';
 import { movieReleaseDetails, opensAtTable, tablePageUrl } from '../../resources/js/alpine/components/movie-release-details-component.js';
 import { tvImageDialog } from '../../resources/js/alpine/components/tv-dialogs-component.js';
 
-/** The Movies release details page's tables and Clip (docs/proposals/movies-redesign/SPEC.md 5C; the details checks of prototype/check.mjs). */
+/** The Movies release details page's tables and Preview chip (docs/proposals/movies-redesign/SPEC.md 5C; the details checks of prototype/check.mjs; issue #995). */
 
 function attributes(initial = {}) {
     const values = { ...initial };
@@ -221,11 +221,12 @@ test('rows without data-category (the Movies and Adult Similar tables) keep thei
     assert.deepEqual(order(), ['c', 'a', 'b']);
 });
 
-test('the Clip chip opens the image dialog with a player that fetches nothing until played, removed on close', () => {
+test('a Preview chip with a clip opens the image dialog with a player that asks for metadata and shows the poster, never autoplays, and is removed on close', () => {
     const created = [];
+    let played = 0;
     globalThis.document = {
         createElement(tag) {
-            const element = { tag, children: [], append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; }, pause() { this.paused = true; }, load() {} };
+            const element = { tag, children: [], append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; }, pause() { this.paused = true; }, load() {}, play() { played++; } };
             created.push(element);
             return element;
         },
@@ -234,24 +235,37 @@ test('the Clip chip opens the image dialog with a player that fetches nothing un
     const dialog = tvImageDialog();
     dialog.$refs = { player, image: {} };
     dialog.$nextTick = callback => callback();
-    dialog.show({ classList: { contains: () => false }, dataset: { guid: 'abc', videoUrl: '/preview/video/abc', videoType: 'video/webm', imageTitle: 'Video preview', releaseDisplayName: 'The.Film.2020' } });
+    dialog.show({ classList: { contains: name => name === 'preview-badge' }, dataset: { guid: 'abc', videoUrl: '/preview/video/abc', videoType: 'video/webm', posterUrl: '/covers/preview/abc.jpg', imageTitle: 'Video preview', releaseDisplayName: 'The.Film.2020' } });
     assert.equal(dialog.title, 'Video preview');
     assert.equal(dialog.video, true);
     assert.equal(dialog.showImage(), false);
     assert.equal(dialog.imageUrl, '');
     const video = player.children[0];
     assert.equal(video.tag, 'video');
-    assert.equal(video.preload, 'none');
+    assert.equal(video.preload, 'metadata');
+    assert.equal(video.poster, '/covers/preview/abc.jpg');
     assert.equal(video.controls, true);
+    assert.equal(video.autoplay, undefined);
     assert.equal(video.tabIndex, 0);
+    assert.equal(played, 0, 'playback waits for the play button');
     assert.deepEqual([video.children[0].src, video.children[0].type], ['/preview/video/abc', 'video/webm']);
     dialog.close();
     assert.equal(video.paused, true);
     assert.deepEqual(player.children, []);
     assert.equal(dialog.video, false);
 
+    dialog.show({ classList: { contains: name => name === 'preview-badge' }, dataset: { guid: 'abc', videoUrl: '/preview/video/abc', videoType: 'video/mp4', imageTitle: 'Video preview' } });
+    const bare = player.children[0];
+    assert.notEqual(bare, video, 'reopening builds a new player');
+    assert.equal(video.paused, true);
+    assert.equal(bare.preload, 'metadata');
+    assert.equal('poster' in bare, false, 'no poster without one');
+    assert.equal(played, 0);
+    dialog.close();
+
     dialog.show({ classList: { contains: name => name === 'preview-badge' }, dataset: { guid: 'abc', imageUrl: '/covers/preview/abc_thumb.webp' } });
     assert.equal(dialog.video, false);
     assert.equal(dialog.showImage(), true);
+    assert.equal(dialog.title, 'Image preview', 'the Preview chip without a title opens the Image preview');
     assert.deepEqual(player.children, []);
 });

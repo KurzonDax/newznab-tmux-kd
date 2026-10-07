@@ -5,7 +5,7 @@ import { tvImageDialog } from '../../resources/js/alpine/components/tv-dialogs-c
 import { tvReleases } from '../../resources/js/alpine/components/tv-releases-component.js';
 
 // The Adult releases list (issue #887): the checks of docs/proposals/adult-redesign/prototype/check.mjs that live in the
-// browser — the name search, the picture's click, the Clip chip's dialog and the table's cell colours.
+// browser — the name search, the picture's click, the Preview chip's video dialog and the table's cell colours.
 
 function nameSearchScreen(href) {
     const requests = [], history = [];
@@ -129,7 +129,7 @@ test('a plain click on a row picture opens its image dialog from the matching ch
         handle(event);
         assert.equal(event.prevented, true, kind + ': the list stays');
         assert.equal(dialog.open, true);
-        assert.equal(dialog.title, kind === 'sample' ? 'Sample image' : 'Preview image');
+        assert.equal(dialog.title, kind === 'sample' ? 'Sample image' : 'Image preview');
         assert.equal(dialog.imageUrl, '/covers/' + kind + '/abc.jpg');
         assert.equal(chip.focused, true, kind + ': focus returns to the chip on close');
     }
@@ -147,17 +147,28 @@ test('a Ctrl-, Cmd- or Shift-click on a row picture follows its link to the deta
     }
 });
 
-test('the Clip chip opens the image dialog in its video mode, titled Video clip', () => {
+test('a Preview chip with a clip opens the image dialog in its video mode, titled Video preview', () => {
     const { dialog, click: handle } = imageDialog();
     const chip = {
-        classList: { contains: () => false },
-        dataset: { guid: 'abc', videoUrl: '/preview/video/abc', videoType: 'video/mp4', imageTitle: 'Video clip', releaseDisplayName: 'Studio.Scene.1080p' },
+        classList: { contains: name => name === 'preview-badge' },
+        dataset: { guid: 'abc', videoUrl: '/preview/video/abc', videoType: 'video/mp4', posterUrl: '/covers/preview/abc.jpg', imageTitle: 'Video preview', releaseDisplayName: 'Studio.Scene.1080p' },
     };
-    const target = { closest: selector => (selector === '.preview-badge, .sample-badge, .clip-badge' ? chip : null) };
+    const target = { closest: selector => (selector === '.preview-badge, .sample-badge' ? chip : null) };
     const event = click(target);
     handle(event);
     assert.equal(event.prevented, true);
-    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.releaseName], [true, true, 'Video clip', 'Studio.Scene.1080p']);
+    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.releaseName], [true, true, 'Video preview', 'Studio.Scene.1080p']);
+});
+
+test('a clip row\'s preview thumbnail opens its Preview chip\'s video mode', () => {
+    const { dialog, click: handle } = imageDialog();
+    const { chip, target } = row('preview');
+    Object.assign(chip.dataset, { videoUrl: '/preview/video/abc', videoType: 'video/mp4', posterUrl: '/covers/preview/abc.jpg', imageTitle: 'Video preview' });
+    const event = click(target);
+    handle(event);
+    assert.equal(event.prevented, true);
+    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl], [true, true, 'Video preview', '']);
+    assert.equal(chip.focused, true);
 });
 
 test('the Adult table keeps Size in ink and the date dim, and draws the picture frame and the dashed "No picture" tile', () => {

@@ -108,6 +108,18 @@ final class ReleaseRowFacts
         ];
     }
 
+    /**
+     * A video clip's poster: the full-size Preview, else the Preview thumb, else the Sample thumb,
+     * whichever is on disk first, whatever haspreview and jpgstatus say (those flags decide only
+     * the image chips and the picture); null without any of them.
+     */
+    public static function clipPoster(string $guid): ?string
+    {
+        return getImageAssetUrl('preview', $guid)
+            ?? getImageAssetUrl('preview', $guid.'_thumb')
+            ?? getImageAssetUrl('sample', $guid.'_thumb');
+    }
+
     /** Sizes as the prototype writes them: 2.41 GB, 12.3 GB, 734 MB, 912 KB. */
     public static function size(float $bytes): string
     {

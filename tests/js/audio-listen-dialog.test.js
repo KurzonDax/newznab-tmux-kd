@@ -136,9 +136,9 @@ test('a second chip replaces the first player, and teardown stops the sound', ()
     assert.equal(second.paused, true);
 });
 
-test('the Listen dialog never opens on a Preview, Sample or Clip chip, and the image dialog never on Listen', () => {
+test('the Listen dialog never opens on a Preview or Sample chip, and the image dialog never on Listen', () => {
     const env = environment();
-    for (const name of ['preview-badge', 'sample-badge', 'clip-badge']) {
+    for (const name of ['preview-badge', 'sample-badge']) {
         const chip = { dataset: {} };
         const event = click({ closest: selector => (selector.split(', ').includes('.' + name) ? chip : null) });
         env.click(event);

@@ -116,8 +116,8 @@ title page, "All N releases of this …". Books and PC also have no title line, 
 
 ## 5. The releases lists (APPROVED 2026-10-01)
 
-The Adult releases list (Adult `SPEC.md` section 5) without its picture, Resolution, Audio and Preview / Sample / Clip
-parts, with the changes below. Console adds a cover, a game line and the game's filters (5.6 to 5.9).
+The Adult releases list (Adult `SPEC.md` section 5) without its picture, Resolution, Audio and Preview / Sample parts
+(the Preview chip's clip included), with the changes below. Console adds a cover, a game line and the game's filters (5.6 to 5.9).
 
 ### 5.1 Header
 

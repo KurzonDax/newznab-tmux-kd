@@ -13,7 +13,7 @@
      * album (docs/proposals/audio-redesign/SPEC.md 5A): the Adult details page's release-only form (the
      * release name as the heading, full width, no aside) without pictures and without the resolution
      * chip. An Audio release adds its MusicBrainz button, its Overview's preview, its Tracks tab and a
-     * music video's Clip chip.
+     * music video's Preview chip playing its clip.
      *
      * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow $row
      * @var string $subCategory

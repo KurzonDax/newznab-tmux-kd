@@ -115,9 +115,10 @@ final class MovieReleaseDetails
     }
 
     /**
-     * The Clip chip's player (the video preview, as today's preview modal plays it), or null.
+     * The Preview chip's player (the video preview, as today's preview modal plays it) and its
+     * poster (ReleaseRowFacts::clipPoster()), or null.
      *
-     * @return array{url: string, type: string}|null
+     * @return array{url: string, type: string, poster: ?string}|null
      */
     private function clip(Release $release): ?array
     {
@@ -126,6 +127,10 @@ final class MovieReleaseDetails
         }
         $clip = ReleaseVideoClip::query()->where('releases_id', $release->id)->first(['releases_id', 'extension', 'mime']);
 
-        return ['url' => route('preview.video', $release->guid), 'type' => $clip?->clipMimeType() ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']];
+        return [
+            'url' => route('preview.video', $release->guid),
+            'type' => $clip?->clipMimeType() ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'],
+            'poster' => ReleaseRowFacts::clipPoster((string) $release->guid),
+        ];
     }
 }

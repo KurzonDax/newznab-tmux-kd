@@ -4,7 +4,7 @@ import test from 'node:test';
 import { tvImageDialog } from '../../resources/js/alpine/components/tv-dialogs-component.js';
 
 // The Adult release details page (issue #888): the Overview's pictures (docs/proposals/adult-redesign/SPEC.md 5A.3).
-// A preview whose release has a clip plays it in the Video clip dialog; the sample opens straight at full size when
+// A preview whose release has a clip plays it in the Video preview dialog; the sample opens straight at full size when
 // its image is larger than the dialog, and shows only once laid out that way; the header chips keep the fitted dialog.
 
 function imageDialog(image = {}) {
@@ -30,7 +30,7 @@ function picture(kind, dataset = {}) {
 }
 
 function click(trigger) {
-    const target = { closest: selector => (selector === '.preview-badge, .sample-badge, .clip-badge' ? trigger : null) };
+    const target = { closest: selector => (selector === '.preview-badge, .sample-badge' ? trigger : null) };
     return { target, button: 0, prevented: false, preventDefault() { this.prevented = true; } };
 }
 
@@ -111,24 +111,24 @@ test('closing and opening another picture forgets the full-size opening', () => 
     dialog.close();
     assert.equal(dialog.full, false);
 
-    handle(click(picture('preview', { imageTitle: 'Preview image' })));
+    handle(click(picture('preview', { imageTitle: 'Image preview' })));
     load(dialog, [1920, 1080], [900, 506]);
-    assert.deepEqual([dialog.canFull, dialog.full, dialog.title], [true, false, 'Preview image']);
+    assert.deepEqual([dialog.canFull, dialog.full, dialog.title], [true, false, 'Image preview']);
 });
 
-test('a preview with a clip opens the Video clip dialog with the player, as the Clip chip does; one without opens its image', () => {
+test('a preview with a clip opens the Video preview dialog with the player, as the Preview chip does; one without opens its image', () => {
     const { dialog, click: handle } = imageDialog();
     const clip = {
-        classList: { contains: name => name === 'clip-badge' },
-        dataset: { guid: 'abc', releaseDisplayName: 'Studio.Scene.1080p', videoUrl: '/preview/video/abc', videoType: 'video/mp4', imageTitle: 'Video clip' },
+        classList: { contains: name => name === 'preview-badge' },
+        dataset: { guid: 'abc', releaseDisplayName: 'Studio.Scene.1080p', videoUrl: '/preview/video/abc', videoType: 'video/mp4', posterUrl: '/covers/preview/abc_thumb.jpg', imageTitle: 'Video preview' },
     };
     handle(click(clip));
-    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl, dialog.showImage()], [true, true, 'Video clip', '', false]);
+    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl, dialog.showImage()], [true, true, 'Video preview', '', false]);
     assert.doesNotMatch(dialog.dialogClass(), /\bis-measuring\b/);
     dialog.close();
 
-    handle(click(picture('preview', { imageTitle: 'Preview image' })));
-    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl], [true, false, 'Preview image', '/covers/preview/abc.jpg']);
+    handle(click(picture('preview', { imageTitle: 'Image preview' })));
+    assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl], [true, false, 'Image preview', '/covers/preview/abc.jpg']);
 });
 
 test('the pictures sit side by side at 220 px; the play button is 56 px round and turns magenta; the clip tag keeps the dark chip values', () => {

@@ -1,8 +1,8 @@
 @php
     /**
      * The Adult details page's Similar releases table (docs/proposals/adult-redesign/SPEC.md 5A.4): the
-     * Movies details page's table without its Source column (Release with the chip line and the Clip
-     * chip, Resolution, Size, Files, Posted and the 2 × 2 buttons without Follow), sorted in the
+     * Movies details page's table without its Source column (Release with the chip line, whose Preview
+     * chip plays a clip, Resolution, Size, Files, Posted and the 2 × 2 buttons without Follow), sorted in the
      * browser by Resolution, Size and Posted. Files reads "—" when none is stored.
      *
      * @var list<\App\Data\AdultReleaseRow> $rows
@@ -33,11 +33,7 @@
                     <a class="tv-release-name" href="{{ route('details', $row->guid) }}" title="{{ $row->name }}">{{ $row->name }}</a>
                     @if($row->hasChips())
                         <div class="tv-chips">
-                            @include('tv.partials.release-chip-list')
-                            @if($row->clip !== null)
-                                <x-chip variant="clip" action class="clip-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-video-url="$row->clip['url']" :data-video-type="$row->clip['type']"
-                                        data-image-title="Video clip" title="Play the video clip">Clip</x-chip>
-                            @endif
+                            @include('tv.partials.release-chip-list', ['clip' => $row->clip])
                         </div>
                     @endif
                 </td>

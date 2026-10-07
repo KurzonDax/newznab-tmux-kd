@@ -19,6 +19,8 @@
     $tabs = ['overview' => 'Overview', 'files' => 'Files ('.$row->files.')', 'media' => 'Media info', 'nfo' => 'NFO', 'comments' => 'Comments ('.$commentCount.')'];
     $mediaSummary = $row->mediaInfoWithResolution();
     $uploader = mb_strlen($row->uploader) > 26 ? mb_substr($row->uploader, 0, 25).'…' : $row->uploader;
+    // The shared Preview chip names its data-part through $chipPart; this page names none.
+    $chipPart = static fn (string $name): ?string => null;
 @endphp
 
 @section('content')
@@ -66,10 +68,7 @@
                     @if($row->nfo)
                         <x-chip variant="nfo" action class="nfo-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" title="View NFO">NFO</x-chip>
                     @endif
-                    @if($row->preview !== null)
-                        <x-chip variant="preview" action class="preview-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->preview['thumb'] ?? ''"
-                                :data-full-url="$row->preview['full']" data-image-title="Preview image" title="View preview image">Preview</x-chip>
-                    @endif
+                    @include('tv.partials.preview-chip', ['clip' => null])
                     @if($row->sample !== null)
                         <x-chip variant="sample" action class="sample-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->sample['thumb'] ?? ''"
                                 :data-full-url="$row->sample['full']" data-image-title="Sample image" title="View sample image">Sample</x-chip>

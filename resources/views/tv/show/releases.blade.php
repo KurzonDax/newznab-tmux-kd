@@ -52,7 +52,7 @@
                     @else
                         <a class="tv-release-name" href="{{ route('details', $row->guid) }}" title="{{ $row->name }}">{{ $row->name }}</a>
                     @endif
-                    @include('tv.partials.release-chips', ['parts' => false])
+                    @include('tv.partials.release-chips', ['parts' => false, 'clip' => null])
                 </td>
                 <td><x-resolution-chip :resolution="$row->resolution" :part="false" /></td>
                 <td class="tv-nowrap">{{ $row->source }}</td>

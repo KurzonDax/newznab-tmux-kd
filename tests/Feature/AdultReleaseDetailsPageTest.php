@@ -116,9 +116,11 @@ final class AdultReleaseDetailsPageTest extends TestCase
             ->assertDontSee('tv-details-art', false)->assertDontSee('tv-about', false)->assertDontSee('tv-source-chip', false)
             ->assertDontSee('data-watch-picker', false)->assertDontSee('Report')->assertDontSee('style="', false);
         $chips = $this->between($response, '<div class="tv-chips tv-details-chips">', '<div class="tv-chips tv-details-origin">');
-        $this->assertSeeOrder($chips, ['resolution-chip-1080', '94% complete', 'nfo-badge', 'preview-badge', 'sample-badge', 'chip-tone-clip']);
-        $this->assertMatchesRegularExpression('/<button[^>]*class="[^"]*chip-tone-clip[^"]*clip-badge[^"]*"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($id)), '/')
-            .'"[^>]*data-video-type="video\/mp4"[^>]*data-image-title="Video clip"[^>]*title="Play the video clip"[^>]*>\s*Clip\s*<\/button>/', $chips);
+        $this->assertSeeOrder($chips, ['resolution-chip-1080', '94% complete', 'nfo-badge', 'preview-badge', 'sample-badge']);
+        $this->assertSame(1, substr_count($chips, 'preview-badge'));
+        $this->assertMatchesRegularExpression('/<button[^>]*class="[^"]*chip-tone-preview[^"]*preview-badge[^"]*"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($id)), '/')
+            .'"[^>]*data-video-type="video\/mp4"[^>]*data-image-title="Video preview"[^>]*title="Play the video preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>/', $chips);
+        $response->assertDontSee('clip-badge', false)->assertDontSee('chip-tone-clip', false);
         $response->assertSeeInOrder(['tv-details-origin', 'href="'.route('browse.all', ['group' => 'alt.binaries.example.erotica']).'"',
             'href="'.route('browse.all', ['poster' => 'paperboat <pb@example.invalid>']).'"'], false);
         $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart'], $this->buttons($html));
@@ -165,7 +167,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->assertSame('12', $this->facts($this->between($counted, 'aria-labelledby="tab-overview" data-details-panel>', '<section id="files"'))['Files']);
     }
 
-    public function test_a_preview_with_a_clip_plays_it_with_the_play_button_and_the_clip_tag_and_the_sample_opens_at_full_size(): void
+    public function test_a_preview_with_a_clip_plays_it_with_its_poster_the_play_button_and_the_seconds_and_the_sample_opens_at_full_size(): void
     {
         $id = $this->adult('Some.Scene.XXX.1080p', ['haspreview' => 1, 'jpgstatus' => 1, 'videostatus' => 1]);
         $guid = $this->guid($id);
@@ -175,30 +177,34 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->image('sample', $guid);
 
         $pictures = $this->pictures($id);
-        $this->assertSame('<button type="button" class="tv-details-preview has-clip clip-badge" data-guid="'.$guid.'" data-release-display-name="Some.Scene.XXX.1080p"'
-            .' data-video-url="'.route('preview.video', $guid).'" data-video-type="video/mp4" data-image-title="Video clip" aria-label="Preview, play the 30-second video clip">'
+        $this->assertSame('<button type="button" class="tv-details-preview has-clip preview-badge" data-guid="'.$guid.'" data-release-display-name="Some.Scene.XXX.1080p"'
+            .' data-video-url="'.route('preview.video', $guid).'" data-video-type="video/mp4" data-poster-url="'.$this->url('preview', $guid.'_thumb').'" data-image-title="Video preview" aria-label="Preview, play the 30-second video preview">'
             .'<img src="'.$this->url('preview', $guid.'_thumb').'" alt="Preview image"><span class="tv-details-play" aria-hidden="true"><i class="fas fa-play"></i></span>'
-            .'<span class="tv-details-picture-label" aria-hidden="true">Preview</span><span class="tv-details-picture-label is-clip" aria-hidden="true">Clip · 30 s</span></button>'
+            .'<span class="tv-details-picture-label" aria-hidden="true">Preview</span><span class="tv-details-picture-label is-clip" aria-hidden="true"><i class="fas fa-play" aria-hidden="true"></i> 30 s</span></button>'
             .'<button type="button" class="tv-details-preview sample-badge" data-guid="'.$guid.'" data-release-display-name="Some.Scene.XXX.1080p"'
             .' data-image-url="'.$this->url('sample', $guid.'_thumb').'" data-full-url="'.$this->url('sample', $guid).'" data-image-title="Sample image" data-open-full aria-label="View sample image at full size">'
             .'<img src="'.$this->url('sample', $guid.'_thumb').'" alt="Sample image"><span class="tv-details-picture-label" aria-hidden="true">Sample</span></button>', $pictures);
-        $this->assertSame(1, substr_count((string) $this->details($id)->getContent(), 'data-open-full'), 'The header Sample chip keeps the fitted dialog.');
+        $html = (string) $this->details($id)->getContent();
+        $this->assertSame(1, substr_count($html, 'data-open-full'), 'The header Sample chip keeps the fitted dialog.');
+        $this->assertStringContainsString('data-poster-url="'.$this->url('preview', $guid.'_thumb').'" data-image-title="Video preview"', $this->between($this->details($id), '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions">'), 'The chip carries the same poster.');
+        $this->assertStringNotContainsString('clip-badge', $html);
     }
 
-    public function test_the_clip_tag_reads_clip_without_seconds_when_no_clip_row_or_no_duration_is_stored(): void
+    public function test_the_picture_has_no_seconds_label_when_no_clip_row_or_no_duration_is_stored(): void
     {
         $id = $this->adult('Some.Scene.XXX.1080p', ['haspreview' => 1, 'videostatus' => 1]);
         $this->image('preview', $this->guid($id).'_thumb');
 
         $legacy = $this->pictures($id);
-        $this->assertStringContainsString('aria-label="Preview, play the video clip"', $legacy);
-        $this->assertStringContainsString('<span class="tv-details-picture-label is-clip" aria-hidden="true">Clip</span>', $legacy);
+        $this->assertStringContainsString('aria-label="Preview, play the video preview"', $legacy);
+        $this->assertStringContainsString('<span class="tv-details-play" aria-hidden="true">', $legacy);
+        $this->assertStringNotContainsString('is-clip', $legacy);
 
         DB::table('release_video_clips')->insert(['releases_id' => $id, 'extension' => 'webm', 'mime' => 'video/webm', 'duration_seconds' => null]);
         $unmeasured = $this->pictures($id);
         $this->assertStringContainsString('data-video-type="video/webm"', $unmeasured);
-        $this->assertStringContainsString('aria-label="Preview, play the video clip"', $unmeasured);
-        $this->assertStringContainsString('<span class="tv-details-picture-label is-clip" aria-hidden="true">Clip</span>', $unmeasured);
+        $this->assertStringContainsString('aria-label="Preview, play the video preview"', $unmeasured);
+        $this->assertStringNotContainsString('is-clip', $unmeasured);
     }
 
     public function test_a_sample_without_a_full_size_copy_opens_its_thumbnail(): void
@@ -221,9 +227,11 @@ final class AdultReleaseDetailsPageTest extends TestCase
 
         $pictures = $this->pictures($id);
         $this->assertSame('<button type="button" class="tv-details-preview preview-badge" data-guid="'.$guid.'" data-release-display-name="Some.Scene.XXX.1080p"'
-            .' data-image-url="'.$this->url('preview', $guid.'_thumb').'" data-full-url="'.$this->url('preview', $guid).'" data-image-title="Preview image" aria-label="View preview image">'
+            .' data-image-url="'.$this->url('preview', $guid.'_thumb').'" data-full-url="'.$this->url('preview', $guid).'" data-image-title="Image preview" aria-label="View the image preview">'
             .'<img src="'.$this->url('preview', $guid.'_thumb').'" alt="Preview image"><span class="tv-details-picture-label" aria-hidden="true">Preview</span></button>', $pictures);
-        $this->details($id)->assertDontSee('clip-badge', false)->assertDontSee('tv-details-play', false)->assertDontSee('Clip ·');
+        $this->details($id)->assertDontSee('clip-badge', false)->assertDontSee('tv-details-play', false)->assertDontSee('data-video-url', false);
+        $chip = $this->between($this->details($id), '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions">');
+        $this->assertMatchesRegularExpression('/<button[^>]*preview-badge[^>]*data-image-title="Image preview"[^>]*title="View the image preview"[^>]*>\s*Preview\s*<\/button>/', $chip);
     }
 
     public function test_a_release_without_pictures_has_no_pictures_block(): void
@@ -245,7 +253,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->assertSame(['Title' => 'Some.Scene.XXX.1080p-GRP', 'Source' => 'abgx', 'Pre date' => 'Sep 19, 2026, 8:30 AM', 'Category' => 'XXX'], $this->facts($predb));
     }
 
-    public function test_similar_releases_list_today_s_search_without_a_source_column_with_dashes_for_unstored_files_and_the_clip_chip(): void
+    public function test_similar_releases_list_today_s_search_without_a_source_column_with_dashes_for_unstored_files_and_the_row_s_own_clip(): void
     {
         $current = $this->adult('Some.Scene.XXX.1080p');
         $clip = $this->adult('Some.Scene.Part.Two.XXX.720p', ['videostatus' => 1, 'totalpart' => 0, 'resolution' => 3, 'postdate' => '2026-09-22 10:00:00']);
@@ -263,8 +271,10 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->assertSame([$clip, $plain], $this->rowIds($similar));
         $this->assertSame(['posted' => 'descending'], $this->sortedHeadings($similar, 'data-similar-sort'));
         $this->assertSame(['—', '40'], $this->fileCells($similar));
-        $this->assertSame(1, substr_count($similar, 'chip-tone-clip'));
-        $this->assertMatchesRegularExpression('/data-image-title="Video clip"[^>]*title="Play the video clip"[^>]*>\s*Clip\s*<\/button>/', $similar);
+        $this->assertSame(1, substr_count($similar, 'preview-badge'));
+        $this->assertStringNotContainsString('clip-badge', $similar);
+        $this->assertMatchesRegularExpression('/data-guid="'.$this->guid($clip).'"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($clip)), '/')
+            .'"[^>]*data-image-title="Video preview"[^>]*title="Play the video preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>/', $similar);
         foreach (['type="checkbox"', 'Grabs', 'data-watch', 'is-current', 'pager', 'tv-show-line'] as $absent) {
             $this->assertStringNotContainsString($absent, $similar);
         }

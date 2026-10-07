@@ -42,7 +42,7 @@
                     <td class="tv-select-cell"><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>
                     <td class="tv-what">
                         <a class="tv-release-name" href="{{ route('details', $row->guid) }}" title="{{ $row->name }}">{{ $row->name }}</a>
-                        @include('tv.partials.release-chips')
+                        @include('tv.partials.release-chips', ['clip' => null])
                     </td>
                     <td><x-resolution-chip :resolution="$row->resolution" :part="false" /></td>
                     <td class="tv-nowrap">{{ $row->source }}</td>

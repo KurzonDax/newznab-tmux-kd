@@ -231,16 +231,17 @@ final class AudioReleaseDetails
     }
 
     /**
-     * A music video release's clip, as AdultReleaseRows builds it: the Clip chip opens it in the
-     * image dialog's player.
+     * A music video release's clip, as AdultReleaseRows builds it: the Preview chip opens it in the
+     * image dialog's player with its poster.
      *
-     * @return array{url: string, type: string}|null
+     * @return array{url: string, type: string, poster: ?string}|null
      */
     private function clip(Release $release): ?array
     {
         return (bool) ($release->has_video_preview ?? false) ? [
             'url' => route('preview.video', (string) $release->guid),
             'type' => (string) ($release->video_preview_mime ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']),
+            'poster' => ReleaseRowFacts::clipPoster((string) $release->guid),
         ] : null;
     }
 

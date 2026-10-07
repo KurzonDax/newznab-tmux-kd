@@ -580,8 +580,9 @@ a.tv-tag:hover { background: var(--tv-line); }
 /*
  * The Adult details page's pictures (docs/proposals/adult-redesign/SPEC.md 5A.3): the preview then the
  * sample, side by side at 220px high, each labelled bottom-left. A preview that plays a clip has a 56px
- * round play button in the middle (magenta 305 on hover and keyboard focus) and the Clip chip's magenta
- * tag bottom-right, in the dark chip values in both themes because it sits on the picture.
+ * round play button in the middle (magenta 305 on hover and keyboard focus) and a magenta tag
+ * bottom-right with a play icon and the seconds, in the dark clip-tone values in both themes because
+ * it sits on the picture.
  */
 .tv-details-pictures { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 22px; }
 .tv-details-pictures .tv-details-preview { position: relative; margin: 0; }

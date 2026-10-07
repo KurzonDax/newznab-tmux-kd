@@ -141,7 +141,7 @@ Posted (or Added, following the sort) 112 · buttons 96.
   13.5 px text, plain text, not a link (there is no album page). The artist is the tag's album artist, else its
   performer. Parts the tags lack are left out; no line when neither artist nor album is tagged.
 - The chip line, in the TV / Movies order: completion (under 100%), Password, media info summary (opens the media info
-  dialog), NFO, then **Listen** (5.10) where Adult's Clip sits; then the group and poster outline chips as one unit that
+  dialog), NFO, then **Listen** (5.10) last; then the group and poster outline chips as one unit that
   never splits. The media info summary of an audio-only release reads codec and channels, e.g. `FLAC 2.0`.
 - Row buttons: Download (coral) and Copy NZB link (blue) on top, Cart (green) alone under Download; no Follow.
 - Selection as every list: a select box per row, select-all, the floating bar.
@@ -186,8 +186,8 @@ exactly. The year is the tags' recorded year. A release with no tagged year drop
 ### 5.10 The Listen chip and dialog (lists)
 
 - A release with a preview (`release_audio_tags.has_preview`) shows **Listen** (today's word, `INVENTORY.md` 4), last in
-  the chip line where Adult's Clip chip sits, in the **Clip chip's magenta 305**: it is the same kind of chip, a preview
-  that plays.
+  the chip line, in the clip tone's **magenta 305** (Adult's Clip chip colour before issue #995 merged that chip into
+  Preview): it is a preview that plays.
 - It opens the **Listen dialog**, 560 px wide: the title "Listen" and the release name; the release's cover (120 px)
   when it has one; the track's title tag in ink, the artist under it in dim; the browser's own audio player, which plays
   at once. Escape, the close button and a click outside close it and stop the sound; focus returns to the chip. (Today's
@@ -258,8 +258,9 @@ not preferred."
   picture's top-left corner (its own text sits in the other corners). The spectrogram opens in the image dialog
   (its size, Full size) as today's does. 24 px below, the facts.
 - **No Listen chip on the release page's own chip line**; the player is the way to play the preview there.
-- A **music video** release (a release with a video clip) keeps the dialog: the Adult Clip chip and clip dialog
-  (Adult `SPEC.md` 5.10). Production has no audio release with a video clip today.
+- A **music video** release (a release with a video clip) keeps the dialog: Adult's Preview chip with a play icon, in
+  Preview's place on the chip line, and its Video preview dialog with the poster (Adult `SPEC.md` 5.10). Production
+  has no audio release with a video clip today.
 
 ### 5C.2 The Tracks tab
 

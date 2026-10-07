@@ -11,7 +11,7 @@
      * The Adult release details page (docs/proposals/adult-redesign/SPEC.md 5A): the Movies details
      * page's form for a release with no film (the release name as the heading, full width, no aside),
      * without the source chip or Follow, with the preview and the sample side by side on the Overview.
-     * A preview whose release has a clip plays it; the sample opens at full size.
+     * A preview whose release has a clip plays it with its poster; the sample opens at full size.
      *
      * @var \App\Data\AdultReleaseRow $row
      * @var string $subCategory
@@ -26,6 +26,8 @@
     $mediaSummary = $row->mediaInfo;
     $previewThumb = $row->preview['thumb'] ?? null;
     $sampleThumb = $row->sample['thumb'] ?? null;
+    // The shared Preview chip names its data-part through $chipPart; this page names none.
+    $chipPart = static fn (string $name): ?string => null;
 @endphp
 
 @section('content')
@@ -55,17 +57,10 @@
                     @if($row->nfo)
                         <x-chip variant="nfo" action class="nfo-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" title="View NFO">NFO</x-chip>
                     @endif
-                    @if($row->preview !== null)
-                        <x-chip variant="preview" action class="preview-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->preview['thumb'] ?? ''"
-                                :data-full-url="$row->preview['full']" data-image-title="Preview image" title="View preview image">Preview</x-chip>
-                    @endif
+                    @include('tv.partials.preview-chip', ['clip' => $row->clip])
                     @if($row->sample !== null)
                         <x-chip variant="sample" action class="sample-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->sample['thumb'] ?? ''"
                                 :data-full-url="$row->sample['full']" data-image-title="Sample image" title="View sample image">Sample</x-chip>
-                    @endif
-                    @if($row->clip !== null)
-                        <x-chip variant="clip" action class="clip-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-video-url="$row->clip['url']" :data-video-type="$row->clip['type']"
-                                data-image-title="Video clip" title="Play the video clip">Clip</x-chip>
                     @endif
                 </div>
                 @if($row->group !== '' || $row->uploader !== '')
@@ -99,16 +94,19 @@
                         <div class="tv-details-pictures">
                             @if($previewThumb !== null)
                                 @if($row->clip !== null)
-                                    <button type="button" class="tv-details-preview has-clip clip-badge" data-guid="{{ $row->guid }}" data-release-display-name="{{ $row->name }}"
-                                            data-video-url="{{ $row->clip['url'] }}" data-video-type="{{ $row->clip['type'] }}" data-image-title="Video clip" aria-label="{{ $clipSeconds === null ? 'Preview, play the video clip' : 'Preview, play the '.$clipSeconds.'-second video clip' }}">
+                                    <button type="button" class="tv-details-preview has-clip preview-badge" data-guid="{{ $row->guid }}" data-release-display-name="{{ $row->name }}"
+                                            data-video-url="{{ $row->clip['url'] }}" data-video-type="{{ $row->clip['type'] }}" @if($row->clip['poster'] !== null) data-poster-url="{{ $row->clip['poster'] }}" @endif
+                                            data-image-title="Video preview" aria-label="{{ $clipSeconds === null ? 'Preview, play the video preview' : 'Preview, play the '.$clipSeconds.'-second video preview' }}">
                                         <img src="{{ $previewThumb }}" alt="Preview image">
                                         <span class="tv-details-play" aria-hidden="true"><i class="fas fa-play"></i></span>
                                         <span class="tv-details-picture-label" aria-hidden="true">Preview</span>
-                                        <span class="tv-details-picture-label is-clip" aria-hidden="true">{{ $clipSeconds === null ? 'Clip' : 'Clip · '.$clipSeconds.' s' }}</span>
+                                        @if($clipSeconds !== null)
+                                            <span class="tv-details-picture-label is-clip" aria-hidden="true"><i class="fas fa-play" aria-hidden="true"></i> {{ $clipSeconds }} s</span>
+                                        @endif
                                     </button>
                                 @else
                                     <button type="button" class="tv-details-preview preview-badge" data-guid="{{ $row->guid }}" data-release-display-name="{{ $row->name }}"
-                                            data-image-url="{{ $previewThumb }}" data-full-url="{{ $row->preview['full'] }}" data-image-title="Preview image" aria-label="View preview image">
+                                            data-image-url="{{ $previewThumb }}" data-full-url="{{ $row->preview['full'] }}" data-image-title="Image preview" aria-label="View the image preview">
                                         <img src="{{ $previewThumb }}" alt="Preview image">
                                         <span class="tv-details-picture-label" aria-hidden="true">Preview</span>
                                     </button>
