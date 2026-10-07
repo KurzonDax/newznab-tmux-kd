@@ -124,7 +124,7 @@ class VideoClipEncoder
                 $processOutput = ($this->commandRunner)($hardwareCommand, $timeoutSeconds);
                 if ($this->isNonEmptyOutput($outputPath)) {
                     $probe = $this->probeOutput($outputPath, $ffmpegBinary, $timeoutSeconds);
-                    if ($probe['video_stream'] && $probe['duration_seconds'] !== null) {
+                    if ($this->isPlayable($probe)) {
                         return $this->encodeResult($outputPath, $container, $probe['duration_seconds']);
                     }
 
@@ -202,7 +202,7 @@ class VideoClipEncoder
         // A Clip is only what the player can play: an MP4 shell with no
         // stream, or an audio-only output, is declined like an empty one.
         $probe = $this->probeOutput($outputPath, $ffmpegBinary, $timeoutSeconds);
-        if (! $probe['video_stream'] || $probe['duration_seconds'] === null) {
+        if (! $this->isPlayable($probe)) {
             @unlink($outputPath);
             $this->logDeclinedEncode(
                 $releaseGuid,
@@ -443,6 +443,16 @@ class VideoClipEncoder
             'video_stream' => preg_match(self::VIDEO_STREAM_PATTERN, $output) === 1,
             'duration_seconds' => $durationSeconds,
         ];
+    }
+
+    /**
+     * @param  array{video_stream: bool, duration_seconds: int|null}  $probe
+     *
+     * @phpstan-assert-if-true array{video_stream: true, duration_seconds: int} $probe
+     */
+    private function isPlayable(array $probe): bool
+    {
+        return $probe['video_stream'] && $probe['duration_seconds'] !== null;
     }
 
     /**

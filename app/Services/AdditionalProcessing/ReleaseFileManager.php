@@ -507,8 +507,8 @@ class ReleaseFileManager
      * Increments the timeout counter on the release. If the counter reaches
      * the configured maximum, the release is deleted entirely. Otherwise,
      * the release is marked as processed (passwordstatus=0, haspreview and
-     * jpgstatus stamped from the artifacts already on disk, as finalisation
-     * does) to remove it from the re-selection query.
+     * jpgstatus stamped from the preview and sample images already on disk)
+     * to remove it from the re-selection query.
      *
      * @return bool True if the release was deleted, false if it was skipped
      */

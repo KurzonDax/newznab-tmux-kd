@@ -1148,7 +1148,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $coversRoot = $this->makeTempDirectory('nntmux-timeout-preview-covers');
         config(['nntmux_settings.covers_path' => $coversRoot]);
 
-        DB::table('releases')->insert(array_merge($this->releaseRow(), ['jpgstatus' => 0]));
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['jpgstatus' => -1]));
         $nzbRoot = $this->makeTempDirectory('nntmux-timeout-preview-nzb').'/';
         config(['nntmux_settings.path_to_nzbs' => $nzbRoot]);
         $nzbPath = $nzbRoot.'g/guid-1.nzb.gz';
@@ -1167,7 +1167,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(1, (int) $release->haspreview);
         $this->assertSame(1, (int) $release->pp_timeout_count);
         $this->assertSame(0, (int) $release->passwordstatus);
-        $this->assertSame(0, (int) $release->jpgstatus);
+        $this->assertSame(-1, (int) $release->jpgstatus, 'Without a sample on disk jpgstatus is not written.');
         $this->assertNull($release->additional_pp_claimed_at);
         $this->assertNull($release->additional_pp_claim_token);
         $this->assertFileExists($nzbPath);
