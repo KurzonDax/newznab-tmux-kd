@@ -465,8 +465,7 @@ class ReleaseFileManager
         ];
 
         if ($settled) {
-            $updateValues += [
-                'haspreview' => 0,
+            $updateValues += $this->artifactFlagsFromDisk((string) $release->guid) + [
                 'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
             ];
         }
@@ -507,8 +506,9 @@ class ReleaseFileManager
      *
      * Increments the timeout counter on the release. If the counter reaches
      * the configured maximum, the release is deleted entirely. Otherwise,
-     * the release is marked as processed (haspreview=0, passwordstatus=0)
-     * to remove it from the re-selection query.
+     * the release is marked as processed (passwordstatus=0, haspreview and
+     * jpgstatus stamped from the artifacts already on disk, as finalisation
+     * does) to remove it from the re-selection query.
      *
      * @return bool True if the release was deleted, false if it was skipped
      */
@@ -527,15 +527,34 @@ class ReleaseFileManager
         // Increment the timeout counter and mark as processed to skip re-selection
         Release::query()->where('id', $release->id)->update(array_merge([
             'pp_timeout_count' => $newCount,
-            'haspreview' => 0,
             'passwordstatus' => ReleaseBrowseService::PASSWD_NONE,
-        ], AdditionalCandidateQuery::claimResetValues()));
+        ], $this->artifactFlagsFromDisk((string) $release->guid), AdditionalCandidateQuery::claimResetValues()));
 
         $this->searchSyncCoordinator->request((int) $release->id);
 
         Log::warning('Release '.$release->id.' skipped after post-processing timeout ('.$newCount.'/'.$maxTimeoutCount.')');
 
         return false;
+    }
+
+    /**
+     * Artifact flags for a run that ends without finalisation: a Generated
+     * Preview or Extracted Sample Image saved before the run stopped still
+     * counts, tested exactly as finalisation tests it.
+     *
+     * @return array{haspreview: int, jpgstatus?: int}
+     */
+    private function artifactFlagsFromDisk(string $guid): array
+    {
+        $flags = [
+            'haspreview' => $this->releaseImage->imageExists($this->releaseImage->imgSavePath, $guid.'_thumb') ? 1 : 0,
+        ];
+
+        if ($this->releaseImage->imageExists($this->releaseImage->jpgSavePath, $guid.'_thumb')) {
+            $flags['jpgstatus'] = 1;
+        }
+
+        return $flags;
     }
 
     /**
