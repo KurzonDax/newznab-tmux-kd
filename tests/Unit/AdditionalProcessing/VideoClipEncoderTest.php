@@ -49,7 +49,7 @@ class VideoClipEncoderTest extends TestCase
                     .'  Stream #0:1(und): Audio: aac (LC), 48000 Hz, stereo';
             }
 
-            return 'Duration: 00:00:30.20, start: 0.000000, bitrate: 5000 kb/s';
+            return $this->playableOutputProbe('00:00:30.20');
         });
 
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, '/usr/bin/ffmpeg', 60, 'test-guid');
@@ -84,7 +84,7 @@ class VideoClipEncoderTest extends TestCase
                 return "Stream #0:0: Video: mpeg4 (Advanced Simple Profile)\n  Stream #0:1: Audio: mp3, 48000 Hz";
             }
 
-            return 'Duration: 00:00:17.00, start: 0.000000, bitrate: 2000 kb/s';
+            return $this->playableOutputProbe('00:00:17.00');
         });
 
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 17);
@@ -119,7 +119,7 @@ class VideoClipEncoderTest extends TestCase
                     return '';
                 }
 
-                return 'Duration: 00:00:17.00, start: 0.000000, bitrate: 2000 kb/s';
+                return $this->playableOutputProbe('00:00:17.00');
             },
             hardwareBackend: 'vaapi',
             hardwareDevice: '/dev/dri/renderD129',
@@ -154,7 +154,7 @@ class VideoClipEncoderTest extends TestCase
                     return '';
                 }
 
-                return 'Duration: 00:00:30.00, start: 0.000000, bitrate: 2000 kb/s';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'qsv',
             hardwareDevice: '/dev/dri/renderD128',
@@ -192,7 +192,7 @@ class VideoClipEncoderTest extends TestCase
                     return '';
                 }
 
-                return 'Duration: 00:00:30.00, start: 0.000000, bitrate: 2000 kb/s';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'vaapi',
         );
@@ -225,9 +225,11 @@ class VideoClipEncoderTest extends TestCase
 
                 if (in_array('libx264', $command, true)) {
                     file_put_contents(end($command), 'software clip bytes');
+
+                    return '';
                 }
 
-                return '';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'off',
         );
@@ -254,9 +256,11 @@ class VideoClipEncoderTest extends TestCase
 
                 if (in_array('libx264', $command, true)) {
                     file_put_contents(end($command), 'software clip bytes');
+
+                    return '';
                 }
 
-                return '';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'cuda',
         );
@@ -286,9 +290,11 @@ class VideoClipEncoderTest extends TestCase
 
                 if (in_array('copy', $command, true)) {
                     file_put_contents(end($command), 'copied clip bytes');
+
+                    return '';
                 }
 
-                return '';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'vaapi',
         );
@@ -340,7 +346,7 @@ class VideoClipEncoderTest extends TestCase
                 return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: ac3, 48000 Hz";
             }
 
-            return 'Duration: 00:00:12.00, start: 0.000000, bitrate: 3000 kb/s';
+            return $this->playableOutputProbe('00:00:12.00');
         });
 
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 12);
@@ -390,7 +396,11 @@ class VideoClipEncoderTest extends TestCase
                 return '';
             }
 
-            return 'Stream #0:0: Video: hevc (Main)';
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return 'Stream #0:0: Video: hevc (Main)';
+            }
+
+            return $this->playableOutputProbe('00:00:45.00');
         });
 
         $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid', 0));
@@ -408,7 +418,11 @@ class VideoClipEncoderTest extends TestCase
                 return '';
             }
 
-            return "Stream #0:0: Video: vp9 (Profile 0)\n  Stream #0:1: Audio: opus, 48000 Hz";
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: vp9 (Profile 0)\n  Stream #0:1: Audio: opus, 48000 Hz";
+            }
+
+            return "Duration: 00:00:30.00, start: 0.000000, bitrate: 2000 kb/s\n  Stream #0:0: Video: vp9 (Profile 0)";
         });
 
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid');
@@ -430,7 +444,11 @@ class VideoClipEncoderTest extends TestCase
                 return '';
             }
 
-            return 'Stream #0:0: Video: h264 (Main)';
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return 'Stream #0:0: Video: h264 (Main)';
+            }
+
+            return $this->playableOutputProbe('00:00:30.00');
         });
 
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid');
@@ -583,7 +601,7 @@ case "$*" in
     printf 'Stream #0:0: Video: hevc (Main)\n' >&2
     ;;
   *)
-    printf 'Duration: 00:00:30.00, start: 0.000000\n' >&2
+    printf 'Duration: 00:00:30.00, start: 0.000000\n  Stream #0:0: Video: h264 (High)\n' >&2
     ;;
 esac
 SHELL);
@@ -626,9 +644,11 @@ SHELL);
 
                 if (in_array('libx264', $command, true)) {
                     file_put_contents(end($command), 'software fallback bytes');
+
+                    return '';
                 }
 
-                return '';
+                return $this->playableOutputProbe('00:00:30.00');
             },
             hardwareBackend: 'vaapi',
         );
@@ -647,6 +667,154 @@ SHELL);
                 && strlen((string) $context['exception_message']) === 1000
                 && ! str_contains((string) $context['exception_message'], 'uncapped-tail')),
         );
+    }
+
+    public function test_a_remux_output_without_a_video_stream_is_refused_and_deleted(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (in_array('copy', $command, true)) {
+                file_put_contents(end($command), 'audio-only clip bytes');
+
+                return '';
+            }
+
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: aac (LC)";
+            }
+
+            return "Duration: 00:00:13.61, start: 0.000000, bitrate: 128 kb/s\n  Stream #0:0(und): Audio: aac (LC)";
+        });
+
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'no-video-guid'));
+        $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'no-video-guid',
+                'reason' => 'clip_output_unplayable',
+                'video_stream' => false,
+                'duration_seconds' => 14,
+            ],
+        );
+    }
+
+    public function test_a_remux_output_without_a_duration_is_refused_and_deleted(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (in_array('copy', $command, true)) {
+                file_put_contents(end($command), 'durationless clip bytes');
+
+                return '';
+            }
+
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return 'Stream #0:0: Video: h264 (High)';
+            }
+
+            return "Duration: N/A, bitrate: N/A\n  Stream #0:0(und): Video: h264 (High)";
+        });
+
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'no-duration-guid'));
+        $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'no-duration-guid',
+                'reason' => 'clip_output_unplayable',
+                'video_stream' => true,
+                'duration_seconds' => null,
+            ],
+        );
+    }
+
+    public function test_an_unplayable_fallback_transcode_reports_the_unsafe_codec_as_causal(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (in_array('libx264', $command, true)) {
+                file_put_contents(end($command), 'empty mp4 shell');
+
+                return '';
+            }
+
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return 'Stream #0:0: Video: hevc (Main)';
+            }
+
+            return 'Input #0, mov,mp4,m4a,3gp,3g2,mj2, from clip: Duration: N/A';
+        });
+
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'unsafe-shell-guid'));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'unsafe-shell-guid',
+                'reason' => 'clip_unsafe_video_codec',
+                'video_codec' => 'hevc',
+                'failure_reason' => 'clip_output_unplayable',
+                'video_stream' => false,
+                'duration_seconds' => null,
+            ],
+        );
+    }
+
+    public function test_an_unplayable_hardware_output_retries_in_software(): void
+    {
+        Log::spy();
+        $commands = [];
+        $encoder = new VideoClipEncoder(
+            commandRunner: function (array $command, int $timeout) use (&$commands): string {
+                $commands[] = $command;
+                if (str_ends_with((string) end($command), 'source.bin')) {
+                    return 'Stream #0:0: Video: hevc (Main)';
+                }
+
+                if (in_array('h264_vaapi', $command, true)) {
+                    file_put_contents(end($command), 'hardware shell bytes');
+
+                    return '';
+                }
+
+                if (in_array('libx264', $command, true)) {
+                    file_put_contents(end($command), 'software clip bytes');
+
+                    return '';
+                }
+
+                return file_get_contents((string) end($command)) === 'software clip bytes'
+                    ? $this->playableOutputProbe('00:00:30.00')
+                    : 'Input #0, mov,mp4, from clip: Duration: N/A';
+            },
+            hardwareBackend: 'vaapi',
+        );
+
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'hardware-shell-guid');
+
+        $this->assertNotNull($result);
+        $this->assertSame('software clip bytes', file_get_contents($result->path));
+        $this->assertSame(30, $result->durationSeconds);
+        $this->assertContains('h264_vaapi', $commands[1]);
+        $this->assertContains('libx264', $commands[3]);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip hardware encode failed; retrying with software',
+            [
+                'release_guid' => 'hardware-shell-guid',
+                'backend' => 'vaapi',
+                'reason' => 'unplayable_output',
+            ],
+        );
+    }
+
+    /**
+     * What `ffmpeg -i` prints for a playable encode output: a duration and a
+     * video stream.
+     */
+    private function playableOutputProbe(string $duration): string
+    {
+        return 'Duration: '.$duration.", start: 0.000000, bitrate: 2000 kb/s\n"
+            .'  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661)';
     }
 
     /**

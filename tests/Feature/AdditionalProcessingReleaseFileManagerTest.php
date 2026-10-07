@@ -1143,6 +1143,93 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertFileDoesNotExist($audioSpectrogramPath);
     }
 
+    public function test_release_timeout_below_the_cap_stamps_haspreview_from_a_preview_on_disk(): void
+    {
+        $coversRoot = $this->makeTempDirectory('nntmux-timeout-preview-covers');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['jpgstatus' => -1]));
+        $nzbRoot = $this->makeTempDirectory('nntmux-timeout-preview-nzb').'/';
+        config(['nntmux_settings.path_to_nzbs' => $nzbRoot]);
+        $nzbPath = $nzbRoot.'g/guid-1.nzb.gz';
+        File::ensureDirectoryExists(dirname($nzbPath));
+        File::put($nzbPath, 'kept');
+        $preview = $coversRoot.'/preview/guid-1_thumb.webp';
+        File::ensureDirectoryExists(dirname($preview));
+        File::put($preview, 'preview');
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $deleted = $this->makeManager()->handleReleaseTimeout(Release::query()->findOrFail(1), 3);
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertFalse($deleted);
+        $this->assertSame(1, (int) $release->haspreview);
+        $this->assertSame(1, (int) $release->pp_timeout_count);
+        $this->assertSame(0, (int) $release->passwordstatus);
+        $this->assertSame(-1, (int) $release->jpgstatus, 'Without a sample on disk jpgstatus is not written.');
+        $this->assertNull($release->additional_pp_claimed_at);
+        $this->assertNull($release->additional_pp_claim_token);
+        $this->assertFileExists($nzbPath);
+    }
+
+    public function test_release_timeout_below_the_cap_without_a_preview_on_disk_stamps_no_preview(): void
+    {
+        config(['nntmux_settings.covers_path' => $this->makeTempDirectory('nntmux-timeout-no-preview-covers')]);
+
+        DB::table('releases')->insert($this->releaseRow());
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $deleted = $this->makeManager()->handleReleaseTimeout(Release::query()->findOrFail(1), 3);
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertFalse($deleted);
+        $this->assertSame(0, (int) $release->haspreview);
+        $this->assertSame(1, (int) $release->pp_timeout_count);
+        $this->assertSame(0, (int) $release->passwordstatus);
+    }
+
+    public function test_release_timeout_below_the_cap_stamps_jpgstatus_from_a_sample_on_disk(): void
+    {
+        $coversRoot = $this->makeTempDirectory('nntmux-timeout-sample-covers');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['jpgstatus' => 0]));
+        $sample = $coversRoot.'/sample/guid-1_thumb.webp';
+        File::ensureDirectoryExists(dirname($sample));
+        File::put($sample, 'sample');
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $this->makeManager()->handleReleaseTimeout(Release::query()->findOrFail(1), 3);
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertSame(1, (int) $release->jpgstatus);
+        $this->assertSame(0, (int) $release->haspreview);
+    }
+
+    public function test_release_exception_at_the_cap_stamps_haspreview_from_a_preview_on_disk(): void
+    {
+        $coversRoot = $this->makeTempDirectory('nntmux-exception-preview-covers');
+        config(['nntmux_settings.covers_path' => $coversRoot]);
+
+        DB::table('releases')->insert(array_merge($this->releaseRow(), ['pp_timeout_count' => 2]));
+        $preview = $coversRoot.'/preview/guid-1_thumb.webp';
+        File::ensureDirectoryExists(dirname($preview));
+        File::put($preview, 'preview');
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $settled = $this->makeManager()->handleReleaseException(Release::query()->findOrFail(1), 3, 'token');
+
+        $release = Release::query()->findOrFail(1);
+
+        $this->assertTrue($settled);
+        $this->assertSame(1, (int) $release->haspreview);
+        $this->assertSame(3, (int) $release->pp_timeout_count);
+        $this->assertSame(0, (int) $release->passwordstatus);
+    }
+
     public function test_incomplete_seven_zip_verdict_stays_pending_until_terminal_unknown(): void
     {
         DB::table('releases')->insert($this->releaseRow());

@@ -147,10 +147,8 @@ class MediaExtractionService
         }
 
         // Duration floor: a starved extraction degrades to "no video preview"
-        // rather than a seconds-long tease behind the play chip. An unreadable
-        // duration is not "below the floor" and stores normally.
+        // rather than a seconds-long tease behind the play chip.
         if ($this->config->clipMinimumSeconds > 0
-            && $clip->durationSeconds !== null
             && $clip->durationSeconds < $this->config->clipMinimumSeconds
         ) {
             File::delete($clip->path);
@@ -158,6 +156,13 @@ class MediaExtractionService
                 'duration_seconds' => $clip->durationSeconds,
                 'minimum_seconds' => $this->config->clipMinimumSeconds,
             ]);
+
+            return false;
+        }
+
+        if (! $this->clipYieldsUsableFrame($clip->path, $tmpPath)) {
+            File::delete($clip->path);
+            ClipGenerationLog::declined($guid, ClipGenerationDeclineReason::NoUsableFrame);
 
             return false;
         }
@@ -186,6 +191,30 @@ class MediaExtractionService
         Release::query()->where('guid', $guid)->update(['videostatus' => 1]);
 
         return true;
+    }
+
+    /**
+     * A Clip cut from a black or fade-in window is no better than none: it is
+     * kept only when the representative-frame extractor finds a usable frame
+     * in the Clip itself. The frame only answers that question; it is removed
+     * here on every outcome so a later workspace scan cannot take it for an
+     * Extracted Sample Image.
+     */
+    private function clipYieldsUsableFrame(string $clipPath, string $tmpPath): bool
+    {
+        $framePath = $tmpPath.'clipframe_'.uniqid('', true).'.jpg';
+
+        try {
+            return $this->videoFrameExtractor->extractRepresentativeFrame($clipPath, $framePath);
+        } catch (\Throwable $e) {
+            if ($this->config->debugMode) {
+                Log::error($e->getTraceAsString());
+            }
+
+            return false;
+        } finally {
+            File::delete($framePath);
+        }
     }
 
     /**

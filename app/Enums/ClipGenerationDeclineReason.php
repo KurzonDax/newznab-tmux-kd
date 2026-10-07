@@ -15,4 +15,6 @@ enum ClipGenerationDeclineReason: string
     case UnsafeAudioCodec = 'clip_unsafe_audio_codec';
     case RemuxFailed = 'clip_remux_failed';
     case EmptyOutput = 'clip_empty_output';
+    case OutputUnplayable = 'clip_output_unplayable';
+    case NoUsableFrame = 'clip_no_usable_frame';
 }
