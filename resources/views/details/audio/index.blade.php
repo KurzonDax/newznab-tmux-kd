@@ -21,7 +21,7 @@
      * @var list<array{string, string}> $predb
      * @var list<\App\Data\AudioTrack> $tracks
      * @var \App\Data\AudioPreview|null $preview
-     * @var array{url: string, type: string}|null $clip
+     * @var array{url: string, type: string, poster: ?string}|null $clip
      * @var string $musicBrainzUrl
      * @var \App\Data\ConsoleGamePageFilters|null $table
      * @var list<\App\Data\AudioReleaseRow> $similar

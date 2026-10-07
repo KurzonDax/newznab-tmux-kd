@@ -145,7 +145,7 @@ the date on one line.
 
 - The release name, bold, two lines at most, links to the release's details page.
 - The chip line, in the TV / Movies order: completion (under 100%), Password, media info summary (opens
-  the media info dialog), NFO, Preview, Sample, **Clip** (5.10); then the group and poster outline
+  the media info dialog), NFO, Preview (with a play icon when the release has a clip, 5.10), Sample; then the group and poster outline
   chips as one unit that never splits, same-tab links to the all-releases lists. The unit wraps to its
   own line before the poster name would be cut below 96 px (the wider picture column leaves less room).
 
@@ -190,17 +190,25 @@ whose lists rejected an in-list text search.
   empties it; Clear all empties it too.
 - Never remembered (5.2).
 
-### 5.10 The Clip chip and dialog
+### 5.10 The Preview chip with a clip, and its dialog
 
 - A release with a video clip (today's `videostatus = 1`; today's player also plays an older clip that has no
-  `release_video_clips` row) shows a **Clip** chip, last in the chip line, in **magenta 305** (his pick of three built, 2026-09-29):
+  `release_video_clips` row) shows **one Preview chip** in Preview's place, before Sample, in the preview tone,
+  with a leading play icon (issue #995). It reads "Preview", with the tooltip "Play the video preview"; no
+  length. Without a clip the chip has no icon and the tooltip "View the image preview".
+- The clip first had its own **Clip** chip, last in the chip line, in **magenta 305** (his pick of three built, 2026-09-29):
   dark theme fill `oklch(0.31 0.085 305)`, text `oklch(0.87 0.09 305)`; light theme fill
   `oklch(0.93 0.03 305)`, text `oklch(0.40 0.17 305)`. Rejected: teal-green 172 (looked like Preview
   beside it), orange 45 (near the coral Download colour, and read like a warning beside a red
-  completion chip).
-- The chip opens a **Video clip** dialog that plays the clip (today's player route, `preview.video`),
-  with the release name under the title; Escape, the close button or a click outside close it and
-  focus returns.
+  completion chip). Issue #995 merged it into the Preview chip; the magenta values remain the
+  clip tokens of the Listen chip and the details picture's play button and seconds tag.
+- With a clip, the chip opens the image dialog as a **Video preview** dialog that plays the clip
+  (today's player route, `preview.video`) with the release name under the title. The player asks for
+  the clip's metadata, so its length shows once that has loaded, and shows a poster: the full-size
+  Preview when it is on disk, else the Preview thumbnail, else the Sample thumbnail, else none, read
+  from the files whatever the image flags say. It plays only when asked. Without a clip the chip opens
+  the **Image preview** dialog. Escape, the close button or a click outside close it and focus
+  returns.
 
 ---
 
@@ -214,7 +222,7 @@ the heading, the page is full width, there is no aside.
 - Breadcrumb: `Adult releases › <sub-category>`.
 - The release name as the heading.
 - The chips: the resolution chip, then the chip line of 5.5 (completion, Password, media info, NFO,
-  Preview, Sample, Clip). **No source chip** (his call, 2026-09-29).
+  Preview, Sample). **No source chip** (his call, 2026-09-29).
 - The group and poster outline chips on their own line.
 - Buttons: **Download NZB** (coral), **Copy NZB link** (neutral), **Add to cart** (neutral; pressed it
   reads "In cart" and fills green without changing width). No Follow.
@@ -227,18 +235,19 @@ file count the tab reads **Files** without a number and the facts grid shows "�
 ### 5A.3 Overview
 
 - **The pictures**, side by side, each at 220 px high: the preview, then the sample.
-  - **A preview whose release has a clip plays the clip**: clicking it opens the same Video clip dialog
-    as the Clip chip (his ruling: "if you click the preview image, the clip should show in a dialog the
+  - **A preview whose release has a clip plays the clip**: clicking it opens the same Video preview dialog
+    as the Preview chip (his ruling: "if you click the preview image, the clip should show in a dialog the
     way it should be if you click the clip chip on the releases view"). There is **no separate clip
     box** (rejected in both a magenta and a neutral version: he asked why the clip should be in a box
     separate from the preview at all).
   - **The preview says it plays a clip** (his request: "there needs to be some sort of indication on the
     preview image that there is a clip that can be played"): a 56 px round play button in the middle of
     the picture (dark translucent ground, white icon; magenta 305 on hover and keyboard focus) and a
-    magenta **Clip · N s** tag in the bottom-right corner, in the dark chip values in both themes
-    because it sits on the picture; **Preview** stays in the bottom-left. Its accessible name starts
-    with the visible word: "Preview, play the N-second video clip".
-  - A preview without a clip opens the preview image dialog.
+    magenta tag in the bottom-right corner reading a play icon and the seconds (**▶ N s**), in the dark
+    chip values in both themes because it sits on the picture, left out when no length is stored;
+    **Preview** stays in the bottom-left. Its accessible name starts with the visible word: "Preview,
+    play the N-second video preview", or "Preview, play the video preview" without a length.
+  - A preview without a clip opens the Image preview dialog; its accessible name is "View the image preview".
   - **The sample opens straight at full size** (his words: "clicking a "sample" image should go straight
     to the full size view and skip the small dialog"): the image dialog opens in its Full size state when
     the image is larger than the dialog; it appears only once it is laid out at full size. Only 392 of
@@ -264,7 +273,7 @@ and Posted. No section when there is no match.
 ### 6.1 Today's features
 
 Every feature of today's Adult screens is in `INVENTORY.md`. Carried: the list itself, the release name
-link, every chip (with Clip added as its own chip), group and poster chips, selection and the bulk bar,
+link, every chip (the clip plays from the Preview chip, issue #995), group and poster chips, selection and the bulk bar,
 the name search, the preview / sample picture, the details page's tabs, pictures, clip, PreDB and
 Similar releases. Dropped the way TV and Movies dropped them (told to him 2026-09-29): the Cards and
 Covers views, the Name and Grabs sorts, the page-size choice, the posted-year filter, the Report and
@@ -293,7 +302,7 @@ To be proven in the data contract at full catalogue size before any build issue:
 - The list's reads: the adult band newest first by posted and by added, page 1 and the last page; each
   filter alone and combined (Category including Exclude Other, Resolution, Audio, Completion); the
   name search on its own and with filters, including a word that matches nothing.
-- The Clip chip: whether a release has a clip, per row, without a per-row query.
+- The Preview chip's clip: whether a release has a clip, per row, without a per-row query.
 - Remembered filters: stored beside the sort in `users.view_prefs` (the #881 rule).
 - Similar releases: today's search-index query, unchanged.
 
@@ -319,7 +328,7 @@ maintainer will look at the Movies > Other categorisation in a separate session.
   "Exclude Other" to fit, by his choice, with the full text in the tooltip.
 - Clear all empties the name search as well as the filters; the name search's × does not touch the
   filters.
-- The Clip tag on the details preview keeps the dark chip values in the light theme.
+- The seconds tag on the details preview keeps the dark clip-tone values in the light theme.
 - The details preview's click plays the clip only when the release has one; the Sample's click opens
   at full size only on the details page's Overview.
 - Files "—" when not stored, on the details tab label, the facts grid and the Similar releases table.

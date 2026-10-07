@@ -48,7 +48,7 @@
                     @endif
                     @if($row->hasChips())
                         <div class="tv-chips">
-                            @include('tv.partials.release-chip-list')
+                            @include('tv.partials.release-chip-list', ['clip' => null])
                             @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
                                 @include('shelf.releases.listen-chip')
                             @endif

@@ -319,7 +319,7 @@ final class AdultReleasesPageTest extends TestCase
         $response = $this->page('/adult')->assertOk()
             ->assertSee('<colgroup><col class="tv-col-select"><col class="tv-col-picture"><col><col class="tv-col-resolution"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>', false);
         $details = static fn (string $name): string => preg_quote(e(route('details', md5($name))), '/');
-        $this->assertMatchesRegularExpression('/<td class="tv-art is-picture">\s*<a href="'.$details('Has.Preview').'" tabindex="-1" aria-hidden="true" data-picture="preview" title="View preview image">\s*'
+        $this->assertMatchesRegularExpression('/<td class="tv-art is-picture">\s*<a href="'.$details('Has.Preview').'" tabindex="-1" aria-hidden="true" data-picture="preview" title="View the image preview">\s*'
             .'<img src="'.preg_quote(url('/covers/preview/'.md5('Has.Preview').'_thumb.jpg'), '/').'" alt="" loading="lazy"/', $this->rowOf($response, 'Has.Preview'));
         $this->assertMatchesRegularExpression('/data-picture="sample" title="View sample image">\s*<img src="'.preg_quote(url('/covers/sample/'.md5('Has.Sample').'_thumb.jpg'), '/').'"/',
             $this->rowOf($response, 'Has.Sample'));
@@ -332,37 +332,103 @@ final class AdultReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('data-picture', $nothing);
     }
 
-    public function test_the_clip_chip_reads_clip_and_opens_the_video_clip_dialog(): void
+    public function test_a_clip_row_has_one_preview_chip_with_a_play_icon_opening_the_video_preview_with_its_poster(): void
     {
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
         $timed = $this->adult('Timed.Clip', ['videostatus' => 1, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1, 'groups_id' => 1]);
         $untimed = $this->adult('Untimed.Clip', ['videostatus' => 1]);
         $this->adult('Legacy.Clip', ['videostatus' => 1]);
+        $this->adult('Image.Only', ['videostatus' => 0, 'haspreview' => 1]);
         $this->adult('No.Clip', ['videostatus' => 0]);
         DB::table('release_video_clips')->insert([
             ['releases_id' => $timed, 'extension' => 'mp4', 'mime' => 'video/mp4', 'duration_seconds' => 30],
             ['releases_id' => $untimed, 'extension' => 'webm', 'mime' => 'video/webm', 'duration_seconds' => null],
         ]);
+        foreach (['preview' => [md5('Timed.Clip'), md5('Timed.Clip').'_thumb', md5('Image.Only').'_thumb', md5('Image.Only')], 'sample' => [md5('Timed.Clip').'_thumb']] as $type => $names) {
+            foreach ($names as $name) {
+                $this->image($type, $name);
+            }
+        }
 
-        // the list chip reads "Clip" (SPEC 5.10, the prototype): the list reads no clip length
+        // the list reads no clip length (SPEC 5.10)
         DB::enableQueryLog();
-        $response = $this->page('/adult')->assertOk()->assertDontSee('Clip · ');
+        $response = $this->page('/adult')->assertOk()->assertDontSee('Clip · ')->assertDontSee('clip-badge', false)->assertDontSee('>Clip<', false);
         $this->assertSame(0, collect(DB::getQueryLog())->filter(static fn (array $query): bool => str_contains($query['query'], 'duration_seconds'))->count());
         DB::disableQueryLog();
 
         $row = $this->rowOf($response, 'Timed.Clip');
-        $this->assertMatchesRegularExpression('/<button [^>]*data-chip-variant="clip"[^>]*>\s*Clip\s*<\/button>/', $row);
-        $this->assertStringContainsString('chip-tone-clip', $row);
-        $this->assertStringContainsString('data-video-url="'.route('preview.video', md5('Timed.Clip')).'" data-video-type="video/mp4"', $row);
-        $this->assertStringContainsString('data-image-title="Video clip"', $row);
-        $this->assertStringContainsString('title="Play the video clip"', $row);
-        $this->assertMatchesRegularExpression('/nfo-badge.*preview-badge.*sample-badge.*clip-badge.*<span class="tv-origin-pair">/s', $row);
-        $this->assertStringContainsString('data-video-type="video/webm"', $this->rowOf($response, 'Untimed.Clip'));
-        $legacy = $this->rowOf($response, 'Legacy.Clip');
-        $this->assertMatchesRegularExpression('/data-chip-variant="clip"[^>]*>\s*Clip\s*<\/button>/', $legacy);
+        $chip = $this->previewChip($row);
+        $this->assertMatchesRegularExpression('/^<button [^>]*data-chip-variant="preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>$/', $chip);
+        $this->assertStringContainsString('chip-tone-preview', $chip);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', md5('Timed.Clip')).'" data-video-type="video/mp4"', $chip);
+        $this->assertStringContainsString('data-poster-url="'.$this->url('preview', md5('Timed.Clip')).'"', $chip);
+        $this->assertStringContainsString('data-image-title="Video preview"', $chip);
+        $this->assertStringContainsString('title="Play the video preview"', $chip);
+        $this->assertStringNotContainsString('data-image-url', $chip);
+        $this->assertStringNotContainsString('data-full-url', $chip);
+        $this->assertMatchesRegularExpression('/nfo-badge.*preview-badge.*sample-badge.*<span class="tv-origin-pair">/s', $row);
+        $this->assertStringContainsString('data-picture="preview" title="Play the video preview"', $row);
+        $this->assertStringContainsString('data-video-type="video/webm"', $this->previewChip($this->rowOf($response, 'Untimed.Clip')));
+        $legacy = $this->previewChip($this->rowOf($response, 'Legacy.Clip'));
         $this->assertStringContainsString('data-video-type="video/ogg"', $legacy);
-        $this->assertStringNotContainsString('clip-badge', $this->rowOf($response, 'No.Clip'));
+        $this->assertStringNotContainsString('data-poster-url', $legacy, 'A clip without any image opens the player without a poster.');
+
+        $image = $this->rowOf($response, 'Image.Only');
+        $imageChip = $this->previewChip($image);
+        $this->assertMatchesRegularExpression('/^<button [^>]*>\s*Preview\s*<\/button>$/', $imageChip, 'no icon without a clip');
+        $this->assertStringContainsString('data-image-url="'.$this->url('preview', md5('Image.Only').'_thumb').'" data-full-url="'.$this->url('preview', md5('Image.Only')).'"', $imageChip);
+        $this->assertStringContainsString('data-image-title="Image preview"', $imageChip);
+        $this->assertStringContainsString('title="View the image preview"', $imageChip);
+        $this->assertStringNotContainsString('data-video-url', $imageChip);
+        $this->assertStringNotContainsString('data-poster-url', $imageChip);
+        $this->assertStringContainsString('data-picture="preview" title="View the image preview"', $image);
+        $this->assertStringNotContainsString('preview-badge', $this->rowOf($response, 'No.Clip'));
         $this->assertStringNotContainsString('tv-chips', $this->rowOf($response, 'No.Clip'));
+    }
+
+    /**
+     * The clip's poster is the full-size Preview, else the Preview thumb, else the Sample thumb,
+     * read from the files on disk whatever haspreview and jpgstatus say; those flags still decide
+     * the picture and the image chips.
+     */
+    public function test_the_clip_poster_takes_the_best_image_on_disk_whatever_the_image_flags_say(): void
+    {
+        $this->adult('Thumbs.Only', ['videostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1]);
+        $this->adult('Sample.Only', ['videostatus' => 1, 'jpgstatus' => 1]);
+        $this->adult('Stale.Preview', ['videostatus' => 1, 'haspreview' => 0]);
+        $this->adult('Stale.Sample', ['videostatus' => 1, 'jpgstatus' => 0]);
+        foreach ([md5('Thumbs.Only').'_thumb', md5('Stale.Preview'), md5('Stale.Preview').'_thumb'] as $name) {
+            $this->image('preview', $name);
+        }
+        foreach ([md5('Thumbs.Only').'_thumb', md5('Sample.Only').'_thumb', md5('Stale.Sample').'_thumb', md5('Stale.Preview').'_thumb'] as $name) {
+            $this->image('sample', $name);
+        }
+
+        $response = $this->page('/adult')->assertOk();
+        $posters = [];
+        foreach (['Thumbs.Only', 'Sample.Only', 'Stale.Preview', 'Stale.Sample'] as $name) {
+            preg_match('/data-poster-url="([^"]*)"/', $this->previewChip($this->rowOf($response, $name)), $match);
+            $posters[$name] = $match[1] ?? null;
+        }
+        $this->assertSame([
+            'Thumbs.Only' => $this->url('preview', md5('Thumbs.Only').'_thumb'),
+            'Sample.Only' => $this->url('sample', md5('Sample.Only').'_thumb'),
+            'Stale.Preview' => $this->url('preview', md5('Stale.Preview')),
+            'Stale.Sample' => $this->url('sample', md5('Stale.Sample').'_thumb'),
+        ], $posters);
+
+        // The flags still decide the picture and the Sample chip: a stale flag shows none.
+        $sampleOnly = $this->rowOf($response, 'Sample.Only');
+        $this->assertStringContainsString('data-picture="sample" title="View sample image"', $sampleOnly);
+        $this->assertStringContainsString('sample-badge', $sampleOnly);
+        foreach (['Stale.Preview', 'Stale.Sample'] as $name) {
+            $stale = $this->rowOf($response, $name);
+            $this->assertStringContainsString('is-no-picture', $stale, $name);
+            $this->assertStringNotContainsString('sample-badge', $stale, $name);
+            $this->assertSame(1, substr_count($stale, 'preview-badge'), $name);
+        }
+        $this->assertSame(['haspreview' => 0, 'jpgstatus' => 0], (array) DB::table('releases')->where('name', 'Stale.Preview')->first(['haspreview', 'jpgstatus']), 'nothing writes the flags');
+        $this->assertSame(['haspreview' => 0, 'jpgstatus' => 0], (array) DB::table('releases')->where('name', 'Stale.Sample')->first(['haspreview', 'jpgstatus']));
     }
 
     public function test_the_table_has_no_source_files_or_grabs_column_and_the_buttons_have_no_follow(): void
@@ -479,6 +545,19 @@ final class AdultReleasesPageTest extends TestCase
     {
         File::ensureDirectoryExists($this->covers.'/'.$type);
         File::put($this->covers.'/'.$type.'/'.$basename.'.jpg', 'jpg');
+    }
+
+    private function url(string $type, string $basename): string
+    {
+        return url('/covers/'.$type.'/'.$basename.'.jpg');
+    }
+
+    /** The row's one Preview chip, its button tag through its closing tag. */
+    private function previewChip(string $row): string
+    {
+        $this->assertSame(1, preg_match_all('/<button [^>]*preview-badge[^>]*>.*?<\/button>/s', $row, $matches), 'exactly one Preview chip');
+
+        return $matches[0][0];
     }
 
     private function page(string $uri, ?User $user = null): TestResponse

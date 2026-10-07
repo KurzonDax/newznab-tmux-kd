@@ -17,7 +17,7 @@ final readonly class AdultReleaseRow
      * @param  array{percent: int, band: string, repairing: bool}|null  $completion  null at 100% or when never measured
      * @param  array{thumb: ?string, full: ?string}|null  $preview
      * @param  array{thumb: ?string, full: ?string}|null  $sample
-     * @param  array{url: string, type: string}|null  $clip  the video clip (videostatus = 1): today's player route and its type
+     * @param  array{url: string, type: string, poster: ?string}|null  $clip  the video clip (videostatus = 1): today's player route, its type and its poster
      */
     public function __construct(
         public int $id,

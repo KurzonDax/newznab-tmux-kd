@@ -32,7 +32,7 @@
 </div>
 <div x-data="tvImageDialog">
     <x-tv-dialog name="image" x-bind:class="dialogClass()">
-        <x-slot:title><span x-text="title">Preview image</span></x-slot:title>
+        <x-slot:title><span x-text="title">Image preview</span></x-slot:title>
         <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
         <p x-show="failed" class="tv-note" role="alert">The image for this release was not found on the server.</p>
         <div x-show="showImage()">

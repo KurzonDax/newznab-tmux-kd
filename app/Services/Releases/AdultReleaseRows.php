@@ -13,7 +13,8 @@ use Carbon\CarbonImmutable;
  * release list shows; this adds the video clip (docs/proposals/adult-redesign/DATA-CONTRACT.md
  * 4.3). The shared loader (ReleasePreviewDataLoader) already marks a release with
  * `videostatus = 1` as having a video preview, with the type today's player serves; the list's
- * Clip chip reads "Clip" (SPEC 5.10), so no further read is needed.
+ * Preview chip reads no clip length (SPEC 5.10), so only the poster (ReleaseRowFacts::clipPoster())
+ * is added.
  */
 final class AdultReleaseRows
 {
@@ -32,6 +33,7 @@ final class AdultReleaseRows
             $clip = (bool) ($release->has_video_preview ?? false) ? [
                 'url' => route('preview.video', $facts['guid']),
                 'type' => (string) ($release->video_preview_mime ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']),
+                'poster' => ReleaseRowFacts::clipPoster($facts['guid']),
             ] : null;
 
             return new AdultReleaseRow(...[...$facts, 'clip' => $clip]);

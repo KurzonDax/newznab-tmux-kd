@@ -42,7 +42,7 @@
                     @if($filmLine && $row->hasFilm())
                         <a class="tv-show-line" href="{{ $row->filmUrl() }}" title="Go to the film">{{ $row->filmLine() }}</a>
                     @endif
-                    @include('tv.partials.release-chips')
+                    @include('tv.partials.release-chips', ['clip' => null])
                 </td>
                 <td><x-resolution-chip :resolution="$row->resolution" :part="false" /></td>
                 <td class="tv-nowrap">{{ $row->source }}</td>

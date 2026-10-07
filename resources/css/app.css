@@ -122,7 +122,7 @@
     --chip-sample-bg-dark: oklch(0.33 0.06 110);
     --chip-sample-fg: oklch(0.42 0.09 105);
     --chip-sample-fg-dark: oklch(0.89 0.10 108);
-    /* The Adult Clip chip: magenta 305 (docs/proposals/adult-redesign/SPEC.md 5.10). */
+    /* The clip tone, magenta 305 (docs/proposals/adult-redesign/SPEC.md 5.10): the Listen chip and the Adult details picture's seconds tag. */
     --chip-clip-bg: oklch(0.93 0.03 305);
     --chip-clip-bg-dark: oklch(0.31 0.085 305);
     --chip-clip-fg: oklch(0.40 0.17 305);

@@ -305,7 +305,7 @@ test('the image dialog shows the full-size copy, its pixel size, and Full size o
     const trigger = { classList: { contains: name => name === 'preview-badge' }, dataset: { guid: 'abc', imageUrl: '/covers/preview/abc_thumb.webp', fullUrl: '/covers/preview/abc.webp', releaseDisplayName: 'The.Release' } };
     dialog.show(trigger);
     assert.equal(dialog.imageUrl, '/covers/preview/abc.webp');
-    assert.equal(dialog.title, 'Preview image');
+    assert.equal(dialog.title, 'Image preview');
     dialog.measure();
     assert.equal(dialog.dimensions, '1920 × 1080');
     assert.equal(dialog.canFull, true);

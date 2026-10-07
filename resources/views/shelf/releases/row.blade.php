@@ -46,7 +46,7 @@
         {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
-                @include('tv.partials.release-chip-list')
+                @include('tv.partials.release-chip-list', ['clip' => null])
                 @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
                     @include('shelf.releases.listen-chip')
                 @endif

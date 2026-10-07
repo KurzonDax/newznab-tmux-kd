@@ -161,7 +161,7 @@ final class ShelfReleaseDetailsPageTest extends TestCase
         $this->details($game)->assertOk()->assertViewIs('details.console.index');
     }
 
-    public function test_the_chip_line_has_no_resolution_preview_sample_or_clip_chip_and_the_buttons_have_no_follow(): void
+    public function test_the_chip_line_has_no_resolution_preview_or_sample_chip_and_the_buttons_have_no_follow(): void
     {
         $id = $this->shelf('Some.Release.Name-GRP', ['completion' => 94, 'passwordstatus' => 1, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1, 'videostatus' => 1,
             'resolution' => 2, 'fromname' => 'paperboat <pb@example.invalid>']);

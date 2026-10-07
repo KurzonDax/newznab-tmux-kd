@@ -342,8 +342,9 @@ pages look good, I approve them."
 - **Preview / Sample image**: shows the image's pixel size and a **Full size** button only
   when the image is larger than shown; Full size grows the dialog to the window and shows real
   pixels (scrolling if needed); the button turns coral and reads "Fit to window"; clicking
-  the image toggles too. **Clip** (not enabled for TV today) and **Listen** reuse this dialog
-  with the right player, keeping the behaviour they have in the current app.
+  the image toggles too. A **Preview chip with a clip** (a play icon on the chip, titled Video
+  preview; not enabled for TV today) and **Listen** reuse this dialog with the right player,
+  keeping the behaviour they have in the current app.
 - **File list**: a plain two-column list, file and size; sizes under 1 MB in KB.
 - **NFO**: the real text, monospace.
 - All dialogs close with X, Escape or a click outside; focus returns to what opened them.
@@ -363,9 +364,9 @@ Chip line under a release name (tinted ground + coloured text), in this order:
 | Password | passworded | none |
 | ⓘ `H.265 · E-AC-3 5.1` | media info exists (codec and audio only, friendly names) | media info dialog |
 | NFO | has an NFO | NFO dialog |
-| Preview | has a preview image | image dialog |
+| Preview | has a preview image, or a video clip (then with a play icon) | image dialog; with a clip, the image dialog with a player |
 | Sample | has a sample image | image dialog |
-| Clip, Listen | when those features apply to the category | the image dialog with a player |
+| Listen | when that feature applies to the category | the image dialog with a player |
 
 Then, on the releases list, the **group and poster chips** (outline, one unit that never
 splits, links as in appendix A; 3.1). The details page shows them under its other chips. The

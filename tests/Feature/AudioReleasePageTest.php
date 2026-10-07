@@ -314,7 +314,7 @@ final class AudioReleasePageTest extends TestCase
         $this->details($single)->assertViewIs('details.shelf.index')->assertSee('<div class="tv-audio-preview" data-part="audio preview">', false);
     }
 
-    public function test_no_listen_chip_on_the_page_s_own_chip_line_while_table_rows_keep_it_and_a_video_clip_shows_the_clip_chip(): void
+    public function test_no_listen_chip_on_the_page_s_own_chip_line_while_table_rows_keep_it_and_a_video_clip_shows_the_preview_chip(): void
     {
         $current = $this->album('Nama-Fibir-2021-MP3', $this->preview(), [], ['postdate' => '2026-09-20 10:00:00']);
         $sibling = $this->album('Nama-Fibir-2021-FLAC', $this->preview(), [], ['categories_id' => self::LOSSLESS, 'postdate' => '2026-09-21 10:00:00']);
@@ -335,17 +335,38 @@ final class AudioReleasePageTest extends TestCase
         $this->assertStringContainsString('<span class="tv-game-line">Nama – Other · 2021</span>', $similarSection);
         $response->assertSee('x-data="tvListenDialog"', false)->assertDontSee('clip-badge', false);
 
+        // A music video's clip: the Preview chip with a play icon in Preview's slot, its poster read
+        // from the files on disk though the shelf rows show no image chips.
         DB::table('releases')->where('id', $current)->update(['videostatus' => 1]);
         DB::table('release_video_clips')->insert(['releases_id' => $current, 'extension' => 'mp4', 'mime' => 'video/mp4']);
-        $own = $this->between($this->details($current), '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions tv-show-actions">');
-        $this->assertMatchesRegularExpression('/class="release-chip chip-tone-clip clip-badge"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($current)), '/').'" data-video-type="video\/mp4"[^>]*>\s*Clip\s*<\/button>\s*<\/div>/', $own);
+        if (! is_dir($this->covers.'/sample')) {
+            mkdir($this->covers.'/sample', 0777, true);
+        }
+        file_put_contents($this->covers.'/sample/'.$this->guid($current).'_thumb.jpg', 'jpg');
+        $response = $this->details($current);
+        $own = $this->between($response, '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions tv-show-actions">');
+        $this->assertMatchesRegularExpression('/class="release-chip chip-tone-preview preview-badge"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($current)), '/').'" data-video-type="video\/mp4"'
+            .' data-poster-url="'.preg_quote(url('/covers/sample/'.$this->guid($current).'_thumb.jpg'), '/').'" data-image-title="Video preview"[^>]*title="Play the video preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>\s*<\/div>/', $own);
         $this->assertStringNotContainsString('listen-badge', $own);
+        $this->assertStringNotContainsString('clip-badge', (string) $response->getContent());
+        foreach (['data-film-releases>', 'data-similar-releases>'] as $section) {
+            $this->assertStringNotContainsString('preview-badge', $this->between($response, $section, '</section>'), 'the page\'s clip stays on its own chip line');
+        }
 
         $single = $this->audio('Some.Single-MP3');
         $this->tag($single, ['performer' => 'Someone', ...$this->preview()]);
         $own = $this->between($this->details($single)->assertViewIs('details.shelf.index'), '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions">');
         $this->assertStringNotContainsString('listen-badge', $own, 'the release-only page\'s own chip line has no Listen either');
         $this->assertStringNotContainsString('Listen', $own);
+        $this->assertStringNotContainsString('preview-badge', $own);
+
+        // A music video without an album: the release-only page's chip line plays its clip from the Preview chip.
+        DB::table('releases')->where('id', $single)->update(['videostatus' => 1]);
+        DB::table('release_video_clips')->insert(['releases_id' => $single, 'extension' => 'mp4', 'mime' => 'video/mp4']);
+        $own = $this->between($this->details($single)->assertViewIs('details.shelf.index'), '<div class="tv-chips tv-details-chips">', '<div class="tv-details-actions">');
+        $this->assertSame(1, substr_count($own, 'preview-badge'));
+        $this->assertMatchesRegularExpression('/class="release-chip chip-tone-preview preview-badge"[^>]*data-video-url="'.preg_quote(route('preview.video', $this->guid($single)), '/').'" data-video-type="video\/mp4"'
+            .' data-image-title="Video preview"[^>]*title="Play the video preview"[^>]*>\s*<i class="fas fa-play" aria-hidden="true"><\/i>\s*Preview\s*<\/button>/', $own);
     }
 
     public function test_the_tracks_tab_shows_only_a_complete_list_of_the_newest_revision(): void

@@ -50,7 +50,7 @@
                 <div class="tv-show-meta tv-film-meta tv-game-line" data-part="game line">
                     <b>{{ $game->title }}</b>@foreach($gameLine as $part)<span aria-hidden="true">·</span><span>{{ $part }}</span>@endforeach
                 </div>
-                @include('details.shelf.chips', ['row' => $row])
+                @include('details.shelf.chips', ['row' => $row, 'clip' => null])
                 @if($game->summary !== '')
                     <p>{{ $game->summary }}</p>
                 @endif

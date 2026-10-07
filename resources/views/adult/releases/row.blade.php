@@ -13,13 +13,18 @@
         return $name;
     };
     $picture = $row->picture();
+    $pictureTitle = match (true) {
+        ($picture['kind'] ?? null) === 'sample' => 'View sample image',
+        $row->clip !== null => 'Play the video preview',
+        default => 'View the image preview',
+    };
 @endphp
 <tr data-release-row>
     <td @if($first) data-part="release row cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>
     {{-- The picture (SPEC 5.6): a click opens its image dialog, a modified click follows the link; the chip is the accessible way in. --}}
     <td class="tv-art is-picture">
         @if($picture !== null)
-            <a href="{{ $details }}" tabindex="-1" aria-hidden="true" data-picture="{{ $picture['kind'] }}" title="View {{ $picture['kind'] }} image">
+            <a href="{{ $details }}" tabindex="-1" aria-hidden="true" data-picture="{{ $picture['kind'] }}" title="{{ $pictureTitle }}">
                 <img src="{{ $picture['url'] }}" alt="" loading="lazy" data-part="row picture">
             </a>
         @else
@@ -31,14 +36,10 @@
     </td>
     <td class="tv-what">
         <a class="tv-release-name" href="{{ $details }}" title="{{ $row->name }}" data-part="release name">{{ $row->name }}</a>
-        {{-- One chip line: the release chips, Clip last, then the group and poster pair that never splits (SPEC 5.5). --}}
+        {{-- One chip line: the release chips, the Preview chip playing the clip when there is one, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
-                @include('tv.partials.release-chip-list')
-                @if($row->clip !== null)
-                    <x-chip variant="clip" action class="clip-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-video-url="$row->clip['url']" :data-video-type="$row->clip['type']"
-                            data-image-title="Video clip" :data-part="$chipPart('Clip chip')" title="Play the video clip">Clip</x-chip>
-                @endif
+                @include('tv.partials.release-chip-list', ['clip' => $row->clip])
                 @include('tv.partials.release-origin')
             </div>
         @endif

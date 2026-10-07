@@ -64,9 +64,10 @@ export function tvFilesDialog() {
  * The preview / sample image dialog: the full-size copy when one is on disk, else the thumb; its
  * pixel size; and a Full size button, offered only when the image is larger than shown, that
  * grows the dialog to the window at real pixels and turns into "Fit to window". Clicking the
- * image toggles too. A Clip chip (data-video-url) opens it with a video player instead, which,
- * as today's preview modal, fetches nothing until play is pressed; the player is built here and
- * removed on close. An Adult row's picture (data-picture: preview or sample) opens the dialog of
+ * image toggles too. A Preview chip with a clip (data-video-url) opens it with a video player
+ * instead, which requests the clip's metadata and shows the resolved poster (data-poster-url)
+ * when one is available, and plays only when asked; the player is built here and removed on
+ * close. An Adult row's picture (data-picture: preview or sample) opens the dialog of
  * its row's matching chip, which takes focus so closing returns there; a Ctrl-, Cmd- or
  * Shift-click follows the picture's link to the details page as a browser does. A trigger with
  * data-open-full (the Adult details page's Sample picture) opens straight in the Full size state
@@ -77,7 +78,7 @@ export function tvImageDialog() {
     return {
         ...modalLifecycle(),
         open: false,
-        title: 'Preview image',
+        title: 'Image preview',
         releaseName: '',
         guid: '',
         imageUrl: '',
@@ -92,7 +93,7 @@ export function tvImageDialog() {
         show(trigger) {
             const sample = trigger.classList.contains('sample-badge');
             this.guid = trigger.dataset.guid || '';
-            this.title = trigger.dataset.imageTitle || (sample ? 'Sample image' : 'Preview image');
+            this.title = trigger.dataset.imageTitle || (sample ? 'Sample image' : 'Image preview');
             this.releaseName = trigger.dataset.releaseDisplayName || '';
             this.dimensions = '';
             this.canFull = false;
@@ -105,17 +106,18 @@ export function tvImageDialog() {
             this.imageUrl = this.video ? '' : trigger.dataset.fullUrl || trigger.dataset.imageUrl || '';
             this.open = true;
             this.$nextTick(() => {
-                if (this.video) return this.addPlayer(trigger.dataset.videoUrl, trigger.dataset.videoType || '');
+                if (this.video) return this.addPlayer(trigger.dataset.videoUrl, trigger.dataset.videoType || '', trigger.dataset.posterUrl || '');
                 const image = this.$refs.image;
                 if (image?.complete && image.naturalWidth) this.measure();
                 return undefined;
             });
         },
 
-        addPlayer(url, type) {
+        addPlayer(url, type, poster) {
             const player = document.createElement('video');
             player.controls = true;
-            player.preload = 'none';
+            player.preload = 'metadata';
+            if (poster) player.poster = poster;
             player.tabIndex = 0;
             const source = document.createElement('source');
             source.src = url;
@@ -192,7 +194,7 @@ export function tvImageDialog() {
             this._click = event => {
                 const picture = event.target.closest('[data-picture]');
                 if (picture) return this.showPicture(event, picture);
-                const trigger = event.target.closest('.preview-badge, .sample-badge, .clip-badge');
+                const trigger = event.target.closest('.preview-badge, .sample-badge');
                 if (!trigger) return undefined;
                 event.preventDefault();
                 return this.show(trigger);
