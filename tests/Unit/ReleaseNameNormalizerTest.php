@@ -62,6 +62,8 @@ class ReleaseNameNormalizerTest extends TestCase
                 'Some.Release.Name',
             ],
             'quoted nfo companion file' => ['"Some.Release.Name.nfo"', 'Some.Release.Name'],
+            'quoted nzb companion file with yenc marker' => ['"Example.Release.nzb" yEnc', 'Example.Release'],
+            'quoted nzb companion file' => ['"Some.Release.Name.nzb"', 'Some.Release.Name'],
             'title outside the quotes wins over the filename' => [
                 '[1/3] - IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar" yEnc',
                 'IP Scanner Pro 3.21-Sebaro - "IP Scanner Pro 3.21-Sebaro.rar"',
@@ -102,6 +104,7 @@ class ReleaseNameNormalizerTest extends TestCase
             'partial quote' => ['"Unbalanced.Release.Name'],
             'part number without archive extension' => ['Some.Release.Name.part018'],
             'rar inside the name' => ['Some.rar.Documentary.2019.1080p'],
+            'nzb inside the name' => ['Some.nzb.Collection.2019'],
             'bitrate is not a size annotation' => ['Some.Album.2019.320kbps'],
             'resolution is not a size annotation' => ['Some.Release.Name.2160p'],
             'leading non-ascii letter is not residue' => ['Ärzte.Live.2019.1080p'],

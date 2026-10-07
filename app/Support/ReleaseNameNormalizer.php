@@ -60,13 +60,13 @@ final class ReleaseNameNormalizer
     private const string VOLUME_SUFFIX_REGEX = '/\.vol\d+\+\d+\.par2$/i';
 
     /**
-     * Suffix of a file that is not the release itself: .part018.rar, .rar, .par2, .nfo.
+     * Suffix of a file that is not the release itself: .part018.rar, .rar, .par2, .nfo, .nzb.
      *
-     * The NFO belongs here for the same dedupe reason as the first RAR volume:
-     * an upload first seen as its NFO and one first seen as its first volume
-     * must reduce to the same string.
+     * The NFO and the companion NZB belong here for the same dedupe reason as
+     * the first RAR volume: an upload first seen as its NFO or its NZB and one
+     * first seen as its first volume must reduce to the same string.
      */
-    private const string ARCHIVE_OR_NFO_SUFFIX_REGEX = '/(\.part\d+)?\.(rar|7z|zip|par2|nfo)$/i';
+    private const string ARCHIVE_OR_NFO_SUFFIX_REGEX = '/(\.part\d+)?\.(rar|7z|zip|par2|nfo|nzb)$/i';
 
     public static function normalize(string $name): string
     {

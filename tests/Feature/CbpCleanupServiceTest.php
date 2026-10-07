@@ -896,6 +896,72 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertNull($reason);
     }
 
+    public function test_release_duplicate_finder_matches_nzb_companion_candidate_within_size_band(): void
+    {
+        config(['nntmux.release_dedupe_size_tolerance' => 0.05]);
+
+        $this->insertRelease(29, 'Example.Release', 3_992_908_465);
+
+        [$dup, $reason] = app(ReleaseDuplicateFinder::class)->findDuplicate(
+            '"Example.Release.nzb" yEnc',
+            'Example.Release.nzb',
+            0,
+            3_992_467_322
+        );
+
+        $this->assertNotNull($dup);
+        $this->assertSame(29, (int) $dup->id);
+        $this->assertSame('normalized_searchname_match', $reason);
+    }
+
+    public function test_release_duplicate_finder_does_not_match_nzb_companion_candidate_outside_size_band(): void
+    {
+        config(['nntmux.release_dedupe_size_tolerance' => 0.05]);
+
+        $this->insertRelease(30, 'Example.Release', 1_000_000);
+
+        [$dup, $reason] = app(ReleaseDuplicateFinder::class)->findDuplicate(
+            '"Example.Release.nzb" yEnc',
+            'Example.Release.nzb',
+            0,
+            1_200_000
+        );
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
+    /**
+     * Records the accepted limitation of #994: a row stored before the change
+     * keeps its old normalized key, which still ends in .nzb. The exact match
+     * the old cleaner relied on still finds it, but the fallback cleaner now
+     * strips the .nzb, so a later copy misses the old row on both lookups.
+     */
+    public function test_a_stored_nzb_suffixed_normalized_key_is_missed_by_the_fallback_cleaned_name(): void
+    {
+        config(['nntmux.release_dedupe_size_tolerance' => 0.05]);
+
+        $this->insertRelease(31, 'Example.Release.nzb', 1_000_000);
+        DB::table('releases')->where('id', 31)->update(['searchname_normalized' => 'Example.Release.nzb']);
+
+        $finder = app(ReleaseDuplicateFinder::class);
+
+        [$dup, $reason] = $finder->findDuplicate('"Example.Release.nzb" yEnc', 'Example.Release.nzb', 0, 1_000_000);
+
+        $this->assertNotNull($dup);
+        $this->assertSame(31, (int) $dup->id);
+        $this->assertSame('searchname_match', $reason);
+
+        $cleaned = app(ReleaseCleaningService::class)->releaseCleanerHelper('"Example.Release.nzb" yEnc');
+
+        $this->assertSame('Example.Release', $cleaned);
+
+        [$dup, $reason] = $finder->findDuplicate('"Example.Release.nzb" yEnc', $cleaned, 0, 1_000_000);
+
+        $this->assertNull($dup);
+        $this->assertNull($reason);
+    }
+
     public function test_normalized_duplicate_identity_finds_the_true_match_after_twenty_five_prefixes(): void
     {
         for ($id = 101; $id <= 125; $id++) {
