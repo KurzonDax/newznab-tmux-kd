@@ -12,7 +12,9 @@ use Tests\TestCase;
 
 /**
  * The chips are the only place a permanently-incomplete release announces
- * itself in a listing, so their bands and their two repair labels are pinned.
+ * itself in a listing, so their bands and the one repair label are pinned. The
+ * repair chip follows {@see ReleaseCompletion::stillRepairing()}: it shows while
+ * an engine can still take the release and never once nothing will.
  */
 final class ReleaseCompletionChipsTest extends TestCase
 {
@@ -58,21 +60,27 @@ final class ReleaseCompletionChipsTest extends TestCase
         $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->renderChips(['completion' => 42]));
     }
 
-    public function test_the_repair_chip_reports_pending_until_both_machines_are_final(): void
+    public function test_the_repair_chip_shows_while_an_engine_can_still_take_the_release_and_never_otherwise(): void
     {
         $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->renderChips([
             'completion' => 42,
             'repair_outcome' => ReleaseRepairOutcome::Failed->value,
-        ]));
+        ]), 'Repair final, re-scan still owed.');
 
-        $complete = $this->renderChips([
+        $finished = $this->renderChips([
             'completion' => 42,
             'repair_outcome' => ReleaseRepairOutcome::Failed->value,
             'rescan_outcome' => ReleaseRepairOutcome::SkippedBudget->value,
         ]);
+        $this->assertStringContainsString('42%', $finished);
+        $this->assertStringNotContainsString('Repair Attempt', $finished, 'Recovery exhausted: no repair chip, pending or complete.');
+        $this->assertStringNotContainsString('repair-badge', $finished);
 
-        $this->assertStringContainsString(ReleaseCompletion::COMPLETE_LABEL, $complete);
-        $this->assertStringContainsString('surface-panel-alt', $complete);
+        $aboveTarget = $this->renderChips(['completion' => 99]);
+        $this->assertStringContainsString('99%', $aboveTarget);
+        $this->assertStringNotContainsString('Repair Attempt', $aboveTarget, 'No engine selects a release at or above the target.');
+
+        $this->assertStringNotContainsString('Repair Attempt', $this->renderChips(['completion' => 42, 'nzbstatus' => 0]), 'No NZB yet.');
     }
 
     public function test_covers_tiles_stay_clean_art_at_full_completion(): void
@@ -83,11 +91,8 @@ final class ReleaseCompletionChipsTest extends TestCase
 
     public function test_every_chip_colour_carries_a_dark_variant(): void
     {
-        $html = $this->renderChips([
-            'completion' => 42,
-            'repair_outcome' => ReleaseRepairOutcome::Failed->value,
-            'rescan_outcome' => ReleaseRepairOutcome::Failed->value,
-        ]);
+        $html = $this->renderChips(['completion' => 42]);
+        $this->assertStringContainsString('repair-badge', $html);
 
         preg_match_all('/class="([^"]*)"/', $html, $classAttributes);
         $this->assertNotEmpty($classAttributes[1]);
@@ -116,7 +121,8 @@ final class ReleaseCompletionChipsTest extends TestCase
             '<x-release-completion-chips :release="$release" :only-when-incomplete="$onlyWhenIncomplete" />',
             [
                 'release' => (object) array_merge(
-                    ['completion' => 0, 'repair_outcome' => null, 'rescan_outcome' => null],
+                    ['completion' => 0, 'repair_outcome' => null, 'rescan_outcome' => null, 'declaredfiles' => null, 'totalpart' => 0,
+                        'nzbstatus' => 1, 'groups_id' => null, 'postdate' => null],
                     $attributes
                 ),
                 'onlyWhenIncomplete' => $onlyWhenIncomplete,

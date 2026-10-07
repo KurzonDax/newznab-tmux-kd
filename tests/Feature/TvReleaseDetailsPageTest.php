@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
+use App\Models\Settings;
 use App\Models\User;
+use App\Services\NNTP\NntpProviderPool;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
+use Tests\Support\InteractsWithSecondaryProviders;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -22,6 +25,7 @@ final class TvReleaseDetailsPageTest extends TestCase
     use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
+    use InteractsWithSecondaryProviders;
     use IsolatedSqliteDatabase;
 
     private const HD = 5040;
@@ -46,7 +50,7 @@ final class TvReleaseDetailsPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'predb_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
@@ -74,6 +78,7 @@ final class TvReleaseDetailsPageTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        NntpProviderPool::forgetConfiguredProviders();
         $this->resetGlobalComposerState();
         $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
@@ -231,6 +236,68 @@ final class TvReleaseDetailsPageTest extends TestCase
         $this->assertSame('Comments (1)', $this->tabs((string) $response->getContent())[4]);
     }
 
+    public function test_the_completion_chip_promises_recovery_only_while_an_engine_can_still_take_the_release(): void
+    {
+        $cases = [
+            'above the target' => [['completion' => 99], false],
+            'at the target' => [['completion' => 95], false],
+            'nothing to rescan' => [['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 10, 'totalpart' => 12], false],
+            'rescan owed' => [['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => null, 'totalpart' => 12], true],
+            'no verdict' => [['completion' => 80], true],
+            'no NZB' => [['completion' => 80, 'nzbstatus' => 0], false],
+        ];
+        foreach ($cases as $label => [$columns, $repairing]) {
+            $id = $this->tv(1, 1);
+            DB::table('releases')->where('id', $id)->update($columns);
+            $chips = $this->chips($id);
+            $percent = (int) $columns['completion'];
+            if ($repairing) {
+                $this->assertMatchesRegularExpression('/>\s*'.$percent.'% complete · still repairing\s*</', $chips, $label);
+                $this->assertStringContainsString('The site may still recover more of it."', $chips, $label);
+            } else {
+                $this->assertMatchesRegularExpression('/>\s*'.$percent.'% complete\s*</', $chips, $label);
+                $this->assertStringNotContainsString('still repairing', $chips, $label);
+                $this->assertStringContainsString('The site will not try to recover more of it."', $chips, $label);
+            }
+        }
+    }
+
+    public function test_the_repair_target_comes_from_the_completionpercent_setting(): void
+    {
+        Settings::query()->updateOrInsert(['name' => 'completionpercent'], ['value' => '99']);
+        $id = $this->tv(1, 1);
+        DB::table('releases')->where('id', $id)->update(['completion' => 97]);
+
+        $this->assertMatchesRegularExpression('/>\s*97% complete · still repairing\s*</', $this->chips($id));
+    }
+
+    public function test_a_secondary_provider_still_reading_the_post_holds_the_label_until_its_position_passes_it(): void
+    {
+        $this->configureSecondaryProvider();
+        ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
+        DB::table('usenet_groups')->where('id', 99)->update(['active' => 1]);
+        $above = $this->tv(1, 1);
+        DB::table('releases')->where('id', $above)->update(['completion' => 99]);
+        $finished = $this->tv(1, 2);
+        DB::table('releases')->where('id', $finished)->update(['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 1]);
+        // The releases are posted at 10:00 and delaytime is unset, so the window closes at 12:00.
+        $this->secondaryPosition(99, '2026-09-20 11:00:00');
+        foreach ([$above => 99, $finished => 80] as $id => $percent) {
+            $this->assertMatchesRegularExpression('/>\s*'.$percent.'% complete · still repairing\s*</', $this->chips($id));
+        }
+
+        $this->secondaryPosition(99, '2026-09-20 13:00:00');
+        foreach ([$above => 99, $finished => 80] as $id => $percent) {
+            $this->assertMatchesRegularExpression('/>\s*'.$percent.'% complete\s*</', $this->chips($id));
+        }
+    }
+
+    /** The chip line of a release's details page. */
+    private function chips(int $id): string
+    {
+        return $this->between($this->details($id)->assertOk(), '<div class="tv-chips tv-details-chips">', '</div>');
+    }
+
     /** A release of the show declaring (season, episode); a null season declares nothing, a null episode the whole season. */
     private function tv(?int $season, ?int $episode, int $size = self::GB, int $resolution = 2, int $categories = self::HD, ?string $name = null, string $fromname = ''): int
     {
@@ -258,6 +325,8 @@ final class TvReleaseDetailsPageTest extends TestCase
     private function page(string $uri): TestResponse
     {
         $this->resetGlobalComposerState();
+        // Each render is a request of its own: nothing a request resolved survives into the next.
+        $this->app->forgetScopedInstances();
 
         return $this->actingAs($this->user())->get($uri);
     }

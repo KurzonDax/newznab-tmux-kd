@@ -74,7 +74,7 @@ final class ReleaseRowFacts
             $completion = [
                 'percent' => $percent,
                 'band' => $percent >= 95 ? 'ok' : ($percent >= 75 ? 'mid' : 'low'),
-                'repairing' => ! ReleaseCompletion::repairAttemptsExhausted($release->repair_outcome, $release->rescan_outcome),
+                'repairing' => ReleaseCompletion::stillRepairing($release),
             ];
         }
         $source = ReleaseSource::tryFrom((int) $release->source) ?? ReleaseSource::Unknown;

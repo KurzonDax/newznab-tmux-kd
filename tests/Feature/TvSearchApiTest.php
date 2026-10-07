@@ -330,6 +330,8 @@ final class TvSearchApiTest extends TestCase
             $table->float('completion')->default(0);
             $table->string('repair_outcome')->nullable();
             $table->string('rescan_outcome')->nullable();
+            $table->integer('declaredfiles')->nullable();
+            $table->integer('nzbstatus')->default(1);
             $table->string('display_name')->nullable();
             $table->string('fromname')->nullable();
             $table->string('postdate')->nullable();

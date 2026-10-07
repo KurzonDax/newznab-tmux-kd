@@ -183,7 +183,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
             'id' => $id, 'guid' => 'release-'.$id, 'searchname' => 'Original.Title', 'display_name' => 'Display title',
             'categories_id' => null, 'size' => 524288000, 'totalpart' => 3, 'adddate' => null, 'postdate' => null,
             'grabs' => 4, 'comments' => 2, 'completion' => 99.5, 'repair_outcome' => null, 'rescan_outcome' => null,
-            'passwordstatus' => null, 'nfostatus' => null, 'haspreview' => 0, 'jpgstatus' => 0, 'groups_id' => null,
+            'declaredfiles' => null, 'nzbstatus' => 1, 'passwordstatus' => null, 'nfostatus' => null, 'haspreview' => 0, 'jpgstatus' => 0, 'groups_id' => null,
             'fromname' => 'Poster', 'isrenamed' => 1, 'additional_pp_claim_token' => null, 'imdbid' => null,
             'videos_id' => null, 'tv_episodes_id' => null, 'musicinfo_id' => null, 'consoleinfo_id' => null,
             'gamesinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, 'movieinfo_id' => null,

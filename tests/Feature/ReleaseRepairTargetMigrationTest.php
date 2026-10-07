@@ -27,6 +27,8 @@ class ReleaseRepairTargetMigrationTest extends TestCase
             $table->id();
             $table->string('repair_outcome', 16)->nullable();
             $table->string('rescan_outcome', 16)->nullable();
+            $table->integer('declaredfiles')->nullable();
+            $table->integer('nzbstatus')->default(1);
         });
 
         DB::table('settings')->insert(['name' => 'completionpercent', 'value' => '97']);
