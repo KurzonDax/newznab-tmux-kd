@@ -10,6 +10,7 @@ use App\Services\BlacklistService;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 final class RecoveryGapDownload
@@ -55,7 +56,7 @@ final class RecoveryGapDownload
 
             return 'source_epoch_pending';
         }
-        $requestKey = implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, $first, $last]);
+        $requestKey = $this->requestKey($gap);
         $receipts = app(RecoveryTransferReceipt::class);
         if (! $frontier && ($receipt = $receipts->recover($claim, 'overview', $requestKey)) !== null) {
             $this->capture($claim, $gap, $group->name, array_map(static fn (array $header): array => array_map(base64_decode(...), $header),
@@ -149,7 +150,7 @@ final class RecoveryGapDownload
 
     private function finish(RecoveryWorkClaim $claim, string $outcome): string
     {
-        return DB::transaction(function () use ($claim, $outcome): string {
+        $finished = DB::transaction(function () use ($claim, $outcome): string {
             if (! app(RecoveryWork::class)->complete($claim, $outcome)) {
                 return 'obsolete';
             }
@@ -162,5 +163,41 @@ final class RecoveryGapDownload
 
             return $outcome;
         }, 1);
+        if ($finished === $outcome && $claim->purpose !== RecoveryFrontierRebuild::PURPOSE) {
+            $this->discardListings($claim);
+        }
+
+        return $finished;
+    }
+
+    /** A finished gap never reads its saved header listing again; retention keeps any listing still referenced elsewhere. */
+    private function discardListings(RecoveryWorkClaim $claim): void
+    {
+        try {
+            $gap = DB::table('obfuscation_recovery_gaps')->where('bundle_id', $claim->bundleId)->first();
+            $owner = DB::table('obfuscation_recovery_bundles')->where('id', $claim->bundleId)->value('owner_digest');
+            if ($gap === null || $owner === null) {
+                return;
+            }
+            $budgets = DB::table('obfuscation_recovery_budgets')
+                ->whereIn('owner_digest', (new RecoveryBudgetOwners(new RecoveryIdentity))->members($owner))->pluck('id');
+            $handoffs = DB::table('obfuscation_recovery_attempts')->whereIn('budget_id', $budgets)
+                ->where('request_digest', (new RecoveryIdentity)->digest(['request', $this->requestKey($gap)]))
+                ->whereNotNull('handoff')->pluck('handoff');
+            $retention = app(RecoveryEvidenceRetention::class);
+            foreach ($handoffs as $handoff) {
+                $receipt = json_decode($handoff, true, flags: JSON_THROW_ON_ERROR);
+                if ($receipt['kind'] === 'overview') {
+                    $retention->discardArtifact($receipt['artifact']);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Recovery gap listing cleanup deferred to retention.', ['bundle_id' => $claim->bundleId, 'reason' => substr($e->getMessage(), 0, 200)]);
+        }
+    }
+
+    private function requestKey(object $gap): string
+    {
+        return implode(':', ['gap', $gap->source_epoch, $gap->groups_id, $gap->capture_generation, (int) $gap->requested_first, (int) $gap->requested_last]);
     }
 }
