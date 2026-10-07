@@ -190,6 +190,8 @@ class CategorizationPipeline
      * Other), as does a hashed or misc-locked name on the existing obfuscated
      * path. Operators may also let high-confidence PC matches escape an
      * unrelated forced root so executable-discard policy follows the PC root.
+     * High-confidence magazine matches without adult markers also escape any
+     * forced root (`magazine_forced_root_escape`).
      */
     protected function applyForcedRootCategory(CategorizationPassable $result): void
     {
@@ -203,6 +205,33 @@ class CategorizationPipeline
         }
 
         $organic = $result->bestResult;
+
+        if ($organic->categoryId === Category::BOOKS_MAGAZINES &&
+            $organic->confidence >= 0.9 &&
+            ! $result->context->hasAdultPublicationMarker()) {
+            $result->bestResult = new CategorizationResult(
+                $organic->categoryId,
+                $organic->confidence,
+                'magazine_forced_root_escape',
+                [
+                    'root_category_id' => $rootCategoryId,
+                    'organic_category_id' => $organic->categoryId,
+                    'organic_match' => $organic->matchedBy,
+                ],
+            );
+
+            if ($result->debug) {
+                $result->allResults['GroupForcedRootEscape'] = [
+                    'category_id' => $result->bestResult->categoryId,
+                    'confidence' => $result->bestResult->confidence,
+                    'matched_by' => $result->bestResult->matchedBy,
+                    'bypassed_root_category_id' => $rootCategoryId,
+                    'organic_matched_by' => $organic->matchedBy,
+                ];
+            }
+
+            return;
+        }
 
         if ($this->forcedRootPcEscape &&
             Category::rootCategoryFor($organic->categoryId) === Category::PC_ROOT &&
@@ -279,7 +308,7 @@ class CategorizationPipeline
         ];
 
         if ($result->lockedToMisc ||
-            in_array($result->bestResult->matchedBy, ['group_only_low_signal', 'pc_forced_root_escape'], true)) {
+            in_array($result->bestResult->matchedBy, ['group_only_low_signal', 'pc_forced_root_escape', 'magazine_forced_root_escape'], true)) {
             Log::info('categorization.decision', $payload);
         }
 

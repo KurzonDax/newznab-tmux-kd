@@ -47,6 +47,12 @@ class ReleaseContext
     /** Source and streaming-service tags that mark an ordinary movie or TV release. */
     private const string ORDINARY_RELEASE_TAG_REGEX = '/\b(?:WEB|WEB-?DL|WEB-?Rip|Blu-?Ray|BDRip|BRRip|HDTV|Remux|DVDRip|AMZN|NF|DSNP|HMAX|ATVP|HULU|PCOK|PMTP|MUBI|iP|ZEE5|CRAV|STAN)\b/i';
 
+    /** Words that mark an adult magazine or photo set rather than a general-interest magazine. */
+    private const string ADULT_PUBLICATION_REGEX = '/\b(?:Erotic|Erotica|Adult|Nude|Nudes|Naked|Photomagazine)\b|\b18\s*&|\bMagazine\s+18\b/i';
+
+    /** Adult magazine brands that are also ordinary words elsewhere in AMBIGUOUS_ADULT_TERMS. */
+    private const string ADULT_MAGAZINE_BRANDS = 'Playboy|Penthouse|Hustler|Score';
+
     public function __construct(
         public readonly string $releaseName,
         public readonly int|string $groupId,
@@ -194,6 +200,22 @@ class ReleaseContext
         }
 
         return ! ($this->hasSeasonEpisodeToken() || $this->hasStandaloneSeasonToken());
+    }
+
+    /**
+     * Adult evidence strong enough to keep a magazine-shaped name out of Books.
+     *
+     * The "18 &" and "Magazine 18" alternatives exist because the obfuscated
+     * subject extractor turns "+" into a space before categorizers see the
+     * name ("Magazine +18 - FHM …", "18+ & Purely Legal"). A bare "18 -" is
+     * deliberately not matched: it is a day range ("August 18 - 24 2026") or
+     * a dated scene name ("2021-04-18 - …").
+     */
+    public function hasAdultPublicationMarker(): bool
+    {
+        return $this->hasAdultMarkers()
+            || preg_match(self::ADULT_PUBLICATION_REGEX, $this->releaseName) === 1
+            || preg_match('/\b(?:'.self::ADULT_MAGAZINE_BRANDS.')\b/i', $this->releaseName) === 1;
     }
 
     /**
