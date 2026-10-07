@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
+use App\Support\ReleaseCompletion;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -16,6 +18,7 @@ use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
+use Tests\Support\InteractsWithSecondaryProviders;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -26,6 +29,7 @@ final class ReleaseBrowserControllerTest extends TestCase
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
+    use InteractsWithSecondaryProviders;
     use IsolatedSqliteDatabase;
 
     protected function setUp(): void
@@ -46,6 +50,7 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     protected function tearDown(): void
     {
+        NntpProviderPool::forgetConfiguredProviders();
         $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
@@ -71,6 +76,31 @@ final class ReleaseBrowserControllerTest extends TestCase
             ->assertOk()
             ->assertSee('Video summary regression')
             ->assertSee('1080p · x264');
+    }
+
+    public function test_the_repair_chip_shows_only_while_an_engine_can_still_take_the_release(): void
+    {
+        $this->release('Above target', ['completion' => 99]);
+        $this->release('No verdict', ['completion' => 80]);
+
+        $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
+        $above = $this->browserRow($response->getContent(), 'Above target');
+        $this->assertStringContainsString('99%', $above);
+        $this->assertStringNotContainsString('Repair Attempt', $above);
+        $this->assertStringNotContainsString('repair-badge', $above);
+        $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->browserRow($response->getContent(), 'No verdict'));
+    }
+
+    public function test_a_secondary_provider_still_reading_the_post_keeps_the_repair_chip_pending(): void
+    {
+        $this->configureSecondaryProvider();
+        ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test', 'active' => 1]);
+        $this->release('Above target', ['completion' => 99, 'groups_id' => 1, 'postdate' => '2026-09-12 23:30:00']);
+        $this->secondaryPosition(1, '2026-09-13 00:30:00');
+
+        $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
+        $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->browserRow($response->getContent(), 'Above target'));
     }
 
     public function test_release_facts_are_a_separate_block_after_the_complete_name(): void
@@ -557,5 +587,16 @@ final class ReleaseBrowserControllerTest extends TestCase
                 ->assertSee('data-release-table', false)->assertDontSee('data-release-cards', false)
                 ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
         }
+    }
+
+    /** The browser's table row for one release. */
+    private function browserRow(string $html, string $name): string
+    {
+        foreach (explode('<tr data-release-row', $html) as $row) {
+            if (str_contains($row, '>'.e($name).'</a>')) {
+                return strstr($row, '</tr>', true) ?: $row;
+            }
+        }
+        $this->fail('No row for '.$name);
     }
 }

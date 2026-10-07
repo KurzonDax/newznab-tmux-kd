@@ -183,10 +183,13 @@ final class DetailsControllerTest extends TestCase
 
     public function test_completion_and_repair_status_stay_in_the_header_above_the_tabs(): void
     {
-        $id = $this->detailRelease('Incomplete.Release', ['completion' => 93]);
+        $id = $this->detailRelease('Incomplete.Release', ['completion' => 80]);
         $url = '/details/'.md5('Incomplete.Release');
         $response = $this->actingAs($this->browserUser())->get($url)->assertOk();
-        $response->assertSeeInOrder(['data-details-header', '93%', 'Repair Attempt(s) Pending', 'class="details-tabs"'], false);
+        $response->assertSeeInOrder(['data-details-header', '80%', 'Repair Attempt(s) Pending', 'class="details-tabs"'], false);
+        DB::table('releases')->where('id', $id)->update(['completion' => 99]);
+        $this->get($url)->assertOk()->assertSeeInOrder(['data-details-header', '99%', 'class="details-tabs"'], false)
+            ->assertDontSee('Repair Attempt')->assertDontSee('repair-badge');
         DB::table('releases')->where('id', $id)->update(['completion' => 0]);
         $this->get($url)->assertOk()->assertSee('Completion not measured')->assertDontSee('Repair Attempt(s) Pending');
     }

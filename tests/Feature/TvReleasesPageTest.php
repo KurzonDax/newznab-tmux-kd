@@ -10,6 +10,7 @@ use App\Enums\ReleaseSort;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Settings;
 use App\Models\User;
+use App\Services\NNTP\NntpProviderPool;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\TvReleaseList;
 use App\Services\Releases\TvShowWall;
@@ -20,6 +21,7 @@ use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
+use Tests\Support\InteractsWithSecondaryProviders;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -30,6 +32,7 @@ final class TvReleasesPageTest extends TestCase
     use AssertsFollowWording;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
+    use InteractsWithSecondaryProviders;
     use IsolatedSqliteDatabase;
 
     private const HD = 5040;
@@ -64,7 +67,7 @@ final class TvReleasesPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres', 'video_genres',
@@ -84,6 +87,7 @@ final class TvReleasesPageTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+        NntpProviderPool::forgetConfiguredProviders();
         $this->resetGlobalComposerState();
         $this->tearDownAdminListPage();
         $this->tearDownIsolatedDatabase();
@@ -906,6 +910,78 @@ final class TvReleasesPageTest extends TestCase
         return DB::table('releases')->whereIn('id', $this->listedIds($response))->orderBy('name')->pluck('name')->all();
     }
 
+    public function test_the_chip_promises_recovery_only_while_an_engine_can_still_take_the_release(): void
+    {
+        $this->tv('Above target', ['completion' => 99]);
+        $this->tv('At target', ['completion' => 95]);
+        $this->tv('Nothing to rescan', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 10, 'totalpart' => 12]);
+        $this->tv('Rescan owed', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => null, 'totalpart' => 12]);
+        $this->tv('No verdict', ['completion' => 80]);
+        $this->tv('No NZB', ['completion' => 80, 'nzbstatus' => 0]);
+
+        $response = $this->page('/tv')->assertOk();
+        foreach (['Above target' => '99% complete', 'At target' => '95% complete', 'Nothing to rescan' => '80% complete', 'No NZB' => '80% complete'] as $name => $chip) {
+            $row = $this->rowOf($response, $name);
+            $this->assertMatchesRegularExpression('/>\s*'.preg_quote($chip, '/').'\s*</', $row, $name);
+            $this->assertStringNotContainsString('still repairing', $row, $name);
+            $this->assertStringContainsString('The site will not try to recover more of it."', $row, $name);
+        }
+        foreach (['Rescan owed', 'No verdict'] as $name) {
+            $row = $this->rowOf($response, $name);
+            $this->assertStringContainsString('80% complete · still repairing', $row, $name);
+            $this->assertStringContainsString('The site may still recover more of it."', $row, $name);
+        }
+        $this->assertStringNotContainsString('as complete as it will get', (string) $response->getContent());
+    }
+
+    public function test_the_repair_target_comes_from_the_completionpercent_setting(): void
+    {
+        Settings::query()->updateOrInsert(['name' => 'completionpercent'], ['value' => '99']);
+        $this->tv('Below the raised target', ['completion' => 97]);
+
+        $this->assertStringContainsString('97% complete · still repairing', $this->rowOf($this->page('/tv')->assertOk(), 'Below the raised target'));
+    }
+
+    public function test_a_secondary_provider_still_reading_the_post_holds_the_label_until_its_position_passes_it(): void
+    {
+        $this->configureSecondaryProvider();
+        ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.tv', 'active' => 1]);
+        $this->tv('Above target', ['completion' => 99, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
+        $this->tv('Nothing to rescan', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 10, 'totalpart' => 12, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
+        // delaytime is unset, so the window closes two hours after the post.
+        $this->secondaryPosition(1, '2026-09-25 09:00:00');
+
+        $response = $this->page('/tv')->assertOk();
+        $this->assertStringContainsString('99% complete · still repairing', $this->rowOf($response, 'Above target'));
+        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'Nothing to rescan'));
+
+        $this->secondaryPosition(1, '2026-09-25 11:00:00');
+        $response = $this->page('/tv')->assertOk();
+        $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $this->rowOf($response, 'Above target'));
+        $this->assertMatchesRegularExpression('/>\s*80% complete\s*</', $this->rowOf($response, 'Nothing to rescan'));
+    }
+
+    public function test_the_page_reads_the_target_the_delay_and_the_secondary_positions_once_however_many_rows(): void
+    {
+        $this->configureSecondaryProvider();
+        ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.tv', 'active' => 1]);
+        $this->secondaryPosition(1, '2026-09-25 09:00:00');
+        foreach (range(1, 12) as $index) {
+            $this->tv('Incomplete '.$index, ['completion' => 90 + $index % 9, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
+        }
+
+        $reads = $this->recordRepairReads();
+        $this->page('/tv')->assertOk();
+        $this->assertSame(['cursors' => 1, 'completionpercent' => 1, 'delaytime' => 1], $reads());
+
+        $this->configureProviders([['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']]);
+        $reads = $this->recordRepairReads();
+        $this->page('/tv')->assertOk();
+        $this->assertSame(['cursors' => 0, 'completionpercent' => 1, 'delaytime' => 0], $reads());
+    }
+
     /** @param array<string, mixed> $attributes */
     private function tv(string $name, array $attributes = []): int
     {
@@ -916,6 +992,8 @@ final class TvReleasesPageTest extends TestCase
     private function page(string $uri, ?User $user = null): TestResponse
     {
         $this->resetGlobalComposerState();
+        // Each render is a request of its own: nothing a request resolved survives into the next.
+        $this->app->forgetScopedInstances();
 
         return $this->actingAs($user ?? $this->user ??= $this->browserUser())->get($uri);
     }

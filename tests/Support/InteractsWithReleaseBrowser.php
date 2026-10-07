@@ -43,9 +43,10 @@ trait InteractsWithReleaseBrowser
             foreach (['name', 'searchname', 'guid', 'display_name', 'fromname', 'imdbid', 'additional_pp_claim_token', 'repair_outcome', 'rescan_outcome'] as $column) {
                 $table->string($column)->nullable();
             }
-            foreach (['categories_id', 'groups_id', 'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id'] as $column) {
+            foreach (['categories_id', 'groups_id', 'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'declaredfiles'] as $column) {
                 $table->integer($column)->nullable();
             }
+            $table->integer('nzbstatus')->default(1);
             foreach (['totalpart', 'grabs', 'comments', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus', 'videostatus', 'isrenamed'] as $column) {
                 $table->integer($column)->default(0);
             }
@@ -55,10 +56,7 @@ trait InteractsWithReleaseBrowser
             $table->dateTime('postdate')->nullable();
             $table->unique('guid');
         });
-        Schema::create('usenet_groups', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('name')->unique();
-        });
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id', 'name', 'active']);
         Schema::create('users_releases', function (Blueprint $table): void {
             $table->increments('id');
             $table->integer('users_id');

@@ -64,7 +64,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id',
             'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
@@ -322,6 +322,16 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $this->actingAs($this->user())->post($url, ['txtAddComment' => 'Works well.'])->assertRedirect($url.'#comments');
         $response = $this->details($id)->assertSee('Works well.');
         $this->assertSame('Comments (1)', $this->tabs((string) $response->getContent())[4]);
+    }
+
+    public function test_a_release_no_engine_will_take_reads_complete_without_a_repair_promise(): void
+    {
+        $id = $this->adult('Vixen.26.09.20.Nearly.Whole.XXX.1080p.MP4-GRP', ['completion' => 99]);
+
+        $chips = $this->between($this->details($id)->assertOk(), '<div class="tv-chips tv-details-chips">', '<div class="tv-chips tv-details-origin">');
+        $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $chips);
+        $this->assertStringNotContainsString('still repairing', $chips);
+        $this->assertStringContainsString('The site will not try to recover more of it."', $chips);
     }
 
     /** @param array<string, mixed> $attributes */

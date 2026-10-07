@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Enums\ReleaseRepairOutcome;
+use App\Services\Nzb\NzbService;
+use App\Services\Releases\IncompleteReleaseSweepQuery;
+use App\Services\Releases\LateHeaderMerger;
 
 /**
  * How a release's stored completion percentage is read on user-facing pages.
@@ -15,11 +18,10 @@ use App\Enums\ReleaseRepairOutcome;
  * the UI unless the number is shown, so the chips, the details rows, and the
  * threshold filter all read it through this one place.
  *
- * The repair state answers a narrower question than the repair engine's own
- * enum: has the release run out of recovery attempts? That is true only when
- * both machines — segment repair and header rescan — have reached a final
- * outcome, the same conjunction the deletion sweep's safe-to-delete invariant
- * uses.
+ * The repair state answers one question: can anything still add to this
+ * release? {@see self::stillRepairing()} is the only place the chips read it
+ * from, and it says yes only while a recovery engine would still select the
+ * release, or a secondary provider may still be reading its post.
  */
 final class ReleaseCompletion
 {
@@ -34,9 +36,8 @@ final class ReleaseCompletion
         100 => '100% only',
     ];
 
+    /** The legacy chip's words while a release is still repairing; it shows no chip otherwise. */
     public const string PENDING_LABEL = 'Repair Attempt(s) Pending';
-
-    public const string COMPLETE_LABEL = 'Repair Attempts Complete';
 
     /** `0` means the release was never measured, so no chip is shown for it. */
     public static function isMeasured(mixed $completion): bool
@@ -63,21 +64,37 @@ final class ReleaseCompletion
     }
 
     /**
-     * Have both recovery machines reached a final outcome?
+     * Is a recovery engine, or a secondary provider's late-header merge, still able to add to
+     * this release? The chip reads "still repairing" exactly while this is true.
      *
-     * Anything else — no verdict yet, a retry still owed, or only one machine
-     * finished — is still pending.
+     * Both engines select only releases with an NZB (`nzbstatus = 1`) measured above 0 and
+     * strictly below the repair target, and they are done with one once segment repair is final
+     * and the header re-scan is final or has nothing to look for: the deletion sweep's own
+     * definition of finished ({@see IncompleteReleaseSweepQuery}). A
+     * release at or above the target is never offered to either engine, so its outcomes stay
+     * null forever and must not read as pending. Independently of both, a secondary provider's
+     * late headers are merged into any incomplete release whose post its position has not yet
+     * passed ({@see LateHeaderMerger}).
+     *
+     * The target, `delaytime` and the secondary positions come from the request-scoped
+     * {@see ReleaseRepairingContext}; this class keeps no state of its own.
+     *
+     * @param  array<string, mixed>|object  $release  carrying `completion`, `repair_outcome`,
+     *                                                `rescan_outcome`, `declaredfiles`, `totalpart`,
+     *                                                `nzbstatus`, `groups_id` and `postdate`
      */
-    public static function repairAttemptsExhausted(mixed $repairOutcome, mixed $rescanOutcome): bool
+    public static function stillRepairing(array|object $release): bool
     {
-        return self::isFinalOutcome($repairOutcome) && self::isFinalOutcome($rescanOutcome);
-    }
+        $completion = self::value(self::column($release, 'completion'));
+        if ((int) self::column($release, 'nzbstatus') !== NzbService::NZB_ADDED || $completion <= 0.0 || $completion >= 100.0) {
+            return false;
+        }
+        $context = app(ReleaseRepairingContext::class);
+        if ($completion < $context->target() && ! self::recoveryExhausted($release)) {
+            return true;
+        }
 
-    public static function repairLabel(mixed $repairOutcome, mixed $rescanOutcome): string
-    {
-        return self::repairAttemptsExhausted($repairOutcome, $rescanOutcome)
-            ? self::COMPLETE_LABEL
-            : self::PENDING_LABEL;
+        return $context->secondaryStillReading(self::column($release, 'groups_id'), self::column($release, 'postdate'));
     }
 
     /**
@@ -88,6 +105,27 @@ final class ReleaseCompletion
         $value = is_numeric($threshold) ? (int) $threshold : 0;
 
         return \array_key_exists($value, self::THRESHOLDS) ? $value : 0;
+    }
+
+    /**
+     * The sweep's "finished" predicate: segment repair final, and the header re-scan final or
+     * with nothing to look for. "Nothing to re-scan" is a derived `declaredfiles` saying so,
+     * zero or no greater than the files held; null means the count was never derived and the
+     * release is still owed a re-scan visit.
+     *
+     * @param  array<string, mixed>|object  $release
+     */
+    private static function recoveryExhausted(array|object $release): bool
+    {
+        if (! self::isFinalOutcome(self::column($release, 'repair_outcome'))) {
+            return false;
+        }
+        if (self::isFinalOutcome(self::column($release, 'rescan_outcome'))) {
+            return true;
+        }
+        $declared = self::column($release, 'declaredfiles');
+
+        return $declared !== null && ((int) $declared <= 0 || (int) $declared <= (int) self::column($release, 'totalpart'));
     }
 
     private static function isFinalOutcome(mixed $outcome): bool
@@ -101,6 +139,12 @@ final class ReleaseCompletion
         }
 
         return ReleaseRepairOutcome::tryFrom($outcome)?->isFinal() ?? false;
+    }
+
+    /** @param array<string, mixed>|object $release */
+    private static function column(array|object $release, string $name): mixed
+    {
+        return is_array($release) ? ($release[$name] ?? null) : ($release->{$name} ?? null);
     }
 
     private static function value(mixed $completion): float

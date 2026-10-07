@@ -72,7 +72,7 @@ final class MovieReleasesPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'people', 'genres', 'movie_genres',
@@ -926,6 +926,19 @@ final class MovieReleasesPageTest extends TestCase
         $user->revokePermissionTo('view movies');
         $this->page('/movies', $user)->assertForbidden();
         $this->actingAs($user)->get('/movies/search?q=glass')->assertForbidden();
+    }
+
+    public function test_a_release_no_engine_will_take_reads_complete_without_a_repair_promise(): void
+    {
+        $this->movie('Above target', ['completion' => 99]);
+        $this->movie('No verdict', ['completion' => 80]);
+
+        $response = $this->page('/movies')->assertOk();
+        $above = $this->rowOf($response, 'Above target');
+        $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $above);
+        $this->assertStringNotContainsString('still repairing', $above);
+        $this->assertStringContainsString('The site will not try to recover more of it."', $above);
+        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'No verdict'));
     }
 
     /** The response after the one redirect a bare open answers with while filters are remembered (#881). */

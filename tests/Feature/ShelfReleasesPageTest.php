@@ -65,7 +65,7 @@ final class ShelfReleasesPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
@@ -441,6 +441,18 @@ final class ShelfReleasesPageTest extends TestCase
         $this->assertTrue(Cache::has('book_releases_value_counts'));
         $this->assertTrue(Cache::has('pc_releases_value_counts'));
         $this->assertFalse(Cache::has('adult_releases_value_counts'));
+    }
+
+    public function test_a_release_no_engine_will_take_reads_complete_without_a_repair_promise(): void
+    {
+        $this->book('Above target', ['completion' => 99]);
+        $this->book('No verdict', ['completion' => 80]);
+
+        $response = $this->page('/books')->assertOk();
+        $above = $this->rowOf($response, 'Above target');
+        $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $above);
+        $this->assertStringNotContainsString('still repairing', $above);
+        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'No verdict'));
     }
 
     private function categoryTitleQueries(string $uri): int
