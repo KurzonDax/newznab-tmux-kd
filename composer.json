@@ -80,6 +80,7 @@
     },
     "require-dev": {
         "barryvdh/laravel-ide-helper": "^3.7",
+        "brianium/paratest": "^7.20",
         "captainhook/captainhook": "^5.4",
         "captainhook/plugin-composer": "^5.2",
         "driftingly/rector-laravel": "^2.0",
