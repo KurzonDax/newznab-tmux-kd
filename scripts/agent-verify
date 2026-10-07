@@ -126,7 +126,10 @@ def final_checks(args):
             checked(filename, ['python3', 'tests/Shell/' + filename], 30, inputs, identity)
     changed_tests = [p for p in php if p.startswith('tests/') and p.endswith('Test.php')]
     behavioral_inputs = [p for p in paths if p in ['tests/TestCase.php', 'tests/CreatesApplication.php'] or p.startswith(('app/', 'routes/', 'tests/Support/', 'tests/Fixtures/', 'tests/mock_data/'))]
-    state = record_state(inputs) if changed_tests or behavioral_inputs else None
+    state = None
+    if changed_tests or behavioral_inputs:
+        prune_records()
+        state = record_state(inputs)
     # Final verification reuses explicitly selected focused measurements; never starts an unbounded full test file here.
     for path in changed_tests:
         patch = git('diff', '--unified=0', args.base, '--', path)
@@ -141,8 +144,6 @@ def final_checks(args):
 
 
 def record_state(inputs):
-    """Read the inputs once per run; records are then compared without rereading them."""
-    prune_records(Path(git('rev-parse', '--git-path', 'agent-verification')))
     return git('branch', '--show-current'), content_digest(inputs)
 
 
@@ -156,18 +157,19 @@ def measurements(inputs, identity, test=None, state=None):
                 continue
             if data.get('success') is True and data['fingerprint'] == fingerprint(data['command'], identity, branch, content):
                 yield data
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError, KeyError, AttributeError):
             continue
 
 
-def prune_records(directory):
+def prune_records():
     """Remove focused records whose branch is gone; their fingerprint can never match again."""
-    live = set(git('for-each-ref', '--format=%(refname:short)', 'refs/heads').splitlines()) | {git('branch', '--show-current')}
+    directory = Path(git('rev-parse', '--git-path', 'agent-verification'))
+    live = set(git('for-each-ref', '--format=%(refname:short)', 'refs/heads').splitlines()) | {''}  # '' = detached HEAD
     for record in directory.glob('focused-*.json'):
         try:
             if json.loads(record.read_text()).get('branch') not in live:
                 record.unlink()
-        except (OSError, ValueError):
+        except (OSError, ValueError, AttributeError):
             continue
 
 

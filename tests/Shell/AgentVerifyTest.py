@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify successful-check reuse and invalidation through the command boundary."""
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,17 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@contextlib.contextmanager
+def temporary_checkout():
+    previous = os.getcwd()
+    with tempfile.TemporaryDirectory() as directory:
+        os.chdir(directory)
+        try:
+            yield Path(directory)
+        finally:
+            os.chdir(previous)
 
 
 class VerifyTest(unittest.TestCase):
@@ -139,7 +151,7 @@ if pathlib.Path('mutate').exists(): pathlib.Path('tests/ExampleTest.php').write_
         for path in ['tests/TestCase.php', 'tests/CreatesApplication.php']:
             with patch.dict(globals, changed=lambda base: [path], files=lambda: [path],
                             runtime_identity=lambda: 'fixture', git=lambda *a: '', checked=lambda *a: None,
-                            measurements=lambda *a: iter([])), patch('subprocess.run'):
+                            prune_records=lambda: None, measurements=lambda *a: iter([])), patch('subprocess.run'):
                 with self.assertRaisesRegex(ValueError, 'focused behavioral measurement'):
                     verifier['final_checks'](argparse.Namespace(mode='final', base='HEAD'))
         calls = []
@@ -221,71 +233,52 @@ if pathlib.Path('mutate').exists(): pathlib.Path('tests/ExampleTest.php').write_
                     patch.object(Path, 'read_bytes', counting):
                 verifier['final_checks'](argparse.Namespace(mode='final', base='HEAD'))
             return len(reads)
-        return tests, record, final, store, verifier
+        return tests, record, final, store
 
     def test_final_reads_inputs_independently_of_records_for_other_tests(self):
-        previous = os.getcwd()
         counts = []
-        try:
-            for others in [0, 40]:
-                with tempfile.TemporaryDirectory() as directory:
-                    root = Path(directory)
-                    os.chdir(root)
-                    tests, record, final, store, verifier = self.final_fixture(root)
-                    branch = 'issue/1'
-                    for index, test in enumerate(tests):
-                        record(test, f'own-{index}', branch=branch)
-                    for index in range(others):
-                        record(f'tests/Other{index}Test.php', f'other-{index}', branch=branch)
-                    counts.append(final())
-        finally:
-            os.chdir(previous)
+        for others in [0, 40]:
+            with temporary_checkout() as root:
+                tests, record, final, store = self.final_fixture(root)
+                for index, test in enumerate(tests):
+                    record(test, f'own-{index}', branch='issue/1')
+                for index in range(others):
+                    record(f'tests/Other{index}Test.php', f'other-{index}', branch='issue/1')
+                counts.append(final())
         self.assertEqual(counts[0], counts[1])
 
     def test_final_still_refuses_unmeasured_tests_and_stale_records(self):
-        previous = os.getcwd()
-        try:
-            with tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                os.chdir(root)
-                tests, record, final, store, verifier = self.final_fixture(root)
-                for index, test in enumerate(tests[:-1]):
-                    record(test, f'own-{index}', branch='issue/1')
-                with self.assertRaisesRegex(ValueError, 'requires a bounded focused run'):
-                    final()
-                record(tests[-1], 'own-last', branch='issue/1')
+        with temporary_checkout() as root:
+            tests, record, final, store = self.final_fixture(root)
+            for index, test in enumerate(tests[:-1]):
+                record(test, f'own-{index}', branch='issue/1')
+            with self.assertRaisesRegex(ValueError, 'requires a bounded focused run'):
                 final()
-                (root / 'app/Thing.php').write_text('<?php\n// edited after the focused run\n')
-                with self.assertRaisesRegex(ValueError, 'requires a bounded focused run'):
-                    final()
-                for path in tests:
-                    subprocess.run(['git', 'checkout', '-q', 'HEAD', '--', path], cwd=root, check=True)
-                with self.assertRaisesRegex(ValueError, 'focused behavioral measurement'):
-                    final()
-                record('tests/AnyTest.php', 'behavioral', branch='issue/1')
+            record(tests[-1], 'own-last', branch='issue/1')
+            final()
+            (root / 'app/Thing.php').write_text('<?php\n// edited after the focused run\n')
+            with self.assertRaisesRegex(ValueError, 'requires a bounded focused run'):
                 final()
-        finally:
-            os.chdir(previous)
+            for path in tests:
+                subprocess.run(['git', 'checkout', '-q', 'HEAD', '--', path], cwd=root, check=True)
+            with self.assertRaisesRegex(ValueError, 'focused behavioral measurement'):
+                final()
+            record('tests/AnyTest.php', 'behavioral', branch='issue/1')
+            final()
 
     def test_records_that_can_never_match_again_are_pruned(self):
-        previous = os.getcwd()
-        try:
-            with tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                os.chdir(root)
-                tests, record, final, store, verifier = self.final_fixture(root)
-                subprocess.run(['git', 'branch', 'issue/2'], cwd=root, check=True)
-                for index, test in enumerate(tests):
-                    record(test, f'own-{index}', branch='issue/1')
-                record('tests/OtherTest.php', 'other-live-branch', branch='issue/2')
-                record('tests/OtherTest.php', 'deleted-branch', branch='issue/gone')
-                record('tests/OtherTest.php', 'detached', branch='')
-                record('tests/OtherTest.php', 'old-format')
-                final()
-                remaining = {path.stem.removeprefix('focused-') for path in store.glob('focused-*.json')}
-                self.assertEqual({'own-0', 'own-1', 'own-2', 'other-live-branch'}, remaining)
-        finally:
-            os.chdir(previous)
+        with temporary_checkout() as root:
+            tests, record, final, store = self.final_fixture(root)
+            subprocess.run(['git', 'branch', 'issue/2'], cwd=root, check=True)
+            for index, test in enumerate(tests):
+                record(test, f'own-{index}', branch='issue/1')
+            record('tests/OtherTest.php', 'other-live-branch', branch='issue/2')
+            record('tests/OtherTest.php', 'detached', branch='')
+            record('tests/OtherTest.php', 'deleted-branch', branch='issue/gone')
+            record('tests/OtherTest.php', 'old-format')
+            final()
+            remaining = {path.stem.removeprefix('focused-') for path in store.glob('focused-*.json')}
+            self.assertEqual({'own-0', 'own-1', 'own-2', 'other-live-branch', 'detached'}, remaining)
 
     def test_mutating_check_cannot_cache_success_and_staged_mismatch_fails_hook(self):
         with tempfile.TemporaryDirectory() as directory:
