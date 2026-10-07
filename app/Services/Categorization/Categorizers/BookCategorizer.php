@@ -12,6 +12,32 @@ class BookCategorizer extends AbstractCategorizer
 {
     protected int $priority = 45;
 
+    private const string MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December';
+
+    private const string MONTH_ABBREVIATIONS = 'Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+
+    /** Well-known magazine titles that identify a magazine on their own. */
+    private const string MAGAZINE_TITLES = 'Forbes|Fortune|GQ|National[._ -]Geographic|Newsweek|Vogue|Wired|The[._ -]?Economist|New[._ -]?Yorker|Scientific[._ -]?American|Popular[._ -]?Mechanics|Cosmopolitan|Elle|Esquire|Vanity[._ -]?Fair|Rolling[._ -]?Stone|Entertainment[._ -]?Weekly|People|Playboy';
+
+    /** An issue or volume number: "Issue 12", "Volume 169", "Vol. 3", "No 45". */
+    private const string MAGAZINE_NUMBER_REGEX = '/\b(?:Issue|Volume|Vol|No|Nr)\.?\s*#?\d{1,4}\b/i';
+
+    /** The word "Magazine(s)" on its own, not inside a longer word such as "Photomagazine". */
+    private const string MAGAZINE_WORD_REGEX = '/(?:^|[^a-z])magazines?(?:[^a-z]|$)/i';
+
+    /**
+     * "<Title> - <date> <year>" ending the name, optionally followed by a container token.
+     * The date is "<Month>", "<Month> <day>", "<day> <Month>", a month range ("September-October",
+     * "26 September - 2 October"), a day range ("August 18 - 24", "12-18 August") or a season.
+     */
+    private const string DASH_DATE_SUFFIX_REGEX = '/\s[-–—]\s*(?:(?:\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?\s+)?(?:'.self::MONTHS.')(?:\s*[-–\/]\s*(?:\d{1,2}(?:st|nd|rd|th)?\s+)?(?:'.self::MONTHS.'))?(?:\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*[-–]\s*\d{1,2}(?:st|nd|rd|th)?)?)?,?|Spring|Summer|Fall|Autumn|Winter)\s+(?:19|20)\d{2}(?:\s+(?:nzb|rar|par2|free|vol\d{1,3}\s+\d{1,3}))?$/iu';
+
+    /** A month name with a year, with an optional day before or after the month: "September 28 2026", "11 August 2026", "Aug. 2026", "June-July 2026". */
+    private const string MONTH_YEAR_REGEX = '/(?:\b\d{1,2}(?:st|nd|rd|th)?\s+)?\b(?:'.self::MONTHS.'|'.self::MONTH_ABBREVIATIONS.')\.?(?:\s*[-–\/]\s*(?:'.self::MONTHS.'))?\s+(?:\d{1,2}(?:st|nd|rd|th)?,?\s+)?(?:19|20)\d{2}\b/i';
+
+    /** A season with a year: "Fall 2026". */
+    private const string SEASON_YEAR_REGEX = '/\b(?:Spring|Summer|Fall|Autumn|Winter)\s+(?:19|20)\d{2}\b/i';
+
     public function getName(): string
     {
         return 'Book';
@@ -85,7 +111,7 @@ class BookCategorizer extends AbstractCategorizer
         if ($result = $this->checkTechnical($name)) {
             return $result;
         }
-        if ($result = $this->checkMagazine($name)) {
+        if ($result = $this->checkMagazine($name, $context)) {
             return $result;
         }
         if ($result = $this->checkEbook($name)) {
@@ -132,10 +158,41 @@ class BookCategorizer extends AbstractCategorizer
         return null;
     }
 
-    protected function checkMagazine(string $name): ?CategorizationResult
+    /**
+     * The three magazine name shapes, as the categorizer and BookService both read them.
+     *
+     * The regexes work on the name as the pipeline delivers it: "_", "+" and
+     * dots between tokens have already become spaces. "magazine_word" needs a
+     * month or season with a year, or an issue or volume number, next to the
+     * word: a bare year is not enough, because a film ("Magazine Dreams 2023")
+     * and an album ("Magazine - Secondhand Daylight 1979") carry the word and
+     * a year too.
+     *
+     * @return 'magazine_word'|'magazine_dated_title'|'magazine_title_dated'|null
+     */
+    public static function magazineNameShape(string $name): ?string
     {
-        $magazines = 'Forbes|Fortune|GQ|National[._ -]Geographic|Newsweek|Vogue|Wired|The[._ -]?Economist|New[._ -]?Yorker|Scientific[._ -]?American|Popular[._ -]?Mechanics|Cosmopolitan|Elle|Esquire|Vanity[._ -]?Fair|Rolling[._ -]?Stone|Entertainment[._ -]?Weekly|People|Playboy';
-        $hasTitle = preg_match('/\b('.$magazines.')\b/i', $name) === 1;
+        $hasMagazineDate = preg_match(self::MONTH_YEAR_REGEX, $name) === 1
+            || preg_match(self::SEASON_YEAR_REGEX, $name) === 1;
+
+        if (preg_match(self::MAGAZINE_WORD_REGEX, $name) === 1
+            && ($hasMagazineDate || preg_match(self::MAGAZINE_NUMBER_REGEX, $name) === 1)) {
+            return 'magazine_word';
+        }
+        if (preg_match(self::DASH_DATE_SUFFIX_REGEX, $name) === 1) {
+            return 'magazine_dated_title';
+        }
+        if (preg_match('/\b(?:'.self::MAGAZINE_TITLES.')\b/i', $name) === 1
+            && preg_match(self::MONTH_YEAR_REGEX, $name) === 1) {
+            return 'magazine_title_dated';
+        }
+
+        return null;
+    }
+
+    protected function checkMagazine(string $name, ReleaseContext $context): ?CategorizationResult
+    {
+        $hasTitle = preg_match('/\b('.self::MAGAZINE_TITLES.')\b/i', $name) === 1;
         $hasIssueNumber = preg_match('/(?:^|[._ -])Issue[._ -]?\d{1,4}(?:$|[._ -,])/i', $name) === 1;
         $hasDateSignal = preg_match('/\b(?:19|20)\d{2}\b|(?:^|[._ -])(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[._ -]?(?:19|20)?\d{2}\b/i', $name) === 1;
         $hasFrequency = preg_match('/[._ -](Monthly|Weekly|Quarterly|Annual)[._ -]/i', $name) === 1;
@@ -147,6 +204,9 @@ class BookCategorizer extends AbstractCategorizer
             ($hasIssueNumber && ($hasDateSignal || $hasTitle || $hasIssueStyleTitle)) ||
             $hasMcnMagazineSignal) {
             return $this->matched(Category::BOOKS_MAGAZINES, 0.9, 'magazine_frequency');
+        }
+        if (! $context->hasAdultPublicationMarker() && ($shape = self::magazineNameShape($name)) !== null) {
+            return $this->matched(Category::BOOKS_MAGAZINES, 0.9, $shape);
         }
         if ($hasTitle) {
             return $this->matched(Category::BOOKS_MAGAZINES, 0.85, 'magazine_title');

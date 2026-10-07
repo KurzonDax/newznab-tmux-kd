@@ -12,6 +12,7 @@ use App\Models\BookInfo;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
+use App\Services\Categorization\Categorizers\BookCategorizer;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use App\Services\NameFixing\ReleaseUpdateService;
@@ -461,6 +462,7 @@ class BookService
             || (preg_match('/^MCN\b/i', $normalized) === 1
                 && preg_match('/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\b/i', $normalized) === 1
                 && preg_match('/\b\d{1,2}\b/', $normalized) === 1)
+            || BookCategorizer::magazineNameShape($releaseName) !== null
         ) && preg_match('/Part \d+/i', $normalized) !== 1;
 
         return new BookParseResult(
@@ -508,6 +510,14 @@ class BookService
 
         $candidate = trim($parsed->searchQuery());
         if ($candidate === '' || preg_match('/^[a-z0-9]+$|^([0-9]+ ){1,}$|Part \d+/i', $candidate)) {
+            return null;
+        }
+
+        // A magazine keeps its dated name: the readable rename strips the year
+        // and the next categorization pass would no longer see a magazine. The
+        // MCN title is the one rename that carries the year through.
+        if ($parsed->isMagazine
+            && ($parsed->year === null || ! str_contains($candidate, (string) $parsed->year))) {
             return null;
         }
 

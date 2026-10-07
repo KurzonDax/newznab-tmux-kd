@@ -6,6 +6,8 @@ namespace Tests\Unit\Services;
 
 use App\Services\BookService;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
+use App\Support\Data\BookParseResult;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class BookServiceTest extends TestCase
@@ -160,6 +162,59 @@ class BookServiceTest extends TestCase
         $this->assertTrue($parsed->isMagazine);
     }
 
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function magazineNameProvider(): array
+    {
+        return [
+            'word with month and year' => ['Magazine - Women’s Health UK – October 2026 nzb'],
+            'word with month and year and no dash' => ['Mece Magazine July 2026'],
+            'word with volume number' => ['Magazine - Australian Guitar – Volume 169 2026'],
+            'dash month day year' => ['Usa California Cabernets New classics Wine Spectator - November 15 2026'],
+            'dash month range year with container token' => ['Good Housekeeping USA - September-October 2026 nzb'],
+            'dash season year' => ['USA Cooking Light - 30-Minute Meals - Fall 2026'],
+            'dash day month year' => ['Amateur Photographer – 11 August 2026'],
+            'dash day month range year' => ['The Week UK - 26 September - 2 October 2026'],
+            'known title with month day year' => ['People USA Brad Angelina Kate William The Unstoppable September 28 2026'],
+            'word with dash month day year' => ['Magazine - Us Weekly - October 5 2026'],
+            'dash month year' => ['Food Wine USA - September 2026'],
+        ];
+    }
+
+    #[DataProvider('magazineNameProvider')]
+    public function test_magazine_names_are_flagged_and_never_renamed(string $name): void
+    {
+        $service = $this->makeService();
+
+        $parsed = $service->parseReleaseName($name, 'ebook');
+
+        $this->assertTrue($parsed->isMagazine, "Expected '{$name}' to be a magazine");
+        $this->assertNull($this->readableBookSearchName($service, $name, $parsed), "Expected no rename for '{$name}'");
+    }
+
+    public function test_mcn_magazine_keeps_its_year_preserving_readable_name(): void
+    {
+        $service = $this->makeService();
+        $name = 'MCN.April.22.2026.HYBRID.MAGAZINE.eBook-21A1';
+
+        $parsed = $service->parseReleaseName($name, 'ebook');
+
+        $this->assertTrue($parsed->isMagazine);
+        $this->assertSame('MCN - April 22, 2026', $this->readableBookSearchName($service, $name, $parsed));
+    }
+
+    public function test_ordinary_ebook_still_gets_a_readable_search_name(): void
+    {
+        $service = $this->makeService();
+        $name = 'Eric.Evans - Domain.Driven.Design 978-0321125217 RETAIL EPUB';
+
+        $parsed = $service->parseReleaseName($name, 'ebook');
+
+        $this->assertFalse($parsed->isMagazine);
+        $this->assertSame('Eric Evans Domain Driven Design', $this->readableBookSearchName($service, $name, $parsed));
+    }
+
     public function test_parse_release_name_marks_mcn_hybrid_magazine_as_magazine(): void
     {
         $service = $this->makeService();
@@ -187,5 +242,16 @@ class BookServiceTest extends TestCase
 
         $this->assertTrue($parsed->isMagazine);
         $this->assertStringStartsWith('MCN', $parsed->title);
+    }
+
+    private function readableBookSearchName(BookService $service, string $name, BookParseResult $parsed): ?string
+    {
+        $method = new \ReflectionMethod(BookService::class, 'determineReadableBookSearchName');
+        $method->setAccessible(true);
+
+        /** @var string|null $result */
+        $result = $method->invoke($service, $name, $parsed);
+
+        return $result;
     }
 }
