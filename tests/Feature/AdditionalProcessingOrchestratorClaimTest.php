@@ -153,9 +153,10 @@ class AdditionalProcessingOrchestratorClaimTest extends TestCase
     {
         DB::table('categories')->insert(['id' => 1]);
         DB::table('releases')->insert($this->releaseRow());
+        config(['nntmux_settings.covers_path' => $this->makeTempDirectory('nntmux-timeout-settle-covers')]);
         $releaseManager = new ReleaseFileManager(
             $this->makeConfig(),
-            Mockery::mock(ReleaseImageService::class),
+            new ReleaseImageService,
             Mockery::mock(NfoService::class),
             Mockery::mock(NzbService::class),
             Mockery::mock(NameFixingService::class),
