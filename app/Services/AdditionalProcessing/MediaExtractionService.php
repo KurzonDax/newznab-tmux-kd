@@ -147,10 +147,8 @@ class MediaExtractionService
         }
 
         // Duration floor: a starved extraction degrades to "no video preview"
-        // rather than a seconds-long tease behind the play chip. An unreadable
-        // duration is not "below the floor" and stores normally.
+        // rather than a seconds-long tease behind the play chip.
         if ($this->config->clipMinimumSeconds > 0
-            && $clip->durationSeconds !== null
             && $clip->durationSeconds < $this->config->clipMinimumSeconds
         ) {
             File::delete($clip->path);

@@ -10,7 +10,7 @@ final readonly class VideoClipEncodeResult
         public string $path,
         public string $extension,
         public string $mime,
-        public ?int $durationSeconds,
+        public int $durationSeconds,
         public int $bytes,
     ) {}
 }

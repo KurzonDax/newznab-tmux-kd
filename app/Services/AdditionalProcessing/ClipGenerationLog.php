@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 final class ClipGenerationLog
 {
     /**
-     * @param  array<string, int|string>  $context
+     * @param  array<string, bool|int|string|null>  $context
      */
     public static function declined(
         string $releaseGuid,

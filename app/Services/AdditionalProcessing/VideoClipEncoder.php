@@ -46,6 +46,8 @@ class VideoClipEncoder
         'webm' => 'video/webm',
     ];
 
+    private const string VIDEO_STREAM_PATTERN = '/Stream #\d+:\d+[^\r\n]*?: Video: ([a-z0-9]+)/i';
+
     /**
      * @var Closure(list<string>, int): string
      */
@@ -121,16 +123,21 @@ class VideoClipEncoder
             try {
                 $processOutput = ($this->commandRunner)($hardwareCommand, $timeoutSeconds);
                 if ($this->isNonEmptyOutput($outputPath)) {
-                    return $this->encodeResult($outputPath, $container, $ffmpegBinary, $timeoutSeconds);
-                }
+                    $probe = $this->probeOutput($outputPath, $ffmpegBinary, $timeoutSeconds);
+                    if ($probe['video_stream'] && $probe['duration_seconds'] !== null) {
+                        return $this->encodeResult($outputPath, $container, $probe['duration_seconds']);
+                    }
 
-                $diagnostic = $this->sanitizedProcessOutput($processOutput);
-                $this->logHardwareFailure(
-                    $releaseGuid,
-                    $hardwareEncoder,
-                    'empty_output',
-                    $diagnostic === null ? [] : ['process_output' => $diagnostic],
-                );
+                    $this->logHardwareFailure($releaseGuid, $hardwareEncoder, 'unplayable_output');
+                } else {
+                    $diagnostic = $this->sanitizedProcessOutput($processOutput);
+                    $this->logHardwareFailure(
+                        $releaseGuid,
+                        $hardwareEncoder,
+                        'empty_output',
+                        $diagnostic === null ? [] : ['process_output' => $diagnostic],
+                    );
+                }
             } catch (Throwable $exception) {
                 $diagnostic = $this->sanitizedExceptionDiagnostic($exception);
                 $this->logHardwareFailure(
@@ -192,7 +199,23 @@ class VideoClipEncoder
             return null;
         }
 
-        return $this->encodeResult($outputPath, $container, $ffmpegBinary, $timeoutSeconds);
+        // A Clip is only what the player can play: an MP4 shell with no
+        // stream, or an audio-only output, is declined like an empty one.
+        $probe = $this->probeOutput($outputPath, $ffmpegBinary, $timeoutSeconds);
+        if (! $probe['video_stream'] || $probe['duration_seconds'] === null) {
+            @unlink($outputPath);
+            $this->logDeclinedEncode(
+                $releaseGuid,
+                $unsafeVideoCodec,
+                $unsafeAudioCodec,
+                ClipGenerationDeclineReason::OutputUnplayable,
+                $probe,
+            );
+
+            return null;
+        }
+
+        return $this->encodeResult($outputPath, $container, $probe['duration_seconds']);
     }
 
     private function resolveHardwareEncoder(string $releaseGuid): ?ClipHardwareEncoder
@@ -310,17 +333,13 @@ class VideoClipEncoder
         return is_file($outputPath) && filesize($outputPath) > 0;
     }
 
-    private function encodeResult(
-        string $outputPath,
-        string $container,
-        string $ffmpegBinary,
-        int $timeoutSeconds,
-    ): VideoClipEncodeResult {
+    private function encodeResult(string $outputPath, string $container, int $durationSeconds): VideoClipEncodeResult
+    {
         return new VideoClipEncodeResult(
             path: $outputPath,
             extension: $container,
             mime: self::CONTAINER_MIME_TYPES[$container],
-            durationSeconds: $this->probeDurationSeconds($outputPath, $ffmpegBinary, $timeoutSeconds),
+            durationSeconds: $durationSeconds,
             bytes: (int) filesize($outputPath),
         );
     }
@@ -329,7 +348,7 @@ class VideoClipEncoder
      * An unsafe codec is the causal decline when its fallback cannot produce a
      * Clip; otherwise report the mechanical failure of the stream-copy path.
      *
-     * @param  array<string, int|string>  $context
+     * @param  array<string, bool|int|string|null>  $context
      */
     private function logDeclinedEncode(
         string $releaseGuid,
@@ -381,7 +400,7 @@ class VideoClipEncoder
             return null;
         }
 
-        if (preg_match('/Stream #\d+:\d+[^\r\n]*?: Video: ([a-z0-9]+)/i', $output, $video) !== 1) {
+        if (preg_match(self::VIDEO_STREAM_PATTERN, $output, $video) !== 1) {
             return null;
         }
 
@@ -393,7 +412,13 @@ class VideoClipEncoder
         return ['video' => strtolower($video[1]), 'audio' => $audio];
     }
 
-    private function probeDurationSeconds(string $path, string $ffmpegBinary, int $timeoutSeconds): ?int
+    /**
+     * Whether `ffmpeg -i` reports a video stream in the encode output, and
+     * the output's duration in whole seconds (null when unreadable).
+     *
+     * @return array{video_stream: bool, duration_seconds: int|null}
+     */
+    private function probeOutput(string $path, string $ffmpegBinary, int $timeoutSeconds): array
     {
         try {
             $output = ($this->commandRunner)([
@@ -404,16 +429,20 @@ class VideoClipEncoder
                 $path,
             ], $timeoutSeconds);
         } catch (Throwable) {
-            return null;
+            return ['video_stream' => false, 'duration_seconds' => null];
         }
 
-        if (preg_match('/Duration:\s*(\d{1,3}):(\d{2}):(\d{2}(?:\.\d+)?)/i', $output, $matches) !== 1) {
-            return null;
+        $durationSeconds = null;
+        if (preg_match('/Duration:\s*(\d{1,3}):(\d{2}):(\d{2}(?:\.\d+)?)/i', $output, $matches) === 1) {
+            $durationSeconds = (int) round(((float) $matches[1] * 3600)
+                + ((float) $matches[2] * 60)
+                + (float) $matches[3]);
         }
 
-        return (int) round(((float) $matches[1] * 3600)
-            + ((float) $matches[2] * 60)
-            + (float) $matches[3]);
+        return [
+            'video_stream' => preg_match(self::VIDEO_STREAM_PATTERN, $output) === 1,
+            'duration_seconds' => $durationSeconds,
+        ];
     }
 
     /**

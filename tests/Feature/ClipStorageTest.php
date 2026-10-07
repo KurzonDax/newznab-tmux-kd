@@ -112,7 +112,7 @@ class ClipStorageTest extends TestCase
                     return "Stream #0:0: Video: mpeg4 (Advanced Simple Profile)\n  Stream #0:1: Audio: mp3, 48000 Hz";
                 }
 
-                return 'Duration: 00:00:24.00, start: 0.000000, bitrate: 2000 kb/s';
+                return "Duration: 00:00:24.00, start: 0.000000, bitrate: 2000 kb/s\n  Stream #0:0: Video: h264 (High)";
             },
             previewTargetSeconds: 24,
         );
@@ -297,19 +297,29 @@ class ClipStorageTest extends TestCase
         $this->assertSame(3, ReleaseVideoClip::query()->where('releases_id', $releaseId)->value('duration_seconds'));
     }
 
-    public function test_an_unreadable_duration_is_not_floored(): void
+    public function test_an_unreadable_duration_stores_no_clip(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
+        Log::spy();
         $service = $this->makeService(
             clipEnabled: true,
             diskHasRoom: true,
             encoderRunner: $this->safeH264Runner(duration: null),
         );
 
-        $this->assertTrue($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
+        $this->assertFalse($service->getVideo($this->tmpPath.'source.mkv', $this->tmpPath, 'clip-guid', 6010));
 
-        $this->assertFileExists($this->coversRoot.'/video/clip-guid.mp4');
-        $this->assertNull(ReleaseVideoClip::query()->where('releases_id', $releaseId)->value('duration_seconds'));
+        $this->assertNoVideoArtifacts($releaseId);
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'clip-guid',
+                'reason' => 'clip_output_unplayable',
+                'video_stream' => true,
+                'duration_seconds' => null,
+            ],
+        );
+        $this->assertSame([], glob($this->tmpPath.'clip_*') ?: []);
     }
 
     public function test_a_declined_clip_logs_no_error_trace_even_in_debug_mode(): void
@@ -417,9 +427,11 @@ class ClipStorageTest extends TestCase
                 return "Stream #0:0(und): Video: h264 (High)\n  Stream #0:1(und): Audio: aac (LC)";
             }
 
+            $video = "\n  Stream #0:0(und): Video: h264 (High)";
+
             return $duration === null
-                ? 'Input #0, mov,mp4, from clip: no duration line'
-                : 'Duration: '.$duration.', start: 0.000000, bitrate: 5000 kb/s';
+                ? 'Input #0, mov,mp4, from clip: no duration line'.$video
+                : 'Duration: '.$duration.', start: 0.000000, bitrate: 5000 kb/s'.$video;
         };
     }
 }
