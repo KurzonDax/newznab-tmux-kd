@@ -262,6 +262,83 @@ class GroupForcedRootCategorizationTest extends TestCase
         $this->assertSame('clip_hd_studio_date', $result['debug']['matched_by']);
     }
 
+    public function test_a_dated_non_adult_magazine_escapes_a_forced_xxx_root(): void
+    {
+        $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'USA Us Weekly - September 21 2026');
+
+        $this->assertSame(Category::BOOKS_MAGAZINES, $result['categories_id']);
+        $this->assertSame('magazine_forced_root_escape', $result['debug']['matched_by']);
+        $this->assertSame(0.9, $result['debug']['final_confidence']);
+        $this->assertSame(
+            [Category::XXX_ROOT, 'magazine_frequency'],
+            [
+                $result['debug']['categorizer_details']['root_category_id'],
+                $result['debug']['categorizer_details']['organic_match'],
+            ],
+        );
+    }
+
+    public function test_a_dated_non_adult_magazine_escapes_a_forced_root_from_an_associated_group(): void
+    {
+        $this->assertSame(
+            Category::BOOKS_MAGAZINES,
+            $this->categorize(self::PLAIN_GROUP_ID, 'USA Us Weekly - September 21 2026', [
+                self::PLAIN_GROUP_ID,
+                self::FORCED_GROUP_ID,
+            ]),
+        );
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function magazineThatStaysForcedProvider(): array
+    {
+        return [
+            'nude photo magazine' => ['Nude Magazine - Issue 61 - Special Issue 2026'],
+            'adult photomagazine' => ['Magazine - AI Sexy Beach Girls Adult Photomagazine with 200 Pictures – Issue 2 2026'],
+            'adult magazine brand' => ['Playboy USA Monthly - Issue 12 2026'],
+            'bare title below the escape floor' => ['People USA Special Edition'],
+        ];
+    }
+
+    #[DataProvider('magazineThatStaysForcedProvider')]
+    public function test_adult_or_bare_title_magazines_stay_in_the_forced_root(string $releaseName): void
+    {
+        $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, $releaseName);
+
+        $this->assertSame(Category::XXX_OTHER, $result['categories_id']);
+        $this->assertSame('group_forced_root', $result['debug']['matched_by']);
+        $this->assertSame(
+            Category::BOOKS_MAGAZINES,
+            $result['debug']['all_results']['GroupForcedRoot']['suppressed']['category_id'],
+        );
+    }
+
+    public function test_an_ambiguous_adult_word_alone_does_not_block_the_magazine_escape(): void
+    {
+        $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'Private Eye - Issue 1630 2026');
+
+        $this->assertSame(Category::BOOKS_MAGAZINES, $result['categories_id']);
+        $this->assertSame('magazine_forced_root_escape', $result['debug']['matched_by']);
+        $this->assertSame('magazine_frequency', $result['debug']['categorizer_details']['organic_match']);
+    }
+
+    public function test_the_magazine_escape_applies_to_every_forced_root(): void
+    {
+        $result = $this->categorizeWithDebug(self::MUSIC_FORCED_GROUP_ID, 'Mojo Monthly - Issue 395 2026');
+
+        $this->assertSame(Category::BOOKS_MAGAZINES, $result['categories_id']);
+        $this->assertSame('magazine_forced_root_escape', $result['debug']['matched_by']);
+        $this->assertSame(
+            [Category::MUSIC_ROOT, 'magazine_frequency'],
+            [
+                $result['debug']['categorizer_details']['root_category_id'],
+                $result['debug']['categorizer_details']['organic_match'],
+            ],
+        );
+    }
+
     public function test_a_more_specific_category_in_the_forced_root_is_kept(): void
     {
         $result = $this->categorizeWithDebug(self::FORCED_GROUP_ID, 'Brazzers.24.01.01.Name.XXX.1080p.MP4-XXX');

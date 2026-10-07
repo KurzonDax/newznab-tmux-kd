@@ -375,6 +375,31 @@ class XxxCategorizationTest extends TestCase
     }
 
     /**
+     * @return array<string, array{0: string, 1: bool}>
+     */
+    public static function adultPublicationMarkerProvider(): array
+    {
+        return [
+            'magazine 18 after the extractor dropped the plus' => ['Magazine 18 - FHM South Africa – September 2026', true],
+            '18 ampersand with no other marker' => ['EFG Presents 18 & Purely Legal', true],
+            'erotic magazine with 18 ampersand' => ['Erotic Magazine - EFG Presents 18 & Purely Legal', true],
+            'adult magazine brand' => ['Playboy USA Monthly - Issue 12 2026', true],
+            'weekly news magazine' => ['USA Us Weekly - September 21 2026', false],
+            'health magazine' => ['Magazine - Women’s Health UK – October 2026', false],
+            'day range starting on the 18th' => ['TV Guide Magazine - August 18 - 24 2026', false],
+            'ambiguous adult word alone' => ['Private Eye - Issue 1630 2026', false],
+        ];
+    }
+
+    #[DataProvider('adultPublicationMarkerProvider')]
+    public function test_adult_publication_marker_separates_adult_from_general_interest_magazines(string $releaseName, bool $expected): void
+    {
+        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0, groupName: 'alt.binaries.multimedia');
+
+        $this->assertSame($expected, $context->hasAdultPublicationMarker(), "Wrong adult publication marker for: {$releaseName}");
+    }
+
+    /**
      * @return array<string, array{0: string}>
      */
     public static function lowResolutionClipProvider(): array
