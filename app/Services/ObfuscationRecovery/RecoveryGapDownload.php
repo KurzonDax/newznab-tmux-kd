@@ -150,11 +150,11 @@ final class RecoveryGapDownload
 
     private function finish(RecoveryWorkClaim $claim, string $outcome): string
     {
-        $finished = DB::transaction(function () use ($claim, $outcome): string {
+        $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
+        $finished = DB::transaction(function () use ($claim, $outcome, $frontier): string {
             if (! app(RecoveryWork::class)->complete($claim, $outcome)) {
                 return 'obsolete';
             }
-            $frontier = $claim->purpose === RecoveryFrontierRebuild::PURPOSE;
             if (! $frontier) {
                 (new RecoveryReferences)->release('bundle', (string) $claim->bundleId);
             }
@@ -163,7 +163,7 @@ final class RecoveryGapDownload
 
             return $outcome;
         }, 1);
-        if ($finished === $outcome && $claim->purpose !== RecoveryFrontierRebuild::PURPOSE) {
+        if ($finished === $outcome && ! $frontier) {
             $this->discardListings($claim);
         }
 
@@ -191,8 +191,8 @@ final class RecoveryGapDownload
                     $retention->discardArtifact($receipt['artifact']);
                 }
             }
-        } catch (\Throwable $e) {
-            Log::warning('Recovery gap listing cleanup deferred to retention.', ['bundle_id' => $claim->bundleId, 'reason' => substr($e->getMessage(), 0, 200)]);
+        } catch (\Throwable $exception) {
+            Log::warning('Recovery gap listing cleanup deferred to retention.', ['bundle_id' => $claim->bundleId, 'reason' => substr($exception->getMessage(), 0, 200)]);
         }
     }
 
