@@ -11,6 +11,7 @@ use App\Services\StatusProbes\MusicBrainzProbe;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 final class MusicBrainzProbeTest extends TestCase
@@ -47,7 +48,7 @@ final class MusicBrainzProbeTest extends TestCase
     {
         Http::fake(function (Request $request) {
             if (str_starts_with($request->url(), 'https://mirror.test/ws/2/')) {
-                return Http::response(['recording-count' => 0, 'recording-offset' => 0, 'recordings' => []]);
+                return Http::response(['created' => '2026-08-30T12:00:00.000Z', 'count' => 0, 'offset' => 0, 'recordings' => []]);
             }
 
             return Http::response('<p>Last replication packet received at 2026-08-29T12:00:00Z</p>');
@@ -75,6 +76,29 @@ final class MusicBrainzProbeTest extends TestCase
         $this->assertStringContainsString('HTTP 503', $result->reason);
     }
 
+    /** @return array<string, array{array<string, mixed>}> */
+    public static function unexpectedHealthResponses(): array
+    {
+        return [
+            'browse shape without count' => [['recording-count' => 0, 'recording-offset' => 0, 'recordings' => []]],
+            'search shape without recordings' => [['created' => '2026-08-30T12:00:00.000Z', 'count' => 0, 'offset' => 0]],
+        ];
+    }
+
+    /** @param array<string, mixed> $payload */
+    #[DataProvider('unexpectedHealthResponses')]
+    public function test_a_response_that_is_not_a_recording_search_is_an_unexpected_health_response(array $payload): void
+    {
+        config(['music-identity.musicbrainz.replication_status_url' => null]);
+        Http::fake(['*' => Http::response($payload)]);
+
+        $result = app(MusicBrainzProbe::class)->probe();
+
+        $this->assertFalse($result->ok);
+        $this->assertSame(IncidentImpactEnum::Major, $result->impact);
+        $this->assertSame('MusicBrainz returned an unexpected health response', $result->reason);
+    }
+
     public function test_public_probe_requests_share_pacing_with_gateway_traffic(): void
     {
         config([
@@ -88,7 +112,7 @@ final class MusicBrainzProbeTest extends TestCase
                 return Http::response($this->fixture('recording-lookup.json'));
             }
 
-            return Http::response(['recording-count' => 0, 'recording-offset' => 0, 'recordings' => []]);
+            return Http::response(['created' => '2026-08-30T12:00:00.000Z', 'count' => 0, 'offset' => 0, 'recordings' => []]);
         });
 
         app(HttpMusicBrainzGateway::class)->candidatesFor(new RecordingQuery(
