@@ -15,6 +15,7 @@ use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzConfigurationException;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
+use App\Services\MusicIdentity\Support\MusicIdentityValueNormalizer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
@@ -976,12 +977,12 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         }
 
         $isrc = $identifiers['isrc'] ?? null;
-        if ($isrc !== null && preg_match('/^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/D', (string) $isrc) !== 1) {
+        if ($isrc !== null && preg_match(MusicIdentityValueNormalizer::ISRC_PATTERN, (string) $isrc) !== 1) {
             throw new \InvalidArgumentException('isrc must be a valid 12-character ISRC.');
         }
 
         $discId = $identifiers['discId'] ?? null;
-        if ($discId !== null && preg_match('/^[A-Za-z0-9._-]{28}$/D', (string) $discId) !== 1) {
+        if ($discId !== null && preg_match(MusicIdentityValueNormalizer::DISC_ID_PATTERN, (string) $discId) !== 1) {
             throw new \InvalidArgumentException('discId must be a valid 28-character MusicBrainz Disc ID.');
         }
     }

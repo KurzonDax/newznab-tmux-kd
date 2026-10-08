@@ -17,6 +17,7 @@ use App\Services\MusicIdentity\DTO\CandidatePool;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Evidence\AudioEvidenceSetFactory;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
+use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
@@ -29,9 +30,11 @@ use Illuminate\Database\Connectors\SQLiteConnector;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\SQLiteConnection;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mockery\MockInterface;
@@ -325,6 +328,33 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertNull($resolved->last_operational_error);
         $this->assertNull($resolved->next_attempt_at);
         $this->assertNotNull($resolved->decided_at);
+    }
+
+    #[Test]
+    public function a_release_whose_only_identifier_is_a_cddb_disc_id_reaches_a_decision(): void
+    {
+        config([
+            'music-identity.musicbrainz.user_agent_contact' => '',
+            'music-identity.musicbrainz.retry.attempts' => 1,
+            'music-identity.musicbrainz.retry.backoff_milliseconds' => 0,
+        ]);
+        Http::fake(['*' => Http::response([
+            'count' => 0,
+            'offset' => 0,
+            'recordings' => [],
+            'releases' => [],
+        ])]);
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $evidence->tracks()->firstOrFail()->update(['disc_id_like' => '9a0bc70c']);
+
+        $identification = $this->worker(app(MusicCandidateGenerator::class))->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame(IdentificationStatus::Unresolved, $identification->state);
+        $this->assertNull($identification->last_operational_error);
+        $this->assertNotNull($identification->decided_at);
+        Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), 'discid'));
     }
 
     #[Test]

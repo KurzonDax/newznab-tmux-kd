@@ -63,9 +63,9 @@ final class MusicBrainzProbe implements ServiceProbeInterface
                 return $this->failed($elapsed, 'MusicBrainz returned invalid JSON: '.$exception->getMessage());
             }
             if (! is_array($payload)
-                || ! isset($payload['recording-count'], $payload['recording-offset'], $payload['recordings'])
-                || ! is_int($payload['recording-count'])
-                || ! is_int($payload['recording-offset'])
+                || ! isset($payload['count'], $payload['offset'], $payload['recordings'])
+                || ! is_int($payload['count'])
+                || ! is_int($payload['offset'])
                 || ! is_array($payload['recordings'])
                 || ! array_is_list($payload['recordings'])) {
                 return $this->failed($elapsed, 'MusicBrainz returned an unexpected health response');
