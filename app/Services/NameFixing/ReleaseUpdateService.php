@@ -33,6 +33,12 @@ class ReleaseUpdateService
 {
     public const DESCRIPTIVE_MEDIA_TITLE_METHOD = 'MediaInfo: Descriptive title';
 
+    /** The rename type of a name built from a release's own audio tags. */
+    public const AUDIO_TAGS_TYPE = 'Audio tags, ';
+
+    /** The rename type of the canonical name of an accepted MusicBrainz album (issue #309). */
+    public const MUSICBRAINZ_TYPE = 'MusicBrainz, ';
+
     /**
      * Methods that offer a descriptive video filename from stored files or an archive listing.
      */
@@ -62,7 +68,8 @@ class ReleaseUpdateService
         'SRRDB, ',
         'PreDB FT Exact, ',
         'PreDB file match, ',
-        'Audio tags, ',
+        self::AUDIO_TAGS_TYPE,
+        self::MUSICBRAINZ_TYPE,
     ];
 
     /**
@@ -513,10 +520,12 @@ class ReleaseUpdateService
         ?int $categoryOverride = null,
         bool $preserveBookInfo = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
+        bool $preserveMusicInfo = false,
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
-        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $imdbId, $categoryOverride, $preserveBookInfo, $recoveryEvidence): void {
+        $nameSource = self::nameSource($type);
+        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
             $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
             if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                 return;
@@ -541,10 +550,15 @@ class ReleaseUpdateService
                     'predb_id' => $preId,
                     ...Release::searchNameValues($newTitle),
                     'is_trusted_name' => $trustedDonorName,
+                    'name_source' => $nameSource,
                 ];
 
                 if ($preserveBookInfo) {
                     unset($updateColumns['bookinfo_id']);
+                }
+
+                if ($preserveMusicInfo) {
+                    unset($updateColumns['musicinfo_id']);
                 }
 
                 if ($categoryOverride !== null) {
@@ -576,6 +590,7 @@ class ReleaseUpdateService
                         'predb_id' => $preId,
                         ...Release::searchNameValues($newTitle),
                         'is_trusted_name' => $trustedDonorName,
+                        'name_source' => $nameSource,
                         'iscategorized' => 1,
                         'categories_id' => $categoryOverride,
                     ], static fn (mixed $value, string $key): bool => $key !== 'categories_id' || $value !== null, ARRAY_FILTER_USE_BOTH));
@@ -596,6 +611,17 @@ class ReleaseUpdateService
     }
 
     /**
+     * The `releases.name_source` a rename of this type records: the type without its trailing
+     * separator ("Audio tags, " records "Audio tags"); null for an empty type.
+     */
+    public static function nameSource(string $type): ?string
+    {
+        $source = trim(rtrim($type, ' ,:'));
+
+        return $source === '' ? null : substr($source, 0, 64);
+    }
+
+    /**
      * Get the status columns to update for a given type.
      *
      * @return array<string, mixed>
@@ -610,7 +636,7 @@ class ReleaseUpdateService
             'XXX filenames, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_xxx' => 1],
             'PreDB FT Exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
             'PreDB exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'Audio tags, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_pp' => 1],
+            self::AUDIO_TAGS_TYPE, self::MUSICBRAINZ_TYPE => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_pp' => 1],
             'Book title, ' => ['isrenamed' => 1, 'iscategorized' => 1],
             'sorter, ' => ['isrenamed' => 1, 'iscategorized' => 1],
             'UID, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_uid' => 1],
@@ -694,7 +720,7 @@ class ReleaseUpdateService
         $this->performDatabaseUpdate(
             $release,
             $newTitle,
-            'Audio tags, ',
+            self::AUDIO_TAGS_TYPE,
             'Embedded media tags',
             true,
             0,
@@ -703,6 +729,84 @@ class ReleaseUpdateService
         );
 
         return $newTitle;
+    }
+
+    /**
+     * The canonical name of the release's accepted MusicBrainz album (issue #309). The release keeps
+     * its category and its legacy `musicinfo_id`; the name becomes trusted and sets `proc_pp`, so a
+     * later tag rename never replaces it. Returns the written name, or null when refused.
+     */
+    public function renameFromMusicIdentity(int $releaseId, string $newTitle): ?string
+    {
+        if ($releaseId === 0 || $newTitle === '') {
+            return null;
+        }
+
+        if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
+            return null;
+        }
+
+        $release = Release::query()->find($releaseId);
+        if ($release === null) {
+            return null;
+        }
+
+        // The name is whole as built: carrying a token over from the outgoing name would guess
+        // a component (a format, a year) the accepted identity and observed audio do not give.
+        $this->performDatabaseUpdate(
+            $release,
+            $newTitle,
+            self::MUSICBRAINZ_TYPE,
+            'Accepted MusicBrainz album',
+            true,
+            0,
+            null,
+            (int) $release->categories_id,
+            preserveMusicInfo: true,
+        );
+
+        return $newTitle;
+    }
+
+    /**
+     * Gives a release back the values a reverted MusicBrainz rename replaced (issue #309), as a
+     * guarded name write like the rename itself: the same identity policy checks, the name event
+     * with the category the release keeps, and the search re-sync. Returns whether it wrote.
+     *
+     * @param  array<string, scalar|null>  $columns  prior values, the search name among them
+     */
+    public function restoreFromMusicIdentity(int $releaseId, array $columns): bool
+    {
+        if ($releaseId === 0 || ! isset($columns['searchname'])) {
+            return false;
+        }
+        $columns = [...$columns, ...Release::searchNameValues((string) $columns['searchname'])];
+
+        $written = DB::transaction(function () use ($releaseId, $columns): bool {
+            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
+            if ($current === null || ! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId)) {
+                return false;
+            }
+            $category = (int) ($columns['categories_id'] ?? $current->categories_id);
+            Release::query()->where('id', $releaseId)->update($columns);
+
+            event(new ReleaseNameFixed(
+                $releaseId,
+                (string) $current->searchname,
+                (string) $columns['searchname'],
+                (int) $current->categories_id,
+                $current->groups_id,
+                (string) ($current->fromname ?? ''),
+                $category,
+            ));
+
+            return true;
+        });
+        if ($written) {
+            $this->searchSyncCoordinator->request($releaseId);
+        }
+
+        return $written;
     }
 
     public function renameFromBookMetadata(int $releaseId, string $newTitle): void

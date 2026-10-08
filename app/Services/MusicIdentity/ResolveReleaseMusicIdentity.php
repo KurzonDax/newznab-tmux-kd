@@ -18,6 +18,7 @@ use App\Services\MusicIdentity\Exceptions\LostMusicIdentityLease;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use App\Services\MusicIdentity\Persistence\MusicIdentitySynthesisLeaseManager;
+use App\Services\MusicIdentity\Rename\MusicRenameProjection;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -35,6 +36,7 @@ final readonly class ResolveReleaseMusicIdentity
         private MusicIdentityRetryPolicy $retryPolicy,
         private IdentificationDecisionStore $decisions,
         private AlbumCoverFetcher $covers,
+        private MusicRenameProjection $renames,
     ) {}
 
     /** @return list<object{id: string}> */
@@ -94,6 +96,26 @@ final readonly class ResolveReleaseMusicIdentity
             return $this->covers->backfill();
         } catch (\Throwable $exception) {
             Log::warning('Album cover catch-up failed.', ['exception' => $exception]);
+
+            return 0;
+        }
+    }
+
+    /**
+     * Once per `mus` pass: the canonical rename for current accepted albums with no rename record
+     * yet, already-accepted releases included, and the reversal of renames a newer decision
+     * replaced or withdrew (#309).
+     */
+    public function catchUpRenames(): int
+    {
+        if (! $this->configuration->active()) {
+            return 0;
+        }
+
+        try {
+            return $this->renames->catchUp();
+        } catch (\Throwable $exception) {
+            Log::warning('Music rename catch-up failed.', ['exception' => $exception]);
 
             return 0;
         }
@@ -162,6 +184,7 @@ final readonly class ResolveReleaseMusicIdentity
                     : null,
                 leaseToken: $workerToken,
             );
+            $this->projectRename($identification);
             $this->fetchCover($identification);
 
             return $identification;
@@ -197,6 +220,23 @@ final readonly class ResolveReleaseMusicIdentity
 
                 return null;
             }
+        }
+    }
+
+    /**
+     * A completed decision renames the release for an accepted album, or reverts the rename of the
+     * decision it replaced; rename work never changes or fails the persisted decision.
+     */
+    private function projectRename(ReleaseMusicIdentification $identification): void
+    {
+        if (! $identification->state->isTerminal()) {
+            return;
+        }
+
+        try {
+            $this->renames->project($identification->releases_id);
+        } catch (\Throwable $exception) {
+            Log::warning('Music rename projection failed.', ['identification_id' => $identification->id, 'exception' => $exception]);
         }
     }
 

@@ -596,8 +596,10 @@ class PostProcessRunner extends BaseRunner
             );
         }
 
-        // Album covers for current accepted albums still without a lookup outcome, after the
-        // bucket workers finish, so it runs even when no release awaits identification.
+        // Canonical renames and album covers for current accepted albums still without a rename
+        // record or a lookup outcome, after the bucket workers finish, so they run even when no
+        // release awaits identification.
+        $identityWorker->catchUpRenames();
         $identityWorker->catchUpCovers();
     }
 
