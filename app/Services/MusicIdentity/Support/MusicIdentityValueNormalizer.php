@@ -22,6 +22,26 @@ final class MusicIdentityValueNormalizer
             : null;
     }
 
+    /**
+     * Accepts the display form (`US-RC1-76-07839`) and returns the 12-character ISRC, or null when invalid.
+     */
+    public static function isrc(?string $value): ?string
+    {
+        $value = self::text($value === null ? null : str_replace(['-', ' '], '', $value), uppercase: true);
+
+        return $value !== null && preg_match('/^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/D', $value) === 1 ? $value : null;
+    }
+
+    /**
+     * Returns a 28-character MusicBrainz Disc ID, or null for anything else (such as an 8-character CDDB ID).
+     */
+    public static function discId(?string $value): ?string
+    {
+        $value = self::text($value);
+
+        return $value !== null && preg_match('/^[A-Za-z0-9._-]{28}$/D', $value) === 1 ? $value : null;
+    }
+
     public static function text(?string $value, bool $uppercase = false): ?string
     {
         $value = $value === null ? null : trim($value);

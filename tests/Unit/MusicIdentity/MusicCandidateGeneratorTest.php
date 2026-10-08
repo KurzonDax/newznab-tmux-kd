@@ -410,6 +410,57 @@ final class MusicCandidateGeneratorTest extends TestCase
     }
 
     #[Test]
+    public function malformed_disc_ids_and_isrcs_are_skipped_while_valid_identifiers_are_still_queried(): void
+    {
+        config([
+            'music-identity.candidate_generation.distinctive_track_evidence_limit' => 0,
+            'music-identity.candidate_generation.exact_identifier_limit' => 12,
+        ]);
+        $gateway = new EmptyCandidateGatewayFake;
+        $generator = new MusicCandidateGenerator($gateway);
+        $evidence = new AudioEvidenceSet(
+            evidenceId: 93,
+            evidenceHash: str_repeat('c', 64),
+            releaseTitle: 'Artist - Album',
+            albumTitle: null,
+            albumArtist: null,
+            releaseYear: null,
+            trackEvidence: [
+                new TrackEvidence(
+                    evidenceTrackId: 20,
+                    sourceKind: 'tag',
+                    sourceOrdinal: 1,
+                    rawFilename: '01 - Track.flac',
+                    recordingId: '33333333-3333-4333-8333-333333333333',
+                    isrc: 'us-rc1-76 07839',
+                    discId: '9a0bc70c',
+                    provenanceFamily: 'tag:20',
+                ),
+                new TrackEvidence(
+                    evidenceTrackId: 21,
+                    sourceKind: 'tag',
+                    sourceOrdinal: 2,
+                    rawFilename: '02 - Track.flac',
+                    isrc: 'NOT-AN-ISRC',
+                    discId: 'I5l9cCSFccLKFEKS.7wqSZAorPU-',
+                    provenanceFamily: 'tag:21',
+                ),
+            ],
+            trackEvidenceListComplete: false,
+        );
+
+        $generator->generate($evidence);
+
+        $normalizedQueries = array_map(
+            static fn (RecordingQuery $query): array => $query->normalized(),
+            $gateway->recordingQueries,
+        );
+        $this->assertSame(['USRC17607839'], array_values(array_filter(array_column($normalizedQueries, 'isrc'))));
+        $this->assertSame(['I5l9cCSFccLKFEKS.7wqSZAorPU-'], array_values(array_filter(array_column($normalizedQueries, 'discId'))));
+        $this->assertContains('33333333-3333-4333-8333-333333333333', array_column($normalizedQueries, 'recordingId'));
+    }
+
+    #[Test]
     public function rare_track_evidence_converges_on_one_bounded_hydrated_candidate(): void
     {
         config([

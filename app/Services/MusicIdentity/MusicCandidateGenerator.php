@@ -283,12 +283,12 @@ final class MusicCandidateGenerator implements CandidateGenerator
                 ),
                 $this->exactQuery(
                     CandidateSignalKind::Isrc,
-                    MusicIdentityValueNormalizer::text($trackEvidence->isrc, uppercase: true),
+                    MusicIdentityValueNormalizer::isrc($trackEvidence->isrc),
                     static fn (string $value): RecordingQuery => new RecordingQuery(isrc: $value),
                 ),
                 $this->exactQuery(
                     CandidateSignalKind::DiscId,
-                    MusicIdentityValueNormalizer::text($trackEvidence->discId),
+                    MusicIdentityValueNormalizer::discId($trackEvidence->discId),
                     static fn (string $value): RecordingQuery => new RecordingQuery(discId: $value),
                 ),
                 $this->exactQuery(
