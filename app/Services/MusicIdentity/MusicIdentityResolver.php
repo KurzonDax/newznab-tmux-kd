@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\MusicIdentity;
 
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
+use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateEvaluation;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
@@ -24,7 +25,7 @@ final readonly class MusicIdentityResolver
     public function __construct(
         private CandidateGenerator $candidateGenerator,
         private WholeReleaseAlignmentScorer $scorer = new WholeReleaseAlignmentScorer,
-        private string $algorithmVersion = 'music-identity-v1',
+        private string $algorithmVersion = 'music-identity-v2',
         private string $resolverVersion = 'resolver-v1',
         private string $normalizerVersion = 'normalizer-v1',
         private string $scorerVersion = 'whole-release-v1',
@@ -476,6 +477,7 @@ final readonly class MusicIdentityResolver
             normalizerVersion: $this->normalizerVersion,
             scorerVersion: $this->scorerVersion,
             policyVersion: $this->policyVersion,
+            acceptedText: $acceptedIdentity === null ? null : AcceptedMusicText::fromAcceptance($status, $best),
         );
     }
 

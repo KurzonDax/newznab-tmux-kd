@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Search\Support;
 
+use App\Services\MusicIdentity\CurrentMusicIdentityReader;
+use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Support\ReleaseSearchIndexDocument;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +40,20 @@ final class ReleaseIndexProjection
         $categoryName = $isSqlite
             ? "cp.title || ' > ' || c.title"
             : "CONCAT(cp.title, ' > ', c.title)";
+        $join = static fn (string ...$columns): string => $isSqlite
+            ? 'NULLIF(TRIM(COALESCE('.implode(", '') || ' ' || COALESCE(", $columns).", '')), '')"
+            : "NULLIF(CONCAT_WS(' ', ".implode(', ', $columns).'), \'\')';
+        // Text of the current accepted MusicBrainz decision (issue #308): an accepted album's
+        // title, aliases, artist credit and tracks; an accepted recording's title (as a track)
+        // and artist credit. Without one, album_title and artist stay the musicinfo text.
+        $albumStates = "'".IdentificationStatus::AcceptedReleaseGroup->value."', '".IdentificationStatus::AcceptedEdition->value."'";
+        $recordingState = "'".IdentificationStatus::AcceptedRecording->value."'";
+        $musicAlbumTitle = "COALESCE(CASE WHEN mbi.state IN ({$albumStates}) THEN "
+            .$join('mbi.accepted_title', 'NULLIF(mbi.accepted_edition_title, mbi.accepted_title)', 'mbi.accepted_aliases')
+            .' END, musicinfo.title)';
+        $musicTracks = "COALESCE(CASE WHEN mbi.state = {$recordingState} THEN mbi.accepted_title ELSE "
+            .$join('mbi.accepted_track_titles', 'mbi.accepted_track_artist_credits')
+            ." END, '')";
 
         return DB::table('releases as r')
             ->leftJoin('usenet_groups as g', 'g.id', '=', 'r.groups_id')
@@ -49,6 +65,12 @@ final class ReleaseIndexProjection
             })
             ->leftJoin('movieinfo as linked_movie', 'linked_movie.imdbid', '=', 'r.imdbid')
             ->leftJoin('musicinfo as musicinfo', 'musicinfo.id', '=', 'r.musicinfo_id')
+            ->leftJoin('release_music_identifications as mbi', function ($join): void {
+                [$current, $bindings] = CurrentMusicIdentityReader::currentIdentificationSql('r.id');
+                $join->on('mbi.releases_id', '=', 'r.id')
+                    ->whereIn('mbi.state', array_map(static fn (IdentificationStatus $state): string => $state->value, IdentificationStatus::accepted()))
+                    ->whereRaw("mbi.id = {$current}", $bindings);
+            })
             ->leftJoin('consoleinfo as consoleinfo', 'consoleinfo.id', '=', 'r.consoleinfo_id')
             ->leftJoin('gamesinfo as gamesinfo', 'gamesinfo.id', '=', 'r.gamesinfo_id')
             ->leftJoin('bookinfo as bookinfo', 'bookinfo.id', '=', 'r.bookinfo_id')
@@ -65,7 +87,8 @@ final class ReleaseIndexProjection
             ->leftJoinSub($mediaInfo, 'mdi', 'mdi.releases_id', '=', 'r.id')
             ->select([
                 'r.musicinfo_id', 'r.consoleinfo_id', 'r.gamesinfo_id', 'r.bookinfo_id',
-                'linked_movie.title as movie_title', 'v.title as show_title', 'musicinfo.title as album_title', 'musicinfo.artist',
+                'linked_movie.title as movie_title', 'v.title as show_title', DB::raw("{$musicAlbumTitle} AS album_title"), DB::raw('COALESCE(mbi.accepted_artist_credit, musicinfo.artist) AS artist'),
+                DB::raw("{$musicTracks} AS music_tracks"),
                 'consoleinfo.title as console_title', 'gamesinfo.title as game_title', 'bookinfo.title as book_title',
                 DB::raw("{$animeTitles} AS anime_titles"),
                 $isSqlite ? 'r.display_name' : DB::raw("LOWER(HEX(WEIGHT_STRING(COALESCE(NULLIF(TRIM(r.display_name), ''), r.searchname)))) AS sort_name"),

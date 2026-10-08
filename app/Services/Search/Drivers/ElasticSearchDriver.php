@@ -2929,6 +2929,10 @@ class ElasticSearchDriver implements SearchDriverInterface
                         'type' => 'cross_fields',
                         'operator' => 'and',
                     ];
+                    if ($criteria['music_text'] ?? false) {
+                        // API general search also matches the release's music text (#308).
+                        $multi['fields'] = [...self::RELEASE_TEXT_FIELDS, ...ReleaseSearchIndexDocument::musicTextFields()];
+                    }
                     if ($useFuzzy && $this->isFuzzyEnabled()) {
                         $multi['fuzziness'] = $this->getFuzzyConfig()['fuzziness'] ?? 'AUTO';
                     }

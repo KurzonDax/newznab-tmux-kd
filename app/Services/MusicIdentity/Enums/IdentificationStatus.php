@@ -15,6 +15,12 @@ enum IdentificationStatus: string
     case Conflicted = 'conflicted';
     case RetryableError = 'retryable_error';
 
+    /** @return list<self> the states that accept an identity (an album or a recording) */
+    public static function accepted(): array
+    {
+        return [self::AcceptedEdition, self::AcceptedReleaseGroup, self::AcceptedRecording];
+    }
+
     public function isTerminal(): bool
     {
         return ! in_array($this, [self::Pending, self::RetryableError], true);

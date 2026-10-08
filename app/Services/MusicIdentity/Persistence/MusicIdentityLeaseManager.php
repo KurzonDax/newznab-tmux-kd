@@ -22,7 +22,7 @@ final class MusicIdentityLeaseManager
     ): ?ReleaseMusicIdentification {
         return DB::transaction(function () use ($evidence, $workerToken): ?ReleaseMusicIdentification {
             $lockedEvidence = ReleaseAudioEvidence::query()->lockForUpdate()->findOrFail($evidence->id);
-            $algorithmVersion = (string) config('music-identity.algorithm_version', 'music-identity-v1');
+            $algorithmVersion = (string) config('music-identity.algorithm_version', 'music-identity-v2');
             $identification = ReleaseMusicIdentification::query()
                 ->where('releases_id', $lockedEvidence->releases_id)
                 ->where('evidence_hash', $lockedEvidence->evidence_hash)

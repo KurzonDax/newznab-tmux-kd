@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\MusicIdentity;
 
 use App\Enums\NzbParseFailure;
+use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
@@ -64,6 +65,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             'music-identity.retry.initial_seconds' => 60,
             'music-identity.retry.maximum_seconds' => 120,
         ]);
+        Search::spy(); // decision writes re-sync the release search document, which these tests do not build
         DB::extend('sqlite', static function (array $config): SQLiteConnection {
             $pdo = (new SQLiteConnector)->connect($config);
 
@@ -125,6 +127,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->migration('*_create_release_music_identification_tables.php')->up();
         $this->migration('*_create_release_music_synthesis_attempts_table.php')->up();
         $this->migration('*_create_music_cover_art_lookups_table.php')->up();
+        $this->migration('*_add_accepted_music_text_to_release_music_identifications.php')->up();
         config([
             'nntmux_settings.covers_path' => $this->makeTempDirectory('music-identity-covers'),
             'music-identity.cover_art.base_url' => 'https://caa.test',
@@ -539,7 +542,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             configuration: new MusicIdentityConfiguration,
             synthesizer: app(AudioEvidenceSynthesizer::class),
             evidenceFactory: new AudioEvidenceSetFactory,
-            resolver: new MusicIdentityResolver(candidateGenerator: $candidateGenerator),
+            resolver: new MusicIdentityResolver(candidateGenerator: $candidateGenerator, algorithmVersion: (string) config('music-identity.algorithm_version')),
             leases: new MusicIdentityLeaseManager,
             synthesisLeases: new MusicIdentitySynthesisLeaseManager($retryPolicy),
             retryPolicy: $retryPolicy,

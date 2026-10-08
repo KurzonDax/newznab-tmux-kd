@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\Feature\MusicIdentity;
 
+use App\Facades\Search;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
+use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
 use App\Services\MusicIdentity\DTO\CandidateSummary;
 use App\Services\MusicIdentity\DTO\DecisionReason;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
+use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Exceptions\LostMusicIdentityLease;
@@ -46,6 +49,8 @@ final class IdentificationDecisionStoreTest extends TestCase
             $table->char('evidence_hash', 64);
         });
         $this->identificationMigration()->up();
+        $this->migration('*_add_accepted_music_text_to_release_music_identifications.php')->up();
+        Search::spy();
 
         DB::table('releases')->insert(['id' => 10]);
         DB::table('release_audio_evidence')->insert([
@@ -185,6 +190,70 @@ final class IdentificationDecisionStoreTest extends TestCase
         (new IdentificationDecisionStore)->persist(10, $wrongEvidence, $this->decision('music-identity-v1'));
     }
 
+    #[Test]
+    public function an_accepted_album_stores_its_search_text_with_original_and_edition_dates_apart(): void
+    {
+        $text = new AcceptedMusicText(
+            scope: AcceptedIdentityScope::Edition,
+            title: 'Example Album',
+            editionTitle: 'Example Album (Remaster)',
+            aliases: ['Alias Album', 'Second Alias'],
+            artistCredit: 'Example Artist',
+            trackTitles: ['First Light', 'Last Light'],
+            trackArtistCredits: ['Example Artist', 'Guest Artist'],
+            originalReleaseDate: '1980-01-01',
+            editionReleaseDate: '2020-01-01',
+        );
+
+        $identification = (new IdentificationDecisionStore)->persist(10, $this->evidence(), $this->decision('music-identity-v1', acceptedText: $text));
+
+        $stored = ReleaseMusicIdentification::query()->findOrFail($identification->id);
+        $this->assertSame('Example Album', $stored->accepted_title);
+        $this->assertSame('Example Album (Remaster)', $stored->accepted_edition_title);
+        $this->assertSame("Alias Album\nSecond Alias", $stored->accepted_aliases);
+        $this->assertSame('Example Artist', $stored->accepted_artist_credit);
+        $this->assertSame("First Light\nLast Light", $stored->accepted_track_titles);
+        $this->assertSame("Example Artist\nGuest Artist", $stored->accepted_track_artist_credits);
+        $this->assertSame('1980-01-01', $stored->original_release_date);
+        $this->assertSame('2020-01-01', $stored->edition_release_date);
+    }
+
+    #[Test]
+    public function missing_text_components_and_dates_are_stored_as_absent(): void
+    {
+        $text = new AcceptedMusicText(scope: AcceptedIdentityScope::ReleaseGroup, title: 'Example Album');
+
+        $identification = (new IdentificationDecisionStore)->persist(10, $this->evidence(), $this->decision('music-identity-v1', acceptedText: $text));
+
+        $stored = ReleaseMusicIdentification::query()->findOrFail($identification->id);
+        $this->assertSame('Example Album', $stored->accepted_title);
+        foreach (['accepted_edition_title', 'accepted_aliases', 'accepted_artist_credit', 'accepted_track_titles', 'accepted_track_artist_credits', 'original_release_date', 'edition_release_date'] as $column) {
+            $this->assertNull($stored->{$column}, $column);
+        }
+    }
+
+    #[Test]
+    public function an_unaccepted_decision_stores_no_search_text(): void
+    {
+        $text = new AcceptedMusicText(scope: AcceptedIdentityScope::Edition, title: 'Candidate Album');
+
+        $identification = (new IdentificationDecisionStore)->persist(10, $this->evidence(), $this->decision('music-identity-v1', IdentificationStatus::NeedsReview, acceptedText: $text));
+
+        $this->assertNull(ReleaseMusicIdentification::query()->findOrFail($identification->id)->accepted_title);
+    }
+
+    #[Test]
+    public function every_decision_write_resyncs_the_release_search_document(): void
+    {
+        $store = new IdentificationDecisionStore;
+        $store->persist(10, $this->evidence(), $this->decision('music-identity-v1'));
+        $store->persist(10, $this->evidence(), $this->decision('music-identity-v2', IdentificationStatus::Unresolved));
+        Search::shouldHaveReceived('updateRelease')->with(10)->twice();
+
+        $store->persist(10, $this->evidence(), $this->decision('music-identity-v2'));
+        Search::shouldHaveReceived('updateRelease')->with(10)->twice();
+    }
+
     private function evidence(): AudioEvidenceSet
     {
         return new AudioEvidenceSet(
@@ -203,6 +272,7 @@ final class IdentificationDecisionStoreTest extends TestCase
         IdentificationStatus $status = IdentificationStatus::AcceptedEdition,
         int $candidateCount = 1,
         ?string $operationalError = null,
+        ?AcceptedMusicText $acceptedText = null,
     ): IdentificationDecision {
         $candidates = [];
         for ($rank = 1; $rank <= $candidateCount; $rank++) {
@@ -238,7 +308,19 @@ final class IdentificationDecisionStoreTest extends TestCase
             scorerVersion: 'scorer-v1',
             policyVersion: 'shadow-v1',
             operationalError: $operationalError,
+            acceptedText: $acceptedText,
         );
+    }
+
+    private function migration(string $pattern): Migration
+    {
+        $paths = glob(database_path('migrations/'.$pattern)) ?: [];
+        $this->assertCount(1, $paths);
+
+        /** @var Migration $migration */
+        $migration = require $paths[0];
+
+        return $migration;
     }
 
     private function identificationMigration(): Migration

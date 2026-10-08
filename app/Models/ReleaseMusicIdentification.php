@@ -27,6 +27,14 @@ use Illuminate\Support\Carbon;
  * @property string|null $musicbrainz_recording_id
  * @property string|null $musicbrainz_release_id
  * @property string|null $musicbrainz_release_group_id
+ * @property string|null $accepted_title
+ * @property string|null $accepted_edition_title
+ * @property string|null $accepted_aliases one per line
+ * @property string|null $accepted_artist_credit
+ * @property string|null $accepted_track_titles one per line
+ * @property string|null $accepted_track_artist_credits one per line
+ * @property string|null $original_release_date
+ * @property string|null $edition_release_date
  * @property list<array{code: string, description: string, contribution: int}> $reasons
  * @property array<string, int> $feature_contributions
  * @property int|null $runner_up_margin

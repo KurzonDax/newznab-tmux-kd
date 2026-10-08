@@ -27,5 +27,6 @@ final readonly class IdentificationDecision
         public string $scorerVersion,
         public string $policyVersion,
         public ?string $operationalError = null,
+        public ?AcceptedMusicText $acceptedText = null,
     ) {}
 }

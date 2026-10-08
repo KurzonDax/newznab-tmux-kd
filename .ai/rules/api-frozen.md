@@ -26,3 +26,11 @@ existing presenters and serializers when fixing behavior.
 When a feature exposes release data that is not already published (completion percentage, repair state, display names, and anything like them), scope it to Blade views, view models, and the search/query layer only. Never mirror it into API or RSS output, and do not offer API exposure as an option in a plan or issue brief; treat "should this also appear in the API?" as already answered no.
 
 Recorded 2026-08-27 during triage of #282: "No API changes to this application EVER."
+
+## Exception: search matching on accepted MusicBrainz text
+By explicit maintainer exception, API general search (v1 `t=search`, v2 `/api/v2/search`)
+also matches a release's music text fields (`album_title`, `artist`, `music_tracks`), which
+carry its current accepted MusicBrainz identity (#308); #307 extends the same matching to
+music search (v1 `t=music`, v2 `/api/v2/audio`). The exception covers which releases match
+only: no route, parameter, field, attribute or value is added to any response, and nothing
+else follows from it.

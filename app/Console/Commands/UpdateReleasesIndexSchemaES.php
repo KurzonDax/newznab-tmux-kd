@@ -53,6 +53,7 @@ class UpdateReleasesIndexSchemaES extends Command
         'show_title' => ['type' => 'text'],
         'album_title' => ['type' => 'text'],
         'artist' => ['type' => 'text'],
+        'music_tracks' => ['type' => 'text'],
         'console_title' => ['type' => 'text'],
         'game_title' => ['type' => 'text'],
         'book_title' => ['type' => 'text'],
