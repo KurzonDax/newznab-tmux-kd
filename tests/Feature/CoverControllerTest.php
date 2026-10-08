@@ -103,6 +103,26 @@ class CoverControllerTest extends TestCase
         $this->assertStringContainsString('tvshows', $route->wheres['type']);
     }
 
+    public function test_an_audio_cover_under_a_configured_covers_root_outside_the_default_roots_is_served(): void
+    {
+        $root = $this->makeTempDirectory('configured-covers');
+        $name = '11111111-1111-4111-8111-'.substr(md5(uniqid()), 0, 12);
+        $path = $root.'/audio/'.$name.'.jpg';
+        $this->createImage($path, 'jpg', 30, 30);
+        config(['nntmux_settings.covers_path' => $root]);
+        foreach ([storage_path('covers/audio/'), public_path('covers/audio/')] as $defaultRoot) {
+            $this->assertFileDoesNotExist($defaultRoot.$name.'.jpg');
+        }
+
+        $url = getImageAssetUrl('audio', $name);
+        $this->assertSame(url('/covers/audio/'.$name.'.jpg'), $url);
+        $response = $this->get((string) $url);
+
+        $response->assertOk();
+        $this->assertSame('image/jpeg', $response->headers->get('Content-Type'));
+        $this->assertSame(file_get_contents($path), $response->streamedContent(), 'the stored image, not the placeholder');
+    }
+
     public function test_traversal_filename_is_rejected(): void
     {
         $this->expectException(NotFoundHttpException::class);

@@ -587,16 +587,18 @@ class PostProcessRunner extends BaseRunner
         $queue = $identityWorker->eligibleBuckets();
         if ($queue === []) {
             $this->headerNone();
-
-            return;
+        } else {
+            $this->runPostProcess(
+                $queue,
+                $identityWorker->workerParallelism(),
+                'music',
+                'music identity postprocessing',
+            );
         }
 
-        $this->runPostProcess(
-            $queue,
-            $identityWorker->workerParallelism(),
-            'music',
-            'music identity postprocessing',
-        );
+        // Album covers for current accepted albums still without a lookup outcome, after the
+        // bucket workers finish, so it runs even when no release awaits identification.
+        $identityWorker->catchUpCovers();
     }
 
     public function processConsoles(): void

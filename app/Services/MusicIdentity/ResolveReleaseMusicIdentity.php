@@ -8,6 +8,7 @@ use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
+use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\DTO\DecisionReason;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
@@ -33,6 +34,7 @@ final readonly class ResolveReleaseMusicIdentity
         private MusicIdentitySynthesisLeaseManager $synthesisLeases,
         private MusicIdentityRetryPolicy $retryPolicy,
         private IdentificationDecisionStore $decisions,
+        private AlbumCoverFetcher $covers,
     ) {}
 
     /** @return list<object{id: string}> */
@@ -76,6 +78,25 @@ final readonly class ResolveReleaseMusicIdentity
         }
 
         return $completed;
+    }
+
+    /**
+     * Once per `mus` pass, whether or not any release awaits identification: covers for current
+     * accepted albums whose lookup has no outcome yet, already-accepted releases included (#1015).
+     */
+    public function catchUpCovers(): int
+    {
+        if (! $this->configuration->active()) {
+            return 0;
+        }
+
+        try {
+            return $this->covers->backfill();
+        } catch (\Throwable $exception) {
+            Log::warning('Album cover catch-up failed.', ['exception' => $exception]);
+
+            return 0;
+        }
     }
 
     public function resolveRelease(
@@ -132,7 +153,7 @@ final readonly class ResolveReleaseMusicIdentity
                 throw new LostMusicIdentityLease('The music identity work lease expired during resolution.');
             }
 
-            return $this->decisions->persist(
+            $identification = $this->decisions->persist(
                 releaseId: (int) $release->id,
                 evidence: $evidence,
                 decision: $decision,
@@ -141,6 +162,9 @@ final readonly class ResolveReleaseMusicIdentity
                     : null,
                 leaseToken: $workerToken,
             );
+            $this->fetchCover($identification);
+
+            return $identification;
         } catch (LostMusicIdentityLease $exception) {
             Log::notice('Music identity work lease was lost.', [
                 'release_id' => $release->id,
@@ -173,6 +197,16 @@ final readonly class ResolveReleaseMusicIdentity
 
                 return null;
             }
+        }
+    }
+
+    /** The accepted album's cover; cover work never changes or fails the persisted decision. */
+    private function fetchCover(ReleaseMusicIdentification $identification): void
+    {
+        try {
+            $this->covers->fetchFor(CurrentMusicIdentity::fromRow($identification));
+        } catch (\Throwable $exception) {
+            Log::warning('Album cover lookup failed.', ['identification_id' => $identification->id, 'exception' => $exception]);
         }
     }
 

@@ -973,6 +973,25 @@ CREATE TABLE `movieinfo` (
   KEY `ix_movieinfo_year` (`year`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `music_cover_art_lookups`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `music_cover_art_lookups` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `kind` varchar(16) NOT NULL,
+  `musicbrainz_id` char(36) NOT NULL,
+  `outcome` varchar(16) NOT NULL,
+  `image_musicbrainz_id` char(36) DEFAULT NULL,
+  `attempt_count` smallint(5) unsigned NOT NULL DEFAULT 0,
+  `next_attempt_at` timestamp NULL DEFAULT NULL,
+  `last_error` text DEFAULT NULL,
+  `checked_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `music_cover_art_lookup_key` (`kind`,`musicbrainz_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `musicinfo`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4201,3 +4220,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (312,'2026_10_04_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (313,'2026_10_04_000100_fill_release_audio_genres',23);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (314,'2026_10_05_000000_create_kept_releases',24);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (315,'2026_10_08_005420_drop_repair_and_rescan_state_from_releases_table',25);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (316,'2026_10_08_120000_create_music_cover_art_lookups_table',26);

@@ -86,7 +86,7 @@ final class AudioReleasePageTest extends TestCase
             'languages', 'release_audio_languages', 'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data',
             'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks', 'predb', 'release_tv_episodes', 'tv_episodes', 'tv_info', 'networks',
             'video_genres', 'video_people', 'genres', 'audio_genres', 'release_audio_genres',
-            'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications'] as $table) {
+            'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
@@ -136,6 +136,40 @@ final class AudioReleasePageTest extends TestCase
         $noArtist = $this->album('Untitled.Album-MP3', ['album' => 'Untitled', 'album_performer' => null, 'performer' => null, 'recorded_year' => null]);
         $this->assertSame('<b>Untitled</b><span aria-hidden="true">·</span><span>MP3</span>', $this->musicLine($this->details($noArtist)));
         $this->assertStringContainsString('<span class="tv-tile-card-title">Untitled</span></div>', $this->between($this->details($noArtist), 'data-part="album cover">', '<h1'));
+    }
+
+    public function test_an_album_with_a_stored_cover_shows_it_in_the_square_in_place_of_the_placeholder(): void
+    {
+        $id = $this->album('Nama-Fibir-2021-MP3');
+        $this->identification($id, $this->evidence($id, 1, null), IdentificationStatus::AcceptedReleaseGroup->value, self::GROUP);
+        $cover = $this->storedCover(self::GROUP);
+
+        $art = $this->between($this->details($id)->assertOk(), '<div class="tv-show-art is-square" data-part="album cover">', '<h1');
+
+        $this->assertStringContainsString('<img src="'.e($cover).'" alt="Fibir cover">', $art);
+        $this->assertStringNotContainsString('tv-show-card', $art);
+    }
+
+    public function test_the_details_tables_carry_each_row_s_cover_to_the_listen_dialog_in_queries_that_do_not_grow_with_the_rows(): void
+    {
+        $cover = $this->storedCover(self::GROUP);
+        $current = $this->album('Nama-Fibir-2021-MP3', $this->preview(), [], ['postdate' => '2026-09-20 10:00:00']);
+        $this->identification($current, $this->evidence($current, 1, null), IdentificationStatus::AcceptedReleaseGroup->value, self::GROUP);
+        $sibling = $this->album('Nama-Fibir-2021-FLAC', $this->preview(), [], ['categories_id' => self::LOSSLESS, 'postdate' => '2026-09-21 10:00:00']);
+        $this->identification($sibling, $this->evidence($sibling, 1, null), IdentificationStatus::AcceptedReleaseGroup->value, self::GROUP);
+        $bare = $this->album('Nama-Fibir-2021-WEB', $this->preview(), [], ['postdate' => '2026-09-19 10:00:00']);
+
+        $section = $this->between($this->details($current)->assertOk(), 'data-film-releases>', '</section>');
+        $this->assertStringContainsString('data-audio-cover="'.e($cover).'"', $this->rowOf($section, $sibling));
+        $this->assertStringNotContainsString('data-audio-cover', $this->rowOf($section, $bare), 'no cover, no attribute');
+
+        $few = $this->queriesOf($current);
+        foreach (range(1, 12) as $index) {
+            $more = $this->album('Nama-Fibir-2021-Copy-'.$index, $this->preview(), [], ['postdate' => '2026-09-18 10:00:00']);
+            $this->identification($more, $this->evidence($more, 1, null), IdentificationStatus::AcceptedReleaseGroup->value, self::GROUP);
+        }
+        $this->assertSame(15, substr_count($this->between($this->details($current), 'data-film-releases>', '</section>'), 'data-release-row'));
+        $this->assertSame($few, $this->queriesOf($current));
     }
 
     public function test_genre_tags_link_to_the_list_with_that_genre_alone_and_the_format_tag_shows_only_when_it_adds(): void
@@ -201,10 +235,11 @@ final class AudioReleasePageTest extends TestCase
         $old = $this->evidence($id, 1, null);
         $newest = $this->evidence($id, 2, null);
         $this->identification($id, $old, IdentificationStatus::AcceptedReleaseGroup->value, '22222222-2222-2222-2222-222222222222');
-        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart'], $this->buttons($this->actions($id)), 'only an older evidence hash is accepted; the tag\'s own id is never used');
+        $this->assertStringContainsString('href="https://musicbrainz.org/release-group/22222222-2222-2222-2222-222222222222"', $this->actions($id),
+            'the newest evidence has no decision yet: the previous completed one stays; the tag\'s own id is never used');
 
         $recording = $this->identification($id, $newest, IdentificationStatus::AcceptedRecording->value, self::GROUP);
-        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart'], $this->buttons($this->actions($id)), 'an accepted recording names no release group');
+        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart'], $this->buttons($this->actions($id)), 'an accepted recording names no album and withdraws the older one');
 
         DB::table('release_music_identifications')->where('id', $recording)->update(['state' => IdentificationStatus::AcceptedReleaseGroup->value]);
         $actions = $this->actions($id);
@@ -649,6 +684,42 @@ final class AudioReleasePageTest extends TestCase
             'state' => $state, 'band' => 'high', 'musicbrainz_release_group_id' => $group, 'reasons' => '[]', 'feature_contributions' => '[]',
             'algorithm_version' => $version, 'resolver_version' => 'r1', 'normalizer_version' => 'n1', 'scorer_version' => 's1', 'policy_version' => 'p1',
         ]);
+    }
+
+    /** A stored Cover Art Archive front for the release group: its lookup row and its file under the covers root; returns its URL. */
+    private function storedCover(string $groupId): string
+    {
+        DB::table('music_cover_art_lookups')->insert(['kind' => 'release-group', 'musicbrainz_id' => $groupId, 'outcome' => 'stored', 'image_musicbrainz_id' => $groupId,
+            'attempt_count' => 1, 'checked_at' => now()]);
+        if (! is_dir($this->covers.'/audio')) {
+            mkdir($this->covers.'/audio', 0777, true);
+        }
+        file_put_contents($this->covers.'/audio/'.$groupId.'.jpg', 'jpg');
+
+        return url('/covers/audio/'.$groupId.'.jpg');
+    }
+
+    /** The queries of the second open of a release's details page. */
+    private function queriesOf(int $id): int
+    {
+        $this->details($id)->assertOk();
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->details($id)->assertOk();
+        $count = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        return $count;
+    }
+
+    private function rowOf(string $html, int $id): string
+    {
+        foreach (explode('<tr ', $html) as $row) {
+            if (str_contains($row, 'value="'.$this->guid($id).'"') || str_contains($row, 'data-guid="'.$this->guid($id).'"')) {
+                return strstr($row, '</tr>', true) ?: $row;
+            }
+        }
+        $this->fail('No row for release '.$id);
     }
 
     private function user(): User

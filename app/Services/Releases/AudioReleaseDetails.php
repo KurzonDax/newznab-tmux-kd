@@ -14,7 +14,7 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseVideoClip;
 use App\Services\AudioProcessing\AudioGenres;
-use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\CurrentMusicIdentityReader;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,15 +23,13 @@ use Illuminate\Support\Facades\DB;
  * row, its sub-category for the breadcrumb and the music line, its tag row and genres, the facts
  * grid (Genre after Category on the release-only page; the album page's genres are its tags), the
  * PreDB block, the complete track list of its newest audio evidence, the preview it plays in the
- * page with the spectrogram, a video clip, the accepted MusicBrainz release group, "All N releases
+ * page with the spectrogram, a video clip, the release group of the current accepted MusicBrainz
+ * album (CurrentMusicIdentityReader, the rule album covers share), "All N releases
  * of this album" (AudioAlbumPage) on the album page and Similar releases without the album's own
  * releases. Each read is one query; the preview reads the tag row the controller already loaded.
  */
 final class AudioReleaseDetails
 {
-    /** The MusicBrainz states that name an accepted release group (IdentificationStatus). */
-    private const array ACCEPTED = [IdentificationStatus::AcceptedReleaseGroup->value, IdentificationStatus::AcceptedEdition->value];
-
     /** MediaInfo's name for MP3, which the pages show as "MP3" (DATA-NOTES.md). */
     private const string MPEG_AUDIO = 'MPEG Audio';
 
@@ -39,6 +37,7 @@ final class AudioReleaseDetails
         private readonly AudioReleaseRows $rows,
         private readonly AudioAlbumPage $albums,
         private readonly ReleaseSearchService $search,
+        private readonly CurrentMusicIdentityReader $identities,
     ) {}
 
     /**
@@ -72,7 +71,7 @@ final class AudioReleaseDetails
             'tracks' => $evidence === null ? [] : $this->tracks($evidence),
             'preview' => $this->preview($release, $music),
             'clip' => $this->clip($release),
-            'musicBrainzUrl' => $evidence === null ? '' : $this->musicBrainzUrl((int) $release->id, (string) $evidence->evidence_hash),
+            'musicBrainzUrl' => $this->identities->forRelease((int) $release->id)?->releaseGroupUrl() ?? '',
             'similar' => $this->similar($release, $albumIds, $exclusions),
             ...($album ? $this->table($row, $music, $exclusions, $table, $pageNamed) : []),
         ];
@@ -196,21 +195,6 @@ final class AudioReleaseDetails
         $stripped = (string) preg_replace('/^0*'.$number.'[ ._-]+/', '', $title);
 
         return $stripped === '' ? $title : $stripped;
-    }
-
-    /**
-     * Read 3: the release group of the release's accepted MusicBrainz identity for the newest
-     * evidence's hash under the configured algorithm version, the newest row by id; '' with none.
-     * The tag row's own release group id is never used (DATA-NOTES.md).
-     */
-    private function musicBrainzUrl(int $releaseId, string $evidenceHash): string
-    {
-        $group = DB::table('release_music_identifications')->where('releases_id', $releaseId)->where('evidence_hash', $evidenceHash)
-            ->where('algorithm_version', (string) config('music-identity.algorithm_version', 'music-identity-v1'))
-            ->whereIn('state', self::ACCEPTED)->whereNotNull('musicbrainz_release_group_id')
-            ->orderByDesc('id')->value('musicbrainz_release_group_id');
-
-        return $group === null || trim((string) $group) === '' ? '' : 'https://musicbrainz.org/release-group/'.trim((string) $group);
     }
 
     /** The preview the Overview plays, with the spectrogram under the player; null without a playable preview. */

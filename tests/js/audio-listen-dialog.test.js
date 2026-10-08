@@ -94,6 +94,22 @@ test('with no track title neither the title nor the artist shows; the artist sho
     assert.deepEqual([env.dialog.showTrack(), env.dialog.showArtist()], [true, false]);
 });
 
+test('the dialog shows the release\'s cover beside the track when the chip carries one, and no image otherwise', () => {
+    const env = environment();
+    env.click(click(listenChip(env.document, { audioCover: '/covers/audio/11111111-1111-4111-8111-111111111111.jpg' }).target));
+    assert.deepEqual([env.dialog.cover, env.dialog.hasCover(), env.dialog.layoutClass()], ['/covers/audio/11111111-1111-4111-8111-111111111111.jpg', true, 'has-cover']);
+    env.dialog.close();
+    env.click(click(listenChip(env.document).target));
+    assert.deepEqual([env.dialog.cover, env.dialog.hasCover(), env.dialog.layoutClass()], ['', false, ''], 'a release without a cover shows no image');
+
+    const markup = readFileSync(new URL('../../resources/views/tv/partials/dialogs.blade.php', import.meta.url), 'utf8');
+    const listen = markup.slice(markup.indexOf('x-data="tvListenDialog"'));
+    assert.match(listen, /<div class="tv-listen" x-bind:class="layoutClass\(\)">\s*<template x-if="hasCover\(\)"><img class="tv-listen-cover" x-bind:src="cover" alt=""><\/template>/);
+    const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
+    assert.match(css, /\.tv-listen\.has-cover \{[^}]*grid-template-columns: 120px 1fr;/, 'the 120 px cover column (SPEC 5.10)');
+    assert.match(css, /\.tv-listen-cover \{[^}]*width: 120px; height: 120px;/);
+});
+
 test('Escape closes the dialog, pauses, empties and removes the player, and returns focus to the chip', () => {
     const env = environment();
     const { chip, target } = listenChip(env.document);

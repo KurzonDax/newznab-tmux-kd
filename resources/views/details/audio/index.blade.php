@@ -42,9 +42,13 @@
             <span>{{ $subCategory }}</span>
         </nav>
         <div class="tv-show-head">
-            {{-- No audio cover is stored (SPEC 6.2): every album page shows the film page's placeholder tile with a disc icon. --}}
+            {{-- The stored cover of the release's current accepted MusicBrainz album (SPEC 5B.2); without one, the film page's placeholder tile with a disc icon. --}}
             <div class="tv-show-art is-square" data-part="album cover">
-                <div class="tv-show-card is-film"><i class="fas fa-compact-disc" aria-hidden="true"></i><span class="tv-tile-card-title">{{ $music->album }}</span>@if($music->year !== '')<small>{{ $music->year }}</small>@endif</div>
+                @if($row->cover !== null)
+                    <img src="{{ $row->cover }}" alt="{{ $music->album }} cover">
+                @else
+                    <div class="tv-show-card is-film"><i class="fas fa-compact-disc" aria-hidden="true"></i><span class="tv-tile-card-title">{{ $music->album }}</span>@if($music->year !== '')<small>{{ $music->year }}</small>@endif</div>
+                @endif
             </div>
             <div>
                 <h1 class="is-release-name" data-part="details heading">{{ $row->name }}</h1>

@@ -78,7 +78,8 @@ final class AudioReleasesPageTest extends TestCase
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
-            'languages', 'release_audio_languages', 'genres', 'audio_genres', 'release_audio_genres'] as $table) {
+            'languages', 'release_audio_languages', 'genres', 'audio_genres', 'release_audio_genres',
+            'release_audio_evidence', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
@@ -87,6 +88,7 @@ final class AudioReleasesPageTest extends TestCase
             DB::table('categories')->insert(['id' => $id, 'title' => $title, 'root_categories_id' => 3000, 'status' => 1]);
         }
         DB::table('categories')->insert(['id' => self::EBOOK, 'title' => 'Ebook', 'root_categories_id' => 7000, 'status' => 1]);
+        config(['nntmux_settings.covers_path' => $this->makeTempDirectory('audio-list-covers')]);
     }
 
     protected function tearDown(): void
@@ -412,6 +414,9 @@ final class AudioReleasesPageTest extends TestCase
         $this->tag($this->audio('No.Year'), ['album' => 'Timeless', 'album_performer' => 'Band', 'genre' => 'rock / UNKNOWN'], [self::ROCK]);
         $this->tag($this->audio('Year.Only'), ['recorded_year' => 2020, 'genre' => '']);
         $this->audio('No.Tag');
+        $fullTags = (int) DB::table('releases')->where('name', 'Full.Tags')->value('id');
+        $cover = $this->cover($fullTags, '11111111-1111-4111-8111-111111111111');
+        $this->cover((int) DB::table('releases')->where('name', 'Album.Only')->value('id'), '22222222-2222-4222-8222-222222222222', stored: false);
 
         $response = $this->page('/audio')->assertOk()
             ->assertSee('<table class="tv-feed is-shelf"', false)
@@ -423,8 +428,9 @@ final class AudioReleasesPageTest extends TestCase
             .'" tabindex="-1" aria-hidden="true">\s*<i class="fas fa-compact-disc" aria-hidden="true"><\/i>\s*<span class="tv-placeholder-label">No cover<\/span>\s*<\/a>\s*<\/td>/';
         $full = $this->rowOf($response, 'Full.Tags');
         $this->assertSame(8, substr_count($full, '<td'));
-        $this->assertMatchesRegularExpression($noCover('Full.Tags'), $full);
         $details = e(route('details', md5('Full.Tags')));
+        $this->assertMatchesRegularExpression('/<td class="tv-art is-square">\s*<a href="'.preg_quote($details, '/').'" tabindex="-1" aria-hidden="true"><img src="'.preg_quote(e($cover), '/')
+            .'" alt="" loading="eager"><\/a>\s*<\/td>/', $full, 'the stored cover of the accepted album');
         $this->assertMatchesRegularExpression('/<a class="tv-release-name" href="'.preg_quote($details, '/').'" title="Full.Tags" data-part="release name">Full.Tags<\/a>\s*<span class="tv-game-line">The Midnight – Night Drive · 1999<\/span>/', $full);
         $joined = e(self::SYNTH_NAME.', Rock, Metal');
         $this->assertStringContainsString('<td class="tv-genre" title="'.$joined.'"><span>'.$joined.'</span></td>', $full, 'position order, the comma name intact');
@@ -436,6 +442,7 @@ final class AudioReleasesPageTest extends TestCase
         $this->assertStringContainsString('<span class="tv-game-line">Solo Act · 1984</span>', $performer, 'an empty album artist counts as missing');
         $this->assertStringContainsString('<td class="tv-genre" title="Unknown"><span>Unknown</span></td>', $performer, 'a tag genre reading only Unknown');
         $album = $this->rowOf($response, 'Album.Only');
+        $this->assertMatchesRegularExpression($noCover('Album.Only'), $album, 'an accepted album with no stored cover');
         $this->assertStringContainsString('<span class="tv-game-line">Untitled Album · 2001</span>', $album);
         $this->assertStringContainsString('<td class="tv-genre" title="Rock"><span>Rock</span></td>', $album);
         $noYear = $this->rowOf($response, 'No.Year');
@@ -448,9 +455,10 @@ final class AudioReleasesPageTest extends TestCase
             $this->assertStringContainsString('<td class="tv-genre"><span>—</span></td>', $row, $name);
         }
         $table = (string) strstr((string) strstr((string) $response->getContent(), '<tbody>'), '</tbody>', true);
-        $this->assertStringNotContainsString('<img', $table);
+        $this->assertSame(1, substr_count($table, '<img'), 'only the stored cover');
         $this->assertStringNotContainsString('tv-show-line', $table);
-        $this->assertSame(6, substr_count($table, 'class="tv-art is-square"'), 'every row shows the No cover tile');
+        $this->assertSame(6, substr_count($table, 'class="tv-art is-square"'), 'every row has the cover slot');
+        $this->assertSame(5, substr_count($table, '>No cover<'), 'every row without a stored cover shows the No cover tile');
 
         // what the release details issue reads from a row: the file count, the category path, no picture
         [$withCount, $withoutCount] = app(AudioReleaseRows::class)->load([$this->audio('Counted', ['totalpart' => 37]), $this->audio('Uncounted', ['totalpart' => 0])], false);
@@ -469,9 +477,11 @@ final class AudioReleasesPageTest extends TestCase
         $this->tag($this->audio('Unserved.Extension'), [...$preview, 'preview_extension' => 'wma']);
         $this->tag($this->audio('Not.Previewed'), [...$preview, 'has_preview' => 0]);
         $this->audio('No.Tag', ['haspreview' => 1, 'jpgstatus' => 1, 'videostatus' => 1]);
+        $cover = $this->cover((int) DB::table('releases')->where('name', 'Timed.Preview')->value('id'), '11111111-1111-4111-8111-111111111111');
 
         $response = $this->page('/audio')->assertOk();
         $timed = $this->rowOf($response, 'Timed.Preview');
+        $this->assertStringContainsString('data-audio-seconds="30" data-audio-cover="'.e($cover).'"', $timed, 'the Listen dialog shows the row\'s cover');
         $this->assertMatchesRegularExpression('/<button [^>]*data-chip-variant="clip"[^>]*>\s*Listen\s*<\/button>/', $timed, 'the word Listen, no icon');
         $this->assertStringContainsString('chip-tone-clip', $timed);
         $this->assertStringContainsString('class="release-chip chip-tone-clip listen-badge"', $timed);
@@ -483,6 +493,7 @@ final class AudioReleasesPageTest extends TestCase
         $album = $this->rowOf($response, 'Album.Title');
         $this->assertStringContainsString('data-audio-type="audio/flac" data-audio-title="Only Album" data-audio-artist="Only Album Artist"', $album, 'the album without a track title');
         $this->assertStringContainsString('title="Play the preview"', $album, 'no stored length');
+        $this->assertStringNotContainsString('data-audio-cover', $album, 'no cover, no attribute');
         $this->assertStringNotContainsString('data-audio-seconds', $album);
         $noTrack = $this->rowOf($response, 'No.Track');
         $this->assertStringNotContainsString('data-audio-title', $noTrack, 'no track title and no album');
@@ -514,15 +525,19 @@ final class AudioReleasesPageTest extends TestCase
         $this->genre(self::METAL, 'Metal');
         $tag = static fn (int $index): array => ['album' => 'Album '.$index, 'album_performer' => 'Artist '.$index, 'recorded_year' => 1990 + $index % 30, 'genre' => 'Rock; Metal',
             'has_preview' => 1, 'preview_extension' => 'mp3', 'preview_mime' => 'audio/mpeg', 'preview_seconds' => 30];
-        $this->tag($this->audio('Release 1'), $tag(1), [self::ROCK, self::METAL]);
+        $this->tag($first = $this->audio('Release 1'), $tag(1), [self::ROCK, self::METAL]);
+        $this->cover($first, sprintf('11111111-1111-4111-8111-%012d', 1));
         $one = $this->queriesOf('/audio');
         foreach (range(2, 60) as $index) {
-            $this->tag($this->audio('Release '.$index), $tag($index), $index % 2 === 0 ? [self::ROCK] : [self::METAL, self::ROCK]);
+            $this->tag($id = $this->audio('Release '.$index), $tag($index), $index % 2 === 0 ? [self::ROCK] : [self::METAL, self::ROCK]);
+            $this->cover($id, sprintf('11111111-1111-4111-8111-%012d', $index));
         }
         Cache::flush();
         $fifty = $this->queriesOf('/audio');
 
-        $this->assertSame(50, count($this->listedIds($this->page('/audio'))));
+        $listed = $this->page('/audio');
+        $this->assertSame(50, count($this->listedIds($listed)));
+        $this->assertSame(50, substr_count((string) $listed->getContent(), 'loading="eager"'), 'every row shows its cover');
         $this->assertSame($one, $fifty);
     }
 
@@ -752,6 +767,33 @@ final class AudioReleasesPageTest extends TestCase
         preg_match('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent(), $match);
 
         return html_entity_decode(trim((string) preg_replace('/\s+/', ' ', strip_tags($match[1]))), ENT_QUOTES);
+    }
+
+    /**
+     * The release's current accepted release group decision and, when stored, its cover file and
+     * stored lookup; returns the cover's URL.
+     */
+    private function cover(int $releasesId, string $groupId, bool $stored = true): string
+    {
+        $hash = hash('sha256', 'evidence '.$releasesId);
+        $evidence = DB::table('release_audio_evidence')->insertGetId(['releases_id' => $releasesId, 'revision' => 1, 'evidence_hash' => $hash, 'schema_version' => 1,
+            'provenance' => 'test', 'release_snapshot' => '{}', 'nzb_manifest' => '[]', 'archive_manifest' => '[]', 'sidecar_manifest' => '[]', 'captured_at' => now()]);
+        DB::table('release_music_identifications')->insert(['releases_id' => $releasesId, 'release_audio_evidence_id' => $evidence, 'evidence_hash' => $hash,
+            'state' => 'accepted_release_group', 'band' => 'strong', 'musicbrainz_release_group_id' => $groupId, 'reasons' => '[]', 'feature_contributions' => '[]',
+            'algorithm_version' => (string) config('music-identity.algorithm_version'), 'resolver_version' => 'r1', 'normalizer_version' => 'n1', 'scorer_version' => 's1',
+            'policy_version' => 'p1', 'decided_at' => now()]);
+        if (! $stored) {
+            return '';
+        }
+        DB::table('music_cover_art_lookups')->insert(['kind' => 'release-group', 'musicbrainz_id' => $groupId, 'outcome' => 'stored', 'image_musicbrainz_id' => $groupId,
+            'attempt_count' => 1, 'checked_at' => now()]);
+        $directory = config('nntmux_settings.covers_path').'/audio';
+        if (! is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+        file_put_contents($directory.'/'.$groupId.'.jpg', 'jpg');
+
+        return url('/covers/audio/'.$groupId.'.jpg');
     }
 
     private function genre(int $id, string $name): void

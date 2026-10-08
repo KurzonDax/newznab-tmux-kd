@@ -12,8 +12,15 @@ use App\Models\ReleaseMusicIdentification;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
+use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
+use App\Services\MusicIdentity\CoverArt\CoverArtPacer;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
+use App\Services\MusicIdentity\DTO\CandidateHypothesis;
+use App\Services\MusicIdentity\DTO\CandidateIdentity;
+use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\CandidatePool;
+use App\Services\MusicIdentity\DTO\CandidateSignal;
+use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Evidence\AudioEvidenceSetFactory;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
@@ -33,6 +40,7 @@ use Illuminate\Database\SQLiteConnection;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -116,6 +124,13 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->migration('*_create_release_audio_evidence_tables.php')->up();
         $this->migration('*_create_release_music_identification_tables.php')->up();
         $this->migration('*_create_release_music_synthesis_attempts_table.php')->up();
+        $this->migration('*_create_music_cover_art_lookups_table.php')->up();
+        config([
+            'nntmux_settings.covers_path' => $this->makeTempDirectory('music-identity-covers'),
+            'music-identity.cover_art.base_url' => 'https://caa.test',
+            'music-identity.cover_art.min_interval_milliseconds' => 0,
+        ]);
+        Cache::flush();
         Log::spy();
     }
 
@@ -358,6 +373,102 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
+    public function an_accepted_album_decision_fetches_its_cover_after_it_is_persisted(): void
+    {
+        Http::fake(['https://caa.test/release/'.AcceptingCandidateGenerator::RELEASE_ID.'/front-500' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $this->albumEvidence($release);
+
+        $identification = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $identification->state);
+        $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release', 'musicbrainz_id' => AcceptingCandidateGenerator::RELEASE_ID, 'outcome' => 'stored']);
+        $this->assertNotNull(getImageAssetUrl('audio', AcceptingCandidateGenerator::RELEASE_ID));
+    }
+
+    #[Test]
+    public function a_cover_failure_or_a_pacing_timeout_leaves_the_decision_unchanged(): void
+    {
+        Http::fake(['*' => Http::response('', 503)]);
+        $release = $this->release();
+        $this->albumEvidence($release);
+
+        $failed = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($failed);
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $failed->state);
+        $this->assertDatabaseHas('music_cover_art_lookups', ['musicbrainz_id' => AcceptingCandidateGenerator::RELEASE_ID, 'outcome' => 'failed']);
+        $stored = ReleaseMusicIdentification::query()->findOrFail($failed->id);
+        $this->assertSame([IdentificationStatus::AcceptedEdition, 1, $failed->decided_at?->toDateTimeString(), null, null],
+            [$stored->state, $stored->attempt_count, $stored->decided_at?->toDateTimeString(), $stored->next_attempt_at, $stored->last_operational_error]);
+
+        DB::table('music_cover_art_lookups')->delete();
+        DB::table('release_music_identifications')->delete();
+        config(['music-identity.cover_art.lock_wait_seconds' => 0]);
+        $held = Cache::lock(CoverArtPacer::LOCK, 60);
+        $this->assertTrue($held->get());
+        $deferred = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-b');
+        $held->release();
+
+        $this->assertNotNull($deferred);
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $deferred->state);
+        $this->assertNotNull($deferred->decided_at);
+        $this->assertSame(0, DB::table('music_cover_art_lookups')->count(), 'deferred: no outcome');
+    }
+
+    #[Test]
+    public function the_cover_catch_up_follows_the_shared_current_decision_rule(): void
+    {
+        Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $current = $this->acceptedGroup($release, $evidence, '11111111-1111-4111-8111-111111111111', 'music-identity-v1');
+        $this->acceptedGroup($release, $evidence, '22222222-2222-4222-8222-222222222222', 'music-identity-v0');
+
+        $this->assertSame(1, $this->worker(new EmptyCandidateGenerator)->catchUpCovers());
+
+        $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release-group', 'musicbrainz_id' => '11111111-1111-4111-8111-111111111111', 'outcome' => 'stored']);
+        $this->assertSame(1, DB::table('music_cover_art_lookups')->count(), 'the configured version\'s completed decision is current; the other is not looked up');
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, ReleaseMusicIdentification::query()->findOrFail($current)->state);
+        $this->assertSame(0, $this->worker(new EmptyCandidateGenerator)->catchUpCovers(), 'a stored outcome is not looked up again');
+        Http::assertSentCount(1);
+
+        // After a version bump with no new row the newest completed decision stays current, as on the pages.
+        config(['music-identity.algorithm_version' => 'music-identity-v2']);
+        $this->assertSame(1, $this->worker(new EmptyCandidateGenerator)->catchUpCovers());
+        $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release-group', 'musicbrainz_id' => '22222222-2222-4222-8222-222222222222', 'outcome' => 'stored']);
+    }
+
+    #[Test]
+    public function the_music_pass_catches_up_covers_even_when_no_release_awaits_identification(): void
+    {
+        Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $this->acceptedGroup($release, $evidence, '11111111-1111-4111-8111-111111111111', 'music-identity-v1');
+        $this->app->instance(ResolveReleaseMusicIdentity::class, $this->worker(new EmptyCandidateGenerator));
+        $runner = new class extends PostProcessRunner
+        {
+            /** @var list<string> */
+            public array $commands = [];
+
+            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc, ?callable $onComplete = null): void
+            {
+                array_push($this->commands, ...$commands);
+            }
+
+            protected function headerNone(): void {}
+        };
+        $this->assertSame([], app(ResolveReleaseMusicIdentity::class)->eligibleBuckets());
+
+        $runner->processMusic();
+
+        $this->assertSame([], $runner->commands);
+        $this->assertDatabaseHas('music_cover_art_lookups', ['musicbrainz_id' => '11111111-1111-4111-8111-111111111111', 'outcome' => 'stored']);
+    }
+
+    #[Test]
     public function the_compatibility_processor_delegates_to_the_evidence_worker_not_music_service(): void
     {
         $source = file_get_contents(app_path('Services/MusicProcessor.php'));
@@ -433,6 +544,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             synthesisLeases: new MusicIdentitySynthesisLeaseManager($retryPolicy),
             retryPolicy: $retryPolicy,
             decisions: new IdentificationDecisionStore,
+            covers: new AlbumCoverFetcher(new CoverArtPacer),
         );
     }
 
@@ -486,6 +598,61 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         return $evidence;
     }
 
+    private function albumEvidence(Release $release): ReleaseAudioEvidence
+    {
+        $evidence = ReleaseAudioEvidence::query()->create([
+            'releases_id' => $release->id,
+            'revision' => 1,
+            'evidence_hash' => str_repeat('d', 64),
+            'schema_version' => 1,
+            'provenance' => 'captured',
+            'release_snapshot' => ['name' => 'Example Artist - Example Album', 'searchname' => 'Example Artist - Example Album 2020 FLAC'],
+            'archive_manifest_complete' => true,
+            'nzb_manifest' => [],
+            'archive_manifest' => [],
+            'sidecar_manifest' => [],
+            'captured_at' => now(),
+        ]);
+        foreach (['First Light', 'Last Light'] as $index => $title) {
+            $evidence->tracks()->create([
+                'source_kind' => 'archive',
+                'source_ordinal' => $index + 1,
+                'raw_filename' => sprintf('%02d - %s.flac', $index + 1, $title),
+                'track_number' => $index + 1,
+                'album' => 'Example Album',
+                'album_artist' => 'Example Artist',
+                'performer' => 'Example Artist',
+                'title' => $title,
+                'recorded_date' => '2020',
+                'whole_duration_seconds' => $index === 0 ? 180 : 210,
+                'whole_duration_reliable' => true,
+                'musicbrainz_release_id' => AcceptingCandidateGenerator::RELEASE_ID,
+            ]);
+        }
+
+        return $evidence;
+    }
+
+    private function acceptedGroup(Release $release, ReleaseAudioEvidence $evidence, string $group, string $version): int
+    {
+        return DB::table('release_music_identifications')->insertGetId([
+            'releases_id' => $release->id, 'release_audio_evidence_id' => $evidence->id, 'evidence_hash' => $evidence->evidence_hash,
+            'state' => IdentificationStatus::AcceptedReleaseGroup->value, 'band' => 'strong', 'musicbrainz_release_group_id' => $group,
+            'reasons' => '[]', 'feature_contributions' => '[]', 'algorithm_version' => $version, 'resolver_version' => 'r1',
+            'normalizer_version' => 'n1', 'scorer_version' => 's1', 'policy_version' => 'p1', 'decided_at' => now(),
+        ]);
+    }
+
+    private function image(): string
+    {
+        $image = imagecreatetruecolor(40, 40);
+        $this->assertNotFalse($image);
+        ob_start();
+        imagejpeg($image, null, 82);
+
+        return (string) ob_get_clean();
+    }
+
     private function migration(string $pattern): Migration
     {
         $paths = glob(database_path('migrations/'.$pattern)) ?: [];
@@ -503,6 +670,46 @@ final readonly class EmptyCandidateGenerator implements CandidateGenerator
     public function generate(AudioEvidenceSet $evidence): CandidatePool
     {
         return new CandidatePool([]);
+    }
+}
+
+/** Accepts the edition the album evidence's embedded release id names (MusicIdentityResolverTest's fixture). */
+final readonly class AcceptingCandidateGenerator implements CandidateGenerator
+{
+    public const string RELEASE_ID = '44444444-4444-4444-8444-444444444444';
+
+    public const string RELEASE_GROUP_ID = '66666666-6666-4666-8666-666666666666';
+
+    public function generate(AudioEvidenceSet $evidence): CandidatePool
+    {
+        $releaseTracks = [];
+        foreach (['First Light', 'Last Light'] as $index => $title) {
+            $length = $index === 0 ? 180_000 : 210_000;
+            $releaseTracks[] = [
+                'musicBrainzReleaseTrackId' => sprintf('33333333-3333-4333-8333-%012d', $index + 1),
+                'title' => $title, 'position' => $index + 1, 'number' => (string) ($index + 1), 'lengthMs' => $length,
+                'artistCredit' => 'Example Artist',
+                'recording' => [
+                    'recordingId' => sprintf('22222222-2222-4222-8222-%012d', $index + 1), 'title' => $title,
+                    'artistCredit' => 'Example Artist', 'lengthMs' => $length, 'video' => false, 'isrcs' => [],
+                    'releaseIds' => [self::RELEASE_ID], 'releaseGroupIds' => [self::RELEASE_GROUP_ID], 'providerScore' => null, 'sources' => ['fixture'],
+                ],
+            ];
+        }
+        $identity = new CandidateIdentity(releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID);
+
+        return new CandidatePool([new CandidateHypothesis(
+            $identity,
+            new CandidateMetadata([], [[
+                'releaseId' => self::RELEASE_ID, 'title' => 'Example Album', 'artistCredit' => 'Example Artist', 'releaseGroupId' => self::RELEASE_GROUP_ID,
+                'status' => 'Official', 'date' => '2020-01-01', 'country' => 'US', 'barcode' => null, 'labels' => [], 'aliases' => [],
+                'media' => [['position' => 1, 'title' => null, 'format' => 'CD', 'releaseTrackCount' => 2, 'discIds' => [], 'releaseTracks' => $releaseTracks]],
+            ]], [[
+                'releaseGroupId' => self::RELEASE_GROUP_ID, 'title' => 'Example Album', 'artistCredit' => 'Example Artist', 'primaryType' => 'Album',
+                'secondaryTypes' => [], 'firstReleaseDate' => '2020-01-01', 'aliases' => [],
+            ]]),
+            [new CandidateSignal(CandidateSignalKind::EmbeddedReleaseId, self::RELEASE_ID, $evidence->trackEvidence[0]->provenanceFamily ?? 'tag', true, $identity)],
+        )]);
     }
 }
 
