@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\MusicIdentity;
 
+use App\Facades\Search;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverImages;
@@ -53,12 +54,13 @@ final class CurrentMusicIdentityTest extends TestCase
             'music-identity.retry.initial_seconds' => 60,
             'music-identity.retry.maximum_seconds' => 120,
         ]);
+        Search::spy(); // decision writes re-sync the release search document, which these tests do not build
         DB::purge();
         DB::reconnect();
         Carbon::setTestNow('2026-10-08 12:00:00');
 
         ProductionTables::fromAuthority()->create('releases', ['id']);
-        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_create_music_cover_art_lookups_table.php'] as $pattern) {
+        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_create_music_cover_art_lookups_table.php', '*_add_accepted_music_text_to_release_music_identifications.php'] as $pattern) {
             $this->migration($pattern)->up();
         }
         DB::table('releases')->insert([['id' => self::RELEASE], ['id' => self::RELEASE + 1]]);

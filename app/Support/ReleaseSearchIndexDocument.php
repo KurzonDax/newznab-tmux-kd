@@ -31,7 +31,7 @@ final class ReleaseSearchIndexDocument
             'media_video_width', 'media_video_height', 'media_audio_format',
             'media_audio_channels', 'media_audio_language', 'media_subtitle_language',
             'has_media_info',
-            'movie_title', 'show_title', 'album_title', 'artist', 'console_title', 'game_title', 'book_title', 'anime_titles', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'sort_name', 'poster_identity',
+            'movie_title', 'show_title', 'album_title', 'artist', 'music_tracks', 'console_title', 'game_title', 'book_title', 'anime_titles', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'sort_name', 'poster_identity',
         ];
     }
 
@@ -150,6 +150,7 @@ final class ReleaseSearchIndexDocument
             'show_title' => (string) ($row['show_title'] ?? ''),
             'album_title' => (string) ($row['album_title'] ?? ''),
             'artist' => (string) ($row['artist'] ?? ''),
+            'music_tracks' => (string) ($row['music_tracks'] ?? ''),
             'console_title' => (string) ($row['console_title'] ?? ''),
             'game_title' => (string) ($row['game_title'] ?? ''),
             'book_title' => (string) ($row['book_title'] ?? ''),
@@ -182,7 +183,18 @@ final class ReleaseSearchIndexDocument
     public static function webTextFields(): array
     {
         return ['searchname', 'plainsearchname', 'name', 'filename', 'fromname',
-            'movie_title', 'show_title', 'album_title', 'artist', 'console_title', 'game_title', 'book_title', 'anime_titles'];
+            'movie_title', 'show_title', 'album_title', 'artist', 'music_tracks', 'console_title', 'game_title', 'book_title', 'anime_titles'];
+    }
+
+    /**
+     * Text fields holding a release's music text (legacy musicinfo, or its current accepted
+     * MusicBrainz identity), which API general search matches besides the release name.
+     *
+     * @return list<string>
+     */
+    public static function musicTextFields(): array
+    {
+        return ['album_title', 'artist', 'music_tracks'];
     }
 
     /** Primary Unicode weights preserve case/accent-insensitive display-name ordering. */

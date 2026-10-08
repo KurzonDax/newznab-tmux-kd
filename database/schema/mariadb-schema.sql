@@ -2777,6 +2777,14 @@ CREATE TABLE `release_music_identifications` (
   `musicbrainz_recording_id` char(36) DEFAULT NULL,
   `musicbrainz_release_id` char(36) DEFAULT NULL,
   `musicbrainz_release_group_id` char(36) DEFAULT NULL,
+  `accepted_title` text DEFAULT NULL,
+  `accepted_edition_title` text DEFAULT NULL,
+  `accepted_aliases` text DEFAULT NULL,
+  `accepted_artist_credit` text DEFAULT NULL,
+  `accepted_track_titles` text DEFAULT NULL,
+  `accepted_track_artist_credits` text DEFAULT NULL,
+  `original_release_date` varchar(10) DEFAULT NULL,
+  `edition_release_date` varchar(10) DEFAULT NULL,
   `reasons` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`reasons`)),
   `feature_contributions` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`feature_contributions`)),
   `runner_up_margin` smallint(6) DEFAULT NULL,
@@ -4221,3 +4229,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (313,'2026_10_04_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (314,'2026_10_05_000000_create_kept_releases',24);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (315,'2026_10_08_005420_drop_repair_and_rescan_state_from_releases_table',25);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (316,'2026_10_08_120000_create_music_cover_art_lookups_table',26);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (317,'2026_10_08_130000_add_accepted_music_text_to_release_music_identifications',27);

@@ -12,8 +12,10 @@ use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Exceptions\LostMusicIdentityLease;
+use App\Support\ReleaseSearchIndexSync;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 final readonly class IdentificationDecisionStore
@@ -27,7 +29,8 @@ final readonly class IdentificationDecisionStore
         ?DateTimeInterface $nextAttemptAt = null,
         ?string $leaseToken = null,
     ): ReleaseMusicIdentification {
-        return DB::transaction(function () use ($releaseId, $evidence, $decision, $nextAttemptAt, $leaseToken): ReleaseMusicIdentification {
+        /** @var array{0: ReleaseMusicIdentification, 1: bool} $outcome the decision row and whether this call wrote it */
+        $outcome = DB::transaction(function () use ($releaseId, $evidence, $decision, $nextAttemptAt, $leaseToken): array {
             $evidenceRecord = ReleaseAudioEvidence::query()->lockForUpdate()->findOrFail($evidence->evidenceId);
             if ($evidenceRecord->releases_id !== $releaseId || ! hash_equals($evidenceRecord->evidence_hash, $evidence->evidenceHash)) {
                 throw new InvalidArgumentException('The audio evidence does not belong to the requested release and evidence hash.');
@@ -65,18 +68,39 @@ final readonly class IdentificationDecisionStore
 
             $this->persistCandidates($identification, $decision);
 
-            return $identification->load('candidateAttempts');
+            return [$identification->load('candidateAttempts'), true];
         });
+
+        [$identification, $written] = $outcome;
+        if ($written) {
+            $this->resyncSearchDocument($releaseId);
+        }
+
+        return $identification;
     }
 
+    /**
+     * The release's search document carries its current accepted MusicBrainz text, so every
+     * decision write re-syncs it once committed; a search outage never fails the decision.
+     */
+    private function resyncSearchDocument(int $releaseId): void
+    {
+        try {
+            ReleaseSearchIndexSync::forIds([$releaseId]);
+        } catch (\Throwable $exception) {
+            Log::warning('Music identity search re-sync failed.', ['release_id' => $releaseId, 'exception' => $exception]);
+        }
+    }
+
+    /** @return array{0: ReleaseMusicIdentification, 1: bool} the row and whether it was written (a completed row never is) */
     private function completeExistingAttempt(
         ReleaseMusicIdentification $identification,
         IdentificationDecision $decision,
         ?DateTimeInterface $nextAttemptAt,
         ?string $leaseToken,
-    ): ReleaseMusicIdentification {
+    ): array {
         if ($identification->state->isTerminal()) {
-            return $identification;
+            return [$identification, false];
         }
         if ($leaseToken !== null
             && ($identification->lease_token === null
@@ -94,7 +118,7 @@ final readonly class IdentificationDecisionStore
         $identification->save();
         $this->persistCandidates($identification, $decision);
 
-        return $identification->load('candidateAttempts');
+        return [$identification->load('candidateAttempts'), true];
     }
 
     /** @return array<string, mixed> */
@@ -115,6 +139,7 @@ final readonly class IdentificationDecisionStore
             'musicbrainz_recording_id' => $decision->acceptedIdentity?->recordingId,
             'musicbrainz_release_id' => $decision->acceptedIdentity?->releaseId,
             'musicbrainz_release_group_id' => $decision->acceptedIdentity?->releaseGroupId,
+            ...$this->acceptedTextAttributes($decision),
             'reasons' => array_map(static fn ($reason): array => $reason->toArray(), $decision->reasons),
             'feature_contributions' => $featureContributions,
             'runner_up_margin' => $decision->runnerUpMargin,
@@ -142,6 +167,28 @@ final readonly class IdentificationDecisionStore
         foreach (array_slice($decision->candidates, 0, max(0, $this->candidateAttemptLimit)) as $index => $candidate) {
             $identification->candidateAttempts()->create($this->candidateAttributes($candidate, $index + 1));
         }
+    }
+
+    /**
+     * Only an accepted decision stores MusicBrainz text; lists are stored one entry per line.
+     *
+     * @return array<string, string|null>
+     */
+    private function acceptedTextAttributes(IdentificationDecision $decision): array
+    {
+        $text = $this->acceptedScope($decision->status) === null ? null : $decision->acceptedText;
+        $lines = static fn (?array $values): ?string => $values === null || $values === [] ? null : implode("\n", $values);
+
+        return [
+            'accepted_title' => $text?->title,
+            'accepted_edition_title' => $text?->editionTitle,
+            'accepted_aliases' => $lines($text?->aliases),
+            'accepted_artist_credit' => $text?->artistCredit,
+            'accepted_track_titles' => $lines($text?->trackTitles),
+            'accepted_track_artist_credits' => $lines($text?->trackArtistCredits),
+            'original_release_date' => $text?->originalReleaseDate,
+            'edition_release_date' => $text?->editionReleaseDate,
+        ];
     }
 
     private function acceptedScope(IdentificationStatus $status): ?AcceptedIdentityScope

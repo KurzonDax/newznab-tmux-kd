@@ -676,8 +676,10 @@ final class AudioReleasePageTest extends TestCase
             'raw_filename' => sprintf('Disc/%02d - Track %d.flac', $ordinal, $ordinal), ...$attributes]);
     }
 
-    private function identification(int $releasesId, int $evidenceId, string $state, ?string $group, string $version = 'music-identity-v1'): int
+    private function identification(int $releasesId, int $evidenceId, string $state, ?string $group, ?string $version = null): int
     {
+        $version ??= (string) config('music-identity.algorithm_version');
+
         return DB::table('release_music_identifications')->insertGetId([
             'releases_id' => $releasesId, 'release_audio_evidence_id' => $evidenceId,
             'evidence_hash' => DB::table('release_audio_evidence')->where('id', $evidenceId)->value('evidence_hash'),

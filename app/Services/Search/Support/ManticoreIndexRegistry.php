@@ -21,6 +21,7 @@ final class ManticoreIndexRegistry
                 'show_title' => ['type' => 'text'],
                 'album_title' => ['type' => 'text'],
                 'artist' => ['type' => 'text'],
+                'music_tracks' => ['type' => 'text'],
                 'console_title' => ['type' => 'text'],
                 'game_title' => ['type' => 'text'],
                 'book_title' => ['type' => 'text'],
@@ -90,7 +91,7 @@ final class ManticoreIndexRegistry
     public static function profile(string $logical): array
     {
         $fields = match ($logical) {
-            'releases' => ['searchname' => 12, 'plainsearchname' => 10, 'name' => 8, 'filename' => 5, 'fromname' => 1, 'movie_title' => 8, 'show_title' => 8, 'album_title' => 8, 'artist' => 8, 'console_title' => 8, 'game_title' => 8, 'book_title' => 8, 'anime_titles' => 8],
+            'releases' => ['searchname' => 12, 'plainsearchname' => 10, 'name' => 8, 'filename' => 5, 'fromname' => 1, 'movie_title' => 8, 'show_title' => 8, 'album_title' => 8, 'artist' => 8, 'music_tracks' => 5, 'console_title' => 8, 'game_title' => 8, 'book_title' => 8, 'anime_titles' => 8],
             'predb' => ['title' => 12, 'filename' => 5],
             'movies' => ['title' => 12, 'director' => 5, 'actors' => 3, 'genre' => 2, 'plot' => 1],
             'tvshows' => ['title' => 12],

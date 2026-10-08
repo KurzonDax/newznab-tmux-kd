@@ -271,6 +271,8 @@ class ReleaseSearchService
                 'sort_dir' => $orderDir,
                 'try_fuzzy' => true,
                 'include_documents' => true,
+                // General search also finds releases by their music text (#308); the response is unchanged.
+                'music_text' => true,
             ];
 
             $criteria['track_total'] = $cursor === null;

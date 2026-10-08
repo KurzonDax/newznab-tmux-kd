@@ -131,7 +131,7 @@ class AppServiceProvider extends ServiceProvider
         ));
         $this->app->bind(MusicIdentityResolver::class, static fn (Application $app): MusicIdentityResolver => new MusicIdentityResolver(
             candidateGenerator: $app->make(CandidateGenerator::class),
-            algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v1'),
+            algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v2'),
             resolverVersion: (string) config('music-identity.resolver_version', 'resolver-v1'),
             normalizerVersion: (string) config('music-identity.normalizer_version', 'normalizer-v1'),
             scorerVersion: (string) config('music-identity.scorer_version', 'whole-release-v1'),

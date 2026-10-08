@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 return [
-    'algorithm_version' => 'music-identity-v1',
+    // Raising the version re-resolves every eligible audio release against MusicBrainz; v2 stores
+    // the accepted MusicBrainz search text with each decision (#308).
+    'algorithm_version' => 'music-identity-v2',
     'resolver_version' => 'resolver-v1',
     'normalizer_version' => 'normalizer-v1',
     'scorer_version' => 'whole-release-v1',

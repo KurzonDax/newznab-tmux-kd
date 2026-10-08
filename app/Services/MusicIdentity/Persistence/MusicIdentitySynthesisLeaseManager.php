@@ -88,7 +88,7 @@ final readonly class MusicIdentitySynthesisLeaseManager
 
     private function algorithmVersion(): string
     {
-        return (string) config('music-identity.algorithm_version', 'music-identity-v1');
+        return (string) config('music-identity.algorithm_version', 'music-identity-v2');
     }
 
     private function leaseExpiry(): \DateTimeInterface

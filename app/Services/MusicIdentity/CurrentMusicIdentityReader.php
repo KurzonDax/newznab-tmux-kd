@@ -13,7 +13,8 @@ use Illuminate\Support\Facades\DB;
  * hash under the configured algorithm version; when that target has no row or only an unfinished
  * attempt (pending, retryable error), the release's newest completed decision by id. The decision
  * is chosen before asking whether it accepts an album, so a completed non-album decision withdraws
- * an older accepted one. Reads any number of releases in two queries.
+ * an older accepted one. Reads any number of releases in two queries; currentIdentificationSql()
+ * states the same rule for SQL reads.
  */
 final class CurrentMusicIdentityReader
 {
@@ -33,7 +34,7 @@ final class CurrentMusicIdentityReader
         $completed = DB::table('release_music_identifications')->whereIn('releases_id', $releaseIds)
             ->whereIn('state', self::completedStates())->orderByDesc('id')
             ->get(['id', 'releases_id', 'evidence_hash', 'algorithm_version', 'state', 'musicbrainz_release_id', 'musicbrainz_release_group_id']);
-        $version = (string) config('music-identity.algorithm_version', 'music-identity-v1');
+        $version = (string) config('music-identity.algorithm_version', 'music-identity-v2');
 
         $current = [];
         foreach ($completed as $row) {
@@ -52,6 +53,27 @@ final class CurrentMusicIdentityReader
     public function forRelease(int $releaseId): ?CurrentMusicIdentity
     {
         return $this->forReleases([$releaseId])[$releaseId] ?? null;
+    }
+
+    /**
+     * The same rule as one correlated SQL expression, for a SQL read such as the release search
+     * projection: the current decision's id for the release in the given column, NULL without a
+     * completed decision.
+     *
+     * @return array{0: string, 1: list<string>} the expression and its bindings
+     */
+    public static function currentIdentificationSql(string $releaseIdColumn): array
+    {
+        $states = self::completedStates();
+        $placeholders = implode(', ', array_fill(0, count($states), '?'));
+        $sql = '(COALESCE('
+            ."(SELECT target.id FROM release_music_identifications target WHERE target.releases_id = {$releaseIdColumn}"
+            ." AND target.algorithm_version = ? AND target.state IN ({$placeholders})"
+            ." AND target.evidence_hash = (SELECT newest.evidence_hash FROM release_audio_evidence newest WHERE newest.releases_id = {$releaseIdColumn} ORDER BY newest.revision DESC LIMIT 1)), "
+            ."(SELECT MAX(fallback.id) FROM release_music_identifications fallback WHERE fallback.releases_id = {$releaseIdColumn} AND fallback.state IN ({$placeholders}))"
+            .'))';
+
+        return [$sql, [(string) config('music-identity.algorithm_version', 'music-identity-v2'), ...$states, ...$states]];
     }
 
     /** @return list<string> */

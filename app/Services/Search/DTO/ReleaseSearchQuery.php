@@ -12,6 +12,7 @@ final readonly class ReleaseSearchQuery
      * @param  list<int>  $excludedCategoryIds
      * @param  list<int>|null  $releaseIds
      * @param  int|null  $excludedMovieinfoId  a film whose releases are left out (Similar releases on a Movies details page)
+     * @param  bool  $matchMusicText  release-name text also matches the music text fields (API general search, #308)
      */
     public function __construct(
         public array|string|null $phrases = null,
@@ -42,6 +43,7 @@ final readonly class ReleaseSearchQuery
         public bool $trackTotal = true,
         public bool $includeDocuments = false,
         public ?int $excludedMovieinfoId = null,
+        public bool $matchMusicText = false,
     ) {}
 
     /** @param array<string, mixed> $criteria */
@@ -78,6 +80,7 @@ final readonly class ReleaseSearchQuery
             trackTotal: (bool) ($criteria['track_total'] ?? true),
             includeDocuments: (bool) ($criteria['include_documents'] ?? false),
             excludedMovieinfoId: isset($criteria['excluded_movieinfo_id']) && (int) $criteria['excluded_movieinfo_id'] > 0 ? (int) $criteria['excluded_movieinfo_id'] : null,
+            matchMusicText: (bool) ($criteria['music_text'] ?? false),
         );
     }
 
@@ -111,6 +114,7 @@ final readonly class ReleaseSearchQuery
             'track_total' => $this->trackTotal,
             'include_documents' => $this->includeDocuments,
             'excluded_movieinfo_id' => $this->excludedMovieinfoId,
+            'music_text' => $this->matchMusicText,
         ];
     }
 

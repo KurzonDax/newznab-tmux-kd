@@ -214,7 +214,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
             $table->id();
             $table->string('title');
         });
-        foreach (['musicinfo' => ['id', 'title', 'artist'], 'consoleinfo' => ['id', 'title'], 'gamesinfo' => ['id', 'title'], 'bookinfo' => ['id', 'title']] as $name => $columns) {
+        foreach (['musicinfo' => ['id', 'title', 'artist'], 'consoleinfo' => ['id', 'title'], 'gamesinfo' => ['id', 'title'], 'bookinfo' => ['id', 'title'], 'release_audio_evidence' => null, 'release_music_identifications' => null] as $name => $columns) {
             ProductionTables::fromAuthority()->create($name, $columns);
         }
         Schema::create('anidb_titles', function (Blueprint $table): void {

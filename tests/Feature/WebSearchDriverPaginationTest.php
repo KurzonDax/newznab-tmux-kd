@@ -96,7 +96,7 @@ final class WebSearchDriverPaginationTest extends TestCase
         ], 24);
         $this->assertSame([501], $page['ids']);
         $query = json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR);
-        foreach (['searchname', 'plainsearchname', 'name', 'filename', 'fromname', 'movie_title', 'show_title', 'album_title', 'artist', 'console_title', 'game_title', 'book_title', 'anime_titles'] as $field) {
+        foreach (['searchname', 'plainsearchname', 'name', 'filename', 'fromname', 'movie_title', 'show_title', 'album_title', 'artist', 'music_tracks', 'console_title', 'game_title', 'book_title', 'anime_titles'] as $field) {
             $this->assertStringContainsString($field, $query);
         }
         foreach (['2030', '5030', '3030', 'passwordstatus', 'completion', '95', hash('sha256', 'Exact@Poster')] as $filter) {
@@ -133,6 +133,42 @@ final class WebSearchDriverPaginationTest extends TestCase
         foreach ($this->requests as $body) {
             $this->assertStringNotContainsString('movieinfo_id', json_encode($body['query'], JSON_THROW_ON_ERROR));
         }
+    }
+
+    /** API general search matches the music text fields besides the release name, exact and fuzzy alike (#308). */
+    #[DataProvider('drivers')]
+    public function test_api_general_search_matches_music_text_fields_exactly_and_fuzzily(string $name): void
+    {
+        $driver = $this->driver($name, 0);
+        $driver->searchReleasePage(ReleaseSearchQuery::fromCriteria(['phrases' => 'Recorded Track', 'music_text' => true, 'include_documents' => true], 100));
+
+        $this->assertCount(2, $this->requests, 'an exact search, then its fuzzy retry');
+        if ($name === 'manticore') {
+            $exact = json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR);
+            $this->assertStringContainsString('@(searchname,album_title,artist,music_tracks) (Recorded Track)', $exact);
+            $this->assertTrue($this->requests[1]['options']['fuzzy']);
+            $this->assertStringNotContainsString('@searchname', json_encode($this->requests[1]['query'], JSON_THROW_ON_ERROR), 'the fuzzy retry reads every text field');
+        } else {
+            foreach ($this->requests as $body) {
+                $this->assertSame(['searchname^3', 'plainsearchname^2', 'album_title', 'artist', 'music_tracks'], $body['query']['bool']['must'][0]['multi_match']['fields']);
+            }
+            $this->assertStringContainsString('fuzziness', json_encode($this->requests[1], JSON_THROW_ON_ERROR));
+        }
+
+        $this->requests = [];
+        $driver->searchReleasePage(ReleaseSearchQuery::fromCriteria(['phrases' => 'Recorded Track'], 100));
+        $exact = json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('music_tracks', $exact, 'other release-name searches keep their fields');
+    }
+
+    /** Release names keep their punctuation-separated fallback when the music fields join the API search. */
+    public function test_api_general_search_keeps_the_normalized_release_name_alternative(): void
+    {
+        $driver = $this->driver('manticore');
+        $driver->searchReleasePage(ReleaseSearchQuery::fromCriteria(['phrases' => 'Example.Artist-Album.2020', 'music_text' => true], 100));
+
+        $query = json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString('@(searchname,album_title,artist,music_tracks) (Example Artist Album 2020)', $query);
     }
 
     #[DataProvider('drivers')]

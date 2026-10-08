@@ -907,6 +907,12 @@ class ManticoreSearchDriver implements SearchDriverInterface
         return $fieldSelector.' '.$scopedQuery;
     }
 
+    /** API general search: the release name plus the release's music text fields (#308). */
+    private static function releaseNameAndMusicSelector(): string
+    {
+        return '@('.implode(',', ['searchname', ...ReleaseSearchIndexDocument::musicTextFields()]).')';
+    }
+
     /**
      * Build a release-name query that also handles punctuation used as token
      * separators in Usenet subjects (for example, WEB-DL.x265).
@@ -920,7 +926,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     {
         $primary = self::scopePreparedQueryToField($preparedQuery, $fieldSelector);
 
-        if ($fieldSelector !== '@searchname' || self::queryHasNegation($rawQuery)) {
+        if (! in_array($fieldSelector, ['@searchname', self::releaseNameAndMusicSelector()], true) || self::queryHasNegation($rawQuery)) {
             return $primary;
         }
 
@@ -2809,7 +2815,11 @@ class ManticoreSearchDriver implements SearchDriverInterface
                         }
                         $prepared = ($criteria['web_search'] ?? false) ? self::prepareWebSearchQuery((string) $value) : self::prepareUserSearchQuery((string) $value);
                         if ($prepared !== '') {
-                            $selector = ($criteria['web_search'] ?? false) ? '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).')' : '@'.$key;
+                            $selector = match (true) {
+                                (bool) ($criteria['web_search'] ?? false) => '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).')',
+                                $key === 'searchname' && ($criteria['music_text'] ?? false) => self::releaseNameAndMusicSelector(),
+                                default => '@'.$key,
+                            };
                             $terms[] = self::scopeReleaseSearchQuery((string) $value, $prepared, $selector);
                         }
                     }

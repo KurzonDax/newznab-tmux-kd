@@ -12,6 +12,7 @@ use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\CandidatePool;
 use App\Services\MusicIdentity\DTO\CandidateSignal;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
+use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
@@ -89,6 +90,7 @@ final class MusicIdentityResolverTest extends TestCase
 
         $this->assertSame(IdentificationStatus::Conflicted, $decision->status);
         $this->assertSame('incompatible_embedded_release_ids', $decision->reasons[0]->code);
+        $this->assertNull($decision->acceptedText);
     }
 
     #[Test]
@@ -231,6 +233,7 @@ final class MusicIdentityResolverTest extends TestCase
 
         $this->assertSame(IdentificationStatus::NeedsReview, $decision->status);
         $this->assertSame(0, $decision->runnerUpMargin);
+        $this->assertNull($decision->acceptedText);
     }
 
     #[Test]
@@ -822,6 +825,119 @@ final class MusicIdentityResolverTest extends TestCase
         $this->assertNull($unresolved->operationalError);
     }
 
+    #[Test]
+    public function an_accepted_edition_carries_its_album_text_and_keeps_original_and_edition_dates_apart(): void
+    {
+        $candidate = $this->albumCandidate(
+            titles: ['First Light', 'Last Light'],
+            signals: [new CandidateSignal(
+                CandidateSignalKind::EmbeddedReleaseId,
+                self::RELEASE_ID,
+                'tag-file:1',
+                true,
+                new CandidateIdentity(releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID),
+            )],
+            aliases: ['Alias Album'],
+            firstReleaseDate: '1980-01-01',
+        );
+
+        $decision = $this->resolver([$candidate])->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01 - First Light.flac', 'First Light', 'Example Artist', 180_000, releaseId: self::RELEASE_ID),
+            new TrackEvidence(2, 'tag', 2, '02 - Last Light.flac', 'Last Light', 'Example Artist', 210_000, releaseId: self::RELEASE_ID),
+        ]));
+
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $decision->status);
+        $text = $decision->acceptedText;
+        $this->assertNotNull($text);
+        $this->assertSame(AcceptedIdentityScope::Edition, $text->scope);
+        $this->assertSame('Example Album', $text->title);
+        $this->assertSame('Example Album', $text->editionTitle);
+        $this->assertSame(['Alias Album'], $text->aliases);
+        $this->assertSame('Example Artist', $text->artistCredit);
+        $this->assertSame(['First Light', 'Last Light'], $text->trackTitles);
+        $this->assertSame(['Example Artist'], $text->trackArtistCredits);
+        $this->assertSame('1980-01-01', $text->originalReleaseDate);
+        $this->assertSame('2020-01-01', $text->editionReleaseDate);
+    }
+
+    #[Test]
+    public function an_accepted_release_group_never_takes_an_edition_date_as_its_original_year(): void
+    {
+        $candidate = $this->albumCandidate(['Rare One', 'Rare Two', 'Rare Three'], $this->recordingSignals(3), firstReleaseDate: '1980-01-01');
+
+        $decision = $this->resolver([$candidate])->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Rare One', 'Example Artist', 180_000),
+            new TrackEvidence(2, 'tag', 2, '02.flac', 'Rare Two', 'Example Artist', 210_000),
+            new TrackEvidence(3, 'tag', 3, '03.flac', 'Rare Three', 'Example Artist', 210_000),
+        ], year: null));
+
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $decision->status);
+        $text = $decision->acceptedText;
+        $this->assertNotNull($text);
+        $this->assertSame(AcceptedIdentityScope::ReleaseGroup, $text->scope);
+        $this->assertSame('Example Album', $text->title);
+        $this->assertNull($text->editionTitle);
+        $this->assertSame(['Rare One', 'Rare Two', 'Rare Three'], $text->trackTitles);
+        $this->assertSame('1980-01-01', $text->originalReleaseDate);
+        $this->assertNull($text->editionReleaseDate);
+    }
+
+    #[Test]
+    public function missing_album_dates_stay_absent(): void
+    {
+        $candidate = $this->albumCandidate(
+            titles: ['First Light', 'Last Light'],
+            signals: [new CandidateSignal(
+                CandidateSignalKind::EmbeddedReleaseId,
+                self::RELEASE_ID,
+                'tag-file:1',
+                true,
+                new CandidateIdentity(releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID),
+            )],
+            date: null,
+        );
+
+        $decision = $this->resolver([$candidate])->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01 - First Light.flac', 'First Light', 'Example Artist', 180_000, releaseId: self::RELEASE_ID),
+            new TrackEvidence(2, 'tag', 2, '02 - Last Light.flac', 'Last Light', 'Example Artist', 210_000, releaseId: self::RELEASE_ID),
+        ]));
+
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $decision->status);
+        $this->assertNull($decision->acceptedText?->originalReleaseDate);
+        $this->assertNull($decision->acceptedText?->editionReleaseDate);
+    }
+
+    #[Test]
+    public function an_accepted_recording_carries_only_its_title_and_artist_credit(): void
+    {
+        $recordingId = '22222222-2222-4222-8222-000000000001';
+        $identity = new CandidateIdentity(recordingId: $recordingId, releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID);
+        $candidate = $this->albumCandidate(
+            ['Recorded Track'],
+            [new CandidateSignal(CandidateSignalKind::Isrc, 'USABC2012345', 'tag-file:1', true, $identity)],
+            title: 'Candidate Album',
+            identity: $identity,
+            aliases: ['Candidate Alias'],
+        );
+
+        $decision = $this->resolver([$candidate])->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Recorded Track', 'Example Artist', 180_000, isrc: 'USABC2012345'),
+        ], complete: false));
+
+        $this->assertSame(IdentificationStatus::AcceptedRecording, $decision->status);
+        $text = $decision->acceptedText;
+        $this->assertNotNull($text);
+        $this->assertSame(AcceptedIdentityScope::Recording, $text->scope);
+        $this->assertSame('Recorded Track', $text->title);
+        $this->assertSame('Example Artist', $text->artistCredit);
+        $this->assertNull($text->editionTitle);
+        $this->assertSame([], $text->aliases);
+        $this->assertSame([], $text->trackTitles);
+        $this->assertSame([], $text->trackArtistCredits);
+        $this->assertNull($text->originalReleaseDate);
+        $this->assertNull($text->editionReleaseDate);
+    }
+
     /** @param list<TrackEvidence> $trackEvidence */
     private function evidence(array $trackEvidence, ?bool $complete = true, ?int $year = 2020): AudioEvidenceSet
     {
@@ -850,9 +966,10 @@ final class MusicIdentityResolverTest extends TestCase
         string $releaseGroupId = self::RELEASE_GROUP_ID,
         string $title = 'Example Album',
         string $artist = 'Example Artist',
-        string $date = '2020-01-01',
+        ?string $date = '2020-01-01',
         ?CandidateIdentity $identity = null,
         array $aliases = [],
+        string|false|null $firstReleaseDate = false,
     ): CandidateHypothesis {
         $releaseTracks = [];
         foreach ($titles as $index => $trackTitle) {
@@ -906,7 +1023,7 @@ final class MusicIdentityResolverTest extends TestCase
                 'artistCredit' => $artist,
                 'primaryType' => 'Album',
                 'secondaryTypes' => [],
-                'firstReleaseDate' => $date,
+                'firstReleaseDate' => $firstReleaseDate === false ? $date : $firstReleaseDate,
                 'aliases' => $aliases,
             ]]),
             $signals,
