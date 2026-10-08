@@ -93,27 +93,6 @@ final class SettingsMigrationDefaultsTest extends TestCase
         $this->assertNull($this->settingValue('forced_root_pc_escape'));
     }
 
-    public function test_repair_and_rescan_settings_are_seeded_and_backfilled_for_existing_installs(): void
-    {
-        (new SettingsTableSeeder)->run();
-        $this->assertSame('72', $this->settingValue('repair_retry_after_hours'));
-        $this->assertSame('500000', $this->settingValue('rescan_max_articles_per_release'));
-
-        DB::table('settings')->whereIn('name', ['repair_limit', 'rescan_limit'])->delete();
-        $migration = $this->migration('2026_08_21_120200_add_repair_and_rescan_settings.php');
-        $migration->up();
-        $this->assertSame('250', $this->settingValue('repair_limit'));
-        $this->assertSame('100', $this->settingValue('rescan_limit'));
-
-        // Re-running must not stamp an operator's value back to the default.
-        DB::table('settings')->where('name', 'repair_limit')->update(['value' => '10']);
-        $migration->up();
-        $this->assertSame('10', $this->settingValue('repair_limit'));
-
-        $migration->down();
-        $this->assertNull($this->settingValue('repair_limit'));
-    }
-
     private function migration(string $file): Migration
     {
         return require database_path('migrations/'.$file);

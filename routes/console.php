@@ -35,13 +35,6 @@ Schedule::command('nntmux:disable-expired-promotions')->daily();
 // Automatically mark completed registration periods as done shortly after they end
 Schedule::command('nntmux:disable-expired-registration-periods')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('nntmux:remove-bad')->hourly()->withoutOverlapping();
-// Rebuild missing NZB segments before the completion sweep may delete a recoverable release.
-// Bounded per invocation on purpose: repaired releases feed straight back into additional
-// processing, and a flood here would starve fresh releases of AP capacity.
-Schedule::command('releases:repair-completion')->hourly()->withoutOverlapping();
-// Derive legacy declared-file counts and recover whole missing files only after segment repair.
-// The command reads its own per-run release and article budgets from site settings.
-Schedule::command('releases:rescan-missing-files')->hourly()->withoutOverlapping();
 Schedule::command('cloudflare:reload')->daily()->withoutOverlapping();
 Schedule::command('cache:prune-stale-tags')->hourly();
 Schedule::command('gdpr:purge-expired-exports')->dailyAt('03:30')->withoutOverlapping();

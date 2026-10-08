@@ -8,10 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
-use App\Services\Binaries\BinariesConfig;
-use App\Services\Binaries\BinariesService;
 use App\Services\CollectionCleanupService;
-use App\Services\CollectionReconciliation\ArtifactInventory;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\CollectionReconciliation\HistoricalReconciliation;
@@ -22,19 +19,12 @@ use App\Services\CollectionReconciliation\PostingNzb;
 use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NNTP\Contracts\BoundedProviderClient;
-use App\Services\NNTP\Contracts\ProviderClient;
 use App\Services\NNTP\DTO\BoundedArticleResponse;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseProcessingService;
-use App\Services\ReleaseRepair\MissingFileRescanOptions;
-use App\Services\ReleaseRepair\MissingFileRescanService;
-use App\Services\ReleaseRepair\ReleaseRepairOptions;
-use App\Services\ReleaseRepair\ReleaseRepairService;
-use App\Services\ReleaseRepair\RescanRunBudget;
-use App\Services\ReleaseRepair\RescanWindowResolver;
 use App\Services\YencService;
 use Database\Seeders\CollectionRegexesTableSeeder;
 use Illuminate\Database\Schema\Blueprint;
@@ -47,7 +37,6 @@ use Illuminate\Support\Str;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
-use Tests\Support\Reconciliation\FakeHeaderNntp;
 use Tests\Support\Reconciliation\Par2Fixture;
 use Tests\Support\TestBinariesHarness;
 use Tests\TestCase;
@@ -229,13 +218,13 @@ class PendingReconciliationTest extends TestCase
     }
 
     #[DataProvider('lateWriterClocks')]
-    public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(bool $repair, string $timezone): void
+    public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(string $timezone): void
     {
         config(['app.timezone' => $timezone]);
         date_default_timezone_set($timezone);
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
-        [$service, $id] = $this->ingestCourse(multipart: $repair);
+        [$service, $id] = $this->ingestCourse();
         DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
         $this->assertSame('associated', $service->reconcile($id, 1));
         config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('current-artifact-late')]);
@@ -248,38 +237,8 @@ class PendingReconciliationTest extends TestCase
             if (str_contains($file->getAttribute('subject'), 'bundle.r15')) {
                 $file->parentNode->removeChild($file);
             }
-            if ($repair && str_contains($file->getAttribute('subject'), 'bundle.r10')) {
-                $segments = $file->getElementsByTagName('segments')->item(0);
-                foreach (iterator_to_array($segments->getElementsByTagName('segment')) as $segment) {
-                    if ($segment->getAttribute('number') === '1') {
-                        $segments->removeChild($segment);
-                    }
-                }
-            }
         }
         $this->assertTrue($nzbs->replaceNzbContents($release->guid, $document->saveXML())->success);
-        if ($repair) {
-            Schema::table('releases', function (Blueprint $table): void {
-                $table->timestamp('repair_attempted_at')->nullable();
-                $table->string('repair_outcome')->nullable();
-                $table->double('repair_target_completion')->nullable();
-                $table->double('repair_evaluated_target_completion')->nullable();
-                foreach (['pp_timeout_count', 'proc_nfo', 'proc_files', 'proc_srr', 'proc_crc32', 'proc_uid', 'proc_hash16k', 'proc_par2', 'proc_srrdb', 'proc_xxx', 'proc_media_movie'] as $column) {
-                    $table->integer($column)->default(1);
-                }
-            });
-            $client = Mockery::mock(ProviderClient::class);
-            $client->shouldReceive('doConnect')->andReturn(true);
-            $client->shouldReceive('statArticle')->once()->with('part1of3.CourseRepair@host')->andReturn(true);
-            $client->shouldReceive('doQuit')->andReturn(true);
-            $provider = new NntpProvider(1, 'repair-fixture', 'example.invalid', 119, false, '', '', 1, 5, true);
-            $pool = new NntpProviderPool([$provider], clientFactory: static fn () => $client);
-            $result = (new ReleaseRepairService($nzbs, $pool))->repair($release->fresh(), new ReleaseRepairOptions);
-            $this->assertSame(1, $result->segmentsAdded, $result->reason);
-            $document->loadXML($nzbs->readNzbContents($release->guid));
-            $this->assertStringContainsString('part1of3.CourseRepair@host', $document->saveXML());
-            $this->assertSame('additive', DB::table('reconciled_artifact_operations')->where('kind', 'repair')->value('change_kind'));
-        }
         $opaque = $document->createElement('file');
         $opaque->setAttribute('subject', '"unproved.txt" (1/1)');
         $opaque->setAttribute('poster', 'Unrelated Poster');
@@ -311,64 +270,12 @@ class PendingReconciliationTest extends TestCase
         $this->assertStringContainsString('opaque@example.invalid', $stored);
         $this->assertStringContainsString('keep this metadata', $stored);
         $this->assertStringContainsString('bundle.r15', $stored);
-        if ($repair) {
-            foreach ([1, 2, 3] as $part) {
-                $this->assertStringContainsString('part'.$part.'of3.CourseRepair@host', $stored);
-            }
-        }
         $this->assertSame(2, (int) DB::table('reconciled_artifacts')->value('epoch'));
     }
 
     public static function lateWriterClocks(): array
     {
-        return [[false, 'UTC'], [true, 'UTC'], [false, 'America/Chicago'], [true, 'America/Chicago']];
-    }
-
-    public function test_legacy_partial_union_can_rescan_a_whole_file_then_prove_another_late_source(): void
-    {
-        [$service] = $this->ingestCourse(['bundle.r14', 'bundle.r15']);
-        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
-        $this->seedLegacyPartialPosting();
-        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('legacy-rescan-late')]);
-        $nzbs = app(NzbService::class);
-        $release = Release::query()->first();
-        $this->assertTrue($nzbs->createNzbForRelease($release)->success);
-        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
-        Schema::table('releases', function (Blueprint $table): void {
-            foreach (['repair', 'rescan'] as $prefix) {
-                $table->timestamp($prefix.'_attempted_at')->nullable();
-                $table->string($prefix.'_outcome')->nullable();
-                $table->double($prefix.'_target_completion')->nullable();
-                $table->double($prefix.'_evaluated_target_completion')->nullable();
-            }
-            foreach (['pp_timeout_count', 'proc_nfo', 'proc_files', 'proc_srr', 'proc_crc32', 'proc_uid', 'proc_hash16k', 'proc_par2', 'proc_srrdb', 'proc_xxx', 'proc_media_movie'] as $column) {
-                $table->integer($column)->default(1);
-            }
-        });
-        DB::table('releases')->where('id', $release->id)->update(['firstarticle' => 100000, 'lastarticle' => 100033]);
-        $lines = [];
-        foreach ($this->courseHeaders as $header) {
-            if (str_contains($header['Subject'], '"bundle.r14"')) {
-                $lines[$header['Number']] = $header;
-            }
-        }
-        $nntp = new FakeHeaderNntp($lines);
-        $nntp->groupFirst = 100000;
-        $nntp->groupLast = 100033;
-        $binaries = new BinariesService(config: new BinariesConfig(echoCli: false));
-        $binaries->setNntp($nntp);
-        $rescan = new MissingFileRescanService($nzbs, $nntp, new RescanWindowResolver($binaries));
-        $result = $rescan->rescan($release->fresh(), new MissingFileRescanOptions(windowMinutes: 0), new RescanRunBudget(1000));
-        $this->assertSame(1, $result->filesRecovered, $result->reason);
-        $rescanXml = $nzbs->readNzbContents($release->guid);
-        $this->assertStringContainsString('bundle.r14', $rescanXml);
-        $late = array_values(array_filter($this->courseHeaders, static fn ($header): bool => str_contains($header['Subject'], '"bundle.r15"')));
-        (new TestBinariesHarness)->simulateScan($late, ['id' => 1, 'name' => 'alt.binaries.boneless']);
-        $lateId = (int) DB::table('collections')->value('id');
-        $this->assertSame('late_added', $service->reconcile($lateId, 1));
-        $current = ArtifactInventory::load($nzbs->readNzbContents($release->guid));
-        $this->assertSame('additive', $current->classifyAgainst(ArtifactInventory::load($rescanXml)));
-        $this->assertCount(33, $current->files());
+        return [['UTC'], ['America/Chicago']];
     }
 
     public static function ordinaryWriterCases(): iterable

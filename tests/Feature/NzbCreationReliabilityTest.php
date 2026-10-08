@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Binaries\BinariesConfig;
@@ -204,7 +203,6 @@ class NzbCreationReliabilityTest extends TestCase
         DB::statement('ALTER TABLE root_categories ADD COLUMN discard_executables INTEGER DEFAULT 0');
         DB::statement('ALTER TABLE releases ADD COLUMN iscategorized INTEGER DEFAULT 1');
         DB::statement('ALTER TABLE releases ADD COLUMN fromname VARCHAR(255)');
-        DB::statement('ALTER TABLE releases ADD COLUMN adddate DATETIME');
         DB::statement('CREATE TABLE genres (id INTEGER PRIMARY KEY, disabled INTEGER DEFAULT 0)');
     }
 
@@ -716,7 +714,7 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertSame(13, (int) DB::table('releases')->where('id', 1)->value('declaredfiles'));
     }
 
-    public function test_a_release_measured_sub_threshold_waits_for_the_repair_engine(): void
+    public function test_a_release_measured_sub_threshold_is_swept_only_after_the_late_header_grace(): void
     {
         $this->insertRelease(1, 'j', completion: (107 / 311) * 100);
         $this->insertWritableCbp(200, 2000, 1, totalParts: 211, arrivedParts: 7);
@@ -727,11 +725,11 @@ class NzbCreationReliabilityTest extends TestCase
         $this->assertTrue($result->success, $result->reason);
         $this->assertEqualsWithDelta((107 / 311) * 100, $this->completionFor(1), 0.0001);
 
-        // Measured sub-threshold, but the repair engine has not seen it yet: the sweep waits.
-        // Missing headers usually mean articles that are still on the provider.
+        // Added just now: late headers may still arrive, so the sweep waits out the grace.
+        DB::table('releases')->where('id', 1)->update(['adddate' => now()->subHours(71)]);
         $this->assertSame([], $this->releasesSelectedByCompletionCleanup(95.0));
 
-        DB::table('releases')->where('id', 1)->update(['repair_outcome' => ReleaseRepairOutcome::Failed->value]);
+        DB::table('releases')->where('id', 1)->update(['adddate' => now()->subHours(73)]);
         $this->assertSame([1], $this->releasesSelectedByCompletionCleanup(95.0));
     }
 
@@ -744,6 +742,8 @@ class NzbCreationReliabilityTest extends TestCase
 
         $this->assertTrue($result->success, $result->reason);
         $this->assertSame(0.0, $this->completionFor(1));
+        // Past the late-header grace, so only the sentinel keeps it out of the sweep.
+        DB::table('releases')->where('id', 1)->update(['adddate' => now()->subHours(73)]);
         $this->assertSame([], $this->releasesSelectedByCompletionCleanup(95.0));
     }
 
@@ -979,10 +979,10 @@ class NzbCreationReliabilityTest extends TestCase
             groups_id INTEGER,
             categories_id INTEGER,
             postdate DATETIME NULL,
+            adddate DATETIME NULL,
             nzbstatus INTEGER,
             completion DOUBLE NOT NULL DEFAULT 0,
-            repair_attempted_at DATETIME NULL,
-            repair_outcome VARCHAR(16) NULL,
+            collectionhash BLOB NULL UNIQUE,
             nzb_creation_claimed_at DATETIME NULL,
             nzb_creation_claim_token VARCHAR(64) NULL
         )');
@@ -997,6 +997,7 @@ class NzbCreationReliabilityTest extends TestCase
         DB::statement('CREATE TABLE usenet_groups (id INTEGER PRIMARY KEY, name VARCHAR(255) UNIQUE)');
         DB::statement('CREATE TABLE collections (
             id INTEGER PRIMARY KEY,
+            collectionhash BLOB NULL UNIQUE,
             releases_id INTEGER NULL,
             fromname VARCHAR(255) NULL,
             date DATETIME NULL,

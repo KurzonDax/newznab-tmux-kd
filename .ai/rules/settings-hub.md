@@ -18,7 +18,7 @@ save path. For numeric-value interpretation, see [settings values](settings-valu
 - A definition owns its label/help, type, options, unit, validation, and eligible
   root IDs. Explicit rules replace type defaults; type guards still apply on top,
   so a picker cannot save an option it does not offer. Reuse existing
-  `RepairSettingRules`, `NzbSettingRules`, and `BackfillSettingRules` where applicable.
+  `NzbSettingRules` and `BackfillSettingRules` where applicable.
 - Saves are per card through `SettingsCardUpdater`. Unknown or cross-card keys
   reject the entire write, and out-of-range values are rejected rather than clamped.
   Per-root toggles (`generate_previews`, `dynamic_preview_budget`, `generate_clips`,

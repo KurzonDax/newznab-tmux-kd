@@ -135,64 +135,6 @@ final class NzbRepairDocument
     }
 
     /**
-     * Work out, per file, which segments are missing and whether their message-IDs are derivable.
-     */
-    public function plan(): ReleaseRepairPlan
-    {
-        $plans = [];
-        $withoutTemplate = 0;
-        $withNoSegments = 0;
-
-        foreach ($this->files as $index => $file) {
-            $subject = $file->getAttribute('subject');
-            $declaredTotal = max(0, $this->parser->extractPartsTotal($subject));
-            $segments = $this->segmentsOf($file);
-
-            if ($segments === []) {
-                // Nothing to derive a template from: this file's token is unknowable from the
-                // NZB alone. Recovering it needs a header re-scan, not synthesis.
-                $withNoSegments++;
-
-                continue;
-            }
-
-            $missing = array_values(array_diff(range(1, max($declaredTotal, 1)), array_keys($segments)));
-
-            if ($declaredTotal <= 0 || $missing === []) {
-                continue;
-            }
-
-            $template = MessageIdTemplate::detect($segments);
-
-            if ($template === null) {
-                $withoutTemplate++;
-
-                continue;
-            }
-
-            $synthesized = [];
-
-            foreach ($missing as $number) {
-                $synthesized[$number] = $template->render($number);
-            }
-
-            $plans[] = new FileRepairPlan(
-                fileIndex: $index,
-                subject: $subject,
-                declaredTotal: $declaredTotal,
-                presentCount: count($segments),
-                synthesized: $synthesized,
-            );
-        }
-
-        return new ReleaseRepairPlan(
-            files: $plans,
-            filesWithoutTemplate: $withoutTemplate,
-            filesWithNoSegments: $withNoSegments,
-        );
-    }
-
-    /**
      * Write verified segments into their files.
      *
      * @param  array<int, array<int, string>>  $accepted  File index => (segment number => message-ID).

@@ -40,7 +40,7 @@ trait InteractsWithReleaseBrowser
     {
         Schema::create('releases', function (Blueprint $table): void {
             $table->increments('id');
-            foreach (['name', 'searchname', 'guid', 'display_name', 'fromname', 'imdbid', 'additional_pp_claim_token', 'repair_outcome', 'rescan_outcome'] as $column) {
+            foreach (['name', 'searchname', 'guid', 'display_name', 'fromname', 'imdbid', 'additional_pp_claim_token'] as $column) {
                 $table->string($column)->nullable();
             }
             foreach (['categories_id', 'groups_id', 'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'declaredfiles'] as $column) {

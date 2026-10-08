@@ -18,8 +18,6 @@ final readonly class ReleaseRowData
         public int $grabs,
         public int $comments,
         public float $completion,
-        public ?string $repair_outcome,
-        public ?string $rescan_outcome,
         public bool $passworded,
         public bool $has_media_info,
         public ?string $media_info_summary,

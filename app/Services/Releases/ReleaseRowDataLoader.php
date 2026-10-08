@@ -23,8 +23,8 @@ final class ReleaseRowDataLoader
      */
     public const REQUIRED_COLUMNS = [
         'id', 'guid', 'searchname', 'display_name', 'categories_id', 'size', 'totalpart',
-        'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome',
-        'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
+        'adddate', 'postdate', 'grabs', 'comments', 'completion',
+        'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
         'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed',
         'additional_pp_claim_token', 'imdbid', 'videos_id', 'tv_episodes_id', 'musicinfo_id',
         'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id',
@@ -108,8 +108,6 @@ final class ReleaseRowDataLoader
                 grabs: (int) ($source->grabs ?? 0),
                 comments: (int) ($source->comments ?? 0),
                 completion: (float) ($source->completion ?? 0),
-                repair_outcome: $source->repair_outcome ?? null,
-                rescan_outcome: $source->rescan_outcome ?? null,
                 passworded: (int) ($source->passwordstatus ?? -1) > 0,
                 has_media_info: (bool) ($release->has_media_info ?? false),
                 media_info_summary: $release->media_info_summary ?? null,

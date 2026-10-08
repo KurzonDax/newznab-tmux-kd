@@ -145,7 +145,7 @@ final class UsenetIngestSection implements SettingsSectionProvider
                 new SettingCard(
                     id: 'part-repair',
                     title: 'Missed-article repair',
-                    description: 'Articles a scan asked for and did not get are recorded and retried later. This is not the same as release repair, which rebuilds a finished release; this repairs the header scan itself.',
+                    description: 'Articles a scan asked for and did not get are recorded and retried later.',
                     icon: 'fas fa-wrench',
                     settings: [
                         SettingDefinition::bool(

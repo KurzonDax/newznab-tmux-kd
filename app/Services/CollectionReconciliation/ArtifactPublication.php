@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use RuntimeException;
-use UnexpectedValueException;
 
 /** Durable intent precedes filesystem publication; replay adopts only recognized bytes. */
 class ArtifactPublication
@@ -143,13 +142,6 @@ class ArtifactPublication
     {
         $target = ArtifactInventory::load($xml);
         $update ??= new ArtifactReleaseUpdate;
-        if (in_array($update->kind, ['repair', 'rescan'], true)) {
-            try {
-                $target->bytes();
-            } catch (UnexpectedValueException $exception) {
-                return NzbReplaceResult::writeFailure($exception->getMessage());
-            }
-        }
         $prepared = DB::transaction(function () use ($guid, $xml, $owner, $expectedDigest, $target, $update, $sourceIds, $expectedSnapshot, $expectedSources, $proof): NzbReplaceResult {
             $observedIds = array_values(array_unique([...$sourceIds, ...array_keys($expectedSources)]));
             if ($observedIds !== []) {

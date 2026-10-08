@@ -1,7 +1,5 @@
 <?php
 
-use App\Enums\ReleaseRepairOutcome;
-use App\Services\ReleaseRepair\ReleaseRepairOptions;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -43,16 +41,16 @@ return new class extends Migration
             ->value('value');
         $targetCompletion = $configuredTarget > 0
             ? $configuredTarget
-            : ReleaseRepairOptions::DEFAULT_TARGET_COMPLETION;
+            : 95.0;
 
         DB::table('releases')
-            ->where('repair_outcome', ReleaseRepairOutcome::Repaired->value)
+            ->where('repair_outcome', 'repaired')
             ->update([
                 'repair_target_completion' => $targetCompletion,
                 'repair_evaluated_target_completion' => $targetCompletion,
             ]);
         DB::table('releases')
-            ->where('rescan_outcome', ReleaseRepairOutcome::Repaired->value)
+            ->where('rescan_outcome', 'repaired')
             ->update([
                 'rescan_target_completion' => $targetCompletion,
                 'rescan_evaluated_target_completion' => $targetCompletion,

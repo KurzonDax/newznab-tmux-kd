@@ -6,7 +6,6 @@ namespace App\Support\Settings\Sections;
 
 use App\Services\CollectionReconciliation\ReconciliationLimits;
 use App\Support\NzbSettingRules;
-use App\Support\RepairSettingRules;
 use App\Support\Settings\PipelineStage;
 use App\Support\Settings\SettingCard;
 use App\Support\Settings\SettingDefinition;
@@ -160,7 +159,7 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'completionpercent',
                             label: 'Minimum completion',
-                            help: 'A collection holding a smaller share of its articles than this is deleted. 0 turns the check off. Release repair runs before this sweep, so a release that can be rebuilt is rebuilt first.',
+                            help: 'A release holding a smaller share of its articles than this is deleted. 0 turns the check off. A release is kept while a secondary provider may still add late headers to it.',
                             type: SettingType::Int,
                             unit: '%',
                             rules: ['required', 'integer', 'min:0', 'max:100'],
@@ -270,95 +269,6 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                             unit: 'hours',
                             rules: ['required', 'integer', 'min:0'],
                             icon: 'fas fa-hashtag',
-                        ),
-                    ],
-                ),
-                new SettingCard(
-                    id: 'repair',
-                    title: 'Release repair & re-scan',
-                    description: 'How hard the recovery passes work to rescue an incomplete release before the completion gate above may delete it. Repair rebuilds segments whose message-IDs can be derived from the ones already held; the re-scan goes back to the group\'s headers for files that were missed entirely.',
-                    icon: 'fas fa-screwdriver-wrench',
-                    settings: [
-                        new SettingDefinition(
-                            key: 'repair_retry_after_hours',
-                            label: 'Repair retry window',
-                            help: 'How long after a repair pass falls short the final pass may run. Fresh releases are promoted at the collection timeout and repaired within hours, while their articles may still be propagating across the provider farm, so a first attempt can fail where a recheck days later succeeds. Every release gets two passes at most.',
-                            type: SettingType::Int,
-                            unit: 'hours',
-                            rules: RepairSettingRules::rulesFor('repair_retry_after_hours'),
-                            icon: 'fas fa-rotate-right',
-                        ),
-                        new SettingDefinition(
-                            key: 'repair_floor_completion',
-                            label: 'Repair floor completion',
-                            help: 'Releases measured below this percentage skip network repair entirely and go straight to a final outcome. A release holding under a tenth of its articles is not a header-scan miss, and confirming that costs article probes.',
-                            type: SettingType::Int,
-                            unit: '%',
-                            rules: RepairSettingRules::rulesFor('repair_floor_completion'),
-                            icon: 'fas fa-arrow-down-short-wide',
-                        ),
-                        new SettingDefinition(
-                            key: 'repair_stat_sample_per_file',
-                            label: 'Repair samples per file',
-                            help: 'Synthesized message-IDs spot-checked per file before its segments are written into the NZB. A file is accepted only when every sampled ID exists. One sample cannot say whether the message-ID template was guessed correctly, so two is the sensible minimum.',
-                            type: SettingType::Int,
-                            unit: 'probes',
-                            rules: RepairSettingRules::rulesFor('repair_stat_sample_per_file'),
-                            icon: 'fas fa-vial',
-                        ),
-                        new SettingDefinition(
-                            key: 'repair_max_stat_probes',
-                            label: 'Repair probe ceiling per release',
-                            help: 'Hard ceiling on article existence probes for one release, however many files it has. When the budget runs out mid-way the remaining files are left for the next pass rather than accepted on a thinner sample.',
-                            type: SettingType::Int,
-                            unit: 'probes',
-                            rules: RepairSettingRules::rulesFor('repair_max_stat_probes'),
-                            icon: 'fas fa-gauge-high',
-                        ),
-                        new SettingDefinition(
-                            key: 'repair_limit',
-                            label: 'Repair releases per run',
-                            help: 'Releases one <code>releases:repair-completion</code> invocation works on. Repaired releases flow straight back into additional processing, so a large batch here starves fresh releases of post-processing capacity.',
-                            type: SettingType::Int,
-                            unit: 'releases',
-                            rules: RepairSettingRules::rulesFor('repair_limit'),
-                            icon: 'fas fa-layer-group',
-                        ),
-                        new SettingDefinition(
-                            key: 'rescan_limit',
-                            label: 'Re-scan releases per run',
-                            help: 'Releases one <code>releases:rescan-missing-files</code> invocation works on. The header re-scan recovers files the scan missed entirely, and it competes with live header scanning for the primary provider\'s connections.',
-                            type: SettingType::Int,
-                            unit: 'releases',
-                            rules: RepairSettingRules::rulesFor('rescan_limit'),
-                            icon: 'fas fa-magnifying-glass-arrow-right',
-                        ),
-                        new SettingDefinition(
-                            key: 'rescan_window_minutes',
-                            label: 'Re-scan window',
-                            help: 'How far either side of the release\'s known article range the re-scan looks, in posting time. Widening it finds files posted further from the rest of the collection, at a proportional cost in overview lines fetched.',
-                            type: SettingType::Int,
-                            unit: 'minutes',
-                            rules: RepairSettingRules::rulesFor('rescan_window_minutes'),
-                            icon: 'fas fa-clock-rotate-left',
-                        ),
-                        new SettingDefinition(
-                            key: 'rescan_max_articles_per_release',
-                            label: 'Re-scan article ceiling per release',
-                            help: 'A release whose estimated article range is wider than this is stamped as skipped without fetching anything. Low-traffic groups give tight ranges; a busy group over a wide window can span millions of articles for one release.',
-                            type: SettingType::Int,
-                            unit: 'articles',
-                            rules: RepairSettingRules::rulesFor('rescan_max_articles_per_release'),
-                            icon: 'fas fa-ruler-horizontal',
-                        ),
-                        new SettingDefinition(
-                            key: 'rescan_max_articles_per_run',
-                            label: 'Re-scan article ceiling per run',
-                            help: 'The invocation stops fetching once this many overview lines have been read, whatever is left in the batch. The unfinished releases keep their state and are picked up next run.',
-                            type: SettingType::Int,
-                            unit: 'articles',
-                            rules: RepairSettingRules::rulesFor('rescan_max_articles_per_run'),
-                            icon: 'fas fa-ruler-combined',
                         ),
                     ],
                 ),

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
@@ -110,12 +109,6 @@ class Release extends Model
     protected function casts(): array
     {
         return [
-            'repair_outcome' => ReleaseRepairOutcome::class,
-            'repair_target_completion' => 'float',
-            'repair_evaluated_target_completion' => 'float',
-            'rescan_outcome' => ReleaseRepairOutcome::class,
-            'rescan_target_completion' => 'float',
-            'rescan_evaluated_target_completion' => 'float',
             'tv_episode_lookup_attempted_at' => 'datetime',
         ];
     }

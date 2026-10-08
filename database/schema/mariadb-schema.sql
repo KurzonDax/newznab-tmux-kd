@@ -2986,14 +2986,6 @@ CREATE TABLE `releases` (
   `leftguid` char(1) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'The first letter of the release guid',
   `fromname` varchar(255) DEFAULT NULL,
   `completion` double NOT NULL DEFAULT 0,
-  `repair_attempted_at` timestamp NULL DEFAULT NULL COMMENT 'When the repair engine last worked this release (both passes stamp it)',
-  `repair_outcome` varchar(16) DEFAULT NULL COMMENT 'retry-pending | repaired | failed | skipped-floor; null = never offered to repair',
-  `repair_target_completion` double DEFAULT NULL COMMENT 'Completion target achieved by this repaired verdict; null for other outcomes',
-  `repair_evaluated_target_completion` double DEFAULT NULL COMMENT 'Latest completion target evaluated by segment repair',
-  `rescan_attempted_at` timestamp NULL DEFAULT NULL COMMENT 'When the header re-scan last worked this release (both passes stamp it)',
-  `rescan_outcome` varchar(16) DEFAULT NULL COMMENT 'retry-pending | repaired | failed | skipped-floor | skipped-budget; null = never re-scanned',
-  `rescan_target_completion` double DEFAULT NULL COMMENT 'Completion target achieved by this repaired verdict; null for other outcomes',
-  `rescan_evaluated_target_completion` double DEFAULT NULL COMMENT 'Latest completion target evaluated by header re-scan',
   `recovery_claimed_at` timestamp NULL DEFAULT NULL COMMENT 'Live lease shared by segment repair and whole-file header re-scan',
   `categories_id` int(11) NOT NULL DEFAULT 10,
   `videos_id` int(10) unsigned NOT NULL DEFAULT 0 COMMENT 'FK to videos.id of the parent series.',
@@ -3074,10 +3066,6 @@ CREATE TABLE `releases` (
   KEY `ix_releases_nzb_creation_group_queue` (`nzbstatus`,`groups_id`,`postdate` DESC,`id`,`nzb_creation_claimed_at`),
   KEY `ix_releases_nzb_creation_global_queue` (`nzbstatus`,`postdate` DESC,`id`,`nzb_creation_claimed_at`),
   KEY `ix_releases_fromname_postdate` (`fromname`(191),`postdate` DESC),
-  KEY `ix_releases_repair_sweep` (`repair_outcome`,`completion`),
-  KEY `ix_releases_repair_retry` (`repair_outcome`,`repair_attempted_at`),
-  KEY `ix_releases_rescan_sweep` (`rescan_outcome`,`completion`),
-  KEY `ix_releases_rescan_retry` (`rescan_outcome`,`rescan_attempted_at`),
   KEY `ix_releases_recovery_claim` (`recovery_claimed_at`),
   KEY `ix_releases_tv_episode_revisit` (`videos_id`,`tv_episodes_id`,`postdate`,`tv_episode_lookup_attempted_at`),
   KEY `ix_releases_searchname_normalized_size` (`searchname_normalized`,`size`),
@@ -4212,3 +4200,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (311,'2026_10_02_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (312,'2026_10_04_000000_add_release_audio_genres',23);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (313,'2026_10_04_000100_fill_release_audio_genres',23);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (314,'2026_10_05_000000_create_kept_releases',24);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (315,'2026_10_08_005420_drop_repair_and_rescan_state_from_releases_table',25);

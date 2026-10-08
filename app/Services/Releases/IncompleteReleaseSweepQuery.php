@@ -4,35 +4,32 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
-use App\Enums\ReleaseRepairOutcome;
 use App\Models\Release;
+use App\Support\ReleaseRepairingContext;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * The single definition of "which incomplete releases may be deleted".
  *
- * Every part of the predicate is load-bearing and easy to get subtly wrong, so they live in
- * one place rather than being restated at each call site:
- *
- * - `completion = 0` is the "never measured" sentinel, not a real 0%. There was no denominator
- *   to measure against, so the release is exempt.
- * - `repair_outcome` must be *final*. A release the segment repair engine has never seen, or
- *   still owes an attempt to, is not garbage yet -- its missing articles may still be on the
- *   provider.
- * - `rescan_outcome` must be final *too*, unless the release has nothing for the header re-scan
- *   to look for. The two passes recover different things -- derivable segments, and files with no
- *   segment at all -- so a release that has exhausted one may still be owed the other.
- *
- * "Nothing to re-scan" is a *derived* `declaredfiles` value saying so: zero (the NZB declares no
- * usable count), or no greater than the files the release holds. Null means the count has never
- * been derived and the release is still owed a re-scan visit, because derivation requires reading
- * the stored NZB rather than SQL.
- *
- * The sweep does no timestamp arithmetic of its own: the state machines own time and hand the
- * reaper only releases they have given up on.
+ * - `completion = 0` is the "never measured" sentinel, not a real 0%, so it is exempt.
+ * - Late headers can still complete a release after it forms ({@see LateHeaderMerger}), and they
+ *   land well after formation. A release is deletable only once it has been in the index for
+ *   {@see self::LATE_HEADER_GRACE_HOURS}, and never while a stored late collection shares its
+ *   `collectionhash` and is waiting for the merge.
+ * - A release is also kept while an enabled secondary provider may still be reading its post. The
+ *   query cannot see provider positions, so the sweep applies {@see self::lateHeadersPending()}
+ *   to every selected row.
  */
 final class IncompleteReleaseSweepQuery
 {
+    /**
+     * Hours after `adddate` before a sub-threshold release may be deleted. Of the late merges that
+     * raised a sub-threshold release between 2026-10-02 and 2026-10-07, 97.2% landed within 72
+     * hours of `adddate`; the rest came more than 1,000 hours later.
+     */
+    public const int LATE_HEADER_GRACE_HOURS = 72;
+
     /**
      * @param  float  $completionThreshold  The `completionpercent` setting.
      * @return Builder<Release>
@@ -42,13 +39,21 @@ final class IncompleteReleaseSweepQuery
         $query = Release::query()
             ->where('completion', '<', $completionThreshold)
             ->where('completion', '>', 0)
-            ->whereIn('repair_outcome', ReleaseRepairOutcome::deletableValues())
-            ->where(static function (Builder $query): void {
-                $query->whereIn('rescan_outcome', ReleaseRepairOutcome::deletableValues())
-                    ->orWhere('declaredfiles', '<=', 0)
-                    ->orWhereColumn('declaredfiles', '<=', 'totalpart');
+            ->where('adddate', '<', now()->subHours(self::LATE_HEADER_GRACE_HOURS));
+
+        if (Schema::hasTable('collections')) {
+            $query->whereNotExists(static function (\Illuminate\Database\Query\Builder $late): void {
+                $late->selectRaw('1')->from('collections')
+                    ->whereColumn('collections.collectionhash', 'releases.collectionhash');
             });
+        }
 
         return ReleaseDeletionProtection::apply($query);
+    }
+
+    /** May a secondary provider still add late headers to this selected release? Such a row is kept. */
+    public static function lateHeadersPending(Release $release, ReleaseRepairingContext $context): bool
+    {
+        return $context->secondaryStillReading($release->groups_id, $release->postdate);
     }
 }

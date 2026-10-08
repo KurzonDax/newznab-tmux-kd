@@ -22,6 +22,6 @@
             title="{{ $percent }}% of this release's articles were seen by the indexer">{{ $percent }}%</x-chip>
     @if($stillRepairing && $showRepair)
         <x-chip variant="warning" icon="fas fa-wrench" class="repair-badge"
-                title="Segment repair, a header rescan or a secondary provider may still recover more of this release">{{ ReleaseCompletion::PENDING_LABEL }}</x-chip>
+                title="A secondary provider may still add headers to this release">{{ ReleaseCompletion::PENDING_LABEL }}</x-chip>
     @endif
 @endif

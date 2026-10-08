@@ -423,9 +423,7 @@ class BackfillReleaseCompletionTest extends TestCase
             nzbstatus INTEGER NOT NULL DEFAULT 0,
             completion DOUBLE NOT NULL DEFAULT 0,
             totalpart INTEGER NOT NULL DEFAULT 0,
-            declaredfiles INTEGER NULL,
-            repair_attempted_at DATETIME NULL,
-            repair_outcome VARCHAR(16) NULL
+            declaredfiles INTEGER NULL
         )');
     }
 }

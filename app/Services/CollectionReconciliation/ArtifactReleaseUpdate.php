@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\CollectionReconciliation;
 
-use App\Enums\ReleaseRepairOutcome;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
@@ -17,8 +16,6 @@ final readonly class ArtifactReleaseUpdate
     private const array FIELDS = [
         'ordinary' => [],
         'duplicate' => ['size', 'declaredfiles'],
-        'repair' => ['repair_attempted_at', 'repair_outcome', 'repair_target_completion', 'repair_evaluated_target_completion'],
-        'rescan' => ['rescan_attempted_at', 'rescan_outcome', 'rescan_target_completion', 'rescan_evaluated_target_completion'],
         'reconciliation' => ['size', 'declaredfiles', 'nzbstatus'],
     ];
 
@@ -72,25 +69,6 @@ final readonly class ArtifactReleaseUpdate
             }
         }
         $result = $this->result;
-        if (in_array($this->kind, ['repair', 'rescan'], true)) {
-            $values['size'] = ArtifactInventory::load($xml)->bytes();
-            $prefix = $this->kind;
-            $outcome = $values[$prefix.'_outcome'] ?? null;
-            $target = $values[$prefix.'_evaluated_target_completion'] ?? null;
-            if ($outcome !== null && $release->getRawOriginal($prefix.'_outcome') === ReleaseRepairOutcome::Repaired->value) {
-                $values[$prefix.'_outcome'] = ReleaseRepairOutcome::Repaired->value;
-                $result['outcome'] = ReleaseRepairOutcome::Repaired->value;
-                if ($target !== null && $completion < $target) {
-                    $values[$prefix.'_target_completion'] = $release->getRawOriginal($prefix.'_target_completion');
-                }
-            }
-            if ($prefix === 'rescan' && $target !== null && $completion >= $target
-                && $release->getRawOriginal('repair_outcome') === ReleaseRepairOutcome::RetryPending->value) {
-                $values['repair_outcome'] = ReleaseRepairOutcome::Repaired->value;
-                $values['repair_target_completion'] = $target;
-                $values['repair_evaluated_target_completion'] = $target;
-            }
-        }
         $release->newQuery()->whereKey($release->id)->update($values + [
             'totalpart' => $document->fileCount(), 'completion' => $completion,
         ]);

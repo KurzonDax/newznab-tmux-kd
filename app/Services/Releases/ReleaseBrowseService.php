@@ -135,8 +135,6 @@ class ReleaseBrowseService
                 'r.searchname',
                 'r.display_name',
                 'r.completion',
-                'r.repair_outcome',
-                'r.rescan_outcome',
                 'r.guid',
                 'r.postdate',
                 'r.categories_id',
@@ -286,7 +284,7 @@ class ReleaseBrowseService
             $innerSelect = 'SELECT r.id, r.searchname, r.display_name, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id';
         } else {
             // Browse only needs columns used in browse/index.blade.php and search/index.blade.php
-            $outerSelect = "SELECT r.id, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, r.group_name,
+            $outerSelect = "SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, r.group_name,
 					CONCAT(cp.title, ' > ', c.title) AS category_name,
 					MAX(df.failed) AS failed_count,
         COUNT(DISTINCT rr.id) AS total_report_count,
@@ -307,7 +305,7 @@ class ReleaseBrowseService
 			LEFT OUTER JOIN release_nfos rn ON rn.releases_id = r.id
       LEFT OUTER JOIN dnzb_failures df ON df.release_id = r.id
       LEFT OUTER JOIN release_reports rr ON rr.releases_id = r.id';
-            $innerSelect = 'SELECT r.id, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, g.name AS group_name, r.movieinfo_id';
+            $innerSelect = 'SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.jpgstatus, r.nfostatus, g.name AS group_name, r.movieinfo_id';
         }
 
         $qry = $outerSelect.sprintf(
@@ -536,14 +534,14 @@ class ReleaseBrowseService
         $fieldOrder = implode(',', $ids);
 
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.nfostatus, r.group_name,
+            "SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.haspreview, r.nfostatus, r.group_name,
 				CONCAT(cp.title, ' > ', c.title) AS category_name,
 				rn.releases_id AS nfoid,
 				v.tvdb, v.trakt, v.tvrage, v.tvmaze, v.imdb, v.tmdb,
 				m.imdbid, m.tmdbid, m.traktid,
 				tve.title, tve.series, tve.episode, tve.firstaired
 			FROM (
-				SELECT r.id, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id
+				SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.nfostatus, g.name AS group_name, r.movieinfo_id
 				FROM releases r
 				LEFT JOIN usenet_groups g ON g.id = r.groups_id
 				WHERE r.id IN (%s)
@@ -665,7 +663,7 @@ class ReleaseBrowseService
     {
         $orderBy = $this->getBrowseOrder($orderBy);
         $sql = sprintf(
-            "SELECT r.id, r.searchname, r.display_name, r.completion, r.repair_outcome, r.rescan_outcome, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
+            "SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
 					CONCAT(cp.title, '->', c.title) AS category_name
 				FROM releases r
 				LEFT JOIN categories c ON c.id = r.categories_id

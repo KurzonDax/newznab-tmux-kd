@@ -5,12 +5,8 @@ namespace Tests\Feature;
 use App\Enums\NzbImportStatus;
 use App\Facades\Search;
 use App\Models\Release;
-use App\Models\UsenetGroup;
-use App\Services\Binaries\BinariesConfig;
-use App\Services\Binaries\BinariesService;
 use App\Services\Nzb\NzbImportService;
 use App\Services\Nzb\NzbService;
-use App\Services\ReleaseRepair\RescanWindowResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -93,43 +89,6 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertSame(NzbImportStatus::Inserted, $status);
         $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
         $this->assertSame(0, DB::table('releases')->value('declaredfiles'));
-    }
-
-    public function test_import_without_article_anchors_resolves_its_rescan_window_from_postdate(): void
-    {
-        $status = $this->scan($this->makeNzb([
-            ['subject' => '[1/2] Rescan.Import.Release.part01.rar yEnc (1/2)', 'segments' => ['rescan-1@example.com']],
-        ]));
-
-        $this->assertSame(NzbImportStatus::Inserted, $status);
-
-        $binaries = new class(new BinariesConfig(echoCli: false)) extends BinariesService
-        {
-            /** @var list<int> */
-            public array $requestedTimestamps = [];
-
-            public function articleForTimestamp(int $goalTime, array $data): string
-            {
-                $this->requestedTimestamps[] = $goalTime;
-
-                return count($this->requestedTimestamps) === 1 ? '200' : '400';
-            }
-        };
-        $release = Release::query()->firstOrFail();
-        $group = UsenetGroup::query()->firstOrFail();
-        $window = (new RescanWindowResolver($binaries))->resolve(
-            $release,
-            $group,
-            ['first' => 1, 'last' => 1000, 'group' => 'alt.test'],
-            60,
-        );
-
-        $this->assertNotNull($window);
-        $this->assertFalse($window->anchored);
-        $this->assertSame(200, $window->first);
-        $this->assertSame(400, $window->last);
-        $postdate = strtotime((string) $release->postdate);
-        $this->assertSame([$postdate - 3600, $postdate + 3600], $binaries->requestedTimestamps);
     }
 
     public function test_reimport_with_rewritten_subject_is_duplicate_via_hash(): void

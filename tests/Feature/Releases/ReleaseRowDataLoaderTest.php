@@ -87,7 +87,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
         self::assertSame('Display title', $rows[0]->display_name);
         self::assertSame(7, $rows[0]->total_report_count);
         self::assertSame(
-            '{"id":100,"guid":"release-100","name":"Display title","category":"","size":"500.00 MB","files":3,"added":"","posted":"","grabs":4,"comments":2,"completion":99.5,"repair_outcome":null,"rescan_outcome":null,"passworded":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"preview":"audio","group":"","poster":"Poster","renamed":true,"pp_done":false,"entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
+            '{"id":100,"guid":"release-100","name":"Display title","category":"","size":"500.00 MB","files":3,"added":"","posted":"","grabs":4,"comments":2,"completion":99.5,"passworded":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"preview":"audio","group":"","poster":"Poster","renamed":true,"pp_done":false,"entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
             json_encode($rows[0]->row_data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         );
     }
@@ -170,7 +170,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
         return json_encode([
             'id' => $id, 'guid' => 'release-'.$id, 'name' => $name, 'category' => '', 'size' => '500.00 MB',
             'files' => 3, 'added' => '', 'posted' => '', 'grabs' => 4, 'comments' => 2, 'completion' => 99.5,
-            'repair_outcome' => null, 'rescan_outcome' => null, 'passworded' => false,
+            'passworded' => false,
             'has_media_info' => false, 'media_info_summary' => null, 'nfo' => false, 'preview' => 'none',
             'group' => '', 'poster' => 'Poster', 'renamed' => true, 'pp_done' => false, 'entity' => null,
             'in_basket' => false, 'watched' => false, 'reports' => 0, 'public_responses' => 0,
@@ -182,7 +182,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
         return [
             'id' => $id, 'guid' => 'release-'.$id, 'searchname' => 'Original.Title', 'display_name' => 'Display title',
             'categories_id' => null, 'size' => 524288000, 'totalpart' => 3, 'adddate' => null, 'postdate' => null,
-            'grabs' => 4, 'comments' => 2, 'completion' => 99.5, 'repair_outcome' => null, 'rescan_outcome' => null,
+            'grabs' => 4, 'comments' => 2, 'completion' => 99.5,
             'declaredfiles' => null, 'nzbstatus' => 1, 'passwordstatus' => null, 'nfostatus' => null, 'haspreview' => 0, 'jpgstatus' => 0, 'groups_id' => null,
             'fromname' => 'Poster', 'isrenamed' => 1, 'additional_pp_claim_token' => null, 'imdbid' => null,
             'videos_id' => null, 'tv_episodes_id' => null, 'musicinfo_id' => null, 'consoleinfo_id' => null,

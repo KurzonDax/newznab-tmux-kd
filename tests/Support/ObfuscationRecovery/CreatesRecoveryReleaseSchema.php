@@ -48,12 +48,6 @@ trait CreatesRecoveryReleaseSchema
             $table->binary('collectionhash', 20, true)->nullable()->unique();
             $table->timestamp('recovery_claimed_at')->nullable();
             $table->uuid('recovery_claim_token')->nullable();
-            foreach (['repair', 'rescan'] as $stage) {
-                $table->string($stage.'_outcome')->nullable();
-                $table->timestamp($stage.'_attempted_at')->nullable();
-                $table->float($stage.'_target_completion')->nullable();
-                $table->float($stage.'_evaluated_target_completion')->nullable();
-            }
             $table->timestamp('nzb_creation_claimed_at')->nullable();
             $table->string('nzb_creation_claim_token')->nullable();
             $table->unique('guid');
