@@ -28,12 +28,16 @@
             @endif
         </td>
     @elseif($row instanceof \App\Data\AudioReleaseRow)
-        {{-- Audio's square cover slot (SPEC 5.7): no audio cover is stored (SPEC 6.2), so every row shows Adult's dashed "No cover" tile. --}}
+        {{-- Audio's square cover slot (SPEC 5.7): the stored cover of the release's current accepted MusicBrainz album; without one, Adult's dashed "No cover" tile. --}}
         <td class="tv-art is-square">
-            <a class="tv-placeholder is-no-picture" href="{{ $details }}" tabindex="-1" aria-hidden="true">
-                <i class="fas fa-compact-disc" aria-hidden="true"></i>
-                <span class="tv-placeholder-label">No cover</span>
-            </a>
+            @if($row->cover !== null)
+                <a href="{{ $details }}" tabindex="-1" aria-hidden="true"><img src="{{ $row->cover }}" alt="" loading="eager"></a>
+            @else
+                <a class="tv-placeholder is-no-picture" href="{{ $details }}" tabindex="-1" aria-hidden="true">
+                    <i class="fas fa-compact-disc" aria-hidden="true"></i>
+                    <span class="tv-placeholder-label">No cover</span>
+                </a>
+            @endif
         </td>
     @endif
     <td class="tv-what">

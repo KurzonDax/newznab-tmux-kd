@@ -6,6 +6,8 @@ namespace App\Services\Releases;
 
 use App\Data\AudioReleaseRow;
 use App\Services\AudioProcessing\AudioGenres;
+use App\Services\MusicIdentity\CoverArt\AlbumCoverImages;
+use App\Services\MusicIdentity\CurrentMusicIdentityReader;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -16,10 +18,16 @@ use Illuminate\Support\Facades\DB;
  * `release_audio_genres.position` order joined with ", " in SQL (a name may hold a comma, so the
  * joined text is never split). The shared loader (ReleasePreviewDataLoader) already marks a
  * release with a playable preview, with its type, track title and artist, for the Listen chip.
+ * The cover of each release's current accepted album (CurrentMusicIdentityReader, AlbumCoverImages)
+ * is read for the whole page too, so the query count never grows with the rows.
  */
 final class AudioReleaseRows
 {
-    public function __construct(private readonly ShelfReleaseRows $shelf) {}
+    public function __construct(
+        private readonly ShelfReleaseRows $shelf,
+        private readonly CurrentMusicIdentityReader $identities,
+        private readonly AlbumCoverImages $covers,
+    ) {}
 
     /**
      * @param  list<int>  $ids  in display order
@@ -32,10 +40,12 @@ final class AudioReleaseRows
         $tags = $releaseIds === [] ? collect() : DB::table('release_audio_tags as t')->whereIn('t.releases_id', $releaseIds)
             ->select(['t.releases_id', 't.album', 't.album_performer', 't.performer', 't.recorded_year', 't.genre', 't.preview_seconds'])
             ->selectRaw(self::genreNamesSql('t.releases_id').' AS genre_names')->get()->keyBy('releases_id');
+        $covers = $this->covers->urlsFor($this->identities->forReleases($releaseIds));
 
-        return array_map(static function (array $row) use ($tags): AudioReleaseRow {
+        return array_map(static function (array $row) use ($tags, $covers): AudioReleaseRow {
             $release = $row['release'];
             $tag = $tags->get((int) $release->id);
+            $cover = $covers[(int) $release->id] ?? null;
             $listen = (bool) ($release->has_audio_preview ?? false) ? [
                 'url' => route('preview.audio', $row['facts']['guid']),
                 'type' => (string) $release->audio_preview_mime,
@@ -44,7 +54,7 @@ final class AudioReleaseRows
                 'seconds' => $tag?->preview_seconds === null ? null : (int) $tag->preview_seconds,
             ] : null;
             if ($tag === null) {
-                return new AudioReleaseRow(...[...$row['facts'], 'listen' => $listen]);
+                return new AudioReleaseRow(...[...$row['facts'], 'listen' => $listen, 'cover' => $cover]);
             }
             $genres = (string) $tag->genre_names;
 
@@ -55,6 +65,7 @@ final class AudioReleaseRows
                 'genres' => $genres,
                 'unknownGenre' => $genres === '' && AudioGenres::readsUnknown($tag->genre === null ? null : (string) $tag->genre),
                 'listen' => $listen,
+                'cover' => $cover,
             ]);
         }, $rows);
     }

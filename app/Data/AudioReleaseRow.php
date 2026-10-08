@@ -9,9 +9,9 @@ use App\Enums\ReleaseResolution;
 /**
  * One release row of the Audio releases list (docs/proposals/audio-redesign/SPEC.md 5.4, 5.5, 5.7,
  * 5.8 and 5.10): the shelf row plus the release's tags, read by `release_audio_tags.releases_id`:
- * the music line under the name, the Genre cell and the Listen chip. No audio cover is stored
- * (SPEC 6.2), so every row shows the "No cover" tile. Like ShelfReleaseRow, the preview and sample
- * are always null.
+ * the music line under the name, the Genre cell and the Listen chip; plus the stored Cover Art
+ * Archive cover of its current accepted album (issue #1015), else the "No cover" tile. Like
+ * ShelfReleaseRow, the preview and sample are always null.
  */
 final readonly class AudioReleaseRow
 {
@@ -32,6 +32,7 @@ final readonly class AudioReleaseRow
      * @param  string  $genres  the release's genres in `position` order joined with ", " (a name may hold a comma); '' with none
      * @param  bool  $unknownGenre  the release has no genre row and its tag's genre value reads "Unknown"
      * @param  array{url: string, type: string, title: ?string, artist: ?string, seconds: ?int}|null  $listen  the playable preview: today's player route, its type, the track title and artist, its length
+     * @param  ?string  $cover  the stored cover of the release's current accepted album (AlbumCoverImages); null shows the placeholder
      */
     public function __construct(
         public int $id,
@@ -68,6 +69,7 @@ final readonly class AudioReleaseRow
         public string $genres = '',
         public bool $unknownGenre = false,
         public ?array $listen = null,
+        public ?string $cover = null,
     ) {}
 
     public function hasChips(): bool

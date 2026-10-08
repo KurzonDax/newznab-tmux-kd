@@ -221,9 +221,10 @@ export function tvImageDialog() {
 
 /**
  * The Listen dialog (docs/proposals/audio-redesign/SPEC.md 5.10), opened by an Audio row's Listen
- * chip (`.listen-badge`): the track title with the artist under it, then the browser's own audio
- * player, built here as the image dialog builds its video player and played at once. Closing
- * pauses, empties and removes the player, so the sound stops.
+ * chip (`.listen-badge`): the release's 120 px cover when the chip carries one, beside the track
+ * title with the artist under it, then the browser's own audio player, built here as the image
+ * dialog builds its video player and played at once. Closing pauses, empties and removes the
+ * player, so the sound stops.
  */
 export function tvListenDialog() {
     return {
@@ -232,6 +233,7 @@ export function tvListenDialog() {
         releaseName: '',
         trackTitle: '',
         artist: '',
+        cover: '',
 
         show(trigger) {
             const data = trigger.dataset;
@@ -239,6 +241,7 @@ export function tvListenDialog() {
             this.releaseName = data.releaseDisplayName || '';
             this.trackTitle = data.audioTitle || '';
             this.artist = data.audioArtist || '';
+            this.cover = data.audioCover || '';
             this.open = true;
             this.$nextTick(() => this.addPlayer(data.audioUrl || '', data.audioType || '', data.audioSeconds || ''));
         },
@@ -265,6 +268,15 @@ export function tvListenDialog() {
             player.replaceChildren();
             player.load();
             this.$refs.player.replaceChildren();
+        },
+
+        /** The release's stored cover, shown beside the track; none without one. */
+        hasCover() {
+            return this.cover !== '';
+        },
+
+        layoutClass() {
+            return this.hasCover() ? 'has-cover' : '';
         },
 
         /** The track title, else nothing: the artist shows only under a title. */

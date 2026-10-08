@@ -33,6 +33,21 @@ return [
         'hydrated_release_edition_limit' => 8,
     ],
 
+    // Album covers from the public Cover Art Archive for releases whose current decision accepts an album:
+    // one lookup at a time across every worker, at least min_interval_milliseconds apart.
+    'cover_art' => [
+        'base_url' => 'https://coverartarchive.org',
+        'min_interval_milliseconds' => 1_000,
+        'lock_wait_seconds' => 10,
+        'timeout_seconds' => 15,
+        'connect_timeout_seconds' => 5,
+        'backfill_batch_size' => 10,
+        'retry' => [
+            'initial_seconds' => 3_600,
+            'maximum_seconds' => 604_800,
+        ],
+    ],
+
     'musicbrainz' => [
         // Empty by default: local evidence capture remains active, but no provider calls occur.
         'endpoint_url' => env('MUSICBRAINZ_ENDPOINT_URL'),

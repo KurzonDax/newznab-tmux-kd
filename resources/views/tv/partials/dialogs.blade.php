@@ -50,14 +50,17 @@
         </x-slot:footer>
     </x-tv-dialog>
 </div>
-{{-- Listen (docs/proposals/audio-redesign/SPEC.md 5.10): the track title and artist, then the browser's own audio player, which the component builds and plays at once; no footer. --}}
+{{-- Listen (docs/proposals/audio-redesign/SPEC.md 5.10): the release's cover when it has one, beside the track title and artist, then the browser's own audio player, which the component builds and plays at once; no footer. --}}
 <div x-data="tvListenDialog">
     <x-tv-dialog name="listen" class="is-listen">
         <x-slot:title>Listen</x-slot:title>
         <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>
-        <div class="tv-listen">
-            <div class="tv-listen-track" x-show="showTrack()"><span x-text="trackTitle"></span><small x-show="showArtist()" x-text="artist"></small></div>
-            <div class="tv-listen-player" x-ref="player"></div>
+        <div class="tv-listen" x-bind:class="layoutClass()">
+            <template x-if="hasCover()"><img class="tv-listen-cover" x-bind:src="cover" alt=""></template>
+            <div>
+                <div class="tv-listen-track" x-show="showTrack()"><span x-text="trackTitle"></span><small x-show="showArtist()" x-text="artist"></small></div>
+                <div class="tv-listen-player" x-ref="player"></div>
+            </div>
         </div>
     </x-tv-dialog>
 </div>

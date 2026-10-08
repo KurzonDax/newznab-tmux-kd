@@ -74,7 +74,14 @@ class CoverController extends Controller
         }
 
         $extensions = array_values(array_unique([$requestedExtension, 'webp', 'jpg', 'jpeg']));
-        $roots = [storage_path('covers'), public_path('covers')];
+        // The roots getImageAssetUrl() publishes from: the configured covers root (which may lie
+        // outside both defaults), then the storage and public defaults.
+        $configuredRoot = config('nntmux_settings.covers_path');
+        $roots = array_values(array_unique(array_filter([
+            is_string($configuredRoot) && $configuredRoot !== '' ? rtrim($configuredRoot, '/\\') : null,
+            storage_path('covers'),
+            public_path('covers'),
+        ], static fn (?string $root): bool => $root !== null)));
 
         foreach ($basenames as $candidateBasename) {
             foreach ($extensions as $extension) {
