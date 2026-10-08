@@ -161,6 +161,34 @@ final class WebSearchDriverPaginationTest extends TestCase
         $this->assertStringNotContainsString('music_tracks', $exact, 'other release-name searches keep their fields');
     }
 
+    /** API music search matches only the music text fields, never the release name, and keeps its filters (#307). */
+    #[DataProvider('drivers')]
+    public function test_api_music_search_matches_only_the_music_text_fields(string $name): void
+    {
+        $driver = $this->driver($name);
+        $driver->searchReleasePage(ReleaseSearchQuery::fromCriteria([
+            'phrases' => 'Recorded Track', 'music_text_only' => true, 'try_fuzzy' => false,
+            'category_ids' => [3040], 'min_size' => 1024, 'sort_field' => 'size', 'sort_dir' => 'asc',
+        ], 2000));
+
+        $this->assertCount(1, $this->requests, 'an exact search only, like the legacy music lookup');
+        $body = $this->requests[0];
+        $query = json_encode($body['query'], JSON_THROW_ON_ERROR);
+        if ($name === 'manticore') {
+            $this->assertStringContainsString('@(album_title,artist,music_tracks) (Recorded Track)', $query);
+            $this->assertStringNotContainsString('searchname', $query);
+            $this->assertSame([['size' => 'asc'], ['id' => 'asc']], $body['sort']);
+        } else {
+            $this->assertSame(['album_title', 'artist', 'music_tracks'], $body['query']['bool']['must'][0]['multi_match']['fields']);
+            $this->assertStringNotContainsString('fuzziness', $query);
+            $this->assertSame([['size' => ['order' => 'asc']], ['id' => ['order' => 'asc']]], $body['sort']);
+        }
+        foreach (['3040', '1024'] as $filter) {
+            $this->assertStringContainsString($filter, $query);
+        }
+        $this->assertFalse(ReleaseSearchQuery::fromCriteria(['phrases' => 'Recorded Track'], 10)->criteria()['music_text_only']);
+    }
+
     /** Release names keep their punctuation-separated fallback when the music fields join the API search. */
     public function test_api_general_search_keeps_the_normalized_release_name_alternative(): void
     {

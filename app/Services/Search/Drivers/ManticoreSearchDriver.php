@@ -913,6 +913,12 @@ class ManticoreSearchDriver implements SearchDriverInterface
         return '@('.implode(',', ['searchname', ...ReleaseSearchIndexDocument::musicTextFields()]).')';
     }
 
+    /** API music search: only the release's music text fields, never its name (#307). */
+    private static function musicTextSelector(): string
+    {
+        return '@('.implode(',', ReleaseSearchIndexDocument::musicTextFields()).')';
+    }
+
     /**
      * Build a release-name query that also handles punctuation used as token
      * separators in Usenet subjects (for example, WEB-DL.x265).
@@ -2801,6 +2807,8 @@ class ManticoreSearchDriver implements SearchDriverInterface
                     );
                     if ($criteria['web_search'] ?? false) {
                         $searchString = '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).') '.$searchString;
+                    } elseif ($criteria['music_text_only'] ?? false) {
+                        $searchString = self::musicTextSelector().' '.$searchString;
                     }
                     $query->search($searchString)
                         ->option('fuzzy', true)
@@ -2817,6 +2825,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
                         if ($prepared !== '') {
                             $selector = match (true) {
                                 (bool) ($criteria['web_search'] ?? false) => '@('.implode(',', ReleaseSearchIndexDocument::webTextFields()).')',
+                                $key === 'searchname' && ($criteria['music_text_only'] ?? false) => self::musicTextSelector(),
                                 $key === 'searchname' && ($criteria['music_text'] ?? false) => self::releaseNameAndMusicSelector(),
                                 default => '@'.$key,
                             };

@@ -243,32 +243,9 @@ class ReleaseSearchService
         [$orderField, $orderDir] = $this->getBrowseOrder($orderBy);
 
         if (Search::isAvailable()) {
-            $groupId = null;
-            if ((int) $groupName !== -1) {
-                $resolved = UsenetGroup::getIDByName((string) $groupName);
-                if ($resolved) {
-                    $groupId = (int) $resolved;
-                }
-            }
-
-            $categoryIdsRaw = Category::getCategorySearch($cat, null, true);
-            $categoryIds = null;
-            if (is_array($categoryIdsRaw)) {
-                $categoryIds = array_map(static fn ($id): int => (int) $id, $categoryIdsRaw);
-            } elseif (is_int($categoryIdsRaw) || (is_string($categoryIdsRaw) && ctype_digit((string) $categoryIdsRaw))) {
-                $categoryIds = [(int) $categoryIdsRaw];
-            }
-
             $criteria = [
+                ...$this->apiIndexFilterCriteria($groupName, $maxAge, $excludedCats, $cat, $minSize, $orderField, $orderDir),
                 'phrases' => $hasText ? $searchName : null,
-                'category_ids' => $categoryIds,
-                'excluded_category_ids' => $excludedCats,
-                'min_size' => $minSize,
-                'max_age_days' => $maxAge,
-                'groups_id' => $groupId,
-                'password_allow_rar' => $this->passwordAllowRar(),
-                'sort_field' => $this->browseOrderToIndexSortField($orderField),
-                'sort_dir' => $orderDir,
                 'try_fuzzy' => true,
                 'include_documents' => true,
                 // General search also finds releases by their music text (#308); the response is unchanged.
@@ -475,7 +452,47 @@ class ReleaseSearchService
     }
 
     /**
-     * API: music releases linked to rows from the music metadata index.
+     * The search-index filters an API search shares with its SQL: group, category, age, size,
+     * passwords and sort.
+     *
+     * @param  array<int|string, mixed>  $cat
+     * @param  array<int, int>  $excludedCats
+     * @return array<string, mixed>
+     */
+    private function apiIndexFilterCriteria(mixed $groupName, int $maxAge, array $excludedCats, array $cat, int $minSize, string $orderField, string $orderDir): array
+    {
+        $groupId = null;
+        if ((int) $groupName !== -1) {
+            $resolved = UsenetGroup::getIDByName((string) $groupName);
+            if ($resolved) {
+                $groupId = (int) $resolved;
+            }
+        }
+
+        $categoryIdsRaw = Category::getCategorySearch($cat, null, true);
+        $categoryIds = null;
+        if (is_array($categoryIdsRaw)) {
+            $categoryIds = array_map(static fn ($id): int => (int) $id, $categoryIdsRaw);
+        } elseif (is_int($categoryIdsRaw) || (is_string($categoryIdsRaw) && ctype_digit((string) $categoryIdsRaw))) {
+            $categoryIds = [(int) $categoryIdsRaw];
+        }
+
+        return [
+            'category_ids' => $categoryIds,
+            'excluded_category_ids' => $excludedCats,
+            'min_size' => $minSize,
+            'max_age_days' => $maxAge,
+            'groups_id' => $groupId,
+            'password_allow_rar' => $this->passwordAllowRar(),
+            'sort_field' => $this->browseOrderToIndexSortField($orderField),
+            'sort_dir' => $orderDir,
+        ];
+    }
+
+    /**
+     * API: music releases whose release search document carries the text in its music fields
+     * (the current accepted MusicBrainz album, artist and track text, #307), together with
+     * releases linked to rows from the music metadata index. Release names are not matched.
      *
      * @param  array<int|string, mixed>  $cat
      * @param  array<int, int>  $excludedCats
@@ -496,9 +513,18 @@ class ReleaseSearchService
             return collect();
         }
 
-        $musicInfoIds = Search::searchSecondary(SecondarySearchIndex::Music, $q, 2000)['id'];
+        [$orderField, $orderDir] = $this->getBrowseOrder($orderBy); // @phpstan-ignore offsetAccess.notFound, offsetAccess.notFound
+        $musicInfoIds = Search::searchSecondary(SecondarySearchIndex::Music, $q, self::SEARCH_INDEX_MAX_CANDIDATES)['id'];
+        $musicTextReleaseIds = Search::searchReleasePage(ReleaseSearchQuery::fromCriteria([
+            ...$this->apiIndexFilterCriteria($groupName, $maxAge, $excludedCats, $cat, $minSize, $orderField, $orderDir),
+            'phrases' => $q,
+            'music_text_only' => true,
+            // Exact matching only, like the music metadata lookup.
+            'try_fuzzy' => false,
+            'track_total' => false,
+        ], self::SEARCH_INDEX_MAX_CANDIDATES))->ids;
 
-        return $this->apiSearchByMetadataForeignKey($musicInfoIds, 'musicinfo_id', $groupName, $offset, $limit, $maxAge, $excludedCats, $cat, $minSize, $orderBy);
+        return $this->apiSearchByMetadataForeignKey($musicInfoIds, 'musicinfo_id', $groupName, $offset, $limit, $maxAge, $excludedCats, $cat, $minSize, $orderBy, $musicTextReleaseIds);
     }
 
     /**
@@ -529,9 +555,13 @@ class ReleaseSearchService
     }
 
     /**
+     * Releases linked through $column to any of $metadataIds, or whose id is in $releaseIds (the
+     * music text matches of an API music search, #307), under the API filters, sort and paging.
+     *
      * @param  list<int>  $metadataIds
      * @param  array<int|string, mixed>  $cat
      * @param  array<int, int>  $excludedCats
+     * @param  list<int>  $releaseIds
      */
     private function apiSearchByMetadataForeignKey(
         array $metadataIds,
@@ -543,10 +573,19 @@ class ReleaseSearchService
         array $excludedCats,
         array $cat,
         int $minSize,
-        string $orderBy = 'posted_desc'
+        string $orderBy = 'posted_desc',
+        array $releaseIds = []
     ): mixed {
         [$orderField, $orderDir] = $this->getBrowseOrder($orderBy);
-        if ($metadataIds === []) {
+        $idList = static fn (array $ids): string => implode(',', array_map('intval', $ids));
+        $matches = [];
+        if ($metadataIds !== []) {
+            $matches[] = sprintf('r.%s IN (%s)', $column, $idList($metadataIds));
+        }
+        if ($releaseIds !== []) {
+            $matches[] = sprintf('r.id IN (%s)', $idList($releaseIds));
+        }
+        if ($matches === []) {
             return collect();
         }
 
@@ -556,7 +595,7 @@ class ReleaseSearchService
 
         $conditions = [
             sprintf('r.passwordstatus %s', $this->showPasswords()),
-            sprintf('r.%s IN (%s)', $column, implode(',', array_map(static fn (int $id): int => $id, $metadataIds))),
+            count($matches) === 1 ? $matches[0] : '('.implode(' OR ', $matches).')',
         ];
 
         if ($maxAge > 0) {
