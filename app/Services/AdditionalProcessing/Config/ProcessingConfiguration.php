@@ -186,6 +186,14 @@ final readonly class ProcessingConfiguration
     }
 
     /**
+     * The FFmpeg executable to run: the configured path, else `ffmpeg` on PATH.
+     */
+    public function ffmpegBinary(): string
+    {
+        return $this->ffmpegPath ?: 'ffmpeg';
+    }
+
+    /**
      * Build the kill string for timeout command wrapper.
      */
     public function getKillString(): string

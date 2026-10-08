@@ -34,6 +34,7 @@ final class AudioProcessingOrchestrator implements AudioProcessingOrchestratorIn
         private readonly AudioProcessingConfiguration $config,
         private readonly AudioReleaseProcessor $processor,
         private readonly TempWorkspaceService $tempWorkspace,
+        private readonly ?ChromaprintCapabilityProbe $chromaprint = null,
     ) {}
 
     /**
@@ -74,6 +75,11 @@ final class AudioProcessingOrchestrator implements AudioProcessingOrchestratorIn
                 ReleaseClaimant::CLAIM_TOKEN_COLUMN,
             ],
         );
+
+        // Startup capability check: probed and logged once per worker process.
+        if ($releases->isNotEmpty()) {
+            $this->chromaprint?->capability();
+        }
 
         $results = [];
 

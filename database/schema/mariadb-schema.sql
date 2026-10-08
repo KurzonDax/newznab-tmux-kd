@@ -2604,6 +2604,10 @@ CREATE TABLE `release_audio_evidence_tracks` (
   `barcode` varchar(64) DEFAULT NULL,
   `catalog_number` varchar(128) DEFAULT NULL,
   `disc_id_like` varchar(255) DEFAULT NULL,
+  `fingerprint` text DEFAULT NULL COMMENT 'Compressed base64 Chromaprint fingerprint of the first 120 decoded seconds',
+  `fingerprint_hash` char(64) DEFAULT NULL,
+  `fingerprint_algorithm` tinyint(3) unsigned DEFAULT NULL COMMENT 'Chromaprint algorithm number as fpcalc numbers it',
+  `fingerprint_generator_version` varchar(128) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
@@ -4256,3 +4260,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (316,'2026_10_08_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (317,'2026_10_08_130000_add_accepted_music_text_to_release_music_identifications',27);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (318,'2026_10_08_140000_add_name_source_to_releases_table',28);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (319,'2026_10_08_140100_create_release_music_renames_table',28);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (320,'2026_10_08_150000_add_acoustic_fingerprints_to_release_audio_evidence_tracks',29);

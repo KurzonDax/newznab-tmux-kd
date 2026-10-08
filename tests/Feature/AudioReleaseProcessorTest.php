@@ -30,6 +30,8 @@ use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\AudioProcessing\Contracts\AcousticFingerprintGenerator;
+use App\Services\AudioProcessing\DTO\AcousticFingerprint;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
@@ -865,6 +867,98 @@ class AudioReleaseProcessorTest extends TestCase
         );
     }
 
+    public function test_a_complete_archive_track_with_tags_and_an_isrc_is_fingerprinted_before_its_source_is_deleted(): void
+    {
+        $this->addFingerprintColumns();
+        $release = $this->makeRelease();
+        $fingerprints = $this->fingerprintSpy();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            nzbContents: [['title' => '"Invented.Album.rar" yEnc', 'segments' => ['<rar-1>']]],
+            archiveService: $this->archiveWithTrack('01 - Invented Song.flac', declaredSize: 2048, extractedBytes: 2048),
+            fingerprints: $fingerprints,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        // The extracted source, while it still existed; cleanup removes it afterwards.
+        $this->assertCount(1, $fingerprints->paths);
+        $this->assertStringStartsWith($this->tmpPath, $fingerprints->paths[0]);
+        $this->assertSame([true], $fingerprints->sourceExisted);
+        $this->assertFileDoesNotExist($fingerprints->paths[0]);
+
+        $track = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()
+            ->tracks()->where('source_kind', 'archive')->sole();
+        $this->assertSame('USRC17607839', $track->isrc);
+        $this->assertSame('11111111-1111-4111-8111-111111111111', $track->musicbrainz_recording_id);
+        $this->assertTrue($track->source_file_complete);
+        $this->assertTrue($track->source_starts_at_zero);
+        $this->assertTrue($track->whole_duration_reliable);
+        $this->assertSame(241.25, $track->whole_duration_seconds);
+        $this->assertSame('AQADtEmUaEkSZSoAAAAA', $track->fingerprint);
+        $this->assertSame(hash('sha256', 'AQADtEmUaEkSZSoAAAAA'), $track->fingerprint_hash);
+        $this->assertSame(2, $track->fingerprint_algorithm);
+        $this->assertSame('ffmpeg-chromaprint-120s-v1 ffmpeg/test', $track->fingerprint_generator_version);
+    }
+
+    public function test_a_truncated_archive_track_is_not_fingerprinted(): void
+    {
+        $this->addFingerprintColumns();
+        $release = $this->makeRelease();
+        $fingerprints = $this->fingerprintSpy();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            nzbContents: [['title' => '"Invented.Album.rar" yEnc', 'segments' => ['<rar-1>']]],
+            archiveService: $this->archiveWithTrack('01 - Invented Song.flac', declaredSize: 8192, extractedBytes: 2048),
+            decodableSeconds: 300.0,
+            fingerprints: $fingerprints,
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame([], $fingerprints->paths);
+        $track = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()
+            ->tracks()->where('source_kind', 'archive')->sole();
+        $this->assertFalse($track->source_file_complete);
+        $this->assertNull($track->fingerprint);
+    }
+
+    public function test_a_complete_bare_file_is_not_fingerprinted_yet(): void
+    {
+        $release = $this->makeRelease();
+        $fingerprints = $this->fingerprintSpy();
+        $processor = $this->makeProcessor($this->taggedContainer(), fingerprints: $fingerprints);
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertTrue(ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()->source_file_complete);
+        $this->assertSame([], $fingerprints->paths);
+    }
+
+    public function test_a_failed_fingerprint_still_records_evidence_and_the_preview(): void
+    {
+        $this->addFingerprintColumns();
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor(
+            $this->taggedContainer(),
+            nzbContents: [['title' => '"Invented.Album.rar" yEnc', 'segments' => ['<rar-1>']]],
+            archiveService: $this->archiveWithTrack('01 - Invented Song.flac', declaredSize: 2048, extractedBytes: 2048),
+            fingerprints: $this->fingerprintSpy(null),
+        );
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $track = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()
+            ->tracks()->where('source_kind', 'archive')->sole();
+        $this->assertSame('USRC17607839', $track->isrc);
+        $this->assertNull($track->fingerprint);
+        $this->assertNull($track->fingerprint_hash);
+    }
+
     public function test_tag_genres_are_stored_one_row_per_genre_beside_the_raw_value(): void
     {
         ProductionTables::fromAuthority()->create('genres');
@@ -970,6 +1064,9 @@ class AudioReleaseProcessorTest extends TestCase
         ?MediaInfoContainer $completeContainer = null,
         bool $completeProbeThrows = false,
         ?AudioGenres $audioGenres = null,
+        ?ArchiveExtractionService $archiveService = null,
+        float $decodableSeconds = 0.0,
+        ?AcousticFingerprintGenerator $fingerprints = null,
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -1034,7 +1131,7 @@ class AudioReleaseProcessorTest extends TestCase
                 ),
         );
 
-        $archiveService = Mockery::mock(ArchiveExtractionService::class);
+        $archiveService ??= Mockery::mock(ArchiveExtractionService::class);
         if ($archiveListings !== null) {
             $archiveService->shouldReceive('listArchiveContentsAtPath')
                 ->times(count($archiveListings))
@@ -1062,7 +1159,7 @@ class AudioReleaseProcessorTest extends TestCase
                 $downloadService,
                 $archiveService,
                 $tools,
-                Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing(0.0),
+                Mockery::mock(AudioDecodableLengthProbe::class)->shouldIgnoreMissing($decodableSeconds),
             ),
             $encoder,
             new AudioTagExtractor,
@@ -1079,6 +1176,7 @@ class AudioReleaseProcessorTest extends TestCase
             new AudioEvidenceRecorder,
             $mediaInfoSnapshots,
             $audioGenres ?? new AudioGenres,
+            $fingerprints,
         );
     }
 
@@ -1139,6 +1237,59 @@ class AudioReleaseProcessorTest extends TestCase
             new ReleaseUpdateService,
             new PreviewGenerationPolicy,
         );
+    }
+
+    private function addFingerprintColumns(): void
+    {
+        $migrations = glob(database_path('migrations/*_add_acoustic_fingerprints_to_release_audio_evidence_tracks.php')) ?: [];
+        $this->assertCount(1, $migrations);
+        (require $migrations[0])->up();
+    }
+
+    private function archiveWithTrack(string $name, int $declaredSize, int $extractedBytes): ArchiveExtractionService
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class);
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn([
+            'files' => [['name' => $name, 'size' => $declaredSize]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')->andReturnUsing(
+            function () use ($name, $extractedBytes): string {
+                $path = $this->tmpPath.$name;
+                file_put_contents($path, str_repeat('f', $extractedBytes));
+
+                return $path;
+            },
+        );
+
+        return $archive;
+    }
+
+    /**
+     * @return AcousticFingerprintGenerator&object{paths: list<string>, sourceExisted: list<bool>}
+     */
+    private function fingerprintSpy(?string $fingerprint = 'AQADtEmUaEkSZSoAAAAA'): AcousticFingerprintGenerator
+    {
+        return new class($fingerprint) implements AcousticFingerprintGenerator
+        {
+            /** @var list<string> */
+            public array $paths = [];
+
+            /** @var list<bool> */
+            public array $sourceExisted = [];
+
+            public function __construct(private readonly ?string $fingerprint) {}
+
+            public function generate(string $sourcePath): ?AcousticFingerprint
+            {
+                $this->paths[] = $sourcePath;
+                $this->sourceExisted[] = is_file($sourcePath);
+
+                return $this->fingerprint === null
+                    ? null
+                    : new AcousticFingerprint($this->fingerprint, 2, 'ffmpeg-chromaprint-120s-v1 ffmpeg/test');
+            }
+        };
     }
 
     private function config(
