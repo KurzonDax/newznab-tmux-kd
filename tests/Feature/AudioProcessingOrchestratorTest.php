@@ -18,14 +18,17 @@ use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\AudioProcessing\ChromaprintCapabilityProbe;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\ReleaseExtraService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\TempWorkspaceService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use ReflectionClass;
@@ -65,6 +68,52 @@ class AudioProcessingOrchestratorTest extends TestCase
         (new ReflectionProperty(ReleaseClaimant::class, 'supportsClaims'))->setValue(null, null);
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
+    }
+
+    public function test_a_worker_probes_chromaprint_once_when_it_starts_a_non_empty_batch(): void
+    {
+        Log::spy();
+        $muxerListings = 0;
+        Process::fake(function (PendingProcess $process) use (&$muxerListings) {
+            if (in_array('-muxers', (array) $process->command, true)) {
+                $muxerListings++;
+
+                return Process::result("  E flac            raw FLAC\n", "ffmpeg version 6.1.1 Copyright\n");
+            }
+
+            return Process::result();
+        });
+        DB::table('usenet_groups')->insert([
+            'id' => 1,
+            'name' => 'alt.binaries.sounds.lossless',
+            'forced_root_categories_id' => null,
+        ]);
+        $parser = Mockery::mock(NzbContentParser::class);
+        $parser->shouldReceive('parseNzb')->andReturn(['contents' => [], 'error' => 'Source is only 7% complete.']);
+        $orchestrator = new AudioProcessingOrchestrator(
+            $this->config(),
+            $this->processor($parser),
+            new TempWorkspaceService,
+            new ChromaprintCapabilityProbe('ffmpeg', 5),
+        );
+
+        try {
+            $orchestrator->start('a', 'worker-1');
+            $this->assertSame(0, $muxerListings, 'An empty batch does not probe.');
+
+            $this->seedRelease(1);
+            $this->seedRelease(2);
+            $orchestrator->start('a', 'worker-1');
+            $this->seedRelease(3);
+            $orchestrator->start('a', 'worker-1');
+        } finally {
+            $orchestrator->finish();
+        }
+
+        $this->assertSame(1, $muxerListings);
+        Log::shouldHaveReceived('info')
+            ->with('Acoustic fingerprints are skipped: FFmpeg 6.1.1 was built without the Chromaprint muxer.')
+            ->once();
     }
 
     public function test_it_logs_failure_reason_counts_and_debug_settlement_for_each_release(): void

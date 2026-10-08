@@ -7,6 +7,7 @@ namespace App\Services\AudioProcessing;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Services\AdditionalProcessing\PostedFileClassifier;
+use App\Services\AudioProcessing\DTO\AcousticFingerprint;
 use App\Services\AudioProcessing\DTO\AudioEvidenceFile;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
@@ -27,6 +28,7 @@ final class AudioEvidenceRecorder
 
     /**
      * @param  array<string, mixed>|null  $sampledTags
+     * @param  AcousticFingerprint|null  $fingerprint  Generated from the sampled track's source.
      */
     public function record(
         Release $release,
@@ -34,6 +36,7 @@ final class AudioEvidenceRecorder
         AudioFetchResult $fetchResult,
         ?array $sampledTags,
         string $provenance = 'captured',
+        ?AcousticFingerprint $fingerprint = null,
     ): ReleaseAudioEvidence {
         $nzbManifest = array_map(
             static fn ($file): array => $file->toArray(),
@@ -44,7 +47,7 @@ final class AudioEvidenceRecorder
             $source->sidecars,
         ), $this->archiveSidecars($fetchResult->archiveMembers));
         $archiveManifest = array_values($fetchResult->archiveMembers);
-        $tracks = $this->tracks($source, $fetchResult, $sampledTags);
+        $tracks = $this->tracks($source, $fetchResult, $sampledTags, fingerprint: $fingerprint);
         $payload = [
             'schema_version' => self::SCHEMA_VERSION,
             'provenance' => $provenance,
@@ -252,6 +255,7 @@ final class AudioEvidenceRecorder
         AudioFetchResult $fetchResult,
         ?array $sampledTags,
         array $additionalAudioFiles = [],
+        ?AcousticFingerprint $fingerprint = null,
     ): array {
         $tracks = [];
 
@@ -327,7 +331,7 @@ final class AudioEvidenceRecorder
             $sampledTags ?? [],
             $fetchResult,
             $tracks[$sampledIndex],
-        ));
+        ), $fingerprint?->toTrackFacts() ?? []);
 
         return array_values($tracks);
     }

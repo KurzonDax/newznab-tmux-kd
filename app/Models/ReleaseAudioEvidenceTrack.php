@@ -29,6 +29,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property bool|null $source_file_complete
  * @property bool|null $source_starts_at_zero
  * @property bool|null $whole_duration_reliable
+ * @property string|null $fingerprint
+ * @property string|null $fingerprint_hash
+ * @property int|null $fingerprint_algorithm
+ * @property string|null $fingerprint_generator_version
  * @property-read ReleaseAudioEvidence|null $evidence
  *
  * @mixin \Eloquent
@@ -58,6 +62,7 @@ class ReleaseAudioEvidenceTrack extends Model
             'source_file_complete' => 'boolean',
             'source_starts_at_zero' => 'boolean',
             'whole_duration_reliable' => 'boolean',
+            'fingerprint_algorithm' => 'integer',
         ];
     }
 

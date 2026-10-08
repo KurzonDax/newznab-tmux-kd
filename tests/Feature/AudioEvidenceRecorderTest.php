@@ -8,6 +8,7 @@ use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseAudioEvidenceTrack;
 use App\Services\AudioProcessing\AudioEvidenceRecorder;
+use App\Services\AudioProcessing\DTO\AcousticFingerprint;
 use App\Services\AudioProcessing\DTO\AudioEvidenceFile;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
@@ -195,6 +196,69 @@ class AudioEvidenceRecorderTest extends TestCase
     }
 
     #[Test]
+    public function it_persists_a_fingerprint_with_its_provenance_on_the_sampled_track_only(): void
+    {
+        $this->fingerprintMigration()->up();
+        $release = $this->release();
+        $source = new AudioSource(
+            kind: AudioSourceKind::Archive,
+            title: 'Invented.Album.rar',
+            extension: '',
+            parts: [['<rar-1>']],
+            nzbAudioFiles: [],
+        );
+        $fetch = AudioFetchResult::fetched(
+            $this->makeTempPath('audio-evidence-fingerprint', '.flac'),
+            'flac',
+            null,
+            sampledFilename: '02 - Invented Song.flac',
+            archiveMembers: [
+                ['name' => '01 - Opening Song.flac', 'size' => 4000],
+                ['name' => '02 - Invented Song.flac', 'size' => 4000],
+            ],
+            archiveManifestComplete: true,
+            sourceFileComplete: true,
+            sourceStartsAtZero: true,
+            wholeDurationReliable: true,
+            onlyOneTrackProbed: true,
+            decodedDurationSeconds: 241.2,
+        );
+        $fingerprint = new AcousticFingerprint('AQADtEmUaEkSZSoAAAAA', 2, 'ffmpeg-chromaprint-120s-v1 ffmpeg/6.1.1');
+
+        $evidence = (new AudioEvidenceRecorder)->record($release, $source, $fetch, [
+            'source_file' => '02 - Invented Song.flac',
+            'track_name' => 'Invented Song',
+            'duration_seconds' => 241.25,
+            'isrc' => 'XXA012600002',
+        ], fingerprint: $fingerprint);
+
+        $tracks = $evidence->tracks()->orderBy('source_ordinal')->get();
+        $this->assertNull($tracks[0]->fingerprint);
+        $this->assertNull($tracks[0]->fingerprint_hash);
+        $sampled = $tracks[1];
+        $this->assertSame('XXA012600002', $sampled->isrc);
+        $this->assertSame('AQADtEmUaEkSZSoAAAAA', $sampled->fingerprint);
+        $this->assertSame(hash('sha256', 'AQADtEmUaEkSZSoAAAAA'), $sampled->fingerprint_hash);
+        $this->assertSame(2, $sampled->fingerprint_algorithm);
+        $this->assertSame('ffmpeg-chromaprint-120s-v1 ffmpeg/6.1.1', $sampled->fingerprint_generator_version);
+        $this->assertSame(241.25, $sampled->whole_duration_seconds);
+        $this->assertSame(241.2, $sampled->decoded_duration_seconds);
+        $this->assertTrue($sampled->source_file_complete);
+        $this->assertTrue($sampled->source_starts_at_zero);
+        $this->assertTrue($sampled->whole_duration_reliable);
+
+        // The fingerprint is evidence: a different fingerprint is a different revision.
+        $unfingerprinted = (new AudioEvidenceRecorder)->record($release, $source, $fetch, [
+            'source_file' => '02 - Invented Song.flac',
+            'track_name' => 'Invented Song',
+            'duration_seconds' => 241.25,
+            'isrc' => 'XXA012600002',
+        ]);
+        $this->assertNotSame($evidence->evidence_hash, $unfingerprinted->evidence_hash);
+        $this->assertNull($unfingerprinted->tracks()->where('source_ordinal', 2)->value('fingerprint'));
+    }
+
+    #[Test]
     public function evidence_factories_create_valid_header_and_track_rows(): void
     {
         $release = $this->release();
@@ -228,6 +292,17 @@ class AudioEvidenceRecorderTest extends TestCase
     {
         $paths = glob(database_path('migrations/*_create_release_audio_evidence_tables.php')) ?: [];
         $this->assertCount(1, $paths, 'The audio evidence migration is missing.');
+
+        /** @var Migration $migration */
+        $migration = require $paths[0];
+
+        return $migration;
+    }
+
+    private function fingerprintMigration(): Migration
+    {
+        $paths = glob(database_path('migrations/*_add_acoustic_fingerprints_to_release_audio_evidence_tracks.php')) ?: [];
+        $this->assertCount(1, $paths, 'The acoustic fingerprint migration is missing.');
 
         /** @var Migration $migration */
         $migration = require $paths[0];

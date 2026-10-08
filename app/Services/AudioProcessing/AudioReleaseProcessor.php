@@ -12,6 +12,8 @@ use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
+use App\Services\AudioProcessing\Contracts\AcousticFingerprintGenerator;
+use App\Services\AudioProcessing\DTO\AcousticFingerprint;
 use App\Services\AudioProcessing\DTO\AudioProcessingResult;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
@@ -55,6 +57,7 @@ final class AudioReleaseProcessor
         private readonly AudioEvidenceRecorder $evidenceRecorder,
         private readonly ?MediaInfoSnapshotWriter $mediaInfoSnapshots = null,
         private readonly AudioGenres $audioGenres = new AudioGenres,
+        private readonly ?AcousticFingerprintGenerator $fingerprints = null,
     ) {}
 
     public function process(Release $release, string $tmpPath, string $groupName): AudioProcessingResult
@@ -136,7 +139,13 @@ final class AudioReleaseProcessor
             $capturedFilename,
             $fetched->succeeded() ? $fetched->mediaInfoSourceComplete : null,
         );
-        $this->recordEvidence($releaseAtCapture, $source, $fetched, $evidenceTags);
+        $this->recordEvidence(
+            $releaseAtCapture,
+            $source,
+            $fetched,
+            $evidenceTags,
+            $this->fingerprint($source, $fetched),
+        );
 
         if ($fetched->declined) {
             return $this->declineToVideoPath($release, $tagsRecorded, $fetched->reason);
@@ -314,13 +323,44 @@ final class AudioReleaseProcessor
         DTO\AudioSource $source,
         DTO\AudioFetchResult $fetchResult,
         ?array $sampledTags,
+        ?AcousticFingerprint $fingerprint,
     ): void {
         try {
-            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags);
+            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags, fingerprint: $fingerprint);
         } catch (\Throwable $exception) {
             Log::debug(
                 'Audio evidence persistence failed for release '.$release->id.': '.$exception->getMessage()
             );
+        }
+    }
+
+    /**
+     * Fingerprint the fetched track while its source still exists.
+     *
+     * A capture fetches exactly one track: the sampled member. It is
+     * fingerprinted only when it was extracted from an archive, complete and
+     * starting at time zero; a bare file, complete or a truncated head, is
+     * not fingerprinted. Tags, ISRCs and embedded identifiers never skip a
+     * qualifying track, because whether a release is ambiguous is known only
+     * after this source is deleted.
+     */
+    private function fingerprint(DTO\AudioSource $source, DTO\AudioFetchResult $fetched): ?AcousticFingerprint
+    {
+        if ($this->fingerprints === null
+            || $source->kind !== AudioSourceKind::Archive
+            || ! $fetched->succeeded()
+            || $fetched->path === null
+            || $fetched->sourceFileComplete !== true
+            || $fetched->sourceStartsAtZero !== true) {
+            return null;
+        }
+
+        try {
+            return $this->fingerprints->generate($fetched->path);
+        } catch (\Throwable $exception) {
+            Log::debug('Acoustic fingerprinting failed: '.$exception->getMessage());
+
+            return null;
         }
     }
 

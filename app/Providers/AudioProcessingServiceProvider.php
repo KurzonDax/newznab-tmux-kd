@@ -21,7 +21,10 @@ use App\Services\AudioProcessing\AudioProcessingOrchestrator;
 use App\Services\AudioProcessing\AudioReleaseProcessor;
 use App\Services\AudioProcessing\AudioSourceSelector;
 use App\Services\AudioProcessing\AudioTagRenamer;
+use App\Services\AudioProcessing\ChromaprintCapabilityProbe;
+use App\Services\AudioProcessing\Contracts\AcousticFingerprintGenerator;
 use App\Services\AudioProcessing\Contracts\AudioProcessingOrchestratorInterface;
+use App\Services\AudioProcessing\FfmpegChromaprintGenerator;
 use App\Services\AudioProcessing\WavPackDecoder;
 use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
@@ -41,6 +44,8 @@ use Illuminate\Support\ServiceProvider;
  */
 class AudioProcessingServiceProvider extends ServiceProvider
 {
+    private const int CHROMAPRINT_PROBE_TIMEOUT_SECONDS = 15;
+
     public function register(): void
     {
         $this->app->singleton(AudioProcessingConfiguration::class, fn (): AudioProcessingConfiguration => new AudioProcessingConfiguration);
@@ -82,6 +87,16 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(WavPackDecoder::class),
         ));
 
+        $this->app->singleton(ChromaprintCapabilityProbe::class, fn ($app): ChromaprintCapabilityProbe => new ChromaprintCapabilityProbe(
+            $app->make(ProcessingConfiguration::class)->ffmpegBinary(),
+            self::CHROMAPRINT_PROBE_TIMEOUT_SECONDS,
+        ));
+
+        $this->app->singleton(AcousticFingerprintGenerator::class, fn ($app): AcousticFingerprintGenerator => new FfmpegChromaprintGenerator(
+            $app->make(ChromaprintCapabilityProbe::class),
+            $app->make(MediaTools::class)->timeoutSeconds(),
+        ));
+
         $this->app->singleton(AudioTagRenamer::class, fn ($app): AudioTagRenamer => new AudioTagRenamer(
             $app->make(AudioProcessingConfiguration::class),
             new CategorizationService,
@@ -102,12 +117,14 @@ class AudioProcessingServiceProvider extends ServiceProvider
             $app->make(PreviewGenerationPolicy::class),
             $app->make(AudioEvidenceRecorder::class),
             $app->make(MediaInfoSnapshotWriter::class),
+            fingerprints: $app->make(AcousticFingerprintGenerator::class),
         ));
 
         $this->app->singleton(AudioProcessingOrchestrator::class, fn ($app): AudioProcessingOrchestrator => new AudioProcessingOrchestrator(
             $app->make(AudioProcessingConfiguration::class),
             $app->make(AudioReleaseProcessor::class),
             $app->make(TempWorkspaceService::class),
+            $app->make(ChromaprintCapabilityProbe::class),
         ));
 
         $this->app->singleton(
