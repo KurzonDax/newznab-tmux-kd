@@ -254,6 +254,19 @@ final class IdentificationDecisionStoreTest extends TestCase
         Search::shouldHaveReceived('updateRelease')->with(10)->twice();
     }
 
+    #[Test]
+    public function a_decision_that_consulted_fingerprint_lookups_stamps_when_they_ran(): void
+    {
+        $store = new IdentificationDecisionStore;
+        $lookedUpAt = Carbon::parse('2026-10-08 12:34:56');
+
+        $stamped = $store->persist(10, $this->evidence(), $this->decision('music-identity-v1', IdentificationStatus::Unresolved)->withAcoustIdLookedUpAt($lookedUpAt));
+        $unstamped = $store->persist(10, $this->evidence(), $this->decision('music-identity-v2', IdentificationStatus::Unresolved));
+
+        $this->assertSame('2026-10-08 12:34:56', ReleaseMusicIdentification::query()->findOrFail($stamped->id)->acoustid_looked_up_at?->toDateTimeString());
+        $this->assertNull(ReleaseMusicIdentification::query()->findOrFail($unstamped->id)->acoustid_looked_up_at);
+    }
+
     private function evidence(): AudioEvidenceSet
     {
         return new AudioEvidenceSet(

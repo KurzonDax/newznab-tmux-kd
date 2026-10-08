@@ -137,6 +137,10 @@ TRAKT_CLIENT_SECRET=your_trakt_secret
 OMDB_API_KEY=your_omdb_key
 FANART_API_KEY=your_fanart_key
 GIANTBOMB_API_KEY=your_giantbomb_key
+# Optional: AcoustID fingerprint lookups for music that MusicBrainz matching leaves
+# unresolved. When set, each derived Chromaprint fingerprint and its duration are sent
+# to AcoustID, a third-party service (lookup only; the audio itself is never sent).
+ACOUSTID_CLIENT_KEY=
 
 # Search Engine (choose one)
 SEARCH_ENGINE=manticore      # Options: manticore, elasticsearch

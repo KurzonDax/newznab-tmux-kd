@@ -29,5 +29,8 @@ final readonly class TrackEvidence
         public ?int $discNumber = null,
         public ?int $releaseTrackNumber = null,
         public ?string $fingerprint = null,
+        public ?string $fingerprintHash = null,
+        public ?int $fingerprintAlgorithm = null,
+        public ?string $fingerprintGeneratorVersion = null,
     ) {}
 }

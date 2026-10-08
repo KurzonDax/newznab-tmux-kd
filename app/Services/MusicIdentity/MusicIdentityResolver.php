@@ -9,6 +9,7 @@ use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateEvaluation;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
+use App\Services\MusicIdentity\DTO\CandidatePool;
 use App\Services\MusicIdentity\DTO\CandidateSignal;
 use App\Services\MusicIdentity\DTO\CandidateSummary;
 use App\Services\MusicIdentity\DTO\DecisionReason;
@@ -16,8 +17,10 @@ use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\Exceptions\AcousticFingerprintLookupException;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
 use App\Services\MusicIdentity\Matching\WholeReleaseAlignmentScorer;
+use Carbon\CarbonImmutable;
 use LogicException;
 
 final readonly class MusicIdentityResolver
@@ -32,6 +35,7 @@ final readonly class MusicIdentityResolver
         private string $policyVersion = 'shadow-v1',
         private int $minimumAlbumScore = 92,
         private int $minimumRunnerUpMargin = 5,
+        private ?AcousticFingerprintCandidates $fingerprintCandidates = null,
     ) {}
 
     public function resolve(AudioEvidenceSet $evidence): IdentificationDecision
@@ -42,6 +46,27 @@ final readonly class MusicIdentityResolver
             return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
         }
 
+        $decision = $this->decide($evidence, $pool);
+        if (! in_array($decision->status, [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview], true)
+            || $this->fingerprintCandidates === null
+            || ! $this->fingerprintCandidates->applicable($evidence)) {
+            return $decision;
+        }
+
+        // Resolution step 7: only a release still unresolved or ambiguous is looked up by fingerprint.
+        try {
+            $pool = $this->fingerprintCandidates->supplement($evidence, $pool);
+        } catch (AcousticFingerprintLookupException $exception) {
+            return $this->terminalDecision(IdentificationStatus::RetryableError, 'acoustid_retryable_error', $exception->getMessage());
+        } catch (MusicBrainzGatewayException $exception) {
+            return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
+        }
+
+        return $this->decide($evidence, $pool)->withAcoustIdLookedUpAt(CarbonImmutable::now());
+    }
+
+    private function decide(AudioEvidenceSet $evidence, CandidatePool $pool): IdentificationDecision
+    {
         $evaluations = array_map(
             fn ($candidate): CandidateEvaluation => $this->scorer->score($evidence, $candidate),
             $pool->candidates,

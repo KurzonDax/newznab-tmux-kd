@@ -12,6 +12,7 @@ use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
+use App\Services\MusicIdentity\AcousticFingerprintCandidates;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\CoverArt\CoverArtPacer;
@@ -389,6 +390,42 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
+    public function an_unresolved_fingerprinted_release_is_looked_up_and_its_decision_stamps_the_lookup(): void
+    {
+        config([
+            'music-identity.acoustid.client_key' => 'synthetic-client-key',
+            'music-identity.acoustid.lookup_url' => 'https://acoustid.test/v2/lookup',
+        ]);
+        $this->migration('*_add_acoustic_fingerprints_to_release_audio_evidence_tracks.php')->up();
+        Http::fake(['https://acoustid.test/*' => Http::response(['status' => 'ok', 'results' => []])]);
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $evidence->tracks()->firstOrFail()->update([
+            'fingerprint' => 'AQADtSyntheticFeatureFingerprint',
+            'fingerprint_hash' => hash('sha256', 'AQADtSyntheticFeatureFingerprint'),
+            'fingerprint_algorithm' => 2,
+            'fingerprint_generator_version' => 'synthetic-generator-v1',
+        ]);
+
+        $track = (new AudioEvidenceSetFactory)->make($evidence->fresh())->trackEvidence[0];
+        $this->assertSame('AQADtSyntheticFeatureFingerprint', $track->fingerprint);
+        $this->assertSame(hash('sha256', 'AQADtSyntheticFeatureFingerprint'), $track->fingerprintHash);
+        $this->assertSame(2, $track->fingerprintAlgorithm);
+        $this->assertSame('synthetic-generator-v1', $track->fingerprintGeneratorVersion);
+
+        $identification = $this->worker(new EmptyCandidateGenerator, app(AcousticFingerprintCandidates::class))
+            ->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame(IdentificationStatus::Unresolved, $identification->state);
+        $this->assertSame(now()->toDateTimeString(), $identification->fresh()?->acoustid_looked_up_at?->toDateTimeString());
+        Http::assertSentCount(1);
+        Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+            && $request['fingerprint'] === 'AQADtSyntheticFeatureFingerprint'
+            && (int) $request['duration'] === 181);
+    }
+
+    #[Test]
     public function an_accepted_album_decision_fetches_its_cover_after_it_is_persisted(): void
     {
         Http::fake(['https://caa.test/release/'.AcceptingCandidateGenerator::RELEASE_ID.'/front-500' => Http::response($this->image(), 200)]);
@@ -563,15 +600,21 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         ]);
     }
 
-    private function worker(CandidateGenerator $candidateGenerator): ResolveReleaseMusicIdentity
-    {
+    private function worker(
+        CandidateGenerator $candidateGenerator,
+        ?AcousticFingerprintCandidates $fingerprintCandidates = null,
+    ): ResolveReleaseMusicIdentity {
         $retryPolicy = new MusicIdentityRetryPolicy;
 
         return new ResolveReleaseMusicIdentity(
             configuration: new MusicIdentityConfiguration,
             synthesizer: app(AudioEvidenceSynthesizer::class),
             evidenceFactory: new AudioEvidenceSetFactory,
-            resolver: new MusicIdentityResolver(candidateGenerator: $candidateGenerator, algorithmVersion: (string) config('music-identity.algorithm_version')),
+            resolver: new MusicIdentityResolver(
+                candidateGenerator: $candidateGenerator,
+                algorithmVersion: (string) config('music-identity.algorithm_version'),
+                fingerprintCandidates: $fingerprintCandidates,
+            ),
             leases: new MusicIdentityLeaseManager,
             synthesisLeases: new MusicIdentitySynthesisLeaseManager($retryPolicy),
             retryPolicy: $retryPolicy,

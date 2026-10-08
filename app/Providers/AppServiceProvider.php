@@ -37,9 +37,13 @@ use App\Observers\UsenetGroupObserver;
 use App\Observers\VideoObserver;
 use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\MediaInfo\MediaInfoSnapshotService;
+use App\Services\MusicIdentity\AcousticFingerprintCandidates;
+use App\Services\MusicIdentity\Contracts\AcousticFingerprintMatcher;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
+use App\Services\MusicIdentity\Gateways\HttpAcoustIdFingerprintMatcher;
 use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
+use App\Services\MusicIdentity\Matching\WholeReleaseAlignmentScorer;
 use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
@@ -124,6 +128,7 @@ class AppServiceProvider extends ServiceProvider
         // save; one instance per request keeps that to a single build.
         $this->app->singleton(SettingsRegistry::class);
         $this->app->bind(MusicBrainzGateway::class, HttpMusicBrainzGateway::class);
+        $this->app->bind(AcousticFingerprintMatcher::class, HttpAcoustIdFingerprintMatcher::class);
         $this->app->bind(CandidateGenerator::class, MusicCandidateGenerator::class);
         $this->app->bind(MediaInfoSnapshotWriter::class, MediaInfoSnapshotService::class);
         $this->app->bind(IdentificationDecisionStore::class, static fn (): IdentificationDecisionStore => new IdentificationDecisionStore(
@@ -131,6 +136,10 @@ class AppServiceProvider extends ServiceProvider
         ));
         $this->app->bind(MusicIdentityResolver::class, static fn (Application $app): MusicIdentityResolver => new MusicIdentityResolver(
             candidateGenerator: $app->make(CandidateGenerator::class),
+            scorer: new WholeReleaseAlignmentScorer(
+                fingerprintDurationToleranceMs: (int) config('music-identity.scoring.fingerprint_duration_tolerance_milliseconds', 10_000),
+                fingerprintDurationToleranceRatio: (float) config('music-identity.scoring.fingerprint_duration_tolerance_ratio', 0.1),
+            ),
             algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v2'),
             resolverVersion: (string) config('music-identity.resolver_version', 'resolver-v1'),
             normalizerVersion: (string) config('music-identity.normalizer_version', 'normalizer-v1'),
@@ -138,6 +147,7 @@ class AppServiceProvider extends ServiceProvider
             policyVersion: (string) config('music-identity.policy_version', 'shadow-v1'),
             minimumAlbumScore: (int) config('music-identity.scoring.minimum_album_score', 92),
             minimumRunnerUpMargin: (int) config('music-identity.scoring.minimum_runner_up_margin', 5),
+            fingerprintCandidates: $app->make(AcousticFingerprintCandidates::class),
         ));
     }
 }
