@@ -78,6 +78,7 @@ class Par2SidecarWorkflowTest extends TestCase
                 $table->unsignedInteger($column)->nullable();
             }
             $table->string('imdbid')->nullable();
+            $table->string('name_source', 64)->nullable();
             $table->float('completion')->default(100);
             $table->dateTime('postdate')->default('2026-09-01 00:00:00');
             $table->dateTime('adddate')->nullable();

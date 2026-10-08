@@ -112,6 +112,7 @@ trait CreatesPostingSchema
             completion DOUBLE NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
+            name_source TEXT,
             iscategorized INTEGER,
             predb_id INTEGER,
             movieinfo_id INTEGER DEFAULT 0, imdbid INTEGER DEFAULT 0, videos_id INTEGER DEFAULT 0, tv_episodes_id INTEGER DEFAULT 0,

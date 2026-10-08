@@ -910,6 +910,7 @@ class TrustedDonorNameFixingTest extends TestCase
             $table->unsignedInteger('anidbid')->nullable();
             $table->boolean('isrenamed')->default(false);
             $table->boolean('is_trusted_name')->default(false);
+            $table->string('name_source', 64)->nullable();
             $table->boolean('iscategorized')->default(false);
             $table->integer('nfostatus')->default(0);
             $table->integer('proc_nfo')->default(0);

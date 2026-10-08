@@ -58,6 +58,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $table->tinyInteger('iscategorized')->default(0);
             $table->tinyInteger('isrenamed')->default(0);
             $table->tinyInteger('is_trusted_name')->default(0);
+            $table->string('name_source', 64)->nullable();
             $table->tinyInteger('proc_files')->default(0);
             $table->tinyInteger('proc_pp')->default(0);
         });

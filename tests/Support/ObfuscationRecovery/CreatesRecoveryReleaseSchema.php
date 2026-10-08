@@ -42,6 +42,7 @@ trait CreatesRecoveryReleaseSchema
             foreach (['passwordstatus', 'haspreview', 'nfostatus', 'nzbstatus', 'isrenamed', 'is_trusted_name', 'iscategorized'] as $name) {
                 $table->integer($name)->default(0);
             }
+            $table->string('name_source', 64)->nullable();
             $table->dateTime('adddate');
             $table->dateTime('postdate');
             $table->double('completion')->default(0);

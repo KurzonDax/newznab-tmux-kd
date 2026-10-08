@@ -2815,6 +2815,29 @@ CREATE TABLE `release_music_identifications` (
   CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `release_music_renames`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `release_music_renames` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `releases_id` int(10) unsigned NOT NULL,
+  `release_music_identification_id` bigint(20) unsigned NOT NULL,
+  `outcome` varchar(16) NOT NULL,
+  `reason` varchar(64) DEFAULT NULL,
+  `before` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`before`)),
+  `after` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`after`)),
+  `restored` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`restored`)),
+  `applied_at` timestamp NULL DEFAULT NULL,
+  `reverted_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `release_music_rename_decision` (`release_music_identification_id`),
+  KEY `release_music_rename_release` (`releases_id`,`outcome`),
+  CONSTRAINT `FK_rmr_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `FK_rmr_rmi` FOREIGN KEY (`release_music_identification_id`) REFERENCES `release_music_identifications` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_music_synthesis_attempts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -3040,6 +3063,7 @@ CREATE TABLE `releases` (
   `iscategorized` tinyint(1) NOT NULL DEFAULT 0,
   `isrenamed` tinyint(1) NOT NULL DEFAULT 0,
   `is_trusted_name` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Current search name came from evidence safe for donor propagation',
+  `name_source` varchar(64) DEFAULT NULL COMMENT 'Source that set the current search name; NULL when unrecorded',
   `proc_pp` tinyint(1) NOT NULL DEFAULT 0,
   `proc_par2` tinyint(1) NOT NULL DEFAULT 0,
   `proc_nfo` tinyint(1) NOT NULL DEFAULT 0,
@@ -4230,3 +4254,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (314,'2026_10_05_00
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (315,'2026_10_08_005420_drop_repair_and_rescan_state_from_releases_table',25);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (316,'2026_10_08_120000_create_music_cover_art_lookups_table',26);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (317,'2026_10_08_130000_add_accepted_music_text_to_release_music_identifications',27);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (318,'2026_10_08_140000_add_name_source_to_releases_table',28);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (319,'2026_10_08_140100_create_release_music_renames_table',28);

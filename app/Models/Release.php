@@ -237,6 +237,9 @@ class Release extends Model
             || AudioData::query()->where('releases_id', $this->id)->exists();
     }
 
+    /** The `name_source` of a search name an admin typed (issue #309). */
+    public const MANUAL_NAME_SOURCE = 'Manual';
+
     /**
      * Keep the search name, its indexed dedupe identity, and its readable
      * rendering inseparable at every writer.
@@ -362,24 +365,31 @@ class Release extends Model
         if (! empty($imDbId)) {
             $movieInfoId = MovieInfo::whereImdbid($imDbId)->first(['id']);
         }
-        self::whereId($id)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update(
-            [
-                'name' => $name,
-                ...self::searchNameValues((string) $searchName),
-                'fromname' => $fromName,
-                'categories_id' => $categoryId,
-                'totalpart' => $parts,
-                'grabs' => $grabs,
-                'size' => $size,
-                'postdate' => $postedDate,
-                'adddate' => $addedDate,
-                'videos_id' => $videoId,
-                'tv_episodes_id' => $episodeId,
-                'imdbid' => $imDbId,
-                'anidbid' => $aniDbId,
-                'movieinfo_id' => $movieInfoId !== null ? $movieInfoId->id : $movieInfoId,
-            ]
-        );
+        DB::transaction(static function () use ($id, $name, $searchName, $fromName, $categoryId, $parts, $grabs, $size, $postedDate, $addedDate, $videoId, $episodeId, $imDbId, $aniDbId, $movieInfoId): void {
+            // A typed search name is recorded as manual, so no automatic rename treats it as its own;
+            // the row stays locked from this read to the write.
+            $current = self::whereId($id)->lockForUpdate()->value('searchname');
+            $nameSource = $current === (string) $searchName ? [] : ['name_source' => self::MANUAL_NAME_SOURCE];
+            self::whereId($id)->whereRaw(RecoveryIdentityPolicy::singleItemSql())->update(
+                [
+                    'name' => $name,
+                    ...self::searchNameValues((string) $searchName),
+                    ...$nameSource,
+                    'fromname' => $fromName,
+                    'categories_id' => $categoryId,
+                    'totalpart' => $parts,
+                    'grabs' => $grabs,
+                    'size' => $size,
+                    'postdate' => $postedDate,
+                    'adddate' => $addedDate,
+                    'videos_id' => $videoId,
+                    'tv_episodes_id' => $episodeId,
+                    'imdbid' => $imDbId,
+                    'anidbid' => $aniDbId,
+                    'movieinfo_id' => $movieInfoId !== null ? $movieInfoId->id : $movieInfoId,
+                ]
+            );
+        });
 
         self::syncSearchIndexAfterCommit((int) $id);
     }

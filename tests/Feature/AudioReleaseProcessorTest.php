@@ -120,6 +120,7 @@ class AudioReleaseProcessorTest extends TestCase
             $table->boolean('iscategorized')->default(false);
             $table->boolean('isrenamed')->default(false);
             $table->boolean('is_trusted_name')->default(false);
+            $table->string('name_source', 64)->nullable();
             $table->integer('haspreview')->default(-1);
             $table->integer('passwordstatus')->default(-1);
             $table->integer('nzbstatus')->default(1);

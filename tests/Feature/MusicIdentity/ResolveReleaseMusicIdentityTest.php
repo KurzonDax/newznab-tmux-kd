@@ -32,6 +32,7 @@ use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use App\Services\MusicIdentity\Persistence\MusicIdentitySynthesisLeaseManager;
+use App\Services\MusicIdentity\Rename\MusicRenameProjection;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Connectors\SQLiteConnector;
@@ -99,10 +100,21 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             $table->char('leftguid', 1);
             $table->string('name');
             $table->string('searchname');
+            $table->string('searchname_normalized')->default('');
+            $table->string('display_name')->nullable();
+            $table->string('fromname')->nullable();
             $table->unsignedInteger('groups_id');
             $table->unsignedInteger('categories_id');
             $table->unsignedBigInteger('size')->default(0);
             $table->integer('musicinfo_id')->nullable();
+            foreach (['predb_id', 'is_trusted_name', 'isrenamed', 'iscategorized', 'proc_pp', 'videos_id', 'tv_episodes_id', 'gamesinfo_id'] as $column) {
+                $table->integer($column)->default(0);
+            }
+            foreach (['movieinfo_id', 'consoleinfo_id', 'bookinfo_id', 'anidbid'] as $column) {
+                $table->integer($column)->nullable();
+            }
+            $table->string('imdbid')->nullable();
+            $table->string('name_source', 64)->nullable();
             $table->string('additional_pp_claim_token')->nullable();
             $table->timestamp('additional_pp_claimed_at')->nullable();
             $table->timestamp('postdate')->nullable();
@@ -128,6 +140,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->migration('*_create_release_music_synthesis_attempts_table.php')->up();
         $this->migration('*_create_music_cover_art_lookups_table.php')->up();
         $this->migration('*_add_accepted_music_text_to_release_music_identifications.php')->up();
+        $this->migration('*_create_release_music_renames_table.php')->up();
         config([
             'nntmux_settings.covers_path' => $this->makeTempDirectory('music-identity-covers'),
             'music-identity.cover_art.base_url' => 'https://caa.test',
@@ -391,6 +404,20 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
+    public function an_accepted_album_decision_renames_the_release_once_it_is_persisted(): void
+    {
+        Http::fake(['*' => Http::response('', 503)]);
+        $release = $this->release();
+        $this->albumEvidence($release);
+
+        $identification = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame('Example Artist - Example Album (2020) FLAC', DB::table('releases')->where('id', $release->id)->value('searchname'));
+        $this->assertDatabaseHas('release_music_renames', ['release_music_identification_id' => $identification->id, 'outcome' => 'applied']);
+    }
+
+    #[Test]
     public function a_cover_failure_or_a_pacing_timeout_leaves_the_decision_unchanged(): void
     {
         Http::fake(['*' => Http::response('', 503)]);
@@ -444,7 +471,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
-    public function the_music_pass_catches_up_covers_even_when_no_release_awaits_identification(): void
+    public function the_music_pass_catches_up_renames_and_covers_even_when_no_release_awaits_identification(): void
     {
         Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
         $release = $this->release();
@@ -469,6 +496,8 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
 
         $this->assertSame([], $runner->commands);
         $this->assertDatabaseHas('music_cover_art_lookups', ['musicbrainz_id' => '11111111-1111-4111-8111-111111111111', 'outcome' => 'stored']);
+        // The same pass gave the decision its rename record; it stored no candidate to rename from.
+        $this->assertDatabaseHas('release_music_renames', ['releases_id' => $release->id, 'outcome' => 'declined', 'reason' => 'no_accepted_evaluation']);
     }
 
     #[Test]
@@ -548,6 +577,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             retryPolicy: $retryPolicy,
             decisions: new IdentificationDecisionStore,
             covers: new AlbumCoverFetcher(new CoverArtPacer),
+            renames: app(MusicRenameProjection::class),
         );
     }
 
