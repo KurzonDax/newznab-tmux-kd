@@ -6,6 +6,12 @@ namespace App\Services\MusicIdentity\Support;
 
 final class MusicIdentityValueNormalizer
 {
+    /** A 12-character ISRC, as MusicBrainz accepts it. */
+    public const string ISRC_PATTERN = '/^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/D';
+
+    /** A 28-character MusicBrainz Disc ID (a CDDB ID is 8 characters and never matches). */
+    public const string DISC_ID_PATTERN = '/^[A-Za-z0-9._-]{28}$/D';
+
     public static function identifier(?string $value, bool $uppercase = false): ?string
     {
         $value = self::text($value);
@@ -23,13 +29,17 @@ final class MusicIdentityValueNormalizer
     }
 
     /**
-     * Accepts the display form (`US-RC1-76-07839`) and returns the 12-character ISRC, or null when invalid.
+     * Accepts the display form (`US-RC1-76-07839`, hyphens and spaces stripped) and returns the
+     * 12-character ISRC, or null when invalid.
      */
     public static function isrc(?string $value): ?string
     {
-        $value = self::text($value === null ? null : str_replace(['-', ' '], '', $value), uppercase: true);
+        if ($value === null) {
+            return null;
+        }
+        $value = self::text(str_replace(['-', ' '], '', $value), uppercase: true);
 
-        return $value !== null && preg_match('/^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$/D', $value) === 1 ? $value : null;
+        return $value !== null && preg_match(self::ISRC_PATTERN, $value) === 1 ? $value : null;
     }
 
     /**
@@ -39,7 +49,7 @@ final class MusicIdentityValueNormalizer
     {
         $value = self::text($value);
 
-        return $value !== null && preg_match('/^[A-Za-z0-9._-]{28}$/D', $value) === 1 ? $value : null;
+        return $value !== null && preg_match(self::DISC_ID_PATTERN, $value) === 1 ? $value : null;
     }
 
     public static function text(?string $value, bool $uppercase = false): ?string
