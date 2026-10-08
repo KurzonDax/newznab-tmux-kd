@@ -25,6 +25,10 @@ return [
     'scoring' => [
         'minimum_album_score' => 92,
         'minimum_runner_up_margin' => 5,
+        // A fingerprint match is contradicted when the file's whole duration differs from every
+        // MusicBrainz length of the matched recording by more than both tolerances.
+        'fingerprint_duration_tolerance_milliseconds' => 10_000,
+        'fingerprint_duration_tolerance_ratio' => 0.1,
     ],
 
     'candidate_generation' => [
@@ -47,6 +51,30 @@ return [
         'retry' => [
             'initial_seconds' => 3_600,
             'maximum_seconds' => 604_800,
+        ],
+    ],
+
+    // AcoustID fingerprint lookups (lookup only, never submission) for releases still unresolved or
+    // ambiguous after MusicBrainz matching. Each lookup sends a stored fingerprint and duration.
+    'acoustid' => [
+        // Empty by default: fingerprints are still stored, but no AcoustID request is made.
+        'client_key' => env('ACOUSTID_CLIENT_KEY'),
+        'lookup_url' => 'https://api.acoustid.org/v2/lookup',
+        // Shared by every worker process, retries included.
+        'requests_per_second' => 3,
+        'lock_wait_seconds' => 10,
+        'timeout_seconds' => 10,
+        'connect_timeout_seconds' => 5,
+        'cache_ttl_seconds' => 2_592_000,
+        // Files shorter than this are never looked up.
+        'minimum_duration_milliseconds' => 1_000,
+        // The whole lookup step stops (retryable) once this is spent, well inside lease_seconds.
+        'lookup_budget_seconds' => 60,
+        'retry' => [
+            'attempts' => 3,
+            'backoff_milliseconds' => 1_000,
+            // A Retry-After longer than this defers the decision instead of waiting in the worker.
+            'maximum_wait_seconds' => 30,
         ],
     ],
 

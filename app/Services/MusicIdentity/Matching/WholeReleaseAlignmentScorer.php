@@ -18,6 +18,8 @@ final readonly class WholeReleaseAlignmentScorer
     public function __construct(
         private ReleaseTrackSequenceAligner $aligner = new ReleaseTrackSequenceAligner,
         private CandidateTextNormalizer $normalizer = new CandidateTextNormalizer,
+        private int $fingerprintDurationToleranceMs = 10_000,
+        private float $fingerprintDurationToleranceRatio = 0.1,
     ) {}
 
     public function score(AudioEvidenceSet $evidence, CandidateHypothesis $candidate): CandidateEvaluation
@@ -67,6 +69,7 @@ final readonly class WholeReleaseAlignmentScorer
             'distinct_recording_support' => $distinctRecordingSupport,
             'independent_recording_support' => $independentRecordingSupport,
             'independent_evidence_support' => $candidate->independentEvidenceSupport(),
+            'fingerprint_provider_score' => $this->fingerprintProviderScore($candidate->signals),
             'release_title_agreement' => round($titleAgreement, 4),
             'artist_credit_agreement' => round($artistAgreement, 4),
             'release_track_artist_credit_agreement' => $alignment->artistCreditAgreement,
@@ -261,6 +264,10 @@ final readonly class WholeReleaseAlignmentScorer
             }
         }
 
+        if ($this->hasFingerprintDurationConflict($evidence, $candidate)) {
+            $contradictions[] = 'fingerprint_duration_conflict';
+        }
+
         if ($evidence->trackEvidenceListComplete === true && $alignment->observedCount >= 2 && (
             $alignment->observedCoverage < 0.5
             || $alignment->candidateCount === 0
@@ -283,6 +290,89 @@ final readonly class WholeReleaseAlignmentScorer
         }
 
         return array_values(array_unique($contradictions));
+    }
+
+    /**
+     * The fingerprint service's best ranking value for this candidate (0-100): a provider feature
+     * kept for review, never a probability and never part of the score.
+     *
+     * @param  list<CandidateSignal>  $signals
+     */
+    private function fingerprintProviderScore(array $signals): ?int
+    {
+        $scores = [];
+        foreach ($signals as $signal) {
+            if ($signal->kind === CandidateSignalKind::Fingerprint && $signal->providerScore !== null) {
+                $scores[] = $signal->providerScore;
+            }
+        }
+
+        return $scores === [] ? null : max($scores);
+    }
+
+    /**
+     * A fingerprint is contradicted when the fingerprinted file's reliable whole duration agrees with
+     * none of the MusicBrainz lengths of any recording this candidate links to that fingerprint. One
+     * fingerprint often links several recordings (an album cut and an edit); one agreeing is enough.
+     */
+    private function hasFingerprintDurationConflict(AudioEvidenceSet $evidence, CandidateHypothesis $candidate): bool
+    {
+        /** @var array<string, list<int>> $lengthsByFingerprint */
+        $lengthsByFingerprint = [];
+        foreach ($candidate->signals as $signal) {
+            $recordingId = $signal->identity->recordingId;
+            if ($signal->kind !== CandidateSignalKind::Fingerprint || ! $signal->exact || $recordingId === null) {
+                continue;
+            }
+            $lengthsByFingerprint[$signal->value] = [
+                ...$lengthsByFingerprint[$signal->value] ?? [],
+                ...$this->recordingLengths($candidate, $recordingId),
+            ];
+        }
+
+        foreach ($lengthsByFingerprint as $fingerprint => $lengths) {
+            if ($lengths === []) {
+                continue;
+            }
+            foreach ($evidence->trackEvidence as $trackEvidence) {
+                if ($trackEvidence->fingerprint !== (string) $fingerprint || $trackEvidence->durationMs === null) {
+                    continue;
+                }
+                $agrees = array_filter($lengths, function (int $lengthMs) use ($trackEvidence): bool {
+                    $difference = abs($lengthMs - (int) $trackEvidence->durationMs);
+
+                    return $difference <= $this->fingerprintDurationToleranceMs
+                        || $difference / max($lengthMs, (int) $trackEvidence->durationMs) <= $this->fingerprintDurationToleranceRatio;
+                });
+                if ($agrees === []) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /** @return list<int> */
+    private function recordingLengths(CandidateHypothesis $candidate, string $recordingId): array
+    {
+        $lengths = [];
+        foreach ($candidate->metadata->releases as $release) {
+            foreach ($release['media'] as $medium) {
+                foreach ($medium['releaseTracks'] as $releaseTrack) {
+                    if (($releaseTrack['recording']['recordingId'] ?? null) === $recordingId) {
+                        $lengths[] = $releaseTrack['lengthMs'] ?? $releaseTrack['recording']['lengthMs'] ?? null;
+                    }
+                }
+            }
+        }
+        foreach ($candidate->metadata->recordings as $recording) {
+            if ($recording['recordingId'] === $recordingId) {
+                $lengths[] = $recording['lengthMs'];
+            }
+        }
+
+        return array_values(array_filter($lengths, static fn (?int $lengthMs): bool => $lengthMs !== null && $lengthMs > 0));
     }
 
     private function isCompilationArtist(string $artist): bool

@@ -6,6 +6,7 @@ namespace App\Services\MusicIdentity\DTO;
 
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use DateTimeInterface;
 
 final readonly class IdentificationDecision
 {
@@ -28,5 +29,28 @@ final readonly class IdentificationDecision
         public string $policyVersion,
         public ?string $operationalError = null,
         public ?AcceptedMusicText $acceptedText = null,
+        public ?DateTimeInterface $acoustIdLookedUpAt = null,
     ) {}
+
+    /** The same decision, reached after consulting fingerprint lookups at the given time. */
+    public function withAcoustIdLookedUpAt(DateTimeInterface $lookedUpAt): self
+    {
+        return new self(
+            status: $this->status,
+            score: $this->score,
+            band: $this->band,
+            acceptedIdentity: $this->acceptedIdentity,
+            reasons: $this->reasons,
+            candidates: $this->candidates,
+            runnerUpMargin: $this->runnerUpMargin,
+            algorithmVersion: $this->algorithmVersion,
+            resolverVersion: $this->resolverVersion,
+            normalizerVersion: $this->normalizerVersion,
+            scorerVersion: $this->scorerVersion,
+            policyVersion: $this->policyVersion,
+            operationalError: $this->operationalError,
+            acceptedText: $this->acceptedText,
+            acoustIdLookedUpAt: $lookedUpAt,
+        );
+    }
 }

@@ -153,6 +153,7 @@ final readonly class IdentificationDecisionStore
             'scorer_version' => $decision->scorerVersion,
             'policy_version' => $decision->policyVersion,
             'decided_at' => $decision->status === IdentificationStatus::RetryableError ? null : now(),
+            'acoustid_looked_up_at' => $decision->acoustIdLookedUpAt,
         ];
     }
 

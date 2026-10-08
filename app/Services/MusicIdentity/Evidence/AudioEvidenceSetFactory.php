@@ -79,6 +79,10 @@ final class AudioEvidenceSetFactory
             provenanceFamily: $this->provenanceFamily($evidence, $trackEvidenceRecord),
             discNumber: $trackEvidenceRecord->disc_number,
             releaseTrackNumber: $trackEvidenceRecord->track_number,
+            fingerprint: $this->text($trackEvidenceRecord->getAttribute('fingerprint')),
+            fingerprintHash: $this->text($trackEvidenceRecord->getAttribute('fingerprint_hash')),
+            fingerprintAlgorithm: $trackEvidenceRecord->fingerprint_algorithm,
+            fingerprintGeneratorVersion: $this->text($trackEvidenceRecord->getAttribute('fingerprint_generator_version')),
         );
     }
 
