@@ -46,6 +46,12 @@ class ReleaseRepairTargetMigrationTest extends TestCase
         parent::tearDown();
     }
 
+    /** The outcome columns this migration reads are dropped by a later migration. */
+    protected function historicalSchema(): ?array
+    {
+        return ['migration' => '2026_10_08_005420_drop_repair_and_rescan_state_from_releases_table.php', 'tables' => ['releases']];
+    }
+
     public function test_existing_repaired_outcomes_are_stamped_at_the_current_target(): void
     {
         $paths = glob(database_path('migrations/*_add_repair_target_completion_to_releases_table.php')) ?: [];

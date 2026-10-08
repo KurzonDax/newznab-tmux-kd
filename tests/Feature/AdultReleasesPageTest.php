@@ -64,7 +64,7 @@ final class AdultReleasesPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
@@ -500,7 +500,7 @@ final class AdultReleasesPageTest extends TestCase
         $this->page('/adult', User::query()->findOrFail($user->id))->assertRedirect(route('adult.releases', ['resolution' => ['1080p'], 'completion' => 95]));
     }
 
-    public function test_a_release_no_engine_will_take_reads_complete_without_a_repair_promise(): void
+    public function test_without_a_secondary_provider_the_chip_shows_no_pending_suffix(): void
     {
         $this->adult('Above target', ['completion' => 99]);
         $this->adult('No verdict', ['completion' => 80]);
@@ -508,8 +508,10 @@ final class AdultReleasesPageTest extends TestCase
         $response = $this->page('/adult')->assertOk();
         $above = $this->rowOf($response, 'Above target');
         $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $above);
-        $this->assertStringNotContainsString('still repairing', $above);
-        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'No verdict'));
+        $this->assertStringNotContainsString('late headers pending', $above);
+        $noVerdict = $this->rowOf($response, 'No verdict');
+        $this->assertMatchesRegularExpression('/>\s*80% complete\s*</', $noVerdict);
+        $this->assertStringNotContainsString('late headers pending', $noVerdict);
     }
 
     /** The response after the one redirect a bare open answers with while filters are remembered (#881). */

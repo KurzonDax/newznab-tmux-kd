@@ -119,9 +119,8 @@ final class ReleaseRepairingContextTest extends TestCase
         $context = $this->context();
         foreach (range(1, 50) as $group) {
             $context->secondaryStillReading($group, self::POSTED);
-            $context->target();
         }
-        $this->assertSame(['cursors' => 1, 'completionpercent' => 1, 'delaytime' => 1], $queries());
+        $this->assertSame(['cursors' => 1, 'completionpercent' => 0, 'delaytime' => 1], $queries());
 
         $this->configureProviders([['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']]);
         $queries = $this->recordRepairReads();

@@ -1,6 +1,5 @@
 <?php
 
-use App\Enums\ReleaseRepairOutcome;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -11,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
  * The repair engine recovers files with at least one seen segment; the header re-scan recovers
  * files with none. They run as separate passes over the same release, so they keep separate state:
  * a release can be `failed` for repair and still owe the re-scan its turn, and the sweep must wait
- * for both. The values are the same {@see ReleaseRepairOutcome} enum, plus
+ * for both. The values are the same outcome strings as repair, plus
  * `skipped-budget` for a window too wide to be worth fetching.
  */
 return new class extends Migration

@@ -62,7 +62,7 @@ class DetailsDocumentViewTest extends TestCase
         $release->row_data = new ReleaseRowData(
             id: 1, guid: 'details-document', name: 'Example.Release', category: 'Movies > HD',
             size: '40.00 MB', files: 3, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 2, comments: 0,
-            completion: 100, repair_outcome: null, rescan_outcome: null, passworded: false,
+            completion: 100, passworded: false,
             has_media_info: false, media_info_summary: null, nfo: true, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
             renamed: true, pp_done: true, entity: new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
             in_basket: false, watched: false,
@@ -117,7 +117,7 @@ class DetailsDocumentViewTest extends TestCase
         $release->row_data = new ReleaseRowData(
             id: 2, guid: 'offsite-links', name: 'Offsite.Release', category: 'Movies > HD',
             size: '1.00 MB', files: 1, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 0, comments: 0,
-            completion: 100, repair_outcome: null, rescan_outcome: null, passworded: false,
+            completion: 100, passworded: false,
             has_media_info: false, media_info_summary: null, nfo: false, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
             renamed: true, pp_done: true, entity: null, in_basket: false, watched: false,
         );

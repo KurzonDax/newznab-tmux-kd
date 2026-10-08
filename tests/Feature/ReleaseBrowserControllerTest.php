@@ -78,7 +78,7 @@ final class ReleaseBrowserControllerTest extends TestCase
             ->assertSee('1080p · x264');
     }
 
-    public function test_the_repair_chip_shows_only_while_an_engine_can_still_take_the_release(): void
+    public function test_without_a_secondary_provider_no_row_shows_the_pending_chip(): void
     {
         $this->release('Above target', ['completion' => 99]);
         $this->release('No verdict', ['completion' => 80]);
@@ -86,9 +86,11 @@ final class ReleaseBrowserControllerTest extends TestCase
         $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
         $above = $this->browserRow($response->getContent(), 'Above target');
         $this->assertStringContainsString('99%', $above);
-        $this->assertStringNotContainsString('Repair Attempt', $above);
+        $this->assertStringNotContainsString(ReleaseCompletion::PENDING_LABEL, $above);
         $this->assertStringNotContainsString('repair-badge', $above);
-        $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->browserRow($response->getContent(), 'No verdict'));
+        $noVerdict = $this->browserRow($response->getContent(), 'No verdict');
+        $this->assertStringNotContainsString(ReleaseCompletion::PENDING_LABEL, $noVerdict);
+        $this->assertStringNotContainsString('repair-badge', $noVerdict);
     }
 
     public function test_a_secondary_provider_still_reading_the_post_keeps_the_repair_chip_pending(): void

@@ -105,28 +105,6 @@ class ArtifactPublicationTest extends TestCase
         }
     }
 
-    #[DataProvider('unmeasurableSizes')]
-    public function test_recovery_rejects_unmeasurable_size_before_preparing_or_publishing(string $kind, string $bytes): void
-    {
-        $target = str_replace('bytes="20"', 'bytes="'.$bytes.'"', $this->original);
-
-        $result = app(ArtifactPublication::class)->replace($this->guid, $target, update: new ArtifactReleaseUpdate($kind));
-
-        $this->assertFalse($result->success);
-        $this->assertSame('artifact_size_overflow', $result->reason);
-        $this->assertSame($this->original, app(NzbService::class)->readNzbContents($this->guid));
-        $this->assertSame(0, DB::table('reconciled_artifact_operations')->count());
-    }
-
-    public static function unmeasurableSizes(): iterable
-    {
-        foreach (['repair', 'rescan'] as $kind) {
-            yield $kind.' missing size' => [$kind, ''];
-            yield $kind.' negative size' => [$kind, '-1'];
-            yield $kind.' overflowing size' => [$kind, '9223372036854775808'];
-        }
-    }
-
     public function test_a_source_reserved_after_evidence_cannot_prepare_a_second_artifact(): void
     {
         DB::table('collections')->insert(['id' => 1]);

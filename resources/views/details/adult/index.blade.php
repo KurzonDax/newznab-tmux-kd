@@ -46,7 +46,7 @@
                     <x-resolution-chip :resolution="$row->resolution" :part="false" />
                     @if($row->completion !== null)
                         <x-chip :variant="'completion-'.$row->completion['band']"
-                                :title="$row->completion['percent'].'% of this release\'s articles were seen by the indexer. '.($row->completion['repairing'] ? 'The site may still recover more of it.' : 'The site will not try to recover more of it.')">{{ $row->completion['percent'] }}% complete{{ $row->completion['repairing'] ? ' · still repairing' : '' }}</x-chip>
+                                :title="$row->completion['percent'].'% of this release\'s articles were seen by the indexer. '.($row->completion['repairing'] ? 'The site may still recover more of it.' : 'The site will not try to recover more of it.')">{{ $row->completion['percent'] }}% complete{{ $row->completion['repairing'] ? ' · late headers pending' : '' }}</x-chip>
                     @endif
                     @if($row->passworded)
                         <x-chip variant="password" icon="fas fa-lock">Password</x-chip>

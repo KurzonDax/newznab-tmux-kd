@@ -52,7 +52,7 @@ final class TvShowPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
@@ -223,7 +223,7 @@ final class TvShowPageTest extends TestCase
         $this->assertSame(2, substr_count($open, 'data-cart="'));
         $this->assertStringContainsString('<th class="tv-num" aria-sort="descending"><button type="button" data-sort="size">', $open);
         $this->assertStringContainsString('<a class="tv-release-name" href="'.route('details', DB::table('releases')->where('id', $big)->value('guid')).'"', $open);
-        $this->assertMatchesRegularExpression('/>\s*94% complete · still repairing\s*</', $open);
+        $this->assertMatchesRegularExpression('/>\s*94% complete\s*</', $open);
         $this->assertMatchesRegularExpression('/<td>\s*<span class="resolution-chip resolution-chip-1080"\s*>1080p<\/span>\s*<\/td>\s*<td class="tv-nowrap">WEB<\/td>\s*<td class="tv-num">3\.00 GB<\/td>/', $open);
         $this->assertStringNotContainsString('data-open', $this->episodeRow($response, 1));
         $response->assertDontSee('data-select-all', false);

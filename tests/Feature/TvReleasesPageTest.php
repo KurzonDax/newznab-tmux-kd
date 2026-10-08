@@ -67,7 +67,7 @@ final class TvReleasesPageTest extends TestCase
         Carbon::setTestNow('2026-09-25 12:00:00');
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
-            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'repair_outcome', 'rescan_outcome', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres', 'video_genres',
@@ -267,7 +267,7 @@ final class TvReleasesPageTest extends TestCase
     public function test_chips_follow_the_completion_bands_and_what_each_release_has(): void
     {
         $this->tv('Complete release', ['completion' => 100]);
-        $this->tv('Nearly complete', ['completion' => 96.4, 'repair_outcome' => 'failed', 'rescan_outcome' => 'failed']);
+        $this->tv('Nearly complete', ['completion' => 96.4]);
         $this->tv('Middling', ['completion' => 80]);
         $this->tv('Poor', ['completion' => 40, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1]);
 
@@ -275,9 +275,10 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('% complete', $this->rowOf($response, 'Complete release'));
         $this->assertStringContainsString('chip-tone-completion-ok', $this->rowOf($response, 'Nearly complete'));
         $this->assertStringContainsString('96% complete', $this->rowOf($response, 'Nearly complete'));
-        $this->assertStringNotContainsString('still repairing', $this->rowOf($response, 'Nearly complete'));
+        $this->assertStringNotContainsString('late headers pending', $this->rowOf($response, 'Nearly complete'));
         $this->assertStringContainsString('chip-tone-completion-mid', $this->rowOf($response, 'Middling'));
-        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'Middling'));
+        $this->assertStringContainsString('80% complete', $this->rowOf($response, 'Middling'));
+        $this->assertStringNotContainsString('late headers pending', $this->rowOf($response, 'Middling'));
         $poor = $this->rowOf($response, 'Poor');
         $this->assertStringContainsString('chip-tone-completion-low', $poor);
         foreach (['nfo-badge' => 'NFO', 'preview-badge' => 'Preview', 'sample-badge' => 'Sample'] as $class => $word) {
@@ -910,51 +911,19 @@ final class TvReleasesPageTest extends TestCase
         return DB::table('releases')->whereIn('id', $this->listedIds($response))->orderBy('name')->pluck('name')->all();
     }
 
-    public function test_the_chip_promises_recovery_only_while_an_engine_can_still_take_the_release(): void
-    {
-        $this->tv('Above target', ['completion' => 99]);
-        $this->tv('At target', ['completion' => 95]);
-        $this->tv('Nothing to rescan', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 10, 'totalpart' => 12]);
-        $this->tv('Rescan owed', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => null, 'totalpart' => 12]);
-        $this->tv('No verdict', ['completion' => 80]);
-        $this->tv('No NZB', ['completion' => 80, 'nzbstatus' => 0]);
-
-        $response = $this->page('/tv')->assertOk();
-        foreach (['Above target' => '99% complete', 'At target' => '95% complete', 'Nothing to rescan' => '80% complete', 'No NZB' => '80% complete'] as $name => $chip) {
-            $row = $this->rowOf($response, $name);
-            $this->assertMatchesRegularExpression('/>\s*'.preg_quote($chip, '/').'\s*</', $row, $name);
-            $this->assertStringNotContainsString('still repairing', $row, $name);
-            $this->assertStringContainsString('The site will not try to recover more of it."', $row, $name);
-        }
-        foreach (['Rescan owed', 'No verdict'] as $name) {
-            $row = $this->rowOf($response, $name);
-            $this->assertStringContainsString('80% complete · still repairing', $row, $name);
-            $this->assertStringContainsString('The site may still recover more of it."', $row, $name);
-        }
-        $this->assertStringNotContainsString('as complete as it will get', (string) $response->getContent());
-    }
-
-    public function test_the_repair_target_comes_from_the_completionpercent_setting(): void
-    {
-        Settings::query()->updateOrInsert(['name' => 'completionpercent'], ['value' => '99']);
-        $this->tv('Below the raised target', ['completion' => 97]);
-
-        $this->assertStringContainsString('97% complete · still repairing', $this->rowOf($this->page('/tv')->assertOk(), 'Below the raised target'));
-    }
-
     public function test_a_secondary_provider_still_reading_the_post_holds_the_label_until_its_position_passes_it(): void
     {
         $this->configureSecondaryProvider();
         ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.tv', 'active' => 1]);
         $this->tv('Above target', ['completion' => 99, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
-        $this->tv('Nothing to rescan', ['completion' => 80, 'repair_outcome' => 'failed', 'declaredfiles' => 10, 'totalpart' => 12, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
+        $this->tv('Nothing to rescan', ['completion' => 80, 'declaredfiles' => 10, 'totalpart' => 12, 'groups_id' => 1, 'postdate' => '2026-09-25 08:00:00']);
         // delaytime is unset, so the window closes two hours after the post.
         $this->secondaryPosition(1, '2026-09-25 09:00:00');
 
         $response = $this->page('/tv')->assertOk();
-        $this->assertStringContainsString('99% complete · still repairing', $this->rowOf($response, 'Above target'));
-        $this->assertStringContainsString('80% complete · still repairing', $this->rowOf($response, 'Nothing to rescan'));
+        $this->assertStringContainsString('99% complete · late headers pending', $this->rowOf($response, 'Above target'));
+        $this->assertStringContainsString('80% complete · late headers pending', $this->rowOf($response, 'Nothing to rescan'));
 
         $this->secondaryPosition(1, '2026-09-25 11:00:00');
         $response = $this->page('/tv')->assertOk();
@@ -962,7 +931,7 @@ final class TvReleasesPageTest extends TestCase
         $this->assertMatchesRegularExpression('/>\s*80% complete\s*</', $this->rowOf($response, 'Nothing to rescan'));
     }
 
-    public function test_the_page_reads_the_target_the_delay_and_the_secondary_positions_once_however_many_rows(): void
+    public function test_the_page_reads_the_delay_and_the_secondary_positions_once_however_many_rows(): void
     {
         $this->configureSecondaryProvider();
         ProductionTables::fromAuthority()->create('usenet_group_provider_cursors');
@@ -974,12 +943,12 @@ final class TvReleasesPageTest extends TestCase
 
         $reads = $this->recordRepairReads();
         $this->page('/tv')->assertOk();
-        $this->assertSame(['cursors' => 1, 'completionpercent' => 1, 'delaytime' => 1], $reads());
+        $this->assertSame(['cursors' => 1, 'completionpercent' => 0, 'delaytime' => 1], $reads());
 
         $this->configureProviders([['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']]);
         $reads = $this->recordRepairReads();
         $this->page('/tv')->assertOk();
-        $this->assertSame(['cursors' => 0, 'completionpercent' => 1, 'delaytime' => 0], $reads());
+        $this->assertSame(['cursors' => 0, 'completionpercent' => 0, 'delaytime' => 0], $reads());
     }
 
     /** @param array<string, mixed> $attributes */

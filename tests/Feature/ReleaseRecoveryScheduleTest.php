@@ -12,25 +12,16 @@ use Tests\TestCase;
 class ReleaseRecoveryScheduleTest extends TestCase
 {
     #[Test]
-    public function bounded_repair_and_rescan_passes_run_hourly_in_recovery_order_without_overlap(): void
+    public function neither_recovery_pass_is_scheduled(): void
     {
-        $events = collect(app(Schedule::class)->events());
-        $repairIndex = $events->search(
-            static fn (Event $event): bool => str_contains($event->command ?? '', 'releases:repair-completion'),
-        );
-        $rescanIndex = $events->search(
-            static fn (Event $event): bool => str_contains($event->command ?? '', 'releases:rescan-missing-files'),
-        );
+        $commands = collect(app(Schedule::class)->events())
+            ->map(static fn (Event $event): string => $event->command ?? '');
 
-        $this->assertIsInt($repairIndex);
-        $this->assertIsInt($rescanIndex);
-        $this->assertLessThan($rescanIndex, $repairIndex, 'Segment repair must be registered before whole-file rescan.');
-
-        $rescan = $events->get($rescanIndex);
-
-        $this->assertInstanceOf(Event::class, $rescan);
-        $this->assertSame('0 * * * *', $rescan->expression);
-        $this->assertTrue($rescan->withoutOverlapping);
+        $this->assertNotEmpty($commands);
+        foreach ($commands as $command) {
+            $this->assertStringNotContainsString('releases:repair-completion', $command);
+            $this->assertStringNotContainsString('releases:rescan-missing-files', $command);
+        }
     }
 
     #[Test]

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature\ObfuscationRecovery;
 
 use App\Enums\HeaderScanDirection;
-use App\Enums\ReleaseRepairOutcome;
 use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
@@ -68,12 +67,7 @@ use App\Services\ObfuscationRecovery\RecoveryWork;
 use App\Services\Par2Processor;
 use App\Services\ReleaseCreationService;
 use App\Services\ReleaseImageService;
-use App\Services\ReleaseRepair\MissingFileRescanOptions;
-use App\Services\ReleaseRepair\MissingFileRescanService;
 use App\Services\ReleaseRepair\RecoveryLease;
-use App\Services\ReleaseRepair\ReleaseRepairOptions;
-use App\Services\ReleaseRepair\ReleaseRepairService;
-use App\Services\ReleaseRepair\RescanRunBudget;
 use App\Services\Releases\ReleaseManagementService;
 use App\Services\Search\SearchService;
 use App\Services\TvProcessing\Providers\AbstractTvProvider;
@@ -418,14 +412,6 @@ final class RecoveryPreparationTest extends TestCase
         }
         sort($counts);
         $this->assertSame($rar ? [1, 2, 3, 3, 3] : [1, 4], $counts);
-        $repair = app(ReleaseRepairService::class)->repair($release, new ReleaseRepairOptions);
-        $rescan = app(MissingFileRescanService::class)->rescan($release,
-            new MissingFileRescanOptions, new RescanRunBudget(100));
-        $this->assertSame(ReleaseRepairOutcome::UnsupportedRecoveryProfile, $repair->outcome);
-        $this->assertSame(ReleaseRepairOutcome::UnsupportedRecoveryProfile, $rescan->outcome);
-        $this->assertSame(0, $repair->articlesProbed + $rescan->articlesRequested);
-        $this->assertSame('unsupported_recovery_profile', $release->fresh()->repair_outcome->value);
-        $this->assertSame('unsupported_recovery_profile', $release->fresh()->rescan_outcome->value);
         $this->assertNull($release->fresh()->recovery_claimed_at);
         $plan = RecoveryPlan::fromArray(json_decode($publication->sealed_plan, true));
         $restore = app(RecoveryNzbRestore::class);

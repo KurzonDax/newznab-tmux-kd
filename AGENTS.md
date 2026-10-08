@@ -113,7 +113,6 @@ Use skills available in the session when their workflows fit the task.
 | Domain terminology or design decisions | [Domain docs](docs/agents/domain.md) |
 | Header ingestion and release formation | [Indexing pipeline](docs/architecture/indexing-pipeline.md) |
 | NNTP providers or header-provider changes | [Provider architecture](docs/architecture/nntp-providers.md) |
-| Missing segments and repair-before-delete | [Release repair](docs/architecture/release-repair.md) |
 | Release naming | [Name-fixing rules](.ai/rules/name-fixing.md), [service README](app/Services/NameFixing/README.md) |
 | Tmux scheduling or audio/additional processing | [Tmux rules](.ai/rules/tmux.md), [processing rules](.ai/rules/additional-processing.md) |
 | Manticore query/schema work | [Search rules](.ai/rules/drivers.md) |

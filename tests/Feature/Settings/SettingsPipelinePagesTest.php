@@ -7,7 +7,6 @@ namespace Tests\Feature\Settings;
 use App\Services\Nzb\NzbService;
 use App\Support\BackfillSettingRules;
 use App\Support\NzbSettingRules;
-use App\Support\RepairSettingRules;
 use App\Support\Settings\SettingsRegistry;
 use Database\Seeders\SettingsTableSeeder;
 use Illuminate\Support\Facades\Cache;
@@ -26,23 +25,6 @@ class SettingsPipelinePagesTest extends TestCase
 {
     use InteractsWithSettingsHub;
     use IsolatedSqliteDatabase;
-
-    /**
-     * The repair and re-scan budgets, in the order the card lists them.
-     *
-     * @var list<string>
-     */
-    private const array REPAIR_KEYS = [
-        'repair_retry_after_hours',
-        'repair_floor_completion',
-        'repair_stat_sample_per_file',
-        'repair_max_stat_probes',
-        'repair_limit',
-        'rescan_limit',
-        'rescan_window_minutes',
-        'rescan_max_articles_per_release',
-        'rescan_max_articles_per_run',
-    ];
 
     /**
      * @return array<string, string>
@@ -124,11 +106,6 @@ class SettingsPipelinePagesTest extends TestCase
         $this->assertStringContainsString('Formation gates', $rendered);
         $this->assertStringContainsString('NZB storage', $rendered);
         $this->assertStringContainsString('Retention &amp; cleanup', $rendered);
-        $this->assertStringContainsString('Release repair &amp; re-scan', $rendered);
-
-        foreach (self::REPAIR_KEYS as $key) {
-            $this->assertStringContainsString('name="'.$key.'"', $rendered);
-        }
     }
 
     public function test_the_formation_gates_state_the_delete_and_the_stricter_of_layers(): void
@@ -248,34 +225,10 @@ class SettingsPipelinePagesTest extends TestCase
         $this->assertSame('0', $this->storedSettingValue('nzbsplitlevel'), 'Zero is the legal store-flat depth.');
     }
 
-    public function test_repair_rules_reject_a_negative_budget(): void
-    {
-        try {
-            $this->saveCard('release-formation', 'repair', $this->repairPayload(['repair_limit' => '-1']));
-            $this->fail('A negative repair budget must be rejected.');
-        } catch (ValidationException $exception) {
-            $this->assertStringContainsString('Repair releases per run', $exception->validator->errors()->first('repair_limit'));
-        }
-
-        $this->assertSame('250', $this->storedSettingValue('repair_limit'));
-    }
-
-    public function test_the_repair_card_saves_the_whole_budget_set(): void
-    {
-        $this->saveCard('release-formation', 'repair', $this->repairPayload(['repair_limit' => '500', 'rescan_window_minutes' => '45']));
-
-        $this->assertSame('500', $this->storedSettingValue('repair_limit'));
-        $this->assertSame('45', $this->storedSettingValue('rescan_window_minutes'));
-    }
-
-    public function test_the_repair_and_nzb_and_backfill_rules_come_from_the_existing_classes(): void
+    public function test_the_nzb_and_backfill_rules_come_from_the_existing_classes(): void
     {
         $registry = app(SettingsRegistry::class);
 
-        $this->assertSame(
-            RepairSettingRules::rules()['repair_limit'],
-            $registry->definition('repair_limit')?->validationRules()['repair_limit'],
-        );
         $this->assertSame(
             NzbSettingRules::rules()['nzbsplitlevel'],
             $registry->definition('nzbsplitlevel')?->validationRules()['nzbsplitlevel'],
@@ -303,20 +256,5 @@ class SettingsPipelinePagesTest extends TestCase
             'back_timer' => '30',
             'progressive' => '1',
         ], $overrides);
-    }
-
-    /**
-     * @param  array<string, string>  $overrides
-     * @return array<string, string>
-     */
-    private function repairPayload(array $overrides = []): array
-    {
-        $payload = [];
-
-        foreach (self::REPAIR_KEYS as $key) {
-            $payload[$key] = (string) DB::table('settings')->where('name', $key)->value('value');
-        }
-
-        return array_merge($payload, $overrides);
     }
 }

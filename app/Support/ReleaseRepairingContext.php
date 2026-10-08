@@ -6,7 +6,6 @@ namespace App\Support;
 
 use App\Models\Settings;
 use App\Services\NNTP\NntpProviderPool;
-use App\Services\ReleaseRepair\ReleaseRepairOptions;
 use App\Support\Data\ProcessReleasesSettings;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -14,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * The per-request facts {@see ReleaseCompletion::stillRepairing()} needs beside a release row:
- * the repair target, the `delaytime` window and how far each secondary provider has read.
+ * the `delaytime` window and how far each secondary provider has read.
  *
  * Registered container-scoped in `AppServiceProvider` beside {@see SiteViewSettings}, so a
  * list page and the legacy chip component, which renders one release at a time without knowing
@@ -24,18 +23,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class ReleaseRepairingContext
 {
-    private ?float $target = null;
-
     private ?int $delayHours = null;
 
     /** @var array<int, int>|null group id => the earliest enabled secondary position, as a timestamp */
     private ?array $secondaryPositions = null;
-
-    /** The completion both recovery engines select below. */
-    public function target(): float
-    {
-        return $this->target ??= ReleaseRepairOptions::targetFromSettings();
-    }
 
     /**
      * `delaytime` read as release formation and the reconciliation admission read it: blank or
@@ -72,7 +63,7 @@ final class ReleaseRepairingContext
      * One query for every enabled secondary provider's cursor at its current host, in active
      * groups only. A deactivated group's cursor is never deleted and stops moving forever, so
      * without the join every incomplete release posted just before its frozen date would read
-     * "still repairing" permanently. A stalled cursor in an active group still counts: once the
+     * "Late Headers Pending" permanently. A stalled cursor in an active group still counts: once the
      * provider resumes, its position passes the posts and the label ends.
      *
      * @return array<int, int>

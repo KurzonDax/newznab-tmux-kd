@@ -44,6 +44,7 @@ use App\Support\Data\ProcessReleasesSettings;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
 use App\Support\DatabaseClock;
+use App\Support\ReleaseRepairingContext;
 use App\Support\ReleaseSearchIndexSync;
 use App\Support\SchemaCapabilities;
 use DateTimeInterface;
@@ -1500,13 +1501,13 @@ final class ReleaseProcessingService
     }
 
     /**
-     * Delete sub-threshold releases the repair engine has finished with.
+     * Delete sub-threshold releases that late headers can no longer complete.
      *
-     * Being measured incomplete is not grounds for deletion: many such releases are recoverable
-     * because the missing articles are still on the provider and only the headers were missed.
-     * So the sweep waits for a *final* repair outcome and never does timestamp arithmetic of its
-     * own -- the repair state machine owns time, and only ever hands the reaper releases it has
-     * given up on. Operators keep their override in `nntmux:delete-releases --completion-max`.
+     * The query holds a release for {@see IncompleteReleaseSweepQuery::LATE_HEADER_GRACE_HOURS}
+     * after it was added and while a late collection is waiting to merge into it. A release a
+     * secondary provider may still be reading is kept until its position passes the post
+     * ({@see IncompleteReleaseSweepQuery::lateHeadersPending()}). Operators keep their override
+     * in `nntmux:delete-releases --completion-max`.
      *
      * `completion = 0` stays exempt as the "never measured" sentinel, as before.
      */
@@ -1516,10 +1517,16 @@ final class ReleaseProcessingService
             return $stats;
         }
 
+        $context = new ReleaseRepairingContext;
+
         IncompleteReleaseSweepQuery::builder((float) $this->settings->completion)
             ->select(['releases.*'])
-            ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats): bool {
+            ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats, $context): bool {
                 foreach ($releases as $release) {
+                    if (IncompleteReleaseSweepQuery::lateHeadersPending($release, $context)) {
+                        continue;
+                    }
+
                     if ($this->deleteSingleRelease($release, 'deleteIncompleteReleases')) {
                         $stats = $stats->increment('completion');
                     }

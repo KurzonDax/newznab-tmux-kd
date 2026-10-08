@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
-use App\Enums\ReleaseRepairOutcome;
-use App\Models\Settings;
 use App\Support\ReleaseCompletion;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Feature\ReleaseRepairingContextTest;
-use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 /**
- * The rule the completion chip reads: a release is "still repairing" only while a recovery
- * engine, or a secondary provider's late-header merge, can still add to it. The provider
+ * The rule the completion chip reads: a release is pending only while a secondary provider's
+ * late-header merge can still add to it. The provider
  * half of the rule has its own test ({@see ReleaseRepairingContextTest}); here
  * the test environment configures provider 1 alone, so no cursor is ever read.
  */
@@ -61,58 +58,21 @@ class ReleaseCompletionTest extends TestCase
         $this->assertTrue(ReleaseCompletion::isIncomplete(5));
     }
 
-    public function test_a_release_below_the_target_is_still_repairing_until_recovery_is_exhausted(): void
-    {
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row()), 'No verdict yet is still repairing.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => ReleaseRepairOutcome::Failed->value])), 'Repair final, re-scan still owed.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => ReleaseRepairOutcome::RetryPending->value, 'rescan_outcome' => ReleaseRepairOutcome::Failed->value])), 'A retry still owed.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => ReleaseRepairOutcome::Repaired->value, 'rescan_outcome' => ReleaseRepairOutcome::Failed->value])), 'A successful repair is not an exhausted one.');
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => ReleaseRepairOutcome::Failed->value, 'rescan_outcome' => ReleaseRepairOutcome::SkippedBudget->value])));
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => ReleaseRepairOutcome::SkippedFloor, 'rescan_outcome' => ReleaseRepairOutcome::Failed])));
-    }
-
-    public function test_nothing_to_rescan_finishes_recovery_once_repair_is_final_as_the_sweep_counts_it(): void
-    {
-        $final = ['repair_outcome' => ReleaseRepairOutcome::Failed->value];
-
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row([...$final, 'declaredfiles' => 0, 'totalpart' => 0])), 'No usable declaration.');
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row([...$final, 'declaredfiles' => 10, 'totalpart' => 12])), 'Holds every declared file.');
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row([...$final, 'declaredfiles' => 12, 'totalpart' => 12])), 'Holds exactly the declared files.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row([...$final, 'declaredfiles' => 13, 'totalpart' => 12])), 'A whole file is still missing.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row([...$final, 'declaredfiles' => null, 'totalpart' => 12])), 'A count never derived is still owed a re-scan.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['declaredfiles' => 0, 'totalpart' => 0])), 'Nothing to re-scan does not finish a repair that has not run.');
-    }
-
-    public function test_a_release_no_engine_would_select_is_not_still_repairing(): void
+    public function test_without_a_secondary_provider_no_release_is_pending(): void
     {
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 99])), 'At or above the default target of 95.');
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 95])), 'Exactly the target.');
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['completion' => 94.99])));
+        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 94.99])));
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 100])));
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 0])), 'Never measured.');
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['nzbstatus' => 0])), 'No NZB yet.');
         $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['nzbstatus' => null])));
     }
 
-    public function test_the_target_is_the_completionpercent_setting_when_it_is_on(): void
-    {
-        ProductionTables::fromAuthority()->create('settings', ['name', 'value']);
-        Settings::query()->insert(['name' => 'completionpercent', 'value' => '99']);
-
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['completion' => 97])));
-        $this->assertFalse(ReleaseCompletion::stillRepairing($this->row(['completion' => 99])));
-    }
-
     public function test_the_rule_reads_an_array_row_as_it_reads_an_object(): void
     {
-        $this->assertTrue(ReleaseCompletion::stillRepairing((array) $this->row()));
+        $this->assertFalse(ReleaseCompletion::stillRepairing((array) $this->row()));
         $this->assertFalse(ReleaseCompletion::stillRepairing((array) $this->row(['completion' => 99])));
-    }
-
-    public function test_unknown_outcome_values_are_never_treated_as_final(): void
-    {
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => 'not-an-outcome', 'rescan_outcome' => ReleaseRepairOutcome::Failed->value])));
-        $this->assertTrue(ReleaseCompletion::stillRepairing($this->row(['repair_outcome' => '', 'rescan_outcome' => ''])));
     }
 
     public function test_thresholds_outside_the_menu_fall_back_to_all_releases(): void
@@ -126,11 +86,11 @@ class ReleaseCompletionTest extends TestCase
         $this->assertSame(100, ReleaseCompletion::normalizeThreshold(100));
     }
 
-    /** An 80% release with an NZB, no verdicts and a re-scan still owed. */
+    /** An 80% release with an NZB. */
     private function row(array $overrides = []): object
     {
         return (object) [
-            'completion' => 80, 'repair_outcome' => null, 'rescan_outcome' => null, 'declaredfiles' => null, 'totalpart' => 12,
+            'completion' => 80,
             'nzbstatus' => 1, 'groups_id' => 1, 'postdate' => '2026-10-01 10:00:00', ...$overrides,
         ];
     }
