@@ -2929,7 +2929,10 @@ class ElasticSearchDriver implements SearchDriverInterface
                         'type' => 'cross_fields',
                         'operator' => 'and',
                     ];
-                    if ($criteria['music_text'] ?? false) {
+                    if ($criteria['music_text_only'] ?? false) {
+                        // API music search matches only the release's music text, never its name (#307).
+                        $multi['fields'] = ReleaseSearchIndexDocument::musicTextFields();
+                    } elseif ($criteria['music_text'] ?? false) {
                         // API general search also matches the release's music text (#308).
                         $multi['fields'] = [...self::RELEASE_TEXT_FIELDS, ...ReleaseSearchIndexDocument::musicTextFields()];
                     }
