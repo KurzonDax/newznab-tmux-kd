@@ -45,7 +45,8 @@ final class ReleaseIndexProjection
             : "NULLIF(CONCAT_WS(' ', ".implode(', ', $columns).'), \'\')';
         // Text of the current accepted MusicBrainz decision (issue #308): an accepted album's
         // title, aliases, artist credit and tracks; an accepted recording's title (as a track)
-        // and artist credit. Without one, album_title and artist stay the musicinfo text.
+        // and artist credit, beside the legacy musicinfo artist so its matches stay valid.
+        // Without one, album_title and artist stay the musicinfo text.
         $albumStates = "'".IdentificationStatus::AcceptedReleaseGroup->value."', '".IdentificationStatus::AcceptedEdition->value."'";
         $recordingState = "'".IdentificationStatus::AcceptedRecording->value."'";
         $musicAlbumTitle = "COALESCE(CASE WHEN mbi.state IN ({$albumStates}) THEN "
@@ -54,6 +55,9 @@ final class ReleaseIndexProjection
         $musicTracks = "COALESCE(CASE WHEN mbi.state = {$recordingState} THEN mbi.accepted_title ELSE "
             .$join('mbi.accepted_track_titles', 'mbi.accepted_track_artist_credits')
             ." END, '')";
+        $musicArtist = "CASE WHEN mbi.state = {$recordingState} THEN "
+            .$join('mbi.accepted_artist_credit', 'musicinfo.artist')
+            .' ELSE COALESCE(mbi.accepted_artist_credit, musicinfo.artist) END';
 
         return DB::table('releases as r')
             ->leftJoin('usenet_groups as g', 'g.id', '=', 'r.groups_id')
@@ -87,7 +91,7 @@ final class ReleaseIndexProjection
             ->leftJoinSub($mediaInfo, 'mdi', 'mdi.releases_id', '=', 'r.id')
             ->select([
                 'r.musicinfo_id', 'r.consoleinfo_id', 'r.gamesinfo_id', 'r.bookinfo_id',
-                'linked_movie.title as movie_title', 'v.title as show_title', DB::raw("{$musicAlbumTitle} AS album_title"), DB::raw('COALESCE(mbi.accepted_artist_credit, musicinfo.artist) AS artist'),
+                'linked_movie.title as movie_title', 'v.title as show_title', DB::raw("{$musicAlbumTitle} AS album_title"), DB::raw("{$musicArtist} AS artist"),
                 DB::raw("{$musicTracks} AS music_tracks"),
                 'consoleinfo.title as console_title', 'gamesinfo.title as game_title', 'bookinfo.title as book_title',
                 DB::raw("{$animeTitles} AS anime_titles"),

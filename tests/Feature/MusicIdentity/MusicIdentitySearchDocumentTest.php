@@ -92,11 +92,14 @@ final class MusicIdentitySearchDocumentTest extends TestCase
 
         foreach ([$unlinkedDocument, $legacyDocument] as $document) {
             $this->assertStringContainsString('Recorded Track', $document['music_tracks']);
-            $this->assertSame('Example Artist', $document['artist']);
+            $this->assertStringContainsString('Example Artist', $document['artist']);
             $this->assertStringNotContainsString('Candidate Album', json_encode($document, JSON_THROW_ON_ERROR));
         }
         $this->assertSame('', $unlinkedDocument['album_title']);
+        $this->assertSame('Example Artist', $unlinkedDocument['artist']);
         $this->assertSame('Legacy Album', $legacyDocument['album_title'], 'a recording acceptance leaves the legacy album match');
+        $this->assertStringContainsString('Legacy Artist', $legacyDocument['artist'], 'the legacy artist still matches');
+        $this->assertStringContainsString('Example Artist', $legacyDocument['artist'], 'the recording artist matches too');
     }
 
     #[Test]
