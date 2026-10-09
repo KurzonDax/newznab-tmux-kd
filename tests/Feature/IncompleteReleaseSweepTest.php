@@ -112,6 +112,42 @@ class IncompleteReleaseSweepTest extends TestCase
     }
 
     #[Test]
+    public function the_configured_wait_replaces_the_default_grace(): void
+    {
+        $this->insertRelease(1, addedHoursAgo: 23);
+        $this->insertRelease(2, addedHoursAgo: 25);
+
+        $this->assertSame([2], $this->sweptIds(graceHours: 24));
+    }
+
+    #[Test]
+    public function a_one_hour_wait_still_holds_a_release_with_a_late_collection_waiting(): void
+    {
+        $hash = sha1('late-collection', true);
+        $this->insertRelease(1, addedMinutesAgo: 59);
+        $this->insertRelease(2, addedMinutesAgo: 61, collectionhash: $hash);
+
+        $this->assertSame([2], $this->sweptIds(graceHours: 1));
+
+        DB::table('collections')->insert(['id' => 10, 'collectionhash' => $hash, 'releases_id' => null]);
+        $this->assertSame([], $this->sweptIds(graceHours: 1));
+    }
+
+    #[Test]
+    public function a_late_collection_is_waiting_only_for_the_release_whose_hash_it_shares(): void
+    {
+        $hash = sha1('late-collection', true);
+        $this->insertRelease(1, collectionhash: $hash);
+        $this->insertRelease(2, collectionhash: sha1('no-collection', true));
+        $this->insertRelease(3);
+        DB::table('collections')->insert(['id' => 10, 'collectionhash' => $hash, 'releases_id' => null]);
+
+        $this->assertTrue(IncompleteReleaseSweepQuery::lateCollectionWaiting(Release::query()->findOrFail(1)));
+        $this->assertFalse(IncompleteReleaseSweepQuery::lateCollectionWaiting(Release::query()->findOrFail(2)));
+        $this->assertFalse(IncompleteReleaseSweepQuery::lateCollectionWaiting(Release::query()->findOrFail(3)), 'A null collectionhash has no late collection to wait for.');
+    }
+
+    #[Test]
     public function without_a_secondary_provider_no_selected_release_is_held(): void
     {
         $this->configureProviders([['position' => 1, 'name' => 'primary', 'host' => 'news.example.invalid']]);
@@ -139,9 +175,9 @@ class IncompleteReleaseSweepTest extends TestCase
     /**
      * @return list<int>
      */
-    private function sweptIds(float $threshold = 95.0): array
+    private function sweptIds(float $threshold = 95.0, int $graceHours = IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS): array
     {
-        return IncompleteReleaseSweepQuery::builder($threshold)
+        return IncompleteReleaseSweepQuery::builder($threshold, $graceHours)
             ->orderBy('id')
             ->pluck('id')
             ->map(intval(...))
@@ -153,6 +189,7 @@ class IncompleteReleaseSweepTest extends TestCase
         float $completion = 80.0,
         int $nzbstatus = 1,
         int $addedHoursAgo = 73,
+        ?int $addedMinutesAgo = null,
         ?string $collectionhash = null,
         ?string $additionalClaimedAt = null,
         ?string $recoveryClaimedAt = null,
@@ -162,7 +199,7 @@ class IncompleteReleaseSweepTest extends TestCase
             'guid' => sprintf('%032x', $id),
             'nzbstatus' => $nzbstatus,
             'completion' => $completion,
-            'adddate' => now()->subHours($addedHoursAgo)->toDateTimeString(),
+            'adddate' => ($addedMinutesAgo === null ? now()->subHours($addedHoursAgo) : now()->subMinutes($addedMinutesAgo))->toDateTimeString(),
             'collectionhash' => $collectionhash,
             'additional_pp_claimed_at' => $additionalClaimedAt,
             'recovery_claimed_at' => $recoveryClaimedAt,

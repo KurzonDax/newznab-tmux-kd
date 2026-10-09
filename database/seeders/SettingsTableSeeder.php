@@ -70,6 +70,10 @@ class SettingsTableSeeder extends Seeder
                 'value' => '95',
             ],
             [
+                'name' => 'incomplete_release_grace_hours',
+                'value' => '72',
+            ],
+            [
                 'name' => 'crossposttime',
                 'value' => '2',
             ],
