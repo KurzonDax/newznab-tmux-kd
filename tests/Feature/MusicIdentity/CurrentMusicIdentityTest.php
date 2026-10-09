@@ -7,12 +7,16 @@ namespace Tests\Feature\MusicIdentity;
 use App\Facades\Search;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
+use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverImages;
+use App\Services\MusicIdentity\CoverArt\CoverArtKind;
 use App\Services\MusicIdentity\CurrentMusicIdentityReader;
+use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
 use App\Services\MusicIdentity\DTO\DecisionReason;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
+use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
@@ -21,6 +25,7 @@ use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\ProductionTables;
@@ -60,7 +65,7 @@ final class CurrentMusicIdentityTest extends TestCase
         Carbon::setTestNow('2026-10-08 12:00:00');
 
         ProductionTables::fromAuthority()->create('releases', ['id']);
-        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_create_music_cover_art_lookups_table.php', '*_add_accepted_music_text_to_release_music_identifications.php'] as $pattern) {
+        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_create_music_cover_art_lookups_table.php', '*_add_accepted_music_text_to_release_music_identifications.php', '*_create_musicbrainz_release_group_genres_table.php', '*_create_musicbrainz_release_tracks_table.php', '*_create_musicbrainz_artist_tables.php'] as $pattern) {
             $this->migration($pattern)->up();
         }
         DB::table('releases')->insert([['id' => self::RELEASE], ['id' => self::RELEASE + 1]]);
@@ -165,6 +170,24 @@ final class CurrentMusicIdentityTest extends TestCase
         $this->assertArrayNotHasKey(self::RELEASE + 1, $covers);
     }
 
+    #[Test]
+    public function a_release_group_acceptance_naming_its_aligned_release_keeps_the_release_group_cover_and_link(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake();
+        $text = new AcceptedMusicText(AcceptedIdentityScope::ReleaseGroup, 'Example Album', releaseId: self::EDITION, tracks: [
+            ['mediumPosition' => 1, 'trackPosition' => 1, 'title' => 'Example Song', 'lengthMs' => null, 'artistCredit' => null],
+        ]);
+        $this->complete($this->evidence(self::RELEASE, 1), IdentificationStatus::AcceptedReleaseGroup, groupId: self::GROUP, text: $text);
+
+        $identity = app(CurrentMusicIdentityReader::class)->forRelease(self::RELEASE);
+        $this->assertSame(self::EDITION, $identity?->musicBrainzReleaseId, 'the decision names the release it aligned to');
+        $this->assertSame([CoverArtKind::ReleaseGroup, self::GROUP], $identity->coverLookup());
+        $this->assertSame($this->album(self::GROUP), $this->display(self::RELEASE));
+        $this->assertSame(0, app(AlbumCoverFetcher::class)->backfill(), 'only the release-group branch reads it, and its lookup is stored');
+        Http::assertNothingSent();
+    }
+
     /**
      * A completed accepted album on revision 1 under version v1, then the new target the variant
      * names: the same evidence under version v2, or revision 2 under the same version.
@@ -230,6 +253,7 @@ final class CurrentMusicIdentityTest extends TestCase
         ?string $releaseId = null,
         ?string $groupId = null,
         ?string $leaseToken = null,
+        ?AcceptedMusicText $text = null,
     ): IdentificationStatus {
         $version = (string) config('music-identity.algorithm_version');
         $retryable = $status === IdentificationStatus::RetryableError;
@@ -251,6 +275,7 @@ final class CurrentMusicIdentityTest extends TestCase
                 scorerVersion: 'whole-release-v1',
                 policyVersion: 'shadow-v1',
                 operationalError: $retryable ? 'mirror unavailable' : null,
+                acceptedText: $text,
             ),
             nextAttemptAt: $retryable ? (new MusicIdentityRetryPolicy)->nextAttemptAt(0) : null,
             leaseToken: $leaseToken,

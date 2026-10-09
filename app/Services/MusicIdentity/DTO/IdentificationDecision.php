@@ -8,11 +8,16 @@ use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use DateTimeInterface;
 
+/**
+ * @phpstan-import-type MusicGenre from CandidateMetadata
+ */
 final readonly class IdentificationDecision
 {
     /**
      * @param  list<DecisionReason>  $reasons
      * @param  list<CandidateSummary>  $candidates
+     * @param  list<MusicGenre>|null  $releaseGroupGenres  An accepted album's release group genres, as the
+     *                                                     release-group lookup listed them; null when no lookup was made.
      */
     public function __construct(
         public IdentificationStatus $status,
@@ -30,6 +35,7 @@ final readonly class IdentificationDecision
         public ?string $operationalError = null,
         public ?AcceptedMusicText $acceptedText = null,
         public ?DateTimeInterface $acoustIdLookedUpAt = null,
+        public ?array $releaseGroupGenres = null,
     ) {}
 
     /** The same decision, reached after consulting fingerprint lookups at the given time. */
@@ -51,6 +57,17 @@ final readonly class IdentificationDecision
             operationalError: $this->operationalError,
             acceptedText: $this->acceptedText,
             acoustIdLookedUpAt: $lookedUpAt,
+            releaseGroupGenres: $this->releaseGroupGenres,
         );
+    }
+
+    /**
+     * The same decision with its accepted album's release group genres.
+     *
+     * @param  list<MusicGenre>  $genres
+     */
+    public function withReleaseGroupGenres(array $genres): self
+    {
+        return new self(...[...get_object_vars($this), 'releaseGroupGenres' => $genres]);
     }
 }

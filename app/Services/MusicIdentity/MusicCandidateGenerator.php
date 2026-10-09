@@ -183,6 +183,19 @@ final class MusicCandidateGenerator implements CandidateGenerator
         $queried = [];
         $validatedArtistIds = [];
 
+        // A rip log's disc IDs (issue #313) are exact disc lookups under the same budget and dedupe,
+        // run first so a long track list's identifiers never use up the budget before them.
+        foreach ($evidence->ripLogDiscIds as ['discId' => $discId, 'provenanceFamily' => $provenanceFamily]) {
+            $exactQuery = $this->exactQuery(
+                CandidateSignalKind::DiscId,
+                MusicIdentityValueNormalizer::discId($discId),
+                static fn (string $value): RecordingQuery => new RecordingQuery(discId: $value),
+            );
+            if ($exactQuery !== null) {
+                $this->runExactRecordingQuery($exactQuery, $provenanceFamily, $accumulators, $queried, $remaining);
+            }
+        }
+
         foreach ($evidence->trackEvidence as $trackEvidence) {
             $releaseId = MusicIdentityValueNormalizer::musicBrainzId($trackEvidence->releaseId);
             $releaseGroupId = MusicIdentityValueNormalizer::musicBrainzId($trackEvidence->releaseGroupId);
@@ -298,24 +311,7 @@ final class MusicCandidateGenerator implements CandidateGenerator
                 ),
             ]));
             foreach ($exactQueries as $exactQuery) {
-                if ($remaining === 0) {
-                    continue;
-                }
-
-                $queryKey = $exactQuery->signalKind->value.':'.$exactQuery->value;
-                if (isset($queried[$queryKey])) {
-                    continue;
-                }
-                $queried[$queryKey] = true;
-                $remaining--;
-                $this->accumulateRecordingMatches(
-                    $accumulators,
-                    $this->gateway->candidatesFor($exactQuery->query),
-                    $exactQuery->signalKind,
-                    $exactQuery->value,
-                    $evidence->provenanceFamilyFor($trackEvidence),
-                    true,
-                );
+                $this->runExactRecordingQuery($exactQuery, $evidence->provenanceFamilyFor($trackEvidence), $accumulators, $queried, $remaining);
             }
 
             $releaseQueries = array_values(array_filter([
@@ -474,6 +470,35 @@ final class MusicCandidateGenerator implements CandidateGenerator
     }
 
     /** @param callable(string): RecordingQuery $queryFactory */
+    /**
+     * One exact recording lookup, once per signal value and within the run's budget.
+     *
+     * @param  array<string, array{identity: CandidateIdentity, metadata: CandidateMetadata|null, signals: list<CandidateSignal>}>  $accumulators
+     * @param  array<string, true>  $queried
+     */
+    private function runExactRecordingQuery(
+        ExactRecordingIdentifierQuery $exactQuery,
+        string $provenanceFamily,
+        array &$accumulators,
+        array &$queried,
+        int &$remaining,
+    ): void {
+        $queryKey = $exactQuery->signalKind->value.':'.$exactQuery->value;
+        if ($remaining === 0 || isset($queried[$queryKey])) {
+            return;
+        }
+        $queried[$queryKey] = true;
+        $remaining--;
+        $this->accumulateRecordingMatches(
+            $accumulators,
+            $this->gateway->candidatesFor($exactQuery->query),
+            $exactQuery->signalKind,
+            $exactQuery->value,
+            $provenanceFamily,
+            true,
+        );
+    }
+
     private function exactQuery(
         CandidateSignalKind $signalKind,
         ?string $value,

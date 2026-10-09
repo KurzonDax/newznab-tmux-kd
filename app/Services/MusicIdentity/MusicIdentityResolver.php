@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\MusicIdentity;
 
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
+use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateEvaluation;
@@ -28,7 +29,7 @@ final readonly class MusicIdentityResolver
     public function __construct(
         private CandidateGenerator $candidateGenerator,
         private WholeReleaseAlignmentScorer $scorer = new WholeReleaseAlignmentScorer,
-        private string $algorithmVersion = 'music-identity-v2',
+        private string $algorithmVersion = MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION,
         private string $resolverVersion = 'resolver-v1',
         private string $normalizerVersion = 'normalizer-v1',
         private string $scorerVersion = 'whole-release-v1',
@@ -36,6 +37,7 @@ final readonly class MusicIdentityResolver
         private int $minimumAlbumScore = 92,
         private int $minimumRunnerUpMargin = 5,
         private ?AcousticFingerprintCandidates $fingerprintCandidates = null,
+        private ?MusicBrainzGateway $musicBrainz = null,
     ) {}
 
     public function resolve(AudioEvidenceSet $evidence): IdentificationDecision
@@ -50,7 +52,7 @@ final readonly class MusicIdentityResolver
         if (! in_array($decision->status, [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview], true)
             || $this->fingerprintCandidates === null
             || ! $this->fingerprintCandidates->applicable($evidence)) {
-            return $decision;
+            return $this->withAlbumGenres($decision);
         }
 
         // Resolution step 7: only a release still unresolved or ambiguous is looked up by fingerprint.
@@ -62,7 +64,31 @@ final readonly class MusicIdentityResolver
             return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
         }
 
-        return $this->decide($evidence, $pool)->withAcoustIdLookedUpAt(CarbonImmutable::now());
+        return $this->withAlbumGenres($this->decide($evidence, $pool)->withAcoustIdLookedUpAt(CarbonImmutable::now()));
+    }
+
+    /**
+     * An accepted album carries its release group's MusicBrainz genres (issue #313): one release-group
+     * lookup, a cache hit when this resolution already hydrated the group. The edition's own genres
+     * are not used. A failed lookup makes the attempt retryable, so an accepted album is never
+     * stored without the lookup's answer. Genres never score.
+     */
+    private function withAlbumGenres(IdentificationDecision $decision): IdentificationDecision
+    {
+        $releaseGroupId = $decision->acceptedIdentity?->releaseGroupId;
+        if ($this->musicBrainz === null
+            || $releaseGroupId === null
+            || ! $decision->status->acceptsAlbum()) {
+            return $decision;
+        }
+
+        try {
+            $releaseGroup = $this->musicBrainz->releaseGroup($releaseGroupId);
+        } catch (MusicBrainzGatewayException $exception) {
+            return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
+        }
+
+        return $decision->withReleaseGroupGenres($releaseGroup['genres'] ?? []);
     }
 
     private function decide(AudioEvidenceSet $evidence, CandidatePool $pool): IdentificationDecision

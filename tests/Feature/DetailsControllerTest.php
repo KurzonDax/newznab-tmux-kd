@@ -100,7 +100,7 @@ final class DetailsControllerTest extends TestCase
     {
         ProductionTables::fromAuthority()->create('musicinfo');
         $this->createGenresTable();
-        foreach (['audio_genres', 'release_audio_genres', 'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications'] as $table) {
+        foreach (['audio_genres', 'release_audio_genres', 'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists'] as $table) {
             ProductionTables::fromAuthority()->create($table);
         }
         DB::table('musicinfo')->insert(['id' => 12, 'title' => 'An Album', 'artist' => 'The Artist', 'year' => '2021']);

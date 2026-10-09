@@ -43,7 +43,7 @@ final class MusicIdentitySearchDocumentTest extends TestCase
             'releases', 'usenet_groups', 'categories', 'root_categories', 'movieinfo', 'musicinfo', 'consoleinfo', 'gamesinfo',
             'bookinfo', 'videos', 'tv_episodes', 'release_nfos', 'video_data', 'media_infos', 'release_files', 'audio_data',
             'release_subtitles', 'anidb_titles', 'media_info_probes', 'media_info_tracks', 'release_audio_tags',
-            'release_audio_evidence', 'release_music_identifications', 'release_music_candidate_attempts',
+            'release_audio_evidence', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists', 'release_music_candidate_attempts',
         ] as $table) {
             ProductionTables::fromAuthority()->create($table);
         }
@@ -93,9 +93,10 @@ final class MusicIdentitySearchDocumentTest extends TestCase
         $this->assertStringContainsString('Example Album', $document['album_title']);
         $this->assertStringContainsString('Alias Album', $document['album_title']);
         $this->assertStringNotContainsString('Legacy Album', $document['album_title']);
-        $this->assertSame('Example Artist', $document['artist']);
+        $this->assertSame('Example Artist Canonical Example Band Altname Ensemble Hintword Band', $document['artist'], 'the credit, the artist\'s canonical name, then its aliases');
         $this->assertStringContainsString('First Light', $document['music_tracks']);
         $this->assertStringContainsString('Last Light', $document['music_tracks']);
+        $this->assertStringContainsString('Example Artist feat. Guest Artist', $document['music_tracks'], 'a guest track artist credit');
     }
 
     #[Test]

@@ -141,6 +141,9 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->migration('*_create_release_music_synthesis_attempts_table.php')->up();
         $this->migration('*_create_music_cover_art_lookups_table.php')->up();
         $this->migration('*_add_accepted_music_text_to_release_music_identifications.php')->up();
+        foreach (['*_create_musicbrainz_release_group_genres_table.php', '*_create_musicbrainz_release_tracks_table.php', '*_create_musicbrainz_artist_tables.php'] as $pattern) {
+            $this->migration($pattern)->up();
+        }
         $this->migration('*_create_release_music_renames_table.php')->up();
         config([
             'nntmux_settings.covers_path' => $this->makeTempDirectory('music-identity-covers'),

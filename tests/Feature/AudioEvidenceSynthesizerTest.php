@@ -7,7 +7,9 @@ namespace Tests\Feature;
 use App\Enums\NzbParseFailure;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
+use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\NzbContentParser;
+use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
 use App\Services\AudioProcessing\DTO\AudioEvidenceFile;
@@ -156,6 +158,31 @@ class AudioEvidenceSynthesizerTest extends TestCase
         $this->assertNull($sampledTrack->decoded_duration_seconds);
         $this->assertNull($sampledTrack->source_file_complete);
         $this->assertNull($sampledTrack->whole_duration_reliable);
+    }
+
+    #[Test]
+    public function a_cue_or_log_known_only_from_the_stored_file_list_is_never_read(): void
+    {
+        $this->mock(UsenetDownloadService::class)->shouldNotReceive('download');
+        $this->mock(ArchiveExtractionService::class, static function ($archive): void {
+            $archive->shouldNotReceive('extractSpecificFileToPath');
+            $archive->shouldNotReceive('carveStoredFileChunkToPath');
+        });
+        $release = $this->release();
+        $this->storeFixtureNzb($release);
+        DB::table('release_files')->insert([
+            ['releases_id' => $release->id, 'name' => 'Recovered/01 - Stored Song.flac', 'size' => 456789, 'passworded' => false, 'crc32' => ''],
+            ['releases_id' => $release->id, 'name' => 'Recovered/Album.cue', 'size' => 900, 'passworded' => false, 'crc32' => ''],
+            ['releases_id' => $release->id, 'name' => 'Recovered/Album.log', 'size' => 1234, 'passworded' => false, 'crc32' => ''],
+        ]);
+
+        $evidence = app(AudioEvidenceSynthesizer::class)->synthesizeIfMissing($release);
+
+        $this->assertSame(0, $evidence->tracks()->where('source_kind', 'cue')->count());
+        foreach ($evidence->sidecar_manifest as $entry) {
+            $this->assertArrayNotHasKey('disc_ids', $entry['facts'] ?? []);
+            $this->assertArrayNotHasKey('cue_tracks', $entry['facts'] ?? []);
+        }
     }
 
     #[Test]

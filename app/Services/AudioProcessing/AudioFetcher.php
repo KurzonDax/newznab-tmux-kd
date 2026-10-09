@@ -14,6 +14,7 @@ use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
+use App\Services\AudioProcessing\Sidecars\SidecarText;
 use Closure;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -46,12 +47,21 @@ final class AudioFetcher
 
     private const int NON_AUDIO_LISTING_VOLUME_LIMIT = 2;
 
+    /** CUE sheets and rip logs posted as their own NZB file downloaded per capture (at most 4 seen on one release). */
+    public const int MAX_NZB_SIDECAR_DOWNLOADS = 8;
+
     private int $crcFailures = 0;
 
     private bool $sourceDamaged = false;
 
     /** @var array<string, array<string, mixed>> */
     private array $observedArchiveMembers = [];
+
+    /** @var array<string, array{volume: string, entry: array<string, mixed>}> CUE and log members, by the volume whose listing first named them */
+    private array $sidecarMembers = [];
+
+    /** @var array<string, string> */
+    private array $sidecarBodies = [];
 
     private ?bool $archiveManifestComplete = null;
 
@@ -84,6 +94,8 @@ final class AudioFetcher
         $this->crcFailures = 0;
         $this->sourceDamaged = false;
         $this->observedArchiveMembers = [];
+        $this->sidecarMembers = [];
+        $this->sidecarBodies = [];
         $this->archiveManifestComplete = $source->kind === AudioSourceKind::Archive ? false : null;
         $this->probedTrackCount = 0;
         $this->sampledFilename = null;
@@ -109,7 +121,51 @@ final class AudioFetcher
                 $this->probedTrackCount === 0 ? null : $this->probedTrackCount === 1,
                 $this->sampledFilename,
             )
-            ->withCrcFailures($this->crcFailures);
+            ->withCrcFailures($this->crcFailures)
+            ->withSidecarBodies($this->sidecarBodies);
+    }
+
+    /**
+     * Downloads the CUE sheets and rip logs posted as their own NZB file (issue #313, section C):
+     * each of one article, at most MAX_NZB_SIDECAR_DOWNLOADS per capture, through the audio
+     * fetch's download call. A failed, CRC-failed or oversized body is skipped and never changes
+     * the capture's outcome; message ids come from the parsed NZB and are never stored.
+     *
+     * @param  list<array<string, mixed>>  $nzbContents  the parsed NZB the source was selected from
+     * @return array<int, string> each body by its NZB ordinal
+     */
+    public function nzbSidecarBodies(Release $release, AudioSource $source, array $nzbContents, string $groupName): array
+    {
+        $bodies = [];
+        $downloads = 0;
+        foreach ($source->sidecars as $sidecar) {
+            if ($downloads >= self::MAX_NZB_SIDECAR_DOWNLOADS) {
+                break;
+            }
+            $segments = array_values(array_filter(
+                array_map('strval', is_array($nzbContents[$sidecar->ordinal - 1]['segments'] ?? null) ? $nzbContents[$sidecar->ordinal - 1]['segments'] : []),
+                static fn (string $messageId): bool => $messageId !== '',
+            ));
+            if (! in_array($sidecar->kind, ['cue', 'eac_log'], true) || $sidecar->segmentCount !== 1 || count($segments) !== 1) {
+                continue;
+            }
+
+            $downloads++;
+            try {
+                $result = $this->downloadService->download(DownloadKind::Audio, $segments, $groupName, (int) $release->id, $sidecar->filename);
+            } catch (\Throwable $exception) {
+                Log::debug('Audio sidecar download failed for release '.$release->id.': '.$exception->getMessage());
+
+                continue;
+            }
+            $data = $result['data'] ?? null;
+            if (($result['success'] ?? false) === true && ($result['crcFailed'] ?? false) !== true
+                && is_string($data) && $data !== '' && strlen($data) <= SidecarText::MAX_BYTES) {
+                $bodies[$sidecar->ordinal] = $data;
+            }
+        }
+
+        return $bodies;
     }
 
     /**
@@ -319,6 +375,9 @@ final class AudioFetcher
                             $name = (string) ($file['name'] ?? '');
                             if ($name !== '') {
                                 $this->observedArchiveMembers[$name] = $file;
+                            }
+                            if ($name !== '' && ! isset($this->sidecarMembers[$name]) && preg_match('/\.(?:cue|log)$/i', $name) === 1) {
+                                $this->sidecarMembers[$name] = ['volume' => $archivePath, 'entry' => $file];
                             }
                             if ($name !== '' && ! array_key_exists($name, $listedFiles)) {
                                 $listedFiles[$name] = $file;
@@ -844,6 +903,8 @@ final class AudioFetcher
                 'No usable audio file was found within '.$fetchedVolumes.' fetched archive volume(s).'
             );
         } finally {
+            // Before any volume file is deleted; never a download of its own.
+            $this->readSidecarMembers($tmpPath);
             $this->deleteShortAudioCandidates($shortAudioCandidates);
 
             if (! $keepCarvedPath && $carvedPath !== null && File::isFile($carvedPath)) {
@@ -853,6 +914,50 @@ final class AudioFetcher
             foreach (File::glob($tmpPath.'audio-archive.part*.rar') as $archivePartPath) {
                 if (File::isFile($archivePartPath)) {
                     File::delete($archivePartPath);
+                }
+            }
+        }
+    }
+
+    /**
+     * Reads each CUE or log member wholly inside the bytes already downloaded, from the volume
+     * whose listing first named it (issue #313): a stored member is carved from its range (the
+     * carve refuses a range past the bytes on disk), a compressed one is extracted only when its
+     * range ends inside the volume file and must come out at its listed size. A split member, a
+     * member not wholly downloaded, an oversized one and a failed read are skipped silently.
+     */
+    private function readSidecarMembers(string $tmpPath): void
+    {
+        foreach ($this->sidecarMembers as $name => ['volume' => $volume, 'entry' => $entry]) {
+            try {
+                $size = (int) ($entry['size'] ?? -1);
+                if (! empty($entry['split']) || $size < 1 || $size > SidecarText::MAX_BYTES || ! File::isFile($volume)) {
+                    continue;
+                }
+                $destination = $tmpPath.'audio-sidecar-'.md5($name);
+                if ((int) ($entry['compressed'] ?? 1) === 0) {
+                    $read = $this->archiveService->carveStoredFileChunkToPath($volume, $entry, $destination, false) ? $destination : null;
+                } else {
+                    $read = preg_match('/^\d+-(\d+)$/', (string) ($entry['range'] ?? ''), $range) === 1 && (int) $range[1] < File::size($volume)
+                        ? $this->archiveService->extractSpecificFileToPath($volume, $name, $tmpPath.'audio-sidecar-'.md5($name).'-extracted')
+                        : null;
+                }
+                if ($read === null || ! File::isFile($read)) {
+                    continue;
+                }
+                $bytes = File::get($read);
+                if (strlen($bytes) === $size) {
+                    $this->sidecarBodies[$name] = $bytes;
+                }
+            } catch (\Throwable $exception) {
+                Log::debug('Audio sidecar member '.$name.' could not be read: '.$exception->getMessage());
+            } finally {
+                foreach (File::glob($tmpPath.'audio-sidecar-'.md5($name).'*') as $leftover) {
+                    if (File::isDirectory($leftover)) {
+                        File::deleteDirectory($leftover);
+                    } else {
+                        File::delete($leftover);
+                    }
                 }
             }
         }

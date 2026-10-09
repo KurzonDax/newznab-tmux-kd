@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\MusicIdentity\Persistence;
 
 use App\Models\Release;
+use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
 use Illuminate\Support\Facades\DB;
 
@@ -88,7 +89,7 @@ final readonly class MusicIdentitySynthesisLeaseManager
 
     private function algorithmVersion(): string
     {
-        return (string) config('music-identity.algorithm_version', 'music-identity-v2');
+        return MusicIdentityConfiguration::algorithmVersion();
     }
 
     private function leaseExpiry(): \DateTimeInterface

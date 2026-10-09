@@ -25,46 +25,65 @@ final class ChildRows
      */
     public static function replace(string $parentTable, int $parentId, string $keyColumn, array $rows, ?Closure $alsoWrite = null): void
     {
-        $keyed = [];
-        foreach ($rows as $table => $tableRows) {
-            $keyed[$table] = array_map(static fn (array $row): array => [$keyColumn => $parentId] + $row, $tableRows);
-        }
+        self::replaceComputed($parentTable, $parentId, $keyColumn, array_keys($rows), static fn (): array => $rows, $alsoWrite);
+    }
+
+    /**
+     * The same replace, with the new rows computed under the parent-row lock (after $alsoWrite),
+     * so rows derived from other stored state reflect every writer this one waited for.
+     *
+     * @param  list<string>  $tables  The child tables $rows fills.
+     * @param  Closure(): array<string, list<array<string, mixed>>>  $rows  Each child table's new rows, without the key column.
+     * @param  (Closure(): void)|null  $alsoWrite  Other writes for the same transaction, run after the child tables are read.
+     */
+    public static function replaceComputed(string $parentTable, int $parentId, string $keyColumn, array $tables, Closure $rows, ?Closure $alsoWrite = null): void
+    {
+        $keyed = static function () use ($rows, $keyColumn, $parentId): array {
+            $keyed = [];
+            foreach ($rows() as $table => $tableRows) {
+                $keyed[$table] = array_map(static fn (array $row): array => [$keyColumn => $parentId] + $row, $tableRows);
+            }
+
+            return $keyed;
+        };
 
         // An enclosing transaction may already have an obsolete consistent-read snapshot, which
         // the reads below would use; a DELETE always sees the stored rows.
         if (DB::transactionLevel() > 0) {
-            DB::transaction(static fn () => self::write($keyed, $keyColumn, $parentId, null, $alsoWrite));
+            DB::transaction(static fn () => self::write($tables, $keyed, $keyColumn, $parentId, null, $alsoWrite));
 
             return;
         }
 
-        DB::transaction(static function () use ($parentTable, $parentId, $keyed, $keyColumn, $alsoWrite): void {
+        DB::transaction(static function () use ($parentTable, $parentId, $tables, $keyed, $keyColumn, $alsoWrite): void {
             // First: the snapshot starts at the first plain read, so a read before this lock
             // would hide rows a writer this one waited for has committed.
             DB::table($parentTable)->where('id', $parentId)->lockForUpdate()->value('id');
             $stored = [];
-            foreach (array_keys($keyed) as $table) {
+            foreach ($tables as $table) {
                 $stored[$table] = DB::table($table)->where($keyColumn, $parentId)->exists();
             }
-            self::write($keyed, $keyColumn, $parentId, $stored, $alsoWrite);
+            self::write($tables, $keyed, $keyColumn, $parentId, $stored, $alsoWrite);
         }, self::ATTEMPTS);
     }
 
     /**
-     * @param  array<string, list<array<string, mixed>>>  $keyed
+     * @param  list<string>  $tables
+     * @param  Closure(): array<string, list<array<string, mixed>>>  $keyed
      * @param  array<string, bool>|null  $stored  Whether each table holds the key's rows; null deletes from every table.
      * @param  (Closure(): void)|null  $alsoWrite
      */
-    private static function write(array $keyed, string $keyColumn, int $parentId, ?array $stored, ?Closure $alsoWrite): void
+    private static function write(array $tables, Closure $keyed, string $keyColumn, int $parentId, ?array $stored, ?Closure $alsoWrite): void
     {
         if ($alsoWrite !== null) {
             $alsoWrite();
         }
-        foreach ($keyed as $table => $tableRows) {
+        $rows = $keyed();
+        foreach ($tables as $table) {
             if ($stored[$table] ?? true) {
                 DB::table($table)->where($keyColumn, $parentId)->delete();
             }
-            DB::table($table)->insert($tableRows);
+            DB::table($table)->insert($rows[$table] ?? []);
         }
     }
 }

@@ -13,6 +13,9 @@ use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
 use App\Services\AudioProcessing\DTO\SynthesizedAudioEvidence;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
+use App\Services\AudioProcessing\Sidecars\CueSheet;
+use App\Services\AudioProcessing\Sidecars\RipLog;
+use App\Services\AudioProcessing\Sidecars\SidecarText;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -26,9 +29,16 @@ final class AudioEvidenceRecorder
 {
     private const int SCHEMA_VERSION = 1;
 
+    /** The source kinds of a revision's audio rows. */
+    public const array AUDIO_SOURCE_KINDS = ['nzb', 'release_file', 'archive', 'sampled'];
+
+    /** The source kind of a CUE sheet's track rows (issue #313). */
+    public const string CUE_SOURCE_KIND = 'cue';
+
     /**
      * @param  array<string, mixed>|null  $sampledTags
      * @param  AcousticFingerprint|null  $fingerprint  Generated from the sampled track's source.
+     * @param  array<int, string>  $nzbSidecarBodies  CUE sheets and rip logs posted as their own NZB file, by ordinal
      */
     public function record(
         Release $release,
@@ -37,6 +47,7 @@ final class AudioEvidenceRecorder
         ?array $sampledTags,
         string $provenance = 'captured',
         ?AcousticFingerprint $fingerprint = null,
+        array $nzbSidecarBodies = [],
     ): ReleaseAudioEvidence {
         $nzbManifest = array_map(
             static fn ($file): array => $file->toArray(),
@@ -48,6 +59,8 @@ final class AudioEvidenceRecorder
         ), $this->archiveSidecars($fetchResult->archiveMembers));
         $archiveManifest = array_values($fetchResult->archiveMembers);
         $tracks = $this->tracks($source, $fetchResult, $sampledTags, fingerprint: $fingerprint);
+        [$sidecarManifest, $sheets] = $this->readSidecars($sidecarManifest, $nzbSidecarBodies, $fetchResult->sidecarBodies);
+        $tracks = [...$tracks, ...$this->cueTracks($sheets, $tracks)];
         $payload = [
             'schema_version' => self::SCHEMA_VERSION,
             'provenance' => $provenance,
@@ -233,6 +246,136 @@ final class AudioEvidenceRecorder
         }
 
         return $sidecars;
+    }
+
+    /**
+     * Reads the CUE sheets and rip logs whose bodies the capture holds (issue #313): a valid sheet
+     * is kept with its own file name and its manifest entry gains `facts.cue_tracks` (its audio
+     * track count, which marks where its rows start); a rip log's entry gains `facts.disc_ids`.
+     * An unreadable or invalid file adds nothing, so a capture without one hashes as before.
+     *
+     * @param  list<array<string, mixed>>  $manifest
+     * @param  array<int, string>  $nzbBodies  by NZB ordinal
+     * @param  array<string, string>  $archiveBodies  by member name
+     * @return array{0: list<array<string, mixed>>, 1: list<array{sheet: CueSheet, filename: string}>}
+     */
+    private function readSidecars(array $manifest, array $nzbBodies, array $archiveBodies): array
+    {
+        $sheets = [];
+        foreach ($manifest as $index => $entry) {
+            $kind = $entry['kind'] ?? null;
+            $filename = (string) ($entry['filename'] ?? '');
+            $body = match ($entry['source'] ?? null) {
+                'nzb' => $nzbBodies[(int) ($entry['ordinal'] ?? 0)] ?? null,
+                'archive' => $archiveBodies[$filename] ?? null,
+                default => null,
+            };
+            $text = ! in_array($kind, ['cue', 'eac_log'], true) || $body === null ? null : SidecarText::decode($body);
+            if ($text === null) {
+                continue;
+            }
+
+            $facts = is_array($entry['facts'] ?? null) ? $entry['facts'] : [];
+            if ($kind === 'cue') {
+                $sheet = CueSheet::parse($text);
+                if ($sheet === null) {
+                    continue;
+                }
+                $sheets[] = ['sheet' => $sheet, 'filename' => $filename];
+                $manifest[$index]['facts'] = [...$facts, 'cue_tracks' => $sheet->trackCount()];
+            } else {
+                $discIds = RipLog::discIds($text);
+                if ($discIds !== []) {
+                    $manifest[$index]['facts'] = [...$facts, 'disc_ids' => $discIds];
+                }
+            }
+        }
+
+        return [$manifest, $sheets];
+    }
+
+    /**
+     * One `cue` row per CUE audio track, after the existing rows, numbered 1..n in CUE order across
+     * the read sheets. A track's length is the next track's INDEX 01 minus its own; the last track
+     * of a file takes the described audio row's whole duration minus its INDEX 01 when that
+     * duration is reliable, else it has none.
+     *
+     * @param  list<array{sheet: CueSheet, filename: string}>  $sheets
+     * @param  list<array<string, mixed>>  $audioRows
+     * @return list<array<string, mixed>>
+     */
+    private function cueTracks(array $sheets, array $audioRows): array
+    {
+        $rows = [];
+        foreach ($sheets as ['sheet' => $sheet, 'filename' => $cueFilename]) {
+            $disc = $sheet->discNumber ?? $this->filenameHints($cueFilename)['disc_number'];
+            foreach ($sheet->files as $file) {
+                $described = self::describedRow($file['name'], count($sheet->files), $audioRows);
+                $wholeDuration = $described !== null && ($described['whole_duration_reliable'] ?? null) === true && is_numeric($described['whole_duration_seconds'] ?? null)
+                    ? (float) $described['whole_duration_seconds']
+                    : null;
+                foreach ($file['tracks'] as $place => $track) {
+                    $end = $file['tracks'][$place + 1]['start'] ?? $wholeDuration;
+                    $length = $end === null ? null : $this->positiveFloat($end - $track['start']);
+                    $performer = $track['performer'] ?? $sheet->albumArtist;
+                    $rows[] = [
+                        'source_kind' => self::CUE_SOURCE_KIND,
+                        'source_ordinal' => count($rows) + 1,
+                        'source_path' => $this->sourcePath($file['name']),
+                        'raw_filename' => mb_substr($file['name'], 0, 512),
+                        'segment_count' => null,
+                        'disc_number' => $disc,
+                        'track_number' => $track['number'],
+                        'normalized_title_hint' => $this->normalizedText($track['title']),
+                        'normalized_artist_hint' => $this->normalizedText($performer),
+                        'album' => $this->limitedText($sheet->album),
+                        'album_artist' => $this->limitedText($sheet->albumArtist),
+                        'performer' => $this->limitedText($performer),
+                        'title' => $this->limitedText($track['title']),
+                        'normalized_album' => $this->normalizedText($sheet->album),
+                        'normalized_album_artist' => $this->normalizedText($sheet->albumArtist),
+                        'normalized_performer' => $this->normalizedText($performer),
+                        'normalized_title' => $this->normalizedText($track['title']),
+                        'whole_duration_seconds' => $length,
+                        'whole_duration_reliable' => $length === null ? null : true,
+                        'isrc' => $this->limitedText($track['isrc'], 64),
+                        'barcode' => $sheet->barcode,
+                    ];
+                }
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The audio row a CUE FILE describes: the one whose name matches it without folder and
+     * extension, ignoring case; or, when the sheet names one FILE and the revision has one
+     * audio row, that row.
+     *
+     * @param  list<array<string, mixed>>  $rows  the revision's rows; only audio rows count
+     * @return array<string, mixed>|null
+     */
+    public static function describedRow(string $cueFile, int $sheetFileCount, array $rows): ?array
+    {
+        $audio = array_values(array_filter($rows, static fn (array $row): bool => in_array($row['source_kind'] ?? null, self::AUDIO_SOURCE_KINDS, true)));
+        $stem = self::stem($cueFile);
+        foreach ($audio as $row) {
+            if ($stem !== '' && self::stem((string) ($row['raw_filename'] ?? '')) === $stem) {
+                return $row;
+            }
+        }
+
+        return $sheetFileCount === 1 && count($audio) === 1 ? $audio[0] : null;
+    }
+
+    /** A file name without its folders (either slash) and its extension, lower case. */
+    private static function stem(string $name): string
+    {
+        $base = (string) preg_replace('#^.*[/\\\\]#', '', trim($name));
+        $dot = strrpos($base, '.');
+
+        return mb_strtolower($dot === false || $dot === 0 ? $base : substr($base, 0, $dot));
     }
 
     private function sidecarKind(string $filename): ?string

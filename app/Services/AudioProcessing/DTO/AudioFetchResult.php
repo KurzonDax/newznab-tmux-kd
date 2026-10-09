@@ -33,6 +33,8 @@ final readonly class AudioFetchResult
         public ?bool $wholeDurationReliable,
         public ?bool $onlyOneTrackProbed,
         public ?float $decodedDurationSeconds,
+        /** @var array<string, string> CUE and log members read from bytes the fetch already downloaded, by member name */
+        public array $sidecarBodies = [],
     ) {}
 
     /**
@@ -101,7 +103,19 @@ final readonly class AudioFetchResult
             $this->wholeDurationReliable,
             $this->onlyOneTrackProbed,
             $this->decodedDurationSeconds,
+            $this->sidecarBodies,
         );
+    }
+
+    /**
+     * The same result with the CUE and log archive members read from bytes already downloaded
+     * (issue #313); a sidecar never decides the outcome.
+     *
+     * @param  array<string, string>  $sidecarBodies  by member name
+     */
+    public function withSidecarBodies(array $sidecarBodies): self
+    {
+        return new self(...[...get_object_vars($this), 'sidecarBodies' => $sidecarBodies]);
     }
 
     /**
@@ -130,6 +144,7 @@ final readonly class AudioFetchResult
             $this->wholeDurationReliable,
             $onlyOneTrackProbed,
             $this->decodedDurationSeconds,
+            $this->sidecarBodies,
         );
     }
 

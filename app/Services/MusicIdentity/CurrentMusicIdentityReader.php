@@ -34,7 +34,7 @@ final class CurrentMusicIdentityReader
         $completed = DB::table('release_music_identifications')->whereIn('releases_id', $releaseIds)
             ->whereIn('state', self::completedStates())->orderByDesc('id')
             ->get(['id', 'releases_id', 'evidence_hash', 'algorithm_version', 'state', 'musicbrainz_release_id', 'musicbrainz_release_group_id']);
-        $version = (string) config('music-identity.algorithm_version', 'music-identity-v2');
+        $version = MusicIdentityConfiguration::algorithmVersion();
 
         $current = [];
         foreach ($completed as $row) {
@@ -73,7 +73,7 @@ final class CurrentMusicIdentityReader
             ."(SELECT MAX(fallback.id) FROM release_music_identifications fallback WHERE fallback.releases_id = {$releaseIdColumn} AND fallback.state IN ({$placeholders}))"
             .'))';
 
-        return [$sql, [(string) config('music-identity.algorithm_version', 'music-identity-v2'), ...$states, ...$states]];
+        return [$sql, [MusicIdentityConfiguration::algorithmVersion(), ...$states, ...$states]];
     }
 
     /** @return list<string> */

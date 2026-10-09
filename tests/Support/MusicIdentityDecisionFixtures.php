@@ -38,6 +38,8 @@ trait MusicIdentityDecisionFixtures
 
     private const string RECORDING_ID = '22222222-2222-4222-8222-000000000001';
 
+    private const string ARTIST_ID = '99999999-9999-4999-8999-999999999999';
+
     /** @param array<string, mixed> $attributes */
     private function release(string $name, ?int $musicInfoId = null, array $attributes = []): int
     {
@@ -179,7 +181,8 @@ trait MusicIdentityDecisionFixtures
             $tracks[] = [
                 'musicBrainzReleaseTrackId' => sprintf('33333333-3333-4333-8333-%012d', $index + 1),
                 'title' => $title, 'position' => $index + 1, 'number' => (string) ($index + 1), 'lengthMs' => $length,
-                'artistCredit' => 'Example Artist',
+                // A guest on the second track: the album's track artist credits are searchable too.
+                'artistCredit' => $index === 1 ? 'Example Artist feat. Guest Artist' : 'Example Artist',
                 'recording' => [
                     'recordingId' => sprintf('22222222-2222-4222-8222-%012d', $index + 1), 'title' => $title,
                     'artistCredit' => 'Example Artist', 'lengthMs' => $length, 'video' => false, 'isrcs' => [],
@@ -192,9 +195,26 @@ trait MusicIdentityDecisionFixtures
             'releaseId' => self::RELEASE_ID, 'title' => $album, 'artistCredit' => 'Example Artist', 'releaseGroupId' => self::RELEASE_GROUP_ID,
             'status' => 'Official', 'date' => '2020-01-01', 'country' => 'US', 'barcode' => null, 'labels' => [], 'aliases' => $aliases,
             'media' => [['position' => 1, 'title' => null, 'format' => 'CD', 'releaseTrackCount' => count($tracks), 'discIds' => [], 'releaseTracks' => $tracks]],
+            'artists' => $this->creditedArtists(),
         ]], [[
             'releaseGroupId' => self::RELEASE_GROUP_ID, 'title' => $album, 'artistCredit' => 'Example Artist', 'primaryType' => 'Album',
-            'secondaryTypes' => [], 'firstReleaseDate' => '2020-01-01', 'aliases' => $aliases,
+            'secondaryTypes' => [], 'firstReleaseDate' => '2020-01-01', 'aliases' => $aliases, 'artists' => $this->creditedArtists(),
         ]]), $signals);
+    }
+
+    /**
+     * The credit's one artist as the normalizer keeps it: its canonical name and its "Artist name"
+     * and "Search hint" aliases (issue #313).
+     *
+     * @param  list<array{name: string, type: 'artist_name'|'search_hint'}>|null  $aliases
+     * @return list<array{artistId: string, name: string, aliases: list<array{name: string, type: 'artist_name'|'search_hint'}>}>
+     */
+    private function creditedArtists(?array $aliases = null): array
+    {
+        return [[
+            'artistId' => self::ARTIST_ID,
+            'name' => 'Canonical Example Band',
+            'aliases' => $aliases ?? [['name' => 'Altname Ensemble', 'type' => 'artist_name'], ['name' => 'Hintword Band', 'type' => 'search_hint']],
+        ]];
     }
 }

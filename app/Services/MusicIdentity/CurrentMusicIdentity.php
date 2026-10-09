@@ -9,8 +9,11 @@ use App\Services\MusicIdentity\Enums\IdentificationStatus;
 
 /**
  * A release's effective current music identity decision (CurrentMusicIdentityReader): always a
- * completed decision. Only an accepted album (release group or edition) gives the release a cover
- * and the MusicBrainz link; any other completed state withdraws both.
+ * completed decision. Only an accepted album (release group or edition) gives the release a cover,
+ * the MusicBrainz link and the album's stored track list; any other completed state withdraws them.
+ * An accepted album's musicBrainzReleaseId is the release its track list is stored under; it names
+ * an edition only when the state is accepted_edition (a release-group acceptance stores the release
+ * it aligned to there, issue #313).
  */
 final readonly class CurrentMusicIdentity
 {
@@ -36,7 +39,7 @@ final readonly class CurrentMusicIdentity
 
     public function acceptsAlbum(): bool
     {
-        return $this->state === IdentificationStatus::AcceptedEdition || $this->state === IdentificationStatus::AcceptedReleaseGroup;
+        return $this->state->acceptsAlbum();
     }
 
     /** The accepted album's MusicBrainz release group page; '' without an accepted album. */
