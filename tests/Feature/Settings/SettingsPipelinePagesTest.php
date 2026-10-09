@@ -163,21 +163,29 @@ class SettingsPipelinePagesTest extends TestCase
 
     public function test_the_formation_gate_card_saves_and_converts_its_size_pair(): void
     {
-        $this->saveCard('release-formation', 'gates', [
-            'minfilestoformrelease' => '2',
-            'minsizetoformrelease' => '50',
-            'minsizetoformrelease_unit' => 'MB',
-            'maxsizetoformrelease' => '100',
-            'maxsizetoformrelease_unit' => 'GB',
-            'completionpercent' => '97',
-            'delaytime' => '2',
-            'collection_timeout' => '48',
-            'crossposttime' => '2',
-        ]);
+        $this->saveCard('release-formation', 'gates', $this->gatesPayload(['incomplete_release_grace_hours' => '24']));
 
         $this->assertSame('52428800', $this->storedSettingValue('minsizetoformrelease'));
         $this->assertSame('107374182400', $this->storedSettingValue('maxsizetoformrelease'));
         $this->assertSame('97', $this->storedSettingValue('completionpercent'));
+        $this->assertSame('24', $this->storedSettingValue('incomplete_release_grace_hours'));
+    }
+
+    public function test_the_incomplete_release_wait_accepts_zero_and_rejects_values_out_of_range(): void
+    {
+        $this->saveCard('release-formation', 'gates', $this->gatesPayload(['incomplete_release_grace_hours' => '0']));
+        $this->assertSame('0', $this->storedSettingValue('incomplete_release_grace_hours'), 'A stored 0 falls back to 72 hours when read.');
+
+        foreach (['-1', '87601'] as $value) {
+            try {
+                $this->saveCard('release-formation', 'gates', $this->gatesPayload(['incomplete_release_grace_hours' => $value]));
+                $this->fail("An incomplete release wait of {$value} hours must be rejected.");
+            } catch (ValidationException $exception) {
+                $this->assertTrue($exception->validator->errors()->has('incomplete_release_grace_hours'));
+            }
+
+            $this->assertSame('0', $this->storedSettingValue('incomplete_release_grace_hours'), 'The stored value survives a rejected save.');
+        }
     }
 
     #[DataProvider('malformedSafeBackfillDates')]
@@ -237,6 +245,26 @@ class SettingsPipelinePagesTest extends TestCase
             BackfillSettingRules::rules()['safebackfilldate'],
             $registry->definition('safebackfilldate')?->validationRules()['safebackfilldate'],
         );
+    }
+
+    /**
+     * @param  array<string, string>  $overrides
+     * @return array<string, string>
+     */
+    private function gatesPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'minfilestoformrelease' => '2',
+            'minsizetoformrelease' => '50',
+            'minsizetoformrelease_unit' => 'MB',
+            'maxsizetoformrelease' => '100',
+            'maxsizetoformrelease_unit' => 'GB',
+            'completionpercent' => '97',
+            'incomplete_release_grace_hours' => '72',
+            'delaytime' => '2',
+            'collection_timeout' => '48',
+            'crossposttime' => '2',
+        ], $overrides);
     }
 
     /**

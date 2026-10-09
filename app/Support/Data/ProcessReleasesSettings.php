@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Data;
 
 use App\Models\Settings;
+use App\Services\Releases\IncompleteReleaseSweepQuery;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\TypeScript;
 
@@ -37,6 +38,7 @@ final class ProcessReleasesSettings extends Data
         public bool $deletePasswordedRelease = false,
         public int $miscOtherRetentionHours = 0,
         public int $miscHashedRetentionHours = 0,
+        public int $incompleteReleaseGraceHours = IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS,
     ) {
         // Clamp completion to a sane upper bound (legacy `min(100, …)`).
         if ($this->completion > 100) {
@@ -49,6 +51,12 @@ final class ProcessReleasesSettings extends Data
         // crawl is no more the operator's intent than an endless spin.
         if ($this->releaseCreationLimit < 1) {
             $this->releaseCreationLimit = self::DEFAULT_RELEASE_CREATION_LIMIT;
+        }
+
+        // A retention window: 0 never means "delete at once", so anything below
+        // one hour resolves to the seeded default.
+        if ($this->incompleteReleaseGraceHours < 1) {
+            $this->incompleteReleaseGraceHours = IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS;
         }
     }
 
@@ -77,6 +85,10 @@ final class ProcessReleasesSettings extends Data
             deletePasswordedRelease: ((int) ($dbSettings['deletepasswordedrelease'] ?? 0)) === 1,
             miscOtherRetentionHours: $getInt('miscotherretentionhours', 0),
             miscHashedRetentionHours: $getInt('mischashedretentionhours', 0),
+            // Not $getInt: it casts a non-numeric value such as 'abc' to 0.
+            incompleteReleaseGraceHours: is_numeric($dbSettings['incomplete_release_grace_hours'] ?? null)
+                ? (int) $dbSettings['incomplete_release_grace_hours']
+                : IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS,
         );
     }
 

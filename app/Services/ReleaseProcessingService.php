@@ -161,7 +161,7 @@ final class ReleaseProcessingService
             'delaytime', 'crossposttime', 'maxnzbsprocessed', 'completionpercent',
             'collection_timeout', 'maxsizetoformrelease', 'minsizetoformrelease',
             'minfilestoformrelease', 'releaseretentiondays', 'deletepasswordedrelease',
-            'miscotherretentionhours', 'mischashedretentionhours',
+            'miscotherretentionhours', 'mischashedretentionhours', 'incomplete_release_grace_hours',
         ];
 
         $dbSettings = [];
@@ -1503,8 +1503,9 @@ final class ReleaseProcessingService
     /**
      * Delete sub-threshold releases that late headers can no longer complete.
      *
-     * The query holds a release for {@see IncompleteReleaseSweepQuery::LATE_HEADER_GRACE_HOURS}
-     * after it was added and while a late collection is waiting to merge into it. A release a
+     * The query holds a release for the `incomplete_release_grace_hours` setting (default
+     * {@see IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS}) after it was added, and
+     * while a late collection is waiting to merge into it, re-checked under the row lock. A release a
      * secondary provider may still be reading is kept until its position passes the post
      * ({@see IncompleteReleaseSweepQuery::lateHeadersPending()}). Operators keep their override
      * in `nntmux:delete-releases --completion-max`.
@@ -1519,7 +1520,7 @@ final class ReleaseProcessingService
 
         $context = new ReleaseRepairingContext;
 
-        IncompleteReleaseSweepQuery::builder((float) $this->settings->completion)
+        IncompleteReleaseSweepQuery::builder((float) $this->settings->completion, $this->settings->incompleteReleaseGraceHours)
             ->select(['releases.*'])
             ->chunkById(self::BATCH_SIZE, function ($releases) use (&$stats, $context): bool {
                 foreach ($releases as $release) {
@@ -1694,6 +1695,9 @@ final class ReleaseProcessingService
                     $unchanged = $unchanged && ((int) $current->passwordstatus === ReleaseBrowseService::PASSWD_RAR
                         || DB::table('release_files')->where('releases_id', $current->id)
                             ->where('passworded', ReleaseBrowseService::PASSWD_RAR)->exists());
+                }
+                if ($unchanged && $reason === 'deleteIncompleteReleases' && IncompleteReleaseSweepQuery::lateCollectionWaiting($current)) {
+                    return ['eligible' => false, 'reason' => 'late_collection_waiting', 'predicate' => $reason];
                 }
 
                 return ['eligible' => $unchanged, 'reason' => 'release_evidence_changed', 'predicate' => $reason];

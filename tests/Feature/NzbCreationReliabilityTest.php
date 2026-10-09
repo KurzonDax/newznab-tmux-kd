@@ -941,7 +941,7 @@ class NzbCreationReliabilityTest extends TestCase
      */
     private function releasesSelectedByCompletionCleanup(float $completionPercent): array
     {
-        return IncompleteReleaseSweepQuery::builder($completionPercent)
+        return IncompleteReleaseSweepQuery::builder($completionPercent, IncompleteReleaseSweepQuery::DEFAULT_LATE_HEADER_GRACE_HOURS)
             ->orderBy('id')
             ->pluck('id')
             ->map(static fn (mixed $id): int => (int) $id)

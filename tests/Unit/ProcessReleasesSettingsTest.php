@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Support\Data\ProcessReleasesSettings;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -59,5 +60,37 @@ class ProcessReleasesSettingsTest extends TestCase
     {
         $this->assertSame(100, (new ProcessReleasesSettings(completion: 150))->completion);
         $this->assertSame(55, ProcessReleasesSettings::forDatabase(['completionpercent' => '55'])->completion);
+    }
+
+    /**
+     * The incomplete-release wait is a retention window: anything that is not a positive number
+     * of hours resolves to the seeded 72, so 0 never means "delete at once".
+     *
+     * @param  array<string, mixed>  $stored
+     */
+    #[DataProvider('incompleteReleaseWaits')]
+    public function test_the_incomplete_release_wait_resolves_unusable_values_to_72_hours(array $stored, int $expected): void
+    {
+        $this->assertSame($expected, ProcessReleasesSettings::forDatabase($stored)->incompleteReleaseGraceHours);
+    }
+
+    /**
+     * @return array<string, array{0: array<string, mixed>, 1: int}>
+     */
+    public static function incompleteReleaseWaits(): array
+    {
+        return [
+            'missing' => [[], 72],
+            'blank' => [['incomplete_release_grace_hours' => ''], 72],
+            'zero' => [['incomplete_release_grace_hours' => '0'], 72],
+            'negative' => [['incomplete_release_grace_hours' => '-5'], 72],
+            'non-numeric' => [['incomplete_release_grace_hours' => 'abc'], 72],
+            'positive' => [['incomplete_release_grace_hours' => '24'], 24],
+        ];
+    }
+
+    public function test_direct_construction_with_a_zero_incomplete_release_wait_resolves_to_72_hours(): void
+    {
+        $this->assertSame(72, (new ProcessReleasesSettings(incompleteReleaseGraceHours: 0))->incompleteReleaseGraceHours);
     }
 }

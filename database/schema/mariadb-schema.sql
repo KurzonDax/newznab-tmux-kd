@@ -4324,3 +4324,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (320,'2026_10_08_15
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (321,'2026_10_08_160000_create_musicbrainz_release_group_genres_table',30);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (322,'2026_10_08_160100_create_musicbrainz_release_tracks_table',30);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (323,'2026_10_08_160200_create_musicbrainz_artist_tables',30);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (324,'2026_10_09_120000_add_incomplete_release_grace_hours_setting',31);

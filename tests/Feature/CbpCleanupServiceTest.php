@@ -446,6 +446,59 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertDatabaseHas('releases', ['id' => 142]);
     }
 
+    public function test_the_completion_sweep_waits_for_the_configured_incomplete_release_wait(): void
+    {
+        $this->freezeTime();
+        $this->prepareCompletionSweep();
+        $this->insertIncompleteRelease(150, 'Incomplete.Recent.Release', addedHoursAgo: 23);
+        $this->insertIncompleteRelease(151, 'Incomplete.Waited.Release', addedHoursAgo: 25);
+        Search::shouldReceive('deleteReleases')->once()->with([151]);
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteReleases();
+
+        $this->assertDatabaseHas('releases', ['id' => 150]);
+        $this->assertDatabaseMissing('releases', ['id' => 151]);
+    }
+
+    public function test_a_late_collection_arriving_after_selection_still_holds_the_release(): void
+    {
+        $this->freezeTime();
+        $this->prepareCompletionSweep();
+        $this->insertIncompleteRelease(152, 'Incomplete.Late.Collection.Release', addedHoursAgo: 25);
+        DB::table('releases')->where('id', 152)->update(['collectionhash' => 'late-collection-hash']);
+        $arrived = false;
+        Release::retrieved(static function (Release $release) use (&$arrived): void {
+            if ($arrived || (int) $release->id !== 152) {
+                return;
+            }
+            $arrived = true;
+            // The sweep query has selected the release; its late collection lands before the delete.
+            DB::table('collections')->insert([
+                'id' => 152,
+                'subject' => 'Incomplete.Late.Collection.Release',
+                'fromname' => 'poster@example.com',
+                'date' => now()->subHours(1)->format('Y-m-d H:i:s'),
+                'dateadded' => now()->format('Y-m-d H:i:s'),
+                'added' => now()->format('Y-m-d H:i:s'),
+                'xref' => 'alt.test:152',
+                'groups_id' => 1,
+                'totalfiles' => 1,
+                'filesize' => 500,
+                'filecheck' => CollectionFileCheckStatus::Sized->value,
+                'collectionhash' => 'late-collection-hash',
+                'collection_regexes_id' => 0,
+                'releases_id' => null,
+                'noise' => '',
+            ]);
+        });
+        Search::shouldReceive('deleteReleases')->never();
+
+        app(ReleaseProcessingService::class)->setEchoCLI(false)->deleteReleases();
+
+        $this->assertTrue($arrived, 'The sweep must hydrate the selected release.');
+        $this->assertDatabaseHas('releases', ['id' => 152]);
+    }
+
     public function test_nzb_creation_cleans_up_collection_binary_and_parts_explicitly(): void
     {
         DB::table('releases')->insert([
@@ -1059,6 +1112,30 @@ class CbpCleanupServiceTest extends TestCase
         $this->assertSame('normalized_searchname_match', $reason);
     }
 
+    /**
+     * Completion sweep at 95% with a 24-hour wait, read through the service's own settings loader.
+     */
+    private function prepareCompletionSweep(): void
+    {
+        ProductionTables::fromAuthority()->create('kept_releases');
+        ProductionTables::fromAuthority()->create('root_categories', ['id', 'discard_executables']);
+        ProductionTables::fromAuthority()->create('genres', ['id', 'disabled']);
+        DB::table('settings')->insert([
+            ['name' => 'completionpercent', 'value' => '95'],
+            ['name' => 'incomplete_release_grace_hours', 'value' => '24'],
+        ]);
+    }
+
+    private function insertIncompleteRelease(int $id, string $searchName, int $addedHoursAgo): void
+    {
+        $this->insertRelease($id, $searchName, 1000);
+        DB::table('releases')->where('id', $id)->update([
+            'completion' => 80.0,
+            'nzbstatus' => NzbService::NZB_ADDED,
+            'adddate' => now()->subHours($addedHoursAgo)->format('Y-m-d H:i:s'),
+        ]);
+    }
+
     private function insertRelease(int $id, string $searchName, int $size, int $groupId = 1): void
     {
         DB::table('releases')->insert([
@@ -1258,7 +1335,8 @@ class CbpCleanupServiceTest extends TestCase
             isrenamed INTEGER,
             is_trusted_name INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
-            predb_id INTEGER
+            predb_id INTEGER,
+            collectionhash BLOB NULL UNIQUE
         )');
         DB::statement('CREATE TABLE collections (
             id INTEGER PRIMARY KEY,

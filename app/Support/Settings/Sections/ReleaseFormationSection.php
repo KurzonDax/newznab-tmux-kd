@@ -159,11 +159,20 @@ final class ReleaseFormationSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'completionpercent',
                             label: 'Minimum completion',
-                            help: 'A release holding a smaller share of its articles than this is deleted. 0 turns the check off. A release is kept while a secondary provider may still add late headers to it.',
+                            help: 'A release holding a smaller share of its articles than this is deleted once it has been in the index for the Incomplete release wait below. 0 turns the check off. A release is kept while a secondary provider may still add late headers to it.',
                             type: SettingType::Int,
                             unit: '%',
                             rules: ['required', 'integer', 'min:0', 'max:100'],
                             icon: 'fas fa-percent',
+                        ),
+                        new SettingDefinition(
+                            key: 'incomplete_release_grace_hours',
+                            label: 'Incomplete release wait',
+                            help: 'How long a release must have been in the index before Minimum completion may delete it, so late headers have time to complete it. Whatever the value, a release is still kept while a late collection is waiting to merge into it or a secondary provider may still add headers to it. <strong>0 falls back to 72 hours.</strong>',
+                            type: SettingType::Int,
+                            unit: 'hours',
+                            rules: ['required', 'integer', 'min:0', 'max:87600'],
+                            icon: 'fas fa-hourglass-half',
                         ),
                         new SettingDefinition(
                             key: 'delaytime',
