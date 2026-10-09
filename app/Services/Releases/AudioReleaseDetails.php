@@ -15,6 +15,7 @@ use App\Models\Release;
 use App\Models\ReleaseVideoClip;
 use App\Services\AudioProcessing\AudioGenres;
 use App\Services\MusicIdentity\CurrentMusicIdentityReader;
+use App\Services\MusicIdentity\Persistence\ReleaseTrackListStore;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -22,9 +23,10 @@ use Illuminate\Support\Facades\DB;
  * DATA-CONTRACT.md 4.5), as ConsoleGameReleaseDetails is for a game: the release as an Audio list
  * row, its sub-category for the breadcrumb and the music line, its tag row and genres, the facts
  * grid (Genre after Category on the release-only page; the album page's genres are its tags), the
- * PreDB block, the complete track list of its newest audio evidence, the preview it plays in the
- * page with the spectrogram, a video clip, the release group of the current accepted MusicBrainz
- * album (CurrentMusicIdentityReader, the rule album covers share), "All N releases
+ * PreDB block, the complete track list of its newest audio evidence (else the accepted MusicBrainz
+ * album's stored track list), the preview it plays in the page with the spectrogram, a video clip,
+ * the release group of the current accepted MusicBrainz album (CurrentMusicIdentityReader, the rule
+ * album covers share, read once for the button and the track list), "All N releases
  * of this album" (AudioAlbumPage) on the album page and Similar releases without the album's own
  * releases. Each read is one query; the preview reads the tag row the controller already loaded.
  */
@@ -58,6 +60,11 @@ final class AudioReleaseDetails
             array_splice($facts, 1, 0, [['Genre', $music?->genreFact() ?? '—']]);
         }
         $evidence = $this->newestEvidence((int) $release->id);
+        $identity = $this->identities->forRelease((int) $release->id);
+        $tracks = $evidence === null ? [] : $this->tracks($evidence);
+        if ($tracks === [] && $identity !== null && $identity->acceptsAlbum() && $identity->musicBrainzReleaseId !== null) {
+            $tracks = $this->musicBrainzTracks($identity->musicBrainzReleaseId);
+        }
         $albumIds = $music !== null && $album ? $this->albums->ids($music->album, self::artistKey($music), $exclusions) : [];
 
         return [
@@ -68,10 +75,10 @@ final class AudioReleaseDetails
             'subCategory' => $subCategory,
             'facts' => $facts,
             'predb' => ReleaseDetailsFacts::predb((int) $release->predb_id),
-            'tracks' => $evidence === null ? [] : $this->tracks($evidence),
+            'tracks' => $tracks,
             'preview' => $this->preview($release, $music),
             'clip' => $this->clip($release),
-            'musicBrainzUrl' => $this->identities->forRelease((int) $release->id)?->releaseGroupUrl() ?? '',
+            'musicBrainzUrl' => $identity?->releaseGroupUrl() ?? '',
             'similar' => $this->similar($release, $albumIds, $exclusions),
             ...($album ? $this->table($row, $music, $exclusions, $table, $pageNamed) : []),
         ];
@@ -146,8 +153,10 @@ final class AudioReleaseDetails
 
     /**
      * Read 2: the revision's complete track list, one source: the archive listing when the revision
-     * marks it complete, else the NZB's audio files; nothing otherwise. A partial archive listing,
-     * the release's own files and the sampled file are never shown (SPEC 5C.2).
+     * marks it complete, else the NZB's audio files; nothing otherwise, and the page then shows the
+     * accepted MusicBrainz album's stored list (read 2b). The list comes from one source only, never
+     * a mix. A partial archive listing, the release's own files, the sampled file and CUE sheet rows
+     * are never shown (SPEC 5C.2).
      *
      * @return list<AudioTrack>
      */
@@ -174,6 +183,23 @@ final class AudioReleaseDetails
         }
 
         return $tracks;
+    }
+
+    /**
+     * Read 2b: with no complete list of its own, the accepted MusicBrainz album's track list, stored
+     * once for its release (issue #313): # is the MusicBrainz track position, the disc its medium
+     * position, and the title exactly as MusicBrainz has it (no structural rule).
+     *
+     * @return list<AudioTrack>
+     */
+    private function musicBrainzTracks(string $musicBrainzReleaseId): array
+    {
+        return array_map(static fn (array $track): AudioTrack => new AudioTrack(
+            number: $track['track_position'],
+            title: $track['title'],
+            seconds: $track['length_ms'] === null ? null : (int) round($track['length_ms'] / 1000),
+            disc: $track['medium_position'],
+        ), ReleaseTrackListStore::stored($musicBrainzReleaseId));
     }
 
     /** A file name without its folders (either slash) and its extension. */

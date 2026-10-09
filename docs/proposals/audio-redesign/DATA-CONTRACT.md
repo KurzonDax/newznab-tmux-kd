@@ -110,12 +110,12 @@ model casts through `casts()`, explicit relationship keys; `database/schema/mari
 
 ## 2. New storage
 
-### 2.1 `audio_genres` and `release_audio_genres` (a release's tag genres, one row per genre)
+### 2.1 `audio_genres` and `release_audio_genres` (a release's genres, one row per genre)
 
 ```sql
 CREATE TABLE `audio_genres` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag writes it',
+  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag or MusicBrainz writes it',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_audio_genres_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
@@ -123,7 +123,7 @@ CREATE TABLE `audio_genres` (
 CREATE TABLE `release_audio_genres` (
   `releases_id` int(10) unsigned NOT NULL,
   `audio_genres_id` int(10) unsigned NOT NULL,
-  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the tag value',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the release''s genre list',
   PRIMARY KEY (`audio_genres_id`,`releases_id`),
   KEY `ix_release_audio_genres_release` (`releases_id`,`position`),
   CONSTRAINT `fk_release_audio_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE,
@@ -131,12 +131,15 @@ CREATE TABLE `release_audio_genres` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 ```
 
-- Styled as `release_audio_languages` (#828) and `console_genres` (#917). A row per genre of the release's tag value,
-  for **every release with audio tags, whatever its category** (the tag table is not per category either).
+- Styled as `release_audio_languages` (#828) and `console_genres` (#917). A row per genre of a release's genres: its
+  accepted MusicBrainz album's genres (2.4, 3.4) when its current music identity accepts an album whose release group
+  has genre rows, else its tag value's genres; for **every release with audio tags, whatever its category** (the tag
+  table is not per category either). A release without a tag row has none.
 - The names are `audio_genres` rows (unique on `name` under the table's `utf8mb4_unicode_ci`), one per name; a name
   resolves case-insensitively to its row, created when none exists. Names that differ only by case or accent share one
   row (`house`/`House`, `Opera`/`Opéra`), and screens show the row's name, the first one stored; the prototype's menu,
-  which lists both spellings, is overridden on this point only. The names are kept out of `genres`, so the frozen API
+  which lists both spellings, is overridden on this point only. MusicBrainz's lower-case names share rows with the tag
+  spellings the same way (`rock` shows the stored `Rock`). The names are kept out of `genres`, so the frozen API
   capabilities genre list and the admin music form never list them (the #826 rule).
 - **"Unknown" stores nothing.** A tag value of `Unknown` (any case) is dropped, so Unknown on the list is one test, "no
   `release_audio_genres` row", which covers no tag row, a tag row without a genre and a genre of only "Unknown" alike
@@ -149,6 +152,26 @@ CREATE TABLE `release_audio_genres` (
 `release_audio_tags (recorded_year, releases_id)`, 4.5 MB at stress. It makes the Year reads tag-led on an index
 (decade 2020s 67-70 ms at stress against 97-102 ms scanning every tag row; it removes a ~20 ms floor from every small
 Year read). Not required for correctness; proposed because it is cheap and cuts every Year read.
+
+### 2.4 `musicbrainz_release_group_genres` (an accepted album's MusicBrainz genres, issue #313)
+
+```sql
+CREATE TABLE `musicbrainz_release_group_genres` (
+  `musicbrainz_release_group_id` char(36) NOT NULL,
+  `audio_genres_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based: vote count highest first, then name A to Z',
+  PRIMARY KEY (`musicbrainz_release_group_id`,`position`),
+  UNIQUE KEY `ux_mb_release_group_genres_genre` (`musicbrainz_release_group_id`,`audio_genres_id`),
+  KEY `fk_mb_release_group_genres_audio_genres_id` (`audio_genres_id`),
+  CONSTRAINT `fk_mb_release_group_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+KEY `release_music_identity_release_group` (`musicbrainz_release_group_id`) -- on release_music_identifications
+```
+
+- MusicBrainz genres are a fact about the release group, shared by every release of the album, so they are stored
+  once per group, on the `audio_genres` lookup (names as MusicBrainz writes them, no cleaning). The new index on
+  `release_music_identifications` finds a group's other releases (3.4).
 
 ### 2.3 What is not stored
 
@@ -166,7 +189,9 @@ Year read). Not required for correctness; proposed because it is cheap and cuts 
 ### 3.1 The tag genres: `AudioReleaseProcessor::recordTags()`
 
 When `recordTags()` writes the tag row (fact 5), the release's `release_audio_genres` rows are replaced in the same
-transaction, through a class with the `ConsoleGenres` method shape (`App\Services\AudioProcessing\AudioGenres`, the same
+transaction by the shared rule (`AudioGenres::effectiveIds()`, 3.4): an accepted album's MusicBrainz genres when the
+release's current decision accepts one whose release group has genre rows, so re-reading tags never replaces them;
+otherwise the tag genres, through a class with the `ConsoleGenres` method shape (`App\Services\AudioProcessing\AudioGenres`, the same
 `ids()` / `replace()` / `stored()` shape): the tag's `genre` split on `;` and on ` / ` (a slash with a space on each
 side), each part trimmed, empty parts and `Unknown` (any case) dropped, a name repeated in one value kept once
 (case-insensitively), each resolved to its `audio_genres` row (inserted with insert-or-ignore on the unique name and
@@ -196,6 +221,28 @@ releases.
 ### 3.3 The Year index
 
 Added by the storage migration with the table; `schema:dump` refreshed in the same PR.
+
+### 3.4 MusicBrainz genres (issue #313)
+
+- **Lookup.** When `MusicIdentityResolver` decides `accepted_release_group` or `accepted_edition`, it reads the accepted
+  release group's genres with one release-group lookup through the gateway (`MusicBrainzGateway::releaseGroup()`: the
+  hydration request, with its pacing, circuit breaker and response cache, so a group the resolution already hydrated
+  is a cache hit; the group's editions are not browsed). An edition uses its release group's genres. A recording
+  acceptance makes no lookup. A failed lookup makes the attempt a retryable error, so an accepted album is never stored
+  without the lookup's answer. The normalizer reads `genres` as name and vote count; a payload without them gives none.
+  Genres never score.
+- **Store.** `IdentificationDecisionStore::persist()` replaces the group's `musicbrainz_release_group_genres` rows
+  from the newest lookup in the decision's transaction, vote count highest first, then name A to Z; no genres (or no
+  group) leaves the group without rows. It deletes only when the group holds rows (the `ChildRows` gap-lock rule). No
+  other code writes the table, and nothing refreshes it in the background.
+- **The release's rows.** After the commit, beside the search re-sync, the written release's `release_audio_genres` rows
+  are re-derived by the shared rule (`AudioGenres::rederive()`); a failure is logged and never fails the decision. That
+  covers a new acceptance, a replacement by another album and a withdrawal by a completed non-album decision or an
+  album without genres. When the group's rows changed, every other release whose current decision accepts that group
+  is re-derived too, found through the new index.
+- **Existing decisions.** `music-identity.algorithm_version` is `music-identity-v3`; the worker re-resolves eligible
+  releases under it, through the gateway's pacing. No migration fills genre rows, and there is no command.
+- The reads (4.3, 4.5) are unchanged: they read `release_audio_genres` with the same queries and indexes.
 
 ---
 
@@ -272,11 +319,14 @@ search alone: the tag side adds about 85-110 ms, one pass over the tag rows. `EX
   (`ReleasePreviewDataLoader`, `ReleaseMediaInfoAvailabilityLoader`).
 - **Details**: the tag row with its genres 0.1 ms; the newest evidence revision (`ORDER BY revision DESC LIMIT 1` on the
   `(releases_id, revision)` key) 0.0 ms and its tracks by `release_audio_evidence_id` in `source_kind, source_ordinal`
-  order (no sort) 0.1 ms; **the tracks shown are one complete source**: the archive listing when the revision's
-  `archive_manifest_complete` is true, else the NZB's files; no list otherwise (`SPEC.md` 5C.2); the MusicBrainz release
-  group: the release's row for the newest evidence's `evidence_hash` in state `accepted_release_group` or
-  `accepted_edition` with a release group id, for the configured `music-identity.algorithm_version`, the newest by id,
-  0.1 ms.
+  order (no sort) 0.1 ms; **the tracks shown are one complete source, never a mix**, in this order: the archive listing
+  when the revision's `archive_manifest_complete` is true, else the NZB's files, else the accepted album's tracks read
+  from `musicbrainz_release_tracks` by the decision's release id (issue #313; a `ref` on the primary key, no sort,
+  0.03 ms); no list otherwise (`SPEC.md` 5C.2). The current music identity follows the shared rule
+  (`CurrentMusicIdentityReader`, #1015): the completed decision for the newest evidence revision's hash under the
+  configured `algorithm_version`; when that target has no row or only an unfinished attempt, the release's newest
+  completed decision by id; the decision is chosen before its state is checked. It gives the release group of an
+  accepted album, and that album's release id, 0.1 ms.
 - **All releases of this album**: `album = ? AND COALESCE(album_performer, performer) = ?` on the existing
   `release_audio_tags_album_index` (the table's `utf8mb4_unicode_ci` makes both case-insensitive) `STRAIGHT_JOIN
   releases`, band 3000 only and visible, newest posted first, 50 a page: 0.1 ms for the biggest stress album (31

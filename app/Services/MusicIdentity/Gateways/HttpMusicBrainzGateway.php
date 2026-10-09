@@ -201,6 +201,25 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         );
     }
 
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        $endpoint = $this->endpoint();
+        if ($endpoint === null) {
+            return null;
+        }
+        $this->assertPublicConfiguration($endpoint);
+
+        $ids = (new CandidateIdentifiers(releaseGroupId: $releaseGroupId))->normalized();
+        $this->assertIdentifiers($ids);
+        if ($ids['releaseGroupId'] === null) {
+            return null;
+        }
+
+        $payload = $this->fetchOne($endpoint, $this->releaseGroupRequest($ids['releaseGroupId']), $this->budget());
+
+        return $payload === [] ? null : $this->normalizer->releaseGroup($payload);
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         $endpoint = $this->endpoint();
@@ -237,12 +256,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             );
         }
         if ($ids['releaseGroupId'] !== null) {
-            $requests['release_group'] = $this->descriptor(
-                'release-group/'.rawurlencode($ids['releaseGroupId']),
-                ['inc' => self::RELEASE_GROUP_INCLUDES, 'fmt' => 'json'],
-                exact: true,
-                shape: 'release_group',
-            );
+            $requests['release_group'] = $this->releaseGroupRequest($ids['releaseGroupId']);
         }
         if ($ids['isrc'] !== null) {
             $requests['isrc'] = $this->descriptor(
@@ -831,6 +845,17 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
 
         return $exception instanceof RequestException
             && ($exception->response->serverError() || $exception->response->status() === 429);
+    }
+
+    /** @return array{path: string, query: array<string, int|string>, exact: bool, shape: string} */
+    private function releaseGroupRequest(string $releaseGroupId): array
+    {
+        return $this->descriptor(
+            'release-group/'.rawurlencode($releaseGroupId),
+            ['inc' => self::RELEASE_GROUP_INCLUDES, 'fmt' => 'json'],
+            exact: true,
+            shape: 'release_group',
+        );
     }
 
     /**

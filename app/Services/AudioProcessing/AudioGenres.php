@@ -4,21 +4,29 @@ declare(strict_types=1);
 
 namespace App\Services\AudioProcessing;
 
+use App\Services\MusicIdentity\CurrentMusicIdentityReader;
+use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\Persistence\ReleaseGroupGenreStore;
 use App\Support\ChildRows;
 use Closure;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Keeps a release's `release_audio_genres` rows, one per genre in its audio tag's genre value,
- * in the value's order. The names are `audio_genres` rows, kept out of the shared `genres` table
- * so the frozen API capabilities genre list never lists them. Written with the tag row, and by
- * the migration that filled the rows for existing tag rows.
+ * Keeps a release's `release_audio_genres` rows: the one effective-genres table every Audio screen
+ * reads. By the one rule (issue #313), they are the accepted MusicBrainz album's genres when the
+ * release's current music identity accepts an album whose release group has genre rows, else one
+ * row per genre in its audio tag's genre value, in the value's order; a release without a tag row
+ * has none. The names are `audio_genres` rows, kept out of the shared `genres` table so the
+ * frozen API capabilities genre list never lists them. Written with the tag row, after each music
+ * identity decision, and by the migration that filled the rows for existing tag rows.
  *
  * Not final, so a test can hand the audio processor a subclass.
  */
 class AudioGenres
 {
+    public function __construct(private readonly CurrentMusicIdentityReader $identities = new CurrentMusicIdentityReader) {}
+
     /** The tag value that names no genre; dropped in any case. */
     private const string UNKNOWN = 'unknown';
 
@@ -92,6 +100,71 @@ class AudioGenres
         }
 
         return $ids;
+    }
+
+    /**
+     * The release's genre rows by the one rule, given its tag's genre value: the release group
+     * rows of its current accepted album when there are any, else the tag genres.
+     *
+     * @return list<int>
+     */
+    public function effectiveIds(int $releasesId, ?string $tagGenre): array
+    {
+        // Most releases never had an album decision; they skip the current-identity read.
+        $hadAlbum = DB::table('release_music_identifications')->where('releases_id', $releasesId)
+            ->whereIn('state', IdentificationStatus::albumValues())->exists();
+        $current = $hadAlbum ? $this->identities->forRelease($releasesId) : null;
+        if ($current !== null && $current->acceptsAlbum() && $current->musicBrainzReleaseGroupId !== null) {
+            $groupIds = ReleaseGroupGenreStore::stored($current->musicBrainzReleaseGroupId);
+            if ($groupIds !== []) {
+                return $groupIds;
+            }
+        }
+
+        return $this->ids(self::split($tagGenre));
+    }
+
+    /**
+     * Replaces the release's genre rows by the one rule for a tag's genre value, computed under the
+     * release-row lock after $alsoWrite (the tag row's write), so a decision committed meanwhile is
+     * read: the tag write and rederive() both lock the release row first, and whichever runs last
+     * sees the other's result.
+     *
+     * @param  (Closure(): void)|null  $alsoWrite  Other writes for the same transaction, run before the rows are computed.
+     */
+    public function replaceForTag(int $releasesId, ?string $tagGenre, ?Closure $alsoWrite = null): void
+    {
+        $this->replaceDerived($releasesId, fn (): array => $this->effectiveIds($releasesId, $tagGenre), $alsoWrite);
+    }
+
+    /**
+     * Re-derives the release's genre rows by the one rule from its stored tag row (none without
+     * one), after its current music identity or its album's genres changed; read under the same
+     * release-row lock as the tag write.
+     */
+    public function rederive(int $releasesId): void
+    {
+        $this->replaceDerived($releasesId, function () use ($releasesId): array {
+            $tag = DB::table('release_audio_tags')->where('releases_id', $releasesId)->first(['genre']);
+
+            return $tag === null ? [] : $this->effectiveIds($releasesId, is_string($tag->genre) ? $tag->genre : null);
+        });
+    }
+
+    /**
+     * @param  Closure(): list<int>  $audioGenreIds
+     * @param  (Closure(): void)|null  $alsoWrite
+     */
+    private function replaceDerived(int $releasesId, Closure $audioGenreIds, ?Closure $alsoWrite = null): void
+    {
+        ChildRows::replaceComputed('releases', $releasesId, 'releases_id', ['release_audio_genres'], static function () use ($audioGenreIds): array {
+            $rows = [];
+            foreach (array_values($audioGenreIds()) as $position => $audioGenreId) {
+                $rows[] = ['audio_genres_id' => $audioGenreId, 'position' => $position];
+            }
+
+            return ['release_audio_genres' => $rows];
+        }, $alsoWrite);
     }
 
     /**

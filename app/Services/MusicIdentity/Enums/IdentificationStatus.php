@@ -21,6 +21,17 @@ enum IdentificationStatus: string
         return [self::AcceptedEdition, self::AcceptedReleaseGroup, self::AcceptedRecording];
     }
 
+    /** @return list<string> the values of the states that accept an album (a release group or an edition) */
+    public static function albumValues(): array
+    {
+        return [self::AcceptedReleaseGroup->value, self::AcceptedEdition->value];
+    }
+
+    public function acceptsAlbum(): bool
+    {
+        return $this === self::AcceptedReleaseGroup || $this === self::AcceptedEdition;
+    }
+
     public function isTerminal(): bool
     {
         return ! in_array($this, [self::Pending, self::RetryableError], true);

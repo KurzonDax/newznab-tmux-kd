@@ -368,6 +368,61 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         ));
     }
 
+    public function test_a_release_group_lookup_normalizes_its_genres_with_vote_counts(): void
+    {
+        $group = $this->fixture('release-group-lookup.json');
+        Http::fake(['*' => Http::response([...$group, 'genres' => [
+            ['id' => 'genre-1', 'name' => 'rock', 'count' => 5, 'disambiguation' => ''],
+            ['id' => 'genre-2', 'name' => 'indie rock', 'count' => 5, 'disambiguation' => ''],
+            ['id' => 'genre-3', 'name' => 'new wave', 'count' => 2, 'disambiguation' => ''],
+        ]])]);
+
+        $releaseGroup = $this->gateway()->releaseGroup('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
+        $this->assertSame([
+            ['name' => 'rock', 'count' => 5],
+            ['name' => 'indie rock', 'count' => 5],
+            ['name' => 'new wave', 'count' => 2],
+        ], $releaseGroup['genres'] ?? null);
+        Http::assertSentCount(1);
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/release-group/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+                && $query['inc'] === 'artist-credits+releases+aliases+genres+tags+url-rels';
+        });
+    }
+
+    public function test_a_release_group_payload_without_genres_lists_none_and_a_missing_group_is_null(): void
+    {
+        Http::fake(function (Request $request) {
+            return str_contains($request->url(), 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+                ? Http::response($this->fixture('release-group-lookup.json'))
+                : Http::response([], 404);
+        });
+
+        $this->assertSame([], $this->gateway()->releaseGroup('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')['genres'] ?? null);
+        $this->assertNull($this->gateway()->releaseGroup('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'));
+    }
+
+    public function test_the_release_group_lookup_reuses_the_hydration_response(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/release-group/')) {
+                return Http::response($this->fixture('release-group-lookup.json'));
+            }
+
+            return Http::response(['release-count' => 0, 'release-offset' => 0, 'releases' => []]);
+        });
+
+        $this->gateway()->hydrate(new CandidateIdentifiers(releaseGroupId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'));
+        $this->gateway()->releaseGroup('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+
+        $this->assertCount(1, Http::recorded(
+            static fn (Request $request): bool => str_contains($request->url(), '/release-group/'),
+        ));
+    }
+
     public function test_invalid_json_is_rejected_instead_of_leaking_an_untrusted_shape(): void
     {
         Http::fake(['*' => Http::response('{broken', 200, ['Content-Type' => 'application/json'])]);

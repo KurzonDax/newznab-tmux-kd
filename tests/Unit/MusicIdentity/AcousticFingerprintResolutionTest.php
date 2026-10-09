@@ -407,6 +407,13 @@ final class AlbumHydratingGateway implements MusicBrainzGateway
         return new ReleaseCandidates([]);
     }
 
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         $this->hydrated[] = $identifiers;

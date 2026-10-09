@@ -79,7 +79,7 @@ final class AudioReleasesPageTest extends TestCase
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'genres', 'audio_genres', 'release_audio_genres',
-            'release_audio_evidence', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
+            'release_audio_evidence', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists', 'music_cover_art_lookups'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
@@ -311,6 +311,34 @@ final class AudioReleasesPageTest extends TestCase
         preg_match_all('/data-value="(\d+)"[^>]*>.*?(\d{4}s)</s', $decades[0] ?? $html, $offered);
         $this->assertSame(['2020s', '2010s', '2000s', '1990s', '1980s', '1970s', '1960s', '1950s', '1940s'], $offered[2]);
         $this->assertSame(['2020', '2010', '2000', '1990', '1980', '1970', '1960', '1950', '1940'], $offered[1]);
+    }
+
+    public function test_an_accepted_albums_musicbrainz_genres_replace_its_tag_genres_in_the_column_menu_and_filter(): void
+    {
+        $group = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        $this->genre(self::ROCK, 'Rock');
+        $this->genre(30, 'Alternatif et Indé');
+        $this->genre(31, 'indie rock');
+        $this->tag($this->audio('Band.Rock'), ['genre' => 'Rock'], [self::ROCK]);
+        $this->tag($indie = $this->audio('Tagged.Indie'), ['genre' => 'Alternatif et Indé'], [30]);
+        $this->tag($unknown = $this->audio('Tagged.Unknown'), ['genre' => 'Unknown']);
+        $this->cover($indie, $group, stored: false);
+        $this->cover($unknown, $group, stored: false);
+        DB::table('musicbrainz_release_group_genres')->insert([
+            ['musicbrainz_release_group_id' => $group, 'audio_genres_id' => 31, 'position' => 0],
+            ['musicbrainz_release_group_id' => $group, 'audio_genres_id' => self::ROCK, 'position' => 1],
+        ]);
+        // What the decision store does once an album decision has committed.
+        (new AudioGenres)->rederive($indie);
+        (new AudioGenres)->rederive($unknown);
+        Cache::flush();
+
+        $response = $this->page('/audio')->assertOk();
+        $this->assertStringContainsString('<td class="tv-genre" title="indie rock, Rock"><span>indie rock, Rock</span></td>', $this->rowOf($response, 'Tagged.Indie'));
+        $this->assertStringContainsString('<td class="tv-genre" title="indie rock, Rock"><span>indie rock, Rock</span></td>', $this->rowOf($response, 'Tagged.Unknown'));
+        $this->assertSame([31 => 'indie rock', self::ROCK => 'Rock'], app(AudioReleaseList::class)->genreMenu(),
+            'the tag-only genre leaves the menu, and no band release is Unknown');
+        $this->assertListed('/audio?genre[]=31', ['Tagged.Indie', 'Tagged.Unknown']);
     }
 
     public function test_the_genre_menu_searches_inside_itself_over_ten_genres(): void

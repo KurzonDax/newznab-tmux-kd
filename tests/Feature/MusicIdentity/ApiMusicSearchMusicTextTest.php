@@ -60,7 +60,7 @@ final class ApiMusicSearchMusicTextTest extends TestCase
             'settings', 'releases', 'usenet_groups', 'categories', 'root_categories', 'movieinfo', 'musicinfo', 'consoleinfo', 'gamesinfo',
             'bookinfo', 'videos', 'tv_episodes', 'release_nfos', 'video_data', 'media_infos', 'release_files', 'audio_data',
             'release_subtitles', 'anidb_titles', 'media_info_probes', 'media_info_tracks', 'release_audio_tags',
-            'release_audio_evidence', 'release_music_identifications', 'release_music_candidate_attempts',
+            'release_audio_evidence', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists', 'release_music_candidate_attempts',
         ] as $table) {
             ProductionTables::fromAuthority()->create($table);
         }
@@ -85,7 +85,7 @@ final class ApiMusicSearchMusicTextTest extends TestCase
         $releaseId = $this->release('Obfuscated.Album-GRP');
         $this->resolveAndStore($releaseId, $this->albumCandidate(), $this->albumEvidence());
 
-        foreach (['Example Album', 'Alias Album', 'Example Artist', 'Last Light', 'example artist first light'] as $text) {
+        foreach (['Example Album', 'Alias Album', 'Example Artist', 'Last Light', 'example artist first light', 'Guest Artist'] as $text) {
             $this->assertSame([$releaseId], $this->found($text), $text);
         }
         $this->assertSame([], $this->found('Obfuscated'), 'the release name is not music text');
@@ -107,15 +107,33 @@ final class ApiMusicSearchMusicTextTest extends TestCase
     }
 
     #[Test]
+    public function an_accepted_albums_artist_names_and_searched_aliases_find_it(): void
+    {
+        $album = $this->release('Obfuscated.Album-GRP');
+        $this->resolveAndStore($album, $this->albumCandidate(), $this->albumEvidence());
+        $recording = $this->release('Recording.Only-GRP');
+        $this->resolveAndStore($recording, $this->recordingCandidate(), $this->recordingEvidence());
+
+        foreach (['Canonical Example Band', 'Altname Ensemble', 'Hintword Band'] as $text) {
+            $this->assertSame([$album], $this->found($text), $text.' finds the album, not the recording-only acceptance');
+        }
+        foreach (['Legalname Person', 'Untypedname Group'] as $text) {
+            $this->assertSame([], $this->found($text), $text);
+        }
+    }
+
+    #[Test]
     public function needs_review_and_conflicted_text_finds_nothing(): void
     {
-        $text = new AcceptedMusicText(AcceptedIdentityScope::ReleaseGroup, 'Reviewed Album', artistCredit: 'Reviewed Artist', trackTitles: ['Reviewed Track']);
+        $text = new AcceptedMusicText(AcceptedIdentityScope::ReleaseGroup, 'Reviewed Album', artistCredit: 'Reviewed Artist', releaseId: '44444444-4444-4444-8444-444444444444', tracks: [
+            ['mediumPosition' => 1, 'trackPosition' => 1, 'title' => 'Reviewed Track', 'lengthMs' => null, 'artistCredit' => 'Reviewed Artist'],
+        ], artists: $this->creditedArtists());
         $reviewed = $this->release('Reviewed.Release-GRP');
         $conflicted = $this->release('Conflicted.Release-GRP');
         $this->persist($this->evidenceRecord($reviewed, 1), IdentificationStatus::NeedsReview, text: $text);
         $this->persist($this->evidenceRecord($conflicted, 1), IdentificationStatus::Conflicted, text: $text);
 
-        foreach (['Reviewed Album', 'Reviewed Artist', 'Reviewed Track'] as $query) {
+        foreach (['Reviewed Album', 'Reviewed Artist', 'Reviewed Track', 'Canonical Example Band', 'Altname Ensemble'] as $query) {
             $this->assertSame([], $this->found($query), $query);
         }
     }
@@ -193,7 +211,7 @@ final class ApiMusicSearchMusicTextTest extends TestCase
         $guid = (string) DB::table('releases')->where('id', $releaseId)->value('guid');
 
         $items = [];
-        foreach (['Legacy Album', 'Example Album', 'Example Artist', 'First Light'] as $text) {
+        foreach (['Legacy Album', 'Example Album', 'Example Artist', 'First Light', 'Altname Ensemble'] as $text) {
             $this->fakeSearchIndex();
             $xml = $this->get('/api/v1/api?'.http_build_query(['t' => 'music', 'apikey' => $token, 'q' => $text, 'extended' => 1]))->assertOk()->getContent();
             $this->fakeSearchIndex();
@@ -207,10 +225,11 @@ final class ApiMusicSearchMusicTextTest extends TestCase
             $items[$text] = ['xml' => $xmlItems[0][0], 'json' => $json['channel']['item'] ?? $json['item'] ?? $json, 'v2' => $v2['results']];
         }
 
-        foreach (['Example Album', 'Example Artist', 'First Light'] as $text) {
+        foreach (['Example Album', 'Example Artist', 'First Light', 'Altname Ensemble'] as $text) {
             $this->assertSame($items['Legacy Album'], $items[$text], $text.' returns the release exactly as the legacy album does');
         }
         $this->assertStringNotContainsString('Example Album', json_encode(array_values($items), JSON_THROW_ON_ERROR), 'no MusicBrainz text enters a response');
+        $this->assertStringNotContainsString('Altname', json_encode(array_values($items), JSON_THROW_ON_ERROR), 'no artist alias enters a response');
     }
 
     /** An API user with today's role limits; returns its token. */

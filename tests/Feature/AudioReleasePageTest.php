@@ -86,7 +86,7 @@ final class AudioReleasePageTest extends TestCase
             'languages', 'release_audio_languages', 'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data',
             'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks', 'predb', 'release_tv_episodes', 'tv_episodes', 'tv_info', 'networks',
             'video_genres', 'video_people', 'genres', 'audio_genres', 'release_audio_genres',
-            'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
+            'release_audio_evidence', 'release_audio_evidence_tracks', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists', 'music_cover_art_lookups'] as $table) {
             $tables->create($table);
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
@@ -437,6 +437,77 @@ final class AudioReleasePageTest extends TestCase
         $this->assertSame(['Overview', 'Tracks (1)', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($response), 'a complete archive listing wins over the NZB\'s tracks');
         $this->assertSame([['1', 'Partial archive']], $this->trackRows($response));
         $this->assertSame(['Tracks' => '1'], $this->infoLines((string) $response->getContent()));
+    }
+
+    public function test_without_a_list_of_its_own_the_tracks_tab_shows_the_accepted_albums_musicbrainz_track_list(): void
+    {
+        $edition = '11111111-1111-4111-8111-111111111111';
+        $id = $this->album('Example-Artist-Example-Album-2021-FLAC');
+        $evidence = $this->evidence($id, 1, null);
+        $decision = $this->identification($id, $evidence, 'accepted_edition', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+        DB::table('release_music_identifications')->where('id', $decision)->update(['musicbrainz_release_id' => $edition]);
+        DB::table('musicbrainz_release_tracks')->insert([
+            ['musicbrainz_release_id' => $edition, 'medium_position' => 1, 'track_position' => 1, 'title' => '1 - Example Opening', 'length_ms' => 125_600, 'artist_credit' => 'Example Artist'],
+            ['musicbrainz_release_id' => $edition, 'medium_position' => 1, 'track_position' => 2, 'title' => 'Example Song', 'length_ms' => 59_400, 'artist_credit' => 'Example Artist feat. Guest Artist'],
+            ['musicbrainz_release_id' => $edition, 'medium_position' => 2, 'track_position' => 1, 'title' => 'Example Closer', 'length_ms' => 61_000, 'artist_credit' => 'Example Artist'],
+        ]);
+
+        $response = $this->details($id);
+        $this->assertSame(['Overview', 'Tracks (3)', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($response));
+        $panel = $this->between($response, 'data-details-panel hidden>', '</section>');
+        $this->assertStringContainsString('<p class="tv-tracks-total">4 min</p>', $panel);
+        $this->assertSame([['Disc 1'], ['1', '1 - Example Opening', '2:06'], ['2', 'Example Song', '0:59'], ['Disc 2'], ['1', 'Example Closer', '1:01']], $this->cells($panel),
+            'MusicBrainz positions and titles as MusicBrainz has them');
+        $this->assertSame(['Tracks' => '3 · 4 min'], array_intersect_key($this->infoLines((string) $response->getContent()), ['Tracks' => true]));
+
+        DB::table('musicbrainz_release_tracks')->where('medium_position', 2)->update(['length_ms' => null]);
+        $panel = $this->between($this->details($id), 'data-details-panel hidden>', '</section>');
+        $this->assertStringNotContainsString('tv-tracks-total', $panel, 'a track has no length');
+        $this->assertSame([['Disc 1'], ['1', '1 - Example Opening', '2:06'], ['2', 'Example Song', '0:59'], ['Disc 2'], ['1', 'Example Closer', '']], $this->cells($panel));
+
+        DB::table('musicbrainz_release_tracks')->where('medium_position', 2)->delete();
+        $panel = $this->between($this->details($id), 'data-details-panel hidden>', '</section>');
+        $this->assertSame([['1', '1 - Example Opening', '2:06'], ['2', 'Example Song', '0:59']], $this->cells($panel), 'one medium has no disc rows');
+
+        $this->track($evidence, 'nzb', 1, ['title' => 'From the NZB']);
+        $this->assertSame([['1', 'From the NZB']], $this->trackRows($this->details($id)), 'the release\'s own list stays the source');
+        DB::table('release_audio_evidence')->where('id', $evidence)->update(['archive_manifest_complete' => 1]);
+        $this->track($evidence, 'archive', 1, ['title' => 'From the archive']);
+        $this->assertSame([['1', 'From the archive']], $this->trackRows($this->details($id)));
+    }
+
+    public function test_cue_sheet_rows_never_show_on_the_tracks_tab(): void
+    {
+        $id = $this->album('Cue-Sheet-Album-2021-FLAC');
+        $evidence = $this->evidence($id, 1, null);
+        $this->track($evidence, 'cue', 1, ['title' => 'From the CUE', 'track_number' => 1]);
+        $this->assertSame(['Overview', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($this->details($id)));
+
+        $this->track($evidence, 'nzb', 1, ['title' => 'From the NZB']);
+        $this->assertSame([['1', 'From the NZB']], $this->trackRows($this->details($id)));
+    }
+
+    public function test_no_accepted_album_or_no_stored_list_shows_no_musicbrainz_tracks(): void
+    {
+        $edition = '11111111-1111-4111-8111-111111111111';
+        DB::table('musicbrainz_release_tracks')->insert(['musicbrainz_release_id' => $edition, 'medium_position' => 1, 'track_position' => 1, 'title' => 'Example Song']);
+        $noTabs = ['Overview', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'];
+
+        $recording = $this->album('Recording-Only-2021-FLAC');
+        $decision = $this->identification($recording, $this->evidence($recording, 1, null), 'accepted_recording', null);
+        DB::table('release_music_identifications')->where('id', $decision)->update(['musicbrainz_release_id' => $edition]);
+        $this->assertSame($noTabs, $this->tabs($this->details($recording)), 'a recording-only acceptance');
+
+        $withdrawn = $this->album('Withdrawn-Album-2021-FLAC');
+        $old = $this->identification($withdrawn, $this->evidence($withdrawn, 1, null), 'accepted_edition', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+        DB::table('release_music_identifications')->where('id', $old)->update(['musicbrainz_release_id' => $edition]);
+        $this->identification($withdrawn, $this->evidence($withdrawn, 2, null), 'unresolved', null);
+        $this->assertSame($noTabs, $this->tabs($this->details($withdrawn)), 'a completed non-accepting decision replaced the album');
+
+        $older = $this->album('Older-Version-2021-FLAC');
+        $this->identification($older, $this->evidence($older, 1, null), 'accepted_release_group', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'music-identity-v2');
+        $this->details($older)->assertOk();
+        $this->assertSame($noTabs, $this->tabs($this->details($older)), 'an older decision names no stored list');
     }
 
     public function test_track_titles_lengths_and_disc_rows_follow_the_structural_rules(): void

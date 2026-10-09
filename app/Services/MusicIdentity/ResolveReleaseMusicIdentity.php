@@ -260,7 +260,7 @@ final readonly class ResolveReleaseMusicIdentity
             reasons: [new DecisionReason('worker_operational_error', $exception->getMessage())],
             candidates: [],
             runnerUpMargin: null,
-            algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v2'),
+            algorithmVersion: MusicIdentityConfiguration::algorithmVersion(),
             resolverVersion: (string) config('music-identity.resolver_version', 'resolver-v1'),
             normalizerVersion: (string) config('music-identity.normalizer_version', 'normalizer-v1'),
             scorerVersion: (string) config('music-identity.scorer_version', 'whole-release-v1'),

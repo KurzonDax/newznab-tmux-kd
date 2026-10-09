@@ -139,12 +139,16 @@ final class AudioReleaseProcessor
             $capturedFilename,
             $fetched->succeeded() ? $fetched->mediaInfoSourceComplete : null,
         );
+        // CUE sheets and rip logs posted as their own file are read as evidence whatever the
+        // fetch's outcome (issue #313); they never change it.
+        $sidecarBodies = $this->fetcher->nzbSidecarBodies($release, $source, $contents, $groupName);
         $this->recordEvidence(
             $releaseAtCapture,
             $source,
             $fetched,
             $evidenceTags,
             $this->fingerprint($source, $fetched),
+            $sidecarBodies,
         );
 
         if ($fetched->declined) {
@@ -292,11 +296,11 @@ final class AudioReleaseProcessor
             }
 
             // Written before the rename, so the row survives even where renaming
-            // is switched off or the release already has a predb name. The tag
-            // genres' rows commit with the tag row or not at all.
+            // is switched off or the release already has a predb name. The genre
+            // rows commit with the tag row or not at all; an accepted album's
+            // MusicBrainz genres outrank the tag genres (AudioGenres' one rule).
             $genre = $tags['genre'] ?? null;
-            $genreIds = $this->audioGenres->ids(AudioGenres::split(is_string($genre) ? $genre : null));
-            $this->audioGenres->replace($releaseId, $genreIds, static function () use ($releaseId, $tags): void {
+            $this->audioGenres->replaceForTag($releaseId, is_string($genre) ? $genre : null, static function () use ($releaseId, $tags): void {
                 ReleaseAudioTag::query()->updateOrCreate(['releases_id' => $releaseId], $tags);
             });
             $this->renamer->rename($release, $tags, $extension);
@@ -317,6 +321,7 @@ final class AudioReleaseProcessor
      * playable source into a failed audio-processing result.
      *
      * @param  array<string, mixed>|null  $sampledTags
+     * @param  array<int, string>  $nzbSidecarBodies  CUE sheets and rip logs posted as their own file, by NZB ordinal
      */
     private function recordEvidence(
         Release $release,
@@ -324,9 +329,10 @@ final class AudioReleaseProcessor
         DTO\AudioFetchResult $fetchResult,
         ?array $sampledTags,
         ?AcousticFingerprint $fingerprint,
+        array $nzbSidecarBodies = [],
     ): void {
         try {
-            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags, fingerprint: $fingerprint);
+            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags, fingerprint: $fingerprint, nzbSidecarBodies: $nzbSidecarBodies);
         } catch (\Throwable $exception) {
             Log::debug(
                 'Audio evidence persistence failed for release '.$release->id.': '.$exception->getMessage()

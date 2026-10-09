@@ -11,6 +11,9 @@ use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 
+/**
+ * @phpstan-import-type MusicReleaseGroup from CandidateMetadata
+ */
 interface MusicBrainzGateway
 {
     public function candidatesFor(RecordingQuery $query): RecordingCandidates;
@@ -18,4 +21,13 @@ interface MusicBrainzGateway
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates;
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata;
+
+    /**
+     * One release group, looked up with the request hydration makes for it (so a group this
+     * resolution already hydrated is a cache hit); its editions are not browsed. Null when
+     * MusicBrainz has no such group or no endpoint is configured.
+     *
+     * @return MusicReleaseGroup|null
+     */
+    public function releaseGroup(string $releaseGroupId): ?array;
 }

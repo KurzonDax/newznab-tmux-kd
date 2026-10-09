@@ -1375,6 +1375,82 @@ class AudioFetcherArchiveTest extends TestCase
         $this->assertNoArchivePartsRemain();
     }
 
+    #[Test]
+    public function a_stored_cue_member_inside_the_downloaded_bytes_is_read_without_another_download(): void
+    {
+        $cue = "FILE \"image.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n";
+        $withCue = $this->sidecarArchive([['name' => 'image.cue', 'size' => strlen($cue), 'compressed' => 0, 'range' => '0-'.(strlen($cue) - 1)]]);
+        $result = $this->fetch($withCue, volumes: 1, downloadData: static fn (): string => $cue.str_repeat('x', 64));
+        $downloadsWithCue = $this->downloads;
+
+        $this->downloads = [];
+        $this->fetch($this->sidecarArchive([]), volumes: 1, downloadData: static fn (): string => $cue.str_repeat('x', 64));
+
+        $this->assertTrue($result->succeeded(), $result->reason);
+        $this->assertSame(['image.cue' => $cue], $result->sidecarBodies);
+        $this->assertSame($this->downloads, $downloadsWithCue, 'the CUE adds no download');
+        $this->assertNoArchivePartsRemain();
+        $this->assertSame([], glob($this->tmpPath.'audio-sidecar-*') ?: []);
+    }
+
+    #[Test]
+    public function a_compressed_cue_member_is_extracted_only_when_its_range_was_downloaded(): void
+    {
+        $cue = "FILE \"image.wav\" WAVE\n";
+        $inside = $this->sidecarArchive([['name' => 'image.cue', 'size' => strlen($cue), 'compressed' => 1, 'range' => '0-9']], extracted: $cue);
+        $past = $this->sidecarArchive([['name' => 'image.cue', 'size' => strlen($cue), 'compressed' => 1, 'range' => '0-999']], extracted: $cue);
+
+        $read = $this->fetch($inside, volumes: 1, downloadData: static fn (): string => str_repeat('x', 64));
+        $skipped = $this->fetch($past, volumes: 1, downloadData: static fn (): string => str_repeat('x', 64));
+
+        $this->assertSame(['image.cue' => $cue], $read->sidecarBodies);
+        $this->assertSame([], $skipped->sidecarBodies);
+        $this->assertTrue($skipped->succeeded(), 'the outcome is unchanged');
+    }
+
+    #[Test]
+    public function a_split_or_partly_downloaded_stored_member_is_skipped(): void
+    {
+        $split = $this->sidecarArchive([['name' => 'image.cue', 'size' => 10, 'compressed' => 0, 'range' => '0-9', 'split' => true]]);
+        $partial = $this->sidecarArchive([['name' => 'rip.log', 'size' => 500, 'compressed' => 0, 'range' => '0-499']]);
+
+        $this->assertSame([], $this->fetch($split, volumes: 1, downloadData: static fn (): string => str_repeat('x', 64))->sidecarBodies);
+        $this->assertSame([], $this->fetch($partial, volumes: 1, downloadData: static fn (): string => str_repeat('x', 64))->sidecarBodies);
+        $this->assertSame([['<vol-1>'], ['<vol-1>']], $this->downloads);
+    }
+
+    /**
+     * One volume listing the sidecar members before a compressed audio member: the real store
+     * carve, extraction faked by name.
+     *
+     * @param  list<array<string, mixed>>  $sidecars
+     */
+    private function sidecarArchive(array $sidecars, ?string $extracted = null): ArchiveExtractionService
+    {
+        $archive = Mockery::mock(ArchiveExtractionService::class)->makePartial();
+        $archive->shouldReceive('listArchiveContentsAtPath')->andReturn([
+            'files' => [...$sidecars, ['name' => '01-image.flac', 'size' => 8]],
+            'hasPassword' => false,
+        ]);
+        $archive->shouldReceive('extractSpecificFileToPath')->andReturnUsing(function (string $archivePath, string $name, string $destination) use ($extracted): ?string {
+            if (str_ends_with($name, '.flac')) {
+                $path = $this->tmpPath.$name;
+                file_put_contents($path, 'abcdefgh');
+
+                return $path;
+            }
+            if ($extracted === null) {
+                return null;
+            }
+            @mkdir($destination, 0777, true);
+            file_put_contents($destination.'/'.$name, $extracted);
+
+            return $destination.'/'.$name;
+        });
+
+        return $archive;
+    }
+
     private function fetch(
         ArchiveExtractionService $archive,
         int $volumes,
@@ -1384,6 +1460,7 @@ class AudioFetcherArchiveTest extends TestCase
         ?UsenetDownloadService $downloadService = null,
         ?Release $release = null,
         float $minimumCompletionPercent = 95,
+        ?callable $downloadData = null,
     ): AudioFetchResult {
         $parts = [];
         foreach (range(1, $volumes) as $volume) {
@@ -1397,6 +1474,7 @@ class AudioFetcherArchiveTest extends TestCase
             mediaContainer: $mediaContainer,
             downloadService: $downloadService,
             minimumCompletionPercent: $minimumCompletionPercent,
+            downloadData: $downloadData,
         )->fetch(
             $release ?? $this->release(),
             $this->archiveSource($parts),

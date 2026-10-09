@@ -50,6 +50,9 @@ final class IdentificationDecisionStoreTest extends TestCase
         });
         $this->identificationMigration()->up();
         $this->migration('*_add_accepted_music_text_to_release_music_identifications.php')->up();
+        foreach (['*_create_musicbrainz_release_group_genres_table.php', '*_create_musicbrainz_release_tracks_table.php', '*_create_musicbrainz_artist_tables.php'] as $pattern) {
+            $this->migration($pattern)->up();
+        }
         Search::spy();
 
         DB::table('releases')->insert(['id' => 10]);
@@ -199,10 +202,13 @@ final class IdentificationDecisionStoreTest extends TestCase
             editionTitle: 'Example Album (Remaster)',
             aliases: ['Alias Album', 'Second Alias'],
             artistCredit: 'Example Artist',
-            trackTitles: ['First Light', 'Last Light'],
-            trackArtistCredits: ['Example Artist', 'Guest Artist'],
             originalReleaseDate: '1980-01-01',
             editionReleaseDate: '2020-01-01',
+            releaseId: 'release-1',
+            tracks: [
+                ['mediumPosition' => 1, 'trackPosition' => 1, 'title' => 'First Light', 'lengthMs' => 180_000, 'artistCredit' => 'Example Artist'],
+                ['mediumPosition' => 1, 'trackPosition' => 2, 'title' => 'Last Light', 'lengthMs' => null, 'artistCredit' => 'Guest Artist'],
+            ],
         );
 
         $identification = (new IdentificationDecisionStore)->persist(10, $this->evidence(), $this->decision('music-identity-v1', acceptedText: $text));
@@ -212,8 +218,12 @@ final class IdentificationDecisionStoreTest extends TestCase
         $this->assertSame('Example Album (Remaster)', $stored->accepted_edition_title);
         $this->assertSame("Alias Album\nSecond Alias", $stored->accepted_aliases);
         $this->assertSame('Example Artist', $stored->accepted_artist_credit);
-        $this->assertSame("First Light\nLast Light", $stored->accepted_track_titles);
-        $this->assertSame("Example Artist\nGuest Artist", $stored->accepted_track_artist_credits);
+        $this->assertSame('release-1', $stored->musicbrainz_release_id);
+        $this->assertSame(
+            [['First Light', 'Example Artist'], ['Last Light', 'Guest Artist']],
+            DB::table('musicbrainz_release_tracks')->where('musicbrainz_release_id', 'release-1')->orderBy('track_position')
+                ->get(['title', 'artist_credit'])->map(static fn (object $row): array => [$row->title, $row->artist_credit])->all(),
+        );
         $this->assertSame('1980-01-01', $stored->original_release_date);
         $this->assertSame('2020-01-01', $stored->edition_release_date);
     }
@@ -227,7 +237,7 @@ final class IdentificationDecisionStoreTest extends TestCase
 
         $stored = ReleaseMusicIdentification::query()->findOrFail($identification->id);
         $this->assertSame('Example Album', $stored->accepted_title);
-        foreach (['accepted_edition_title', 'accepted_aliases', 'accepted_artist_credit', 'accepted_track_titles', 'accepted_track_artist_credits', 'original_release_date', 'edition_release_date'] as $column) {
+        foreach (['accepted_edition_title', 'accepted_aliases', 'accepted_artist_credit', 'original_release_date', 'edition_release_date'] as $column) {
             $this->assertNull($stored->{$column}, $column);
         }
     }

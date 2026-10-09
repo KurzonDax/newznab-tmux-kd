@@ -546,6 +546,13 @@ final class AmbiguousCandidateGatewayFake implements MusicBrainzGateway
         return ReleaseCandidates::empty();
     }
 
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         $this->hydrationRequests[] = $identifiers;
@@ -603,6 +610,13 @@ final class CandidateGeneratorGatewayFake implements MusicBrainzGateway
             'providerScore' => 100,
             'sources' => ['recording_search'],
         ]], 1, ['musicbrainz:response:recording-search']);
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
@@ -683,6 +697,13 @@ final class EmptyCandidateGatewayFake implements MusicBrainzGateway
         return ReleaseCandidates::empty();
     }
 
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         $this->hydrationRequests[] = $identifiers;
@@ -707,6 +728,13 @@ final class CanonicalIdentifierGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return ReleaseCandidates::empty();
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
@@ -748,6 +776,13 @@ final class ConflictingIdentifierGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return ReleaseCandidates::empty();
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
@@ -812,6 +847,13 @@ final class ReleaseGroupConvergenceGatewayFake implements MusicBrainzGateway
         return ReleaseCandidates::empty();
     }
 
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
+    }
+
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
     {
         unset($identifiers);
@@ -851,6 +893,13 @@ final class EvidenceRankingGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return ReleaseCandidates::empty();
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        unset($releaseGroupId);
+
+        return null;
     }
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata

@@ -194,8 +194,8 @@ final class LanguageNames
         return (string) Locale::getDisplayLanguage($code, 'en');
     }
 
-    /** The name folded for matching: lower case, accents dropped from Latin letters. */
-    private static function fold(string $name): string
+    /** The name folded for matching: lower case, accents dropped from Latin letters, other scripts as written. */
+    public static function fold(string $name): string
     {
         $decomposed = Normalizer::normalize($name, Normalizer::FORM_D);
         $bare = (string) preg_replace('/(?<=[A-Za-z])\p{Mn}+/u', '', is_string($decomposed) ? $decomposed : $name);

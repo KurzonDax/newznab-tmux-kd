@@ -75,7 +75,7 @@ DROP TABLE IF EXISTS `audio_genres`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `audio_genres` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag writes it',
+  `name` varchar(100) NOT NULL COMMENT 'A genre name as an audio tag or MusicBrainz writes it',
   PRIMARY KEY (`id`),
   UNIQUE KEY `ux_audio_genres_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
@@ -990,6 +990,53 @@ CREATE TABLE `music_cover_art_lookups` (
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `music_cover_art_lookup_key` (`kind`,`musicbrainz_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `musicbrainz_artist_aliases`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `musicbrainz_artist_aliases` (
+  `musicbrainz_artist_id` char(36) NOT NULL,
+  `position` smallint(5) unsigned NOT NULL COMMENT '0-based, in MusicBrainz response order',
+  `name` text NOT NULL,
+  `type` varchar(16) NOT NULL COMMENT 'artist_name or search_hint',
+  PRIMARY KEY (`musicbrainz_artist_id`,`position`),
+  CONSTRAINT `fk_mb_artist_aliases_artist` FOREIGN KEY (`musicbrainz_artist_id`) REFERENCES `musicbrainz_artists` (`musicbrainz_artist_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `musicbrainz_artists`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `musicbrainz_artists` (
+  `musicbrainz_artist_id` char(36) NOT NULL,
+  `name` text NOT NULL COMMENT 'The artist''s MusicBrainz canonical name',
+  PRIMARY KEY (`musicbrainz_artist_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `musicbrainz_release_group_genres`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `musicbrainz_release_group_genres` (
+  `musicbrainz_release_group_id` char(36) NOT NULL,
+  `audio_genres_id` int(10) unsigned NOT NULL,
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based: vote count highest first, then name A to Z',
+  PRIMARY KEY (`musicbrainz_release_group_id`,`position`),
+  UNIQUE KEY `ux_mb_release_group_genres_genre` (`musicbrainz_release_group_id`,`audio_genres_id`),
+  KEY `fk_mb_release_group_genres_audio_genres_id` (`audio_genres_id`),
+  CONSTRAINT `fk_mb_release_group_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `musicbrainz_release_tracks`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `musicbrainz_release_tracks` (
+  `musicbrainz_release_id` char(36) NOT NULL,
+  `medium_position` smallint(5) unsigned NOT NULL,
+  `track_position` smallint(5) unsigned NOT NULL,
+  `title` text NOT NULL,
+  `length_ms` int(10) unsigned DEFAULT NULL,
+  `artist_credit` text DEFAULT NULL COMMENT 'The credit as printed on the track, join phrases included',
+  PRIMARY KEY (`musicbrainz_release_id`,`medium_position`,`track_position`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `musicinfo`;
@@ -2623,7 +2670,7 @@ DROP TABLE IF EXISTS `release_audio_genres`;
 CREATE TABLE `release_audio_genres` (
   `releases_id` int(10) unsigned NOT NULL,
   `audio_genres_id` int(10) unsigned NOT NULL,
-  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the tag value',
+  `position` tinyint(3) unsigned NOT NULL COMMENT '0-based order of the genre in the release''s genre list',
   PRIMARY KEY (`audio_genres_id`,`releases_id`),
   KEY `ix_release_audio_genres_release` (`releases_id`,`position`),
   CONSTRAINT `fk_release_audio_genres_audio_genres_id` FOREIGN KEY (`audio_genres_id`) REFERENCES `audio_genres` (`id`) ON DELETE CASCADE,
@@ -2766,6 +2813,19 @@ CREATE TABLE `release_music_candidate_attempts` (
   CONSTRAINT `FK_rmca_rmi` FOREIGN KEY (`release_music_identification_id`) REFERENCES `release_music_identifications` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `release_music_identification_artists`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `release_music_identification_artists` (
+  `release_music_identifications_id` bigint(20) unsigned NOT NULL,
+  `position` smallint(5) unsigned NOT NULL COMMENT '0-based, in artist credit order',
+  `musicbrainz_artist_id` char(36) NOT NULL,
+  PRIMARY KEY (`release_music_identifications_id`,`position`),
+  KEY `ix_rmi_artists_artist` (`musicbrainz_artist_id`),
+  CONSTRAINT `FK_rmiart_mb_artist` FOREIGN KEY (`musicbrainz_artist_id`) REFERENCES `musicbrainz_artists` (`musicbrainz_artist_id`),
+  CONSTRAINT `FK_rmiart_rmi` FOREIGN KEY (`release_music_identifications_id`) REFERENCES `release_music_identifications` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_music_identifications`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -2785,8 +2845,6 @@ CREATE TABLE `release_music_identifications` (
   `accepted_edition_title` text DEFAULT NULL,
   `accepted_aliases` text DEFAULT NULL,
   `accepted_artist_credit` text DEFAULT NULL,
-  `accepted_track_titles` text DEFAULT NULL,
-  `accepted_track_artist_credits` text DEFAULT NULL,
   `original_release_date` varchar(10) DEFAULT NULL,
   `edition_release_date` varchar(10) DEFAULT NULL,
   `reasons` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`reasons`)),
@@ -2814,6 +2872,8 @@ CREATE TABLE `release_music_identifications` (
   KEY `release_music_identity_retry` (`state`,`next_attempt_at`),
   KEY `FK_rmi_rae` (`release_audio_evidence_id`),
   KEY `FK_rmi_supersedes` (`supersedes_id`),
+  KEY `release_music_identity_release_group` (`musicbrainz_release_group_id`),
+  KEY `release_music_identity_release` (`musicbrainz_release_id`),
   CONSTRAINT `FK_rmi_rae` FOREIGN KEY (`release_audio_evidence_id`) REFERENCES `release_audio_evidence` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `FK_rmi_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON UPDATE CASCADE
@@ -4261,3 +4321,6 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (317,'2026_10_08_13
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (318,'2026_10_08_140000_add_name_source_to_releases_table',28);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (319,'2026_10_08_140100_create_release_music_renames_table',28);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (320,'2026_10_08_150000_add_acoustic_fingerprints_to_release_audio_evidence_tracks',29);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (321,'2026_10_08_160000_create_musicbrainz_release_group_genres_table',30);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (322,'2026_10_08_160100_create_musicbrainz_release_tracks_table',30);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (323,'2026_10_08_160200_create_musicbrainz_artist_tables',30);

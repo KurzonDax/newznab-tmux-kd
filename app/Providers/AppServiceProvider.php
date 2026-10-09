@@ -45,6 +45,7 @@ use App\Services\MusicIdentity\Gateways\HttpAcoustIdFingerprintMatcher;
 use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
 use App\Services\MusicIdentity\Matching\WholeReleaseAlignmentScorer;
 use App\Services\MusicIdentity\MusicCandidateGenerator;
+use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\NNTP\NntpProviderPool;
@@ -140,7 +141,7 @@ class AppServiceProvider extends ServiceProvider
                 fingerprintDurationToleranceMs: (int) config('music-identity.scoring.fingerprint_duration_tolerance_milliseconds', 10_000),
                 fingerprintDurationToleranceRatio: (float) config('music-identity.scoring.fingerprint_duration_tolerance_ratio', 0.1),
             ),
-            algorithmVersion: (string) config('music-identity.algorithm_version', 'music-identity-v2'),
+            algorithmVersion: MusicIdentityConfiguration::algorithmVersion(),
             resolverVersion: (string) config('music-identity.resolver_version', 'resolver-v1'),
             normalizerVersion: (string) config('music-identity.normalizer_version', 'normalizer-v1'),
             scorerVersion: (string) config('music-identity.scorer_version', 'whole-release-v1'),
@@ -148,6 +149,7 @@ class AppServiceProvider extends ServiceProvider
             minimumAlbumScore: (int) config('music-identity.scoring.minimum_album_score', 92),
             minimumRunnerUpMargin: (int) config('music-identity.scoring.minimum_runner_up_margin', 5),
             fingerprintCandidates: $app->make(AcousticFingerprintCandidates::class),
+            musicBrainz: $app->make(MusicBrainzGateway::class),
         ));
     }
 }

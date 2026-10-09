@@ -30,7 +30,9 @@ Recorded 2026-08-27 during triage of #282: "No API changes to this application E
 ## Exception: search matching on accepted MusicBrainz text
 By explicit maintainer exception, API general search (v1 `t=search`, v2 `/api/v2/search`)
 also matches a release's music text fields (`album_title`, `artist`, `music_tracks`), which
-carry its current accepted MusicBrainz identity (#308); #307 extends the same matching to
+carry its current accepted MusicBrainz identity (#308); for an accepted album, `artist` also
+carries its album artists' MusicBrainz canonical names and their "Artist name" and "Search
+hint" aliases (#313). #307 extends the same matching to
 music search (v1 `t=music`, v2 `/api/v2/audio`). The exception covers which releases match
 only: no route, parameter, field, attribute or value is added to any response, and nothing
 else follows from it.

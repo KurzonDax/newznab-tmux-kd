@@ -46,7 +46,8 @@ namespace App\Services\MusicIdentity\DTO;
  *     barcode: string|null,
  *     labels: list<MusicLabel>,
  *     media: list<MusicMedium>,
- *     aliases?: list<string>
+ *     aliases?: list<string>,
+ *     artists?: list<MusicCreditedArtist>
  * }
  * @phpstan-type MusicReleaseGroup array{
  *     releaseGroupId: string,
@@ -55,8 +56,13 @@ namespace App\Services\MusicIdentity\DTO;
  *     primaryType: string|null,
  *     secondaryTypes: list<string>,
  *     firstReleaseDate: string|null,
- *     aliases?: list<string>
+ *     aliases?: list<string>,
+ *     genres?: list<MusicGenre>,
+ *     artists?: list<MusicCreditedArtist>
  * }
+ * @phpstan-type MusicGenre array{name: string, count: int}
+ * @phpstan-type MusicArtistAlias array{name: string, type: value-of<\App\Services\MusicIdentity\Enums\ArtistAliasType>}
+ * @phpstan-type MusicCreditedArtist array{artistId: string, name: string, aliases: list<MusicArtistAlias>}
  * @phpstan-type MusicArtist array{
  *     artistId: string,
  *     name: string,

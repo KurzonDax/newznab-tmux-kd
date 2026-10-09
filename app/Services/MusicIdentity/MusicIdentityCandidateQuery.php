@@ -25,7 +25,7 @@ final class MusicIdentityCandidateQuery
         string $guidChar = '',
         ?string $algorithmVersion = null,
     ): Builder {
-        $algorithmVersion ??= (string) config('music-identity.algorithm_version', 'music-identity-v2');
+        $algorithmVersion ??= MusicIdentityConfiguration::algorithmVersion();
         $seed = Release::query()->from('releases as r')->select('r.id');
         if ($groupId !== '') {
             $seed->where('r.groups_id', $groupId);

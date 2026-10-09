@@ -75,7 +75,7 @@ final class MusicRenameProjectionTest extends TestCase
         $tables->create('releases');
         $tables->create('usenet_groups', ['id', 'forced_root_categories_id']);
         $tables->create('releases_groups', ['releases_id', 'groups_id']);
-        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_add_accepted_music_text_to_release_music_identifications.php', '*_create_release_music_renames_table.php'] as $pattern) {
+        foreach (['*_create_release_audio_evidence_tables.php', '*_create_release_music_identification_tables.php', '*_add_accepted_music_text_to_release_music_identifications.php', '*_create_musicbrainz_release_group_genres_table.php', '*_create_musicbrainz_release_tracks_table.php', '*_create_musicbrainz_artist_tables.php', '*_create_release_music_renames_table.php'] as $pattern) {
             $this->migration($pattern)->up();
         }
         DB::table('usenet_groups')->insert(['id' => 1]);

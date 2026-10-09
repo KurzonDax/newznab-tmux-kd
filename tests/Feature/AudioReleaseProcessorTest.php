@@ -75,6 +75,9 @@ class AudioReleaseProcessorTest extends TestCase
     /** @var list<list<string>> */
     private array $downloads = [];
 
+    /** @var array<string, array<string, mixed>> a download's result by its first message id; others get the default body */
+    private array $downloadResults = [];
+
     /** @var list<int> */
     private array $timeoutCountsAtDownload = [];
 
@@ -190,6 +193,9 @@ class AudioReleaseProcessorTest extends TestCase
         (require $evidenceMigrations[0])->up();
         ProductionTables::fromAuthority()->create('audio_genres');
         ProductionTables::fromAuthority()->create('release_audio_genres');
+        // The genre rule reads the release's music identity decisions and its album's genres.
+        ProductionTables::fromAuthority()->create('release_music_identifications');
+        ProductionTables::fromAuthority()->create('musicbrainz_release_group_genres');
 
         // The search driver is unreachable in tests and the refinement/rename
         // paths sync through it; swap it out rather than log a page of failures.
@@ -226,8 +232,9 @@ class AudioReleaseProcessorTest extends TestCase
 
         $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
-        // The probe article on its own, then the remaining head in one request.
-        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>']], $this->downloads);
+        // The probe article on its own, then the remaining head in one request; then the
+        // one-article CUE sheet and log, read as evidence (the playlist is not read).
+        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>'], ['<cue>'], ['<log>']], $this->downloads);
 
         $tags = ReleaseAudioTag::query()->where('releases_id', $release->id)->firstOrFail();
         $this->assertSame('Test Album', $tags->album);
@@ -980,6 +987,71 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertSame([[0, 'Rock'], [1, 'Pop']], $this->storedGenres((int) $release->id));
     }
 
+    public function test_only_one_article_cue_sheets_and_rip_logs_are_downloaded_after_the_audio(): void
+    {
+        $release = $this->makeRelease();
+        $processor = $this->makeProcessor($this->taggedContainer(), nzbContents: [
+            ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
+            ['title' => '"Album.cue" yEnc', 'segments' => ['<cue-1>', '<cue-2>']],
+            ['title' => '"Album.log" yEnc', 'segments' => ['<log>']],
+            ['title' => '"Album.m3u" yEnc', 'segments' => ['<playlist>']],
+        ]);
+
+        $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>'], ['<log>']], $this->downloads, 'a multi-article CUE and a playlist are not downloaded');
+    }
+
+    public function test_a_failed_or_oversized_sidecar_changes_nothing_but_a_valid_cue_adds_its_rows(): void
+    {
+        $release = $this->makeRelease();
+        $this->downloadResults = [
+            '<cue>' => ['success' => true, 'data' => "FILE \"01 - track.wav\" WAVE\n TRACK 01 AUDIO\n  TITLE \"Cue Title\"\n  INDEX 01 00:00:00\n",
+                'groupUnavailable' => false, 'error' => null, 'crcFailures' => 0, 'crcFailed' => false],
+            '<log>' => ['success' => false, 'data' => null, 'groupUnavailable' => false, 'error' => 'missing', 'crcFailures' => 1, 'crcFailed' => true],
+            '<big>' => ['success' => true, 'data' => str_repeat('x', 65_536), 'groupUnavailable' => false, 'error' => null, 'crcFailures' => 0, 'crcFailed' => false],
+        ];
+        $processor = $this->makeProcessor($this->taggedContainer(), nzbContents: [
+            ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
+            ['title' => '"Album.cue" yEnc', 'segments' => ['<cue>']],
+            ['title' => '"Album.log" yEnc', 'segments' => ['<log>']],
+            ['title' => '"Big.log" yEnc', 'segments' => ['<big>']],
+        ]);
+
+        $result = $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame(1, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
+        $evidence = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole();
+        $this->assertSame(['Cue Title'], $evidence->tracks()->where('source_kind', 'cue')->pluck('title')->all());
+        $this->assertSame([[], [], []], array_map(static fn (array $entry): array => array_diff_key($entry['facts'] ?? [], ['cue_tracks' => true]), $evidence->sidecar_manifest));
+    }
+
+    public function test_reprocessing_keeps_the_accepted_albums_musicbrainz_genres(): void
+    {
+        $release = $this->makeRelease();
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Rock');
+        $this->makeProcessor($container)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $evidence = DB::table('release_audio_evidence')->where('releases_id', $release->id)->orderByDesc('revision')->first(['id', 'evidence_hash']);
+        $this->assertNotNull($evidence);
+        $group = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        DB::table('release_music_identifications')->insert([
+            'releases_id' => $release->id, 'release_audio_evidence_id' => $evidence->id, 'evidence_hash' => $evidence->evidence_hash,
+            'state' => 'accepted_release_group', 'musicbrainz_release_group_id' => $group,
+            'algorithm_version' => config('music-identity.algorithm_version'),
+        ]);
+        $indieRock = DB::table('audio_genres')->insertGetId(['name' => 'indie rock']);
+        DB::table('musicbrainz_release_group_genres')->insert(['musicbrainz_release_group_id' => $group, 'audio_genres_id' => $indieRock, 'position' => 0]);
+
+        $container = $this->taggedContainer();
+        $container->getGeneral()?->set('genre', 'Jazz');
+        $this->makeProcessor($container)->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame('Jazz', ReleaseAudioTag::query()->where('releases_id', $release->id)->value('genre'));
+        $this->assertSame([[0, 'indie rock']], $this->storedGenres((int) $release->id));
+    }
+
     public function test_reprocessing_a_release_replaces_its_genre_rows(): void
     {
         $release = $this->makeRelease();
@@ -1091,7 +1163,7 @@ class AudioReleaseProcessorTest extends TestCase
                     ->where('id', 1)
                     ->value('pp_timeout_count');
 
-                return $downloadResult ?? [
+                return $downloadResult ?? $this->downloadResults[$messageIds[0] ?? ''] ?? [
                     'success' => true,
                     'data' => str_repeat('x', 2048),
                     'groupUnavailable' => false,

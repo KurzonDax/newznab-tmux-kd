@@ -44,20 +44,40 @@ final class ReleaseIndexProjection
             ? 'NULLIF(TRIM(COALESCE('.implode(", '') || ' ' || COALESCE(", $columns).", '')), '')"
             : "NULLIF(CONCAT_WS(' ', ".implode(', ', $columns).'), \'\')';
         // Text of the current accepted MusicBrainz decision (issue #308): an accepted album's
-        // title, aliases, artist credit and tracks; an accepted recording's title (as a track)
-        // and artist credit, beside the legacy musicinfo artist so its matches stay valid.
-        // Without one, album_title and artist stay the musicinfo text.
-        $albumStates = "'".IdentificationStatus::AcceptedReleaseGroup->value."', '".IdentificationStatus::AcceptedEdition->value."'";
+        // title, aliases, artist credit (with its artists' MusicBrainz names and aliases, #313)
+        // and tracks; an accepted recording's title (as a track) and artist credit, beside the
+        // legacy musicinfo artist so its matches stay valid.
+        // Without one, album_title and artist stay the musicinfo text. An accepted album's
+        // tracks are the track titles and distinct track artist credits stored once for the
+        // release it names (musicbrainz_release_tracks, issue #313), read by correlated scalar
+        // subqueries on that table's key: a grouped derived-table join would rebuild the whole
+        // aggregate for every populate chunk.
+        $albumStates = "'".implode("', '", IdentificationStatus::albumValues())."'";
         $recordingState = "'".IdentificationStatus::AcceptedRecording->value."'";
         $musicAlbumTitle = "COALESCE(CASE WHEN mbi.state IN ({$albumStates}) THEN "
             .$join('mbi.accepted_title', 'NULLIF(mbi.accepted_edition_title, mbi.accepted_title)', 'mbi.accepted_aliases')
             .' END, musicinfo.title)';
-        $musicTracks = "COALESCE(CASE WHEN mbi.state = {$recordingState} THEN mbi.accepted_title ELSE "
-            .$join('mbi.accepted_track_titles', 'mbi.accepted_track_artist_credits')
+        // A correlated scalar subquery joining one column's values with spaces. SQLite's GROUP_CONCAT
+        // takes no separator beside DISTINCT, so a distinct list aggregates a SELECT DISTINCT.
+        $spaced = static fn (string $column, string $from, bool $distinct = false): string => match (true) {
+            ! $isSqlite => '(SELECT GROUP_CONCAT('.($distinct ? 'DISTINCT ' : '')."{$column} SEPARATOR ' ') {$from})",
+            $distinct => "(SELECT GROUP_CONCAT(spaced.value, ' ') FROM (SELECT DISTINCT {$column} AS value {$from}) spaced)",
+            default => "(SELECT GROUP_CONCAT({$column}, ' ') {$from})",
+        };
+        $albumTracks = 'FROM musicbrainz_release_tracks mrt WHERE mrt.musicbrainz_release_id = mbi.musicbrainz_release_id';
+        $musicTracks = "COALESCE(CASE WHEN mbi.state = {$recordingState} THEN mbi.accepted_title WHEN mbi.state IN ({$albumStates}) THEN "
+            .$join($spaced('mrt.title', $albumTracks), $spaced('mrt.artist_credit', $albumTracks, distinct: true))
             ." END, '')";
+        // An accepted album's artist is its credit, then its linked artists' canonical names and
+        // their "Artist name" and "Search hint" aliases (issue #313), read the same way on the link
+        // table's key; with none of the three it stays the musicinfo artist.
+        $albumArtistNames = $spaced('mba.name', 'FROM release_music_identification_artists rmia JOIN musicbrainz_artists mba ON mba.musicbrainz_artist_id = rmia.musicbrainz_artist_id WHERE rmia.release_music_identifications_id = mbi.id');
+        $albumArtistAliases = $spaced('mbaa.name', 'FROM release_music_identification_artists rmia JOIN musicbrainz_artist_aliases mbaa ON mbaa.musicbrainz_artist_id = rmia.musicbrainz_artist_id WHERE rmia.release_music_identifications_id = mbi.id');
         $musicArtist = "CASE WHEN mbi.state = {$recordingState} THEN "
             .$join('mbi.accepted_artist_credit', 'musicinfo.artist')
-            .' ELSE COALESCE(mbi.accepted_artist_credit, musicinfo.artist) END';
+            ." WHEN mbi.state IN ({$albumStates}) THEN COALESCE("
+            .$join('mbi.accepted_artist_credit', $albumArtistNames, $albumArtistAliases)
+            .', musicinfo.artist) ELSE musicinfo.artist END';
 
         return DB::table('releases as r')
             ->leftJoin('usenet_groups as g', 'g.id', '=', 'r.groups_id')

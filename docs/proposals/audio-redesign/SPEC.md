@@ -167,13 +167,18 @@ tags' album, album artist or performer**, as typed (today's Covers search matche
 
 ### 5.8 The Genre column and menu
 
-- **Genre column**: the release's tag genres as one comma list (dim, wrapping, at most four lines, the full list on
-  hover); "—" when the tags give none.
+- **Genre column**: the release's genres as one comma list (dim, wrapping, at most four lines, the full list on
+  hover): the accepted MusicBrainz album's genres in vote order when MusicBrainz lists any, else its tag genres; "—"
+  when there are none.
 - A tag genre is taken **as written**; a tag holding several genres, joined with `;` or with ` / ` (a slash with a space
   on each side, as the tag values on production join them), is several genres; an unspaced slash (`Pop/Rock`) is part of
   one genre's name; no other cleaning (the maintainer's rule for display values: one structural rule, no junk filters).
-- **Genre menu**: the genres the band's releases have, A to Z ignoring case, then **Unknown** for releases with no genre
-  tag. A tag that literally reads "Unknown" is that item, not a genre of its own. OR within the menu; it searches inside
+- An accepted MusicBrainz album's genres (issue #313) are the release group's MusicBrainz genre names as MusicBrainz
+  writes them (lower case), highest vote count first, then A to Z; a name equal to a stored one ignoring case shows the
+  stored spelling. Only a release whose current music identity accepts an album (release group or edition) takes them;
+  a recording-only acceptance changes nothing, and the tag genres stay the fallback.
+- **Genre menu**: the genres the band's releases have, A to Z ignoring case, then **Unknown** for releases with no
+  genre. A tag that literally reads "Unknown" is that item, not a genre of its own. OR within the menu; it searches inside
   itself (over ten options); each option sits on one line.
 
 ### 5.9 The Year menu
@@ -207,7 +212,7 @@ The Books / PC release-details page (Books / Console / PC `SPEC.md` 5A):
 - **Tabs**: Overview, **Tracks (N)** only when a track list is stored (5C.2), Files (N), **Media info** only when the
   release has media info, NFO, Comments (N). A remembered tab that is absent falls back to Overview.
 - **Overview**: the preview (5C.1) when the release has one, then the facts grid (Category, Genre, Size, Files,
-  Completion, Posted, Added, Grabs, Group, Poster, Password status; Genre reads the tag genres or "—"), then the PreDB
+  Completion, Posted, Added, Grabs, Group, Poster, Password status; Genre reads the release's genres (5.8) or "—"), then the PreDB
   block when the release has a match.
 - **Similar releases**: today's query, within the band, newest posted first, at most 50, without this release; the table
   of Books / Console / PC 5A. No section when nothing matches.
@@ -265,7 +270,8 @@ not preferred."
 ### 5C.2 The Tracks tab
 
 - Shown only when the release has a complete stored track list in its newest audio evidence revision: the archive
-  listing when the revision marks it complete, else the NZB's audio files. A partial list (an archive listing not marked
+  listing when the revision marks it complete, else the NZB's audio files; else, when the release's current music
+  identity accepts an album, the accepted MusicBrainz release's stored track list (issue #313). A partial list (an archive listing not marked
   complete, the release's files, the one sampled file) is not shown: the preview step reads only the archive volumes it
   needs for one playable file, so those lists hold a few tracks of the album (the maintainer's decision, 2026-10-04).
 - A dim line with the total length when every track's length is stored; then a table **#, Title, Length** (Length only
@@ -273,7 +279,8 @@ not preferred."
   each disc when the tracks span more than one disc.
 - One structural rule for a title: the track's title tag, else the file name without its folders and extension, without
   a leading track number the # column already shows ("104 - Catapult" → "Catapult"). No other cleaning. Track numbers
-  are shown as stored (a tag of 102 stays 102).
+  are shown as stored (a tag of 102 stays 102). The rule is for our own files only: MusicBrainz titles are shown exactly
+  as MusicBrainz has them, the # column shows the MusicBrainz track position, and the disc is the medium position.
 
 ### 5C.3 Media info: Title instead of Language (his ruling, 2026-10-04)
 
@@ -323,8 +330,10 @@ To be proven in the data contract at full catalogue size before any build issue:
   that matches nothing.
 - Per row: the tags' artist, album, year, genres and preview flag for a page of 50 without a per-row query.
 - **Genres stored one row per genre**, as TV, Movies and Console store theirs (the maintainer's rule: normalize), written
-  where the tags are written, existing rows filled by the migration.
-- Details: the tag row; the track list of the newest evidence revision; the accepted MusicBrainz release group; the
+  where the tags are written and where a music identity decision is written (issue #313), existing rows filled by the
+  migration.
+- Details: the tag row; the track list of the newest evidence revision, else the accepted album's stored MusicBrainz
+  track list; the accepted MusicBrainz release group; the
   album's releases, newest posted first, paged, with their count.
 - Media info presence per release without loading the media info (today's loaders).
 - Remembered filters and the sort: beside the other roots in `users.view_prefs`.

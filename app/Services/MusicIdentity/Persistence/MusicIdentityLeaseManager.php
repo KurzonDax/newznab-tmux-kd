@@ -8,6 +8,7 @@ use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
+use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,7 @@ final class MusicIdentityLeaseManager
     ): ?ReleaseMusicIdentification {
         return DB::transaction(function () use ($evidence, $workerToken): ?ReleaseMusicIdentification {
             $lockedEvidence = ReleaseAudioEvidence::query()->lockForUpdate()->findOrFail($evidence->id);
-            $algorithmVersion = (string) config('music-identity.algorithm_version', 'music-identity-v2');
+            $algorithmVersion = MusicIdentityConfiguration::algorithmVersion();
             $identification = ReleaseMusicIdentification::query()
                 ->where('releases_id', $lockedEvidence->releases_id)
                 ->where('evidence_hash', $lockedEvidence->evidence_hash)

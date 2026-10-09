@@ -24,6 +24,8 @@ final readonly class AudioEvidenceSet
         public ?string $primaryType = null,
         /** @var list<string> */
         public array $secondaryTypes = [],
+        /** @var list<array{discId: string, provenanceFamily: string}> the revision's rip-log disc IDs (issue #313) */
+        public array $ripLogDiscIds = [],
     ) {}
 
     public function albumProvenanceFamily(): string

@@ -6,7 +6,9 @@ namespace App\Services\MusicIdentity\Gateways;
 
 use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\Enums\ArtistAliasType;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
+use App\Support\LanguageNames;
 
 /**
  * Turns accepted MusicBrainz responses into the module's stable schema.
@@ -15,6 +17,8 @@ use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
  * @phpstan-import-type MusicRecording from CandidateMetadata
  * @phpstan-import-type MusicRelease from CandidateMetadata
  * @phpstan-import-type MusicReleaseGroup from CandidateMetadata
+ * @phpstan-import-type MusicGenre from CandidateMetadata
+ * @phpstan-import-type MusicCreditedArtist from CandidateMetadata
  * @phpstan-import-type MusicArtist from CandidateMetadata
  * @phpstan-import-type ReleaseCandidate from ReleaseCandidates
  */
@@ -148,6 +152,7 @@ final class MusicBrainzNormalizer
             'labels' => $labels,
             'media' => $media,
             'aliases' => $this->aliasNames($raw),
+            'artists' => $this->creditedArtists($raw['artist-credit'] ?? []),
         ];
     }
 
@@ -183,7 +188,29 @@ final class MusicBrainzNormalizer
             'secondaryTypes' => $this->stringList($raw['secondary-types'] ?? [], 'release group secondary types'),
             'firstReleaseDate' => $this->nullableString($raw['first-release-date'] ?? null, 'release group first release date'),
             'aliases' => $this->aliasNames($raw),
+            'genres' => $this->genres($raw),
+            'artists' => $this->creditedArtists($raw['artist-credit'] ?? []),
         ];
+    }
+
+    /**
+     * The release group's MusicBrainz genres with their vote counts, as listed; none without `genres`.
+     *
+     * @param  array<string, mixed>  $raw
+     * @return list<MusicGenre>
+     */
+    private function genres(array $raw): array
+    {
+        $genres = [];
+        foreach ($this->list($raw, 'genres') as $genre) {
+            $genre = $this->object($genre, 'genre');
+            $genres[] = [
+                'name' => $this->requiredString($genre, 'name'),
+                'count' => $this->nullableInteger($genre['count'] ?? null, 'genre vote count') ?? 0,
+            ];
+        }
+
+        return $genres;
     }
 
     /** @param array<string, mixed> $raw
@@ -318,6 +345,50 @@ final class MusicBrainzNormalizer
         }
 
         return array_values(array_unique($strings));
+    }
+
+    /**
+     * The artists of a release's or release group's artist credit, in credit order (issue #313):
+     * each one's MBID, canonical name and its "Artist name" and "Search hint" aliases, read as
+     * aliasNames() reads them. Another type, no type, or a name that folds (LanguageNames::fold())
+     * to the canonical name or an alias already kept is left out.
+     *
+     * @return list<MusicCreditedArtist>
+     */
+    private function creditedArtists(mixed $value): array
+    {
+        if ($value === null || $value === [] || ! is_array($value) || ! array_is_list($value)) {
+            return [];
+        }
+
+        $artists = [];
+        foreach ($value as $item) {
+            $item = $this->object($item, 'artist credit');
+            $artist = $item['artist'] ?? null;
+            $artist = $artist === null ? null : $this->object($artist, 'artist credit artist');
+            $artistId = $artist === null ? null : $this->nullableString($artist['id'] ?? null, 'artist id');
+            $name = $artist === null ? null : $this->nullableString($artist['name'] ?? null, 'artist name');
+            if ($artistId === null || $name === null) {
+                continue;
+            }
+
+            $seen = [LanguageNames::fold($name) => true];
+            $aliases = [];
+            foreach ($this->list($artist, 'aliases') as $alias) {
+                $alias = $this->object($alias, 'alias');
+                $aliasName = $this->requiredString($alias, 'name');
+                $type = ArtistAliasType::fromMusicBrainz($this->nullableString($alias['type'] ?? null, 'alias type'));
+                $folded = LanguageNames::fold($aliasName);
+                if ($type === null || isset($seen[$folded])) {
+                    continue;
+                }
+                $seen[$folded] = true;
+                $aliases[] = ['name' => $aliasName, 'type' => $type->value];
+            }
+            $artists[] = ['artistId' => $artistId, 'name' => $name, 'aliases' => $aliases];
+        }
+
+        return $artists;
     }
 
     private function artistCredit(mixed $value): ?string

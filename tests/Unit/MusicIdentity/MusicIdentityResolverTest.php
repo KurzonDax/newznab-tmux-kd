@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace Tests\Unit\MusicIdentity;
 
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
+use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateHypothesis;
+use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
 use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\CandidatePool;
 use App\Services\MusicIdentity\DTO\CandidateSignal;
+use App\Services\MusicIdentity\DTO\RecordingCandidates;
+use App\Services\MusicIdentity\DTO\RecordingQuery;
+use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
 use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
 use App\Services\MusicIdentity\Enums\CandidateSignalKind;
@@ -826,6 +832,134 @@ final class MusicIdentityResolverTest extends TestCase
     }
 
     #[Test]
+    public function an_accepted_release_group_names_the_aligned_release_and_carries_its_track_list(): void
+    {
+        $aligned = $this->albumCandidate(['Rare One', 'Rare Two', 'Rare Three'], $this->recordingSignals(3));
+        $other = $this->albumCandidate(['Other One', 'Other Two'], [], releaseId: '44444444-4444-4444-8444-444444444444');
+        $candidate = new CandidateHypothesis(
+            new CandidateIdentity(releaseGroupId: self::RELEASE_GROUP_ID),
+            new CandidateMetadata([], [...$other->metadata->releases, ...$aligned->metadata->releases], $aligned->metadata->releaseGroups),
+            $aligned->signals,
+        );
+
+        $decision = $this->resolver([$candidate])->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Rare One', 'Example Artist', 180_000),
+            new TrackEvidence(2, 'tag', 2, '02.flac', 'Rare Two', 'Example Artist', 210_000),
+            new TrackEvidence(3, 'tag', 3, '03.flac', 'Rare Three', 'Example Artist', 210_000),
+        ], year: null));
+
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $decision->status);
+        $this->assertNull($decision->acceptedIdentity?->releaseId, 'the accepted identity stays the release group');
+        $this->assertSame(self::RELEASE_ID, $decision->acceptedText?->releaseId);
+        $this->assertSame([
+            ['mediumPosition' => 1, 'trackPosition' => 1, 'title' => 'Rare One', 'lengthMs' => 180_000, 'artistCredit' => 'Example Artist'],
+            ['mediumPosition' => 1, 'trackPosition' => 2, 'title' => 'Rare Two', 'lengthMs' => 210_000, 'artistCredit' => 'Example Artist'],
+            ['mediumPosition' => 1, 'trackPosition' => 3, 'title' => 'Rare Three', 'lengthMs' => 210_000, 'artistCredit' => 'Example Artist'],
+        ], $decision->acceptedText->tracks);
+    }
+
+    #[Test]
+    public function an_accepted_release_group_carries_its_release_groups_genres_from_one_lookup(): void
+    {
+        $gateway = new GenreLookupGatewayFake($this->genreGroup([['name' => 'rock', 'count' => 5], ['name' => 'new wave', 'count' => 2]]));
+        $candidate = $this->albumCandidate(['Rare One', 'Rare Two', 'Rare Three'], $this->recordingSignals(3));
+
+        $decision = $this->resolverWithGateway([$candidate], $gateway)->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Rare One', 'Example Artist', 180_000),
+            new TrackEvidence(2, 'tag', 2, '02.flac', 'Rare Two', 'Example Artist', 210_000),
+            new TrackEvidence(3, 'tag', 3, '03.flac', 'Rare Three', 'Example Artist', 210_000),
+        ], year: null));
+
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $decision->status);
+        $this->assertSame([self::RELEASE_GROUP_ID], $gateway->lookups);
+        $this->assertSame([['name' => 'rock', 'count' => 5], ['name' => 'new wave', 'count' => 2]], $decision->releaseGroupGenres);
+    }
+
+    #[Test]
+    public function an_accepted_edition_takes_its_release_groups_genres_not_its_own(): void
+    {
+        $gateway = new GenreLookupGatewayFake($this->genreGroup([['name' => 'synth-pop', 'count' => 3]]));
+        $candidate = $this->albumCandidate(
+            titles: ['First Light', 'Last Light'],
+            signals: [new CandidateSignal(
+                CandidateSignalKind::EmbeddedReleaseId,
+                self::RELEASE_ID,
+                'tag-file:1',
+                true,
+                new CandidateIdentity(releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID),
+            )],
+        );
+
+        $decision = $this->resolverWithGateway([$candidate], $gateway)->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01 - First Light.flac', 'First Light', 'Example Artist', 180_000, releaseId: self::RELEASE_ID),
+            new TrackEvidence(2, 'tag', 2, '02 - Last Light.flac', 'Last Light', 'Example Artist', 210_000, releaseId: self::RELEASE_ID),
+        ]));
+
+        $this->assertSame(IdentificationStatus::AcceptedEdition, $decision->status);
+        $this->assertSame([self::RELEASE_GROUP_ID], $gateway->lookups);
+        $this->assertSame([['name' => 'synth-pop', 'count' => 3]], $decision->releaseGroupGenres);
+    }
+
+    #[Test]
+    public function a_release_group_lookup_without_genres_or_without_a_group_gives_none(): void
+    {
+        $candidate = $this->albumCandidate(['Rare One', 'Rare Two', 'Rare Three'], $this->recordingSignals(3));
+        $evidence = $this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Rare One', 'Example Artist', 180_000),
+            new TrackEvidence(2, 'tag', 2, '02.flac', 'Rare Two', 'Example Artist', 210_000),
+            new TrackEvidence(3, 'tag', 3, '03.flac', 'Rare Three', 'Example Artist', 210_000),
+        ], year: null);
+
+        $withoutGenres = $this->resolverWithGateway([$candidate], new GenreLookupGatewayFake($this->genreGroup(null)))->resolve($evidence);
+        $withoutGroup = $this->resolverWithGateway([$candidate], new GenreLookupGatewayFake(null))->resolve($evidence);
+
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $withoutGenres->status);
+        $this->assertSame([], $withoutGenres->releaseGroupGenres);
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $withoutGroup->status);
+        $this->assertSame([], $withoutGroup->releaseGroupGenres);
+    }
+
+    #[Test]
+    public function a_failed_genre_lookup_makes_the_attempt_retryable(): void
+    {
+        $gateway = new GenreLookupGatewayFake(null, fails: true);
+        $candidate = $this->albumCandidate(['Rare One', 'Rare Two', 'Rare Three'], $this->recordingSignals(3));
+
+        $decision = $this->resolverWithGateway([$candidate], $gateway)->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Rare One', 'Example Artist', 180_000),
+            new TrackEvidence(2, 'tag', 2, '02.flac', 'Rare Two', 'Example Artist', 210_000),
+            new TrackEvidence(3, 'tag', 3, '03.flac', 'Rare Three', 'Example Artist', 210_000),
+        ], year: null));
+
+        $this->assertSame(IdentificationStatus::RetryableError, $decision->status);
+        $this->assertNull($decision->acceptedIdentity);
+        $this->assertNull($decision->acceptedText);
+        $this->assertNull($decision->releaseGroupGenres);
+        $this->assertSame('provider_retryable_error', $decision->reasons[0]->code);
+    }
+
+    #[Test]
+    public function a_recording_acceptance_makes_no_release_group_lookup(): void
+    {
+        $gateway = new GenreLookupGatewayFake($this->genreGroup([['name' => 'rock', 'count' => 5]]));
+        $recordingId = '22222222-2222-4222-8222-000000000001';
+        $identity = new CandidateIdentity(recordingId: $recordingId, releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID);
+        $candidate = $this->albumCandidate(
+            ['Recorded Track'],
+            [new CandidateSignal(CandidateSignalKind::Isrc, 'USABC2012345', 'tag-file:1', true, $identity)],
+            identity: $identity,
+        );
+
+        $decision = $this->resolverWithGateway([$candidate], $gateway)->resolve($this->evidence([
+            new TrackEvidence(1, 'tag', 1, '01.flac', 'Recorded Track', 'Example Artist', 180_000, isrc: 'USABC2012345'),
+        ], complete: false));
+
+        $this->assertSame(IdentificationStatus::AcceptedRecording, $decision->status);
+        $this->assertSame([], $gateway->lookups);
+        $this->assertNull($decision->releaseGroupGenres);
+    }
+
+    #[Test]
     public function an_accepted_edition_carries_its_album_text_and_keeps_original_and_edition_dates_apart(): void
     {
         $candidate = $this->albumCandidate(
@@ -854,8 +988,9 @@ final class MusicIdentityResolverTest extends TestCase
         $this->assertSame('Example Album', $text->editionTitle);
         $this->assertSame(['Alias Album'], $text->aliases);
         $this->assertSame('Example Artist', $text->artistCredit);
-        $this->assertSame(['First Light', 'Last Light'], $text->trackTitles);
-        $this->assertSame(['Example Artist'], $text->trackArtistCredits);
+        $this->assertSame(self::RELEASE_ID, $text->releaseId);
+        $this->assertSame(['First Light', 'Last Light'], array_column($text->tracks, 'title'));
+        $this->assertSame(['Example Artist', 'Example Artist'], array_column($text->tracks, 'artistCredit'));
         $this->assertSame('1980-01-01', $text->originalReleaseDate);
         $this->assertSame('2020-01-01', $text->editionReleaseDate);
     }
@@ -877,7 +1012,7 @@ final class MusicIdentityResolverTest extends TestCase
         $this->assertSame(AcceptedIdentityScope::ReleaseGroup, $text->scope);
         $this->assertSame('Example Album', $text->title);
         $this->assertNull($text->editionTitle);
-        $this->assertSame(['Rare One', 'Rare Two', 'Rare Three'], $text->trackTitles);
+        $this->assertSame(['Rare One', 'Rare Two', 'Rare Three'], array_column($text->tracks, 'title'));
         $this->assertSame('1980-01-01', $text->originalReleaseDate);
         $this->assertNull($text->editionReleaseDate);
     }
@@ -932,8 +1067,8 @@ final class MusicIdentityResolverTest extends TestCase
         $this->assertSame('Example Artist', $text->artistCredit);
         $this->assertNull($text->editionTitle);
         $this->assertSame([], $text->aliases);
-        $this->assertSame([], $text->trackTitles);
-        $this->assertSame([], $text->trackArtistCredits);
+        $this->assertNull($text->releaseId);
+        $this->assertSame([], $text->tracks);
         $this->assertNull($text->originalReleaseDate);
         $this->assertNull($text->editionReleaseDate);
     }
@@ -1071,6 +1206,26 @@ final class MusicIdentityResolverTest extends TestCase
     {
         return new MusicIdentityResolver(new FixedCandidateGenerator(new CandidatePool($candidates)));
     }
+
+    /** @param list<CandidateHypothesis> $candidates */
+    private function resolverWithGateway(array $candidates, MusicBrainzGateway $gateway): MusicIdentityResolver
+    {
+        return new MusicIdentityResolver(new FixedCandidateGenerator(new CandidatePool($candidates)), musicBrainz: $gateway);
+    }
+
+    /**
+     * The looked-up release group; null genres means the payload listed none.
+     *
+     * @param  list<array{name: string, count: int}>|null  $genres
+     * @return array<string, mixed>
+     */
+    private function genreGroup(?array $genres): array
+    {
+        return [
+            'releaseGroupId' => self::RELEASE_GROUP_ID, 'title' => 'Example Album', 'artistCredit' => 'Example Artist',
+            'primaryType' => 'Album', 'secondaryTypes' => [], 'firstReleaseDate' => null, 'aliases' => [], 'genres' => $genres ?? [],
+        ];
+    }
 }
 
 final readonly class FixedCandidateGenerator implements CandidateGenerator
@@ -1092,5 +1247,46 @@ final readonly class ThrowingCandidateGenerator implements CandidateGenerator
         unset($evidence);
 
         throw new MusicBrainzGatewayException('mirror unavailable');
+    }
+}
+
+final class GenreLookupGatewayFake implements MusicBrainzGateway
+{
+    /** @var list<string> */
+    public array $lookups = [];
+
+    /** @param array<string, mixed>|null $releaseGroup */
+    public function __construct(private readonly ?array $releaseGroup, private readonly bool $fails = false) {}
+
+    public function candidatesFor(RecordingQuery $query): RecordingCandidates
+    {
+        unset($query);
+
+        return RecordingCandidates::empty();
+    }
+
+    public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
+    {
+        unset($query);
+
+        return ReleaseCandidates::empty();
+    }
+
+    public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
+    {
+        unset($identifiers);
+
+        return CandidateMetadata::empty();
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        $this->lookups[] = $releaseGroupId;
+        if ($this->fails) {
+            throw new MusicBrainzGatewayException('MusicBrainz returned HTTP 503.');
+        }
+
+        /** @phpstan-ignore return.type (a frozen release group payload, normalized by hand) */
+        return $this->releaseGroup;
     }
 }
