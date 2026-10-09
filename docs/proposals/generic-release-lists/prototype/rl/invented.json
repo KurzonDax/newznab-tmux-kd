@@ -1,0 +1,25 @@
+{
+ "_note": "INVENTED for the mockup: the lab copy has no release reports and no comments. reports = open reports per release, responses = a public staff response exists, comments = comment counts.",
+ "reports": {
+  "7503282": 3,
+  "7501509": 1,
+  "7502397": 1,
+  "7500900": 3,
+  "7501945": 2,
+  "7500860": 2
+ },
+ "responses": {
+  "7502397": 1,
+  "7500900": 1,
+  "7501945": 1,
+  "7500860": 1
+ },
+ "comments": {
+  "7500900": 4,
+  "7501945": 4,
+  "7500860": 7,
+  "7501456": 7,
+  "7503281": 7,
+  "7503243": 1
+ }
+}
