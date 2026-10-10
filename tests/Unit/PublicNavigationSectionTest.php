@@ -31,6 +31,8 @@ final class PublicNavigationSectionTest extends TestCase
         yield 'all releases' => ['/browse/all', null, BrowseRoot::All];
         yield 'all releases, capitalised' => ['/browse/All', null, BrowseRoot::All];
         yield 'group redirect' => ['/browse/group', null, BrowseRoot::All];
+        yield 'poster list' => ['/poster?name=x', null, BrowseRoot::All];
+        yield 'other list' => ['/browse/other', null, BrowseRoot::Other];
         yield 'tv release details' => ['/details/abc', 5030, BrowseRoot::Tv];
         yield 'movie release details' => ['/details/abc', 2040, BrowseRoot::Movies];
         yield 'adult release details' => ['/details/abc', 6010, BrowseRoot::Adult];

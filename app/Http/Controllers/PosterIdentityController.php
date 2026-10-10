@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Data\ReleaseBrowserState;
-use App\Enums\BrowseRoot;
 use App\Http\Requests\Admin\StorePosterIdentityBlacklistRequest;
 use App\Services\BlacklistSweepService;
 use App\Services\PosterIdentityBlacklistService;
 use App\Services\PosterIdentityBrowserContext;
-use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\View\View;
 use RuntimeException;
 
+/**
+ * An administrator's blacklist action on a poster's list (docs/proposals/generic-release-lists/SPEC.md
+ * 5.8); the list itself is GenericReleasesController::poster(). A started sweep is reported only
+ * in the list's pager line (the run the start returned, kept in the session with the rule and
+ * the exact poster), never doubled by a flash; a sweep not started or unable to start stays a
+ * flash message.
+ */
 final class PosterIdentityController extends BasePageController
 {
     public function __construct(
@@ -24,27 +25,6 @@ final class PosterIdentityController extends BasePageController
         private readonly BlacklistSweepService $blacklistSweeps,
     ) {
         parent::__construct();
-    }
-
-    /**
-     * @throws \Exception
-     */
-    public function __invoke(Request $request): View|RedirectResponse
-    {
-        $state = ReleaseBrowserState::fromRequest($request, BrowseRoot::All, $this->userdata);
-        $posterIdentity = $state->posterIdentity;
-        $results = $posterIdentity === ''
-            ? new LengthAwarePaginator([], 0, $state->per, 1, ['path' => $request->url(), 'query' => $request->query()])
-            : app(ReleaseBrowserQuery::class)->paginate($state, $this->userdata);
-        if ($state->page > $results->lastPage()) {
-            return redirect()->to($state->pageUrl($request, $results->lastPage()));
-        }
-        $context = app(PosterIdentityBrowserContext::class)->forIdentity($posterIdentity, $this->userdata, $request->session()->get('poster_identity_blacklist_sweep_started') === true);
-
-        return view('poster-identity.index', array_merge($this->viewData, $context, [
-            'results' => $results, 'browserState' => $state,
-            'meta_title' => $posterIdentity === '' ? 'Posted By' : 'Posts by '.$posterIdentity,
-        ]));
     }
 
     public function storeBlacklist(StorePosterIdentityBlacklistRequest $request): RedirectResponse
@@ -57,26 +37,17 @@ final class PosterIdentityController extends BasePageController
             (string) $validated['preview_token'],
         );
         $ruleId = (int) $rule->id;
-        $message = 'Rule #'.$ruleId.' added · sweep not started';
-        $sweepStarted = false;
+        $redirect = redirect()->route('poster-identity', ['name' => $posterIdentity]);
 
-        if ($request->boolean('delete_releases')) {
-            try {
-                $this->blacklistSweeps->start('delete', $ruleId);
-                $message = 'Rule #'.$ruleId.' added · sweep started';
-                $sweepStarted = true;
-            } catch (RuntimeException) {
-                $message = 'Rule #'.$ruleId.' added · sweep could not start';
-            }
+        if (! $request->boolean('delete_releases')) {
+            return $redirect->with('success', 'Rule #'.$ruleId.' added · sweep not started');
         }
-
-        $redirect = redirect()
-            ->route('poster-identity', ['name' => $posterIdentity])
-            ->with('success', $message);
-
-        if ($sweepStarted) {
-            $redirect->with('poster_identity_blacklist_sweep_started', true);
+        try {
+            $run = $this->blacklistSweeps->start('delete', $ruleId);
+        } catch (RuntimeException) {
+            return $redirect->with('success', 'Rule #'.$ruleId.' added · sweep could not start');
         }
+        $request->session()->put(PosterIdentityBrowserContext::SESSION_KEY, ['run' => $run['id'], 'rule' => $ruleId, 'poster' => $posterIdentity]);
 
         return $redirect;
     }

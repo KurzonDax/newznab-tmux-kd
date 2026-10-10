@@ -24,7 +24,10 @@ use Illuminate\Support\Facades\DB;
  * exactly, menus it leaves empty included. A value no longer in its menu is dropped, except a
  * sleeping Exclude Other mode (ReleaseListFilters::EXCLUDE_OTHER), which is kept. A refresh sends the time it was made (STAMP, from the
  * page's data-filters-clock), so a refresh the server finishes after a newer change never
- * replaces it. Clear all (?clear) forgets the set and opens the bare list.
+ * replaces it. Clear all (?clear) forgets the set and opens the bare list, keeping the list's
+ * identity ($context: a group, a poster, the Following scope, a route segment). A carried key
+ * may displace stored keys on recall ($overrides: today's `minc` links supply the completion
+ * threshold before a saved Completion value, issue #1032).
  */
 final readonly class RememberedListFilters
 {
@@ -41,8 +44,13 @@ final readonly class RememberedListFilters
      * @param  list<string>  $carried  URL keys that are not remembered and never decide whether the
      *                                 URL carries filters, yet travel through a bare open's redirect
      *                                 (the Adult name search)
+     * @param  array<string, string|int>  $context  route parameters that identify the list: kept by Clear all and
+     *                                              merged into a bare open's recalled request
+     * @param  array<string, list<string>>  $overrides  carried URL key => the stored keys it displaces on recall
+     *                                                  while the request carries it
      */
-    public function __construct(private string $root, private string $route, private array $keys, private array $carried = []) {}
+    public function __construct(private string $root, private string $route, private array $keys, private array $carried = [],
+        private array $context = [], private array $overrides = []) {}
 
     /**
      * The list's filters for this request, or the redirect that opens it: to the bare list after
@@ -59,7 +67,7 @@ final readonly class RememberedListFilters
         if (! $fragment && $request->query->has(self::CLEAR)) {
             $this->store($user->id, [], null);
 
-            return redirect()->route($this->route);
+            return redirect()->route($this->route, $this->context);
         }
         if (! $fragment && ! $this->carries($request)) {
             $filters = $read($this->recalled($request, $user));
@@ -100,13 +108,24 @@ final readonly class RememberedListFilters
         return false;
     }
 
-    /** The request with the remembered set in place of its query, the page and the carried keys kept. */
+    /**
+     * The request with the remembered set in place of its query, the list's context, the page and
+     * the carried keys kept; a stored key an override displaces is left out.
+     */
     private function recalled(Request $request, User $user): Request
     {
         $stored = $user->releaseViewPreferences($this->root)['filters'] ?? [];
         $query = [];
         foreach (is_array($stored) ? array_intersect_key($stored, array_flip($this->keys)) : [] as $key => $value) {
             $query[$key] = is_array($value) ? array_map('strval', array_filter($value, 'is_scalar')) : (is_scalar($value) ? (string) $value : null);
+        }
+        foreach ($this->overrides as $key => $displaced) {
+            if (is_string($request->query($key)) && $request->query($key) !== '') {
+                $query = array_diff_key($query, array_flip($displaced));
+            }
+        }
+        foreach ($this->context as $key => $value) {
+            $query[$key] = (string) $value;
         }
         foreach (['page', ...$this->carried] as $key) {
             if (is_string($request->query($key))) {

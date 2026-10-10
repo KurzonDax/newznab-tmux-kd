@@ -4,9 +4,10 @@
      * 5.5, 5A and 5B; docs/proposals/audio-redesign/SPEC.md 5C.1): the list rows' chips (completion,
      * Password, media info, NFO; never a resolution, Sample or Listen chip, and a Preview chip only
      * for an Audio music video release, playing its clip), then the group and poster outline chips
-     * on their own line. Every caller passes $clip, the page's clip or null.
+     * on their own line. Every caller passes $clip, the page's clip or null. An Other release
+     * (generic-release-lists SPEC 6) keeps its Preview / Sample chips and adds Reported and Response.
      *
-     * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow $row
+     * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow|\App\Data\GenericReleaseRow $row
      * @var array{url: string, type: string, poster: ?string}|null $clip
      */
     // The shared chip partial names each chip's data-part through $chipPart; this header names none.
@@ -14,6 +15,9 @@
 @endphp
 <div class="tv-chips tv-details-chips">
     @include('tv.partials.release-chip-list', ['clip' => $clip])
+    @if($row instanceof \App\Data\GenericReleaseRow)
+        @include('tv.partials.report-chips', ['href' => null])
+    @endif
 </div>
 @if($row->group !== '' || $row->uploader !== '')
     <div class="tv-chips tv-details-origin">

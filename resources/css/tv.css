@@ -660,3 +660,45 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-listen-track { color: var(--tv-ink); font-size: 16px; font-weight: 700; line-height: 1.3; }
 .tv-listen-track small { display: block; margin-top: 2px; color: var(--tv-dim); font-size: 14px; font-weight: 500; }
 .tv-listen-player audio { display: block; width: 100%; height: 44px; margin-top: 14px; }
+
+/*
+ * Generic release lists (docs/proposals/generic-release-lists/SPEC.md 5): the Books / PC list with a "Root > Sub"
+ * Category column, 160 px (the width of "Console > Xbox 360 DLC" at the column's 13.5 px face plus the 24 px cell
+ * padding) and 92 px for the sub-category alone on Other; the breadcrumb above a group's or poster's heading; the
+ * poster heading free to break before "@" and "<"; the administrator's rose (hue 12) Blacklist button and muted
+ * Blacklisted link; the sweep status in the pager line's reserved slot; the 680 px confirmation dialog; the
+ * details page's report note.
+ */
+.tv-list-crumbs + div .tv-filters, .tv-list-crumbs + .tv-filters { padding-top: 10px; }
+.tv-filters h1.is-poster { overflow-wrap: anywhere; }
+.tv-col-category-path { width: 160px; }
+.tv-feed.is-other col.tv-col-category-path { width: 92px; }
+.tv-screen { --tv-danger-bg: oklch(0.92 0.045 12); --tv-danger-fg: oklch(0.45 0.16 12); --tv-danger-hover-bg: oklch(0.87 0.07 12); --tv-danger-mark: oklch(0.62 0.19 12); }
+.dark .tv-screen { --tv-danger-bg: oklch(0.31 0.07 12); --tv-danger-fg: oklch(0.86 0.11 12); --tv-danger-hover-bg: oklch(0.37 0.09 12); --tv-danger-mark: oklch(0.72 0.17 12); }
+.tv-blacklist-button, .tv-blacklist-link { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border: 0; border-radius: 19px; font-size: 13.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: pointer; }
+.tv-blacklist-button { background: var(--tv-danger-bg); color: var(--tv-danger-fg); }
+.tv-blacklist-button:hover { background: var(--tv-danger-hover-bg); }
+.tv-blacklist-button:focus-visible { outline: 2px solid var(--tv-ink); outline-offset: 1px; }
+.tv-blacklist-link { background: var(--tv-panel-alt); color: var(--tv-dim); }
+.tv-blacklist-link:hover { color: var(--tv-ink); }
+.tv-blacklist-button i, .tv-blacklist-link i { font-size: 12px; }
+.tv-details-button.is-danger { background: var(--tv-danger-bg); color: var(--tv-danger-fg); }
+.tv-details-button.is-danger:hover { background: var(--tv-danger-hover-bg); filter: none; }
+.pager-line-status { display: inline-flex; align-items: center; min-height: 34px; }
+.tv-sweep-slot { display: inline-flex; align-items: center; min-height: 34px; margin-right: 14px; }
+.tv-sweep { display: inline-flex; align-items: center; gap: 8px; color: var(--tv-dim); font-size: 14px; line-height: 1.5; white-space: nowrap; }
+.tv-sweep b { color: var(--tv-ink); font-weight: 600; }
+.tv-sweep i { flex: none; color: var(--tv-danger-mark); }
+.tv-dialog.is-blacklist { width: min(680px, 100%); }
+.tv-rule-facts { display: grid; gap: 14px; margin: 14px 0 0; }
+.tv-rule-facts dt { color: var(--tv-dim); font-size: 13px; font-weight: 600; }
+.tv-rule-facts dd { margin: 4px 0 0; color: var(--tv-ink); font-size: 15px; }
+.tv-rule-facts dd.is-code { padding: 10px 12px; border-radius: 10px; background: var(--tv-panel-alt); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; overflow-wrap: anywhere; }
+.tv-danger-option { display: flex; gap: 12px; align-items: flex-start; margin-top: 18px; padding: 14px 16px; border: 1px solid var(--tv-line); border-radius: 12px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.tv-danger-option:has(input:checked) { border-color: var(--tv-danger-mark); background: color-mix(in oklab, var(--tv-danger-mark) 10%, transparent); }
+.tv-danger-option input { margin-top: 3px; accent-color: var(--tv-danger-mark); }
+.tv-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.tv-report-note { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; padding: 12px 16px; border-radius: 14px; background: var(--tv-panel-alt); color: var(--tv-dim); font-size: 14px; }
+.tv-report-note i { flex: none; margin-top: 3px; color: var(--chip-reported-fg); }
+.tv-report-note b { font-weight: 700; color: var(--chip-reported-fg); }
+.dark .tv-report-note i, .dark .tv-report-note b { color: var(--chip-reported-fg-dark); }

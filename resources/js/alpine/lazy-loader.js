@@ -46,6 +46,7 @@ const lazyComponentMap = {
     'blacklistSweep':  () => import('./components/admin/blacklist-sweep.js'),
     'settingsCard':    () => import('./components/admin/settings-card.js'),
     'posterIdentityBlacklist': () => import('./components/poster-identity-blacklist.js'),
+    'posterSweepStatus': () => import('./components/poster-sweep-status.js'),
     'contentDelete':   () => import('./components/content-toggle.js'),  // same file
     'releaseReport':   () => import('./components/release-report.js'),
     'adminReleaseReports': () => import('./components/release-report.js'),  // same file

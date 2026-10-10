@@ -4,23 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
 use App\Models\Category;
-use App\Services\PosterIdentityBrowserContext;
-use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\Request;
 
 class BrowseController extends BasePageController
 {
     /**
-     * @throws \Exception
+     * /browse/{root}/{id?}: TV and Movies redirect to their lists, the retired roots are not
+     * found, and Other, the one root still rendered here, opens the generic Other list with the
+     * sub-category the address names (by id or title) set as its Category.
      */
-    public function index(Request $request): mixed
-    {
-        return $this->renderBrowser($request, BrowseRoot::All);
-    }
-
     public function show(Request $request, string $parentCategory, string $id = 'All'): mixed
     {
         $root = BrowseRoot::fromRoute($parentCategory);
@@ -40,39 +34,7 @@ class BrowseController extends BasePageController
             return redirect()->route('movies.releases', $category === null ? [] : ['category' => [(int) $category->id]]);
         }
 
-        return $this->renderBrowser($request, $root, $category);
-    }
-
-    private function renderBrowser(Request $request, BrowseRoot $root, ?Category $category = null): mixed
-    {
-        $state = ReleaseBrowserState::fromRequest($request, $root, $this->userdata, $category?->id);
-        $browserQuery = app(ReleaseBrowserQuery::class);
-        $results = $browserQuery->paginate($state, $this->userdata);
-        if ($state->page > $results->lastPage()) {
-            return redirect()->to($state->pageUrl($request, $results->lastPage()));
-        }
-        $title = $category === null ? $root->label() : $root->label().' · '.$category->title;
-        if ($state->group !== '') {
-            $title = 'Releases in '.$state->group;
-        }
-        if ($state->posterIdentity !== '') {
-            $title = 'Posts by '.$state->posterIdentity;
-        }
-
-        $data = array_merge($this->viewData, [
-            'category' => $category->id ?? $root->categoryId() ?? -1,
-            'catname' => $category->title ?? $root->label(),
-            'results' => $results, 'lastvisit' => $this->userdata->lastlogin,
-            'browserState' => $state, 'browserTitle' => $title, 'meta_title' => $title,
-            'sortOptions' => $browserQuery->sortOptions($state),
-        ]);
-        if ($state->posterIdentity !== '') {
-            $context = app(PosterIdentityBrowserContext::class)->forIdentity($state->posterIdentity, $this->userdata, $request->session()->get('poster_identity_blacklist_sweep_started') === true);
-
-            return view('poster-identity.index', array_merge($data, $context));
-        }
-
-        return view('browse.index', $data);
+        return app(GenericReleasesController::class)->other($request, $this->userdata, $category);
     }
 
     public function group(Request $request): mixed

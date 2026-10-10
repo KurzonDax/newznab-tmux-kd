@@ -4,7 +4,8 @@
     With `clearAll` (the unfiltered URL) the line holds "Clear all" in a fixed slot left of the arrows,
     hidden but keeping its place while nothing is `filtered`, and the page text has a fixed width.
     `fixed` gives the page text its fixed width without the slot. With `single`, one result reads
-    "Showing 1 film" rather than "Showing 1–1 of 1 film" (the Films wall's wording).
+    "Showing 1 film" rather than "Showing 1–1 of 1 film" (the Films wall's wording). A `status` slot
+    (a poster list's blacklist sweep, generic-release-lists SPEC 5.3) sits between the count and Clear all.
 --}}
 @php
     /** @var \Closure(int): string $url */
@@ -18,6 +19,9 @@
 @endphp
 <nav {{ $attributes->class(['pager-line', 'is-fixed' => $clearAll !== null || $fixed]) }} aria-label="Pages">
     <span class="pager-line-summary" data-part="showing line">{{ $summary }}</span>
+    @isset($status)
+        <span class="pager-line-status">{{ $status }}</span>
+    @endisset
     @if($clearAll !== null)
         <a href="{{ $clearAll }}" @class(['pager-line-clear', 'is-hidden' => ! $filtered]) data-clear-all aria-hidden="{{ $filtered ? 'false' : 'true' }}"@unless($filtered) tabindex="-1"@endunless>Clear all</a>
     @endif

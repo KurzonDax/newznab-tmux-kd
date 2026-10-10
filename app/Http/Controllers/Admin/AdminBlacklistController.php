@@ -66,8 +66,19 @@ class AdminBlacklistController extends BasePageController
         return response()->json(['message' => 'Blacklist sweep started.', 'run' => $run], 202);
     }
 
-    public function sweepStatus(): JsonResponse
+    /**
+     * The global sweep status, or with ?run= one run by the id start() returned (the poster
+     * page's own sweep, issue #1032 correction 5): never another run's counts.
+     */
+    public function sweepStatus(Request $request): JsonResponse
     {
+        $runId = $request->query('run');
+        if (is_string($runId) && $runId !== '') {
+            $run = $this->blacklistSweeps->run($runId);
+
+            return response()->json(['running' => ($run['running'] ?? false) === true, 'available' => $run !== null, 'run' => $run]);
+        }
+
         return response()->json($this->blacklistSweeps->publicStatus());
     }
 

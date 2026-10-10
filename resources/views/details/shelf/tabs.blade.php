@@ -7,7 +7,10 @@
      * then the facts and the PreDB block it is given. A poster address breaks before its "@", never
      * inside a word.
      *
-     * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow $row
+     * An Other release (generic-release-lists SPEC 6) opens Overview with its pictures and, when
+     * reported, the report note.
+     *
+     * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow|\App\Data\GenericReleaseRow $row
      * @var list<array{string, string}> $facts
      * @var list<array{string, string}> $predb
      * @var list<\App\Data\AudioTrack> $tracks
@@ -15,6 +18,8 @@
      */
     $tracks ??= [];
     $preview ??= null;
+    $clip ??= null;
+    $clipSeconds ??= null;
     $tabs = ['overview' => 'Overview'];
     if ($tracks !== []) {
         $tabs['tracks'] = 'Tracks ('.count($tracks).')';
@@ -34,6 +39,15 @@
 <section id="overview" class="tv-details-panel" role="tabpanel" aria-labelledby="tab-overview" data-details-panel>
     @if($preview !== null)
         @include('details.audio.preview')
+    @endif
+    @if($row instanceof \App\Data\GenericReleaseRow)
+        @include('details.shelf.pictures', ['row' => $row, 'clip' => $clip, 'clipSeconds' => $clipSeconds])
+        @if($row->reports > 0)
+            <div class="tv-report-note" role="note" data-report-note>
+                <i class="fas fa-flag" aria-hidden="true"></i>
+                <div><b>Reported{{ $row->reports > 1 ? ' '.$row->reports.' times' : '' }}</b> · {{ $row->publicResponses > 0 ? 'A staff response was posted.' : 'Under review.' }}</div>
+            </div>
+        @endif
     @endif
     <dl class="tv-details-facts">
         @foreach($facts as [$label, $value])

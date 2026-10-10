@@ -47,7 +47,8 @@ trait InteractsWithReleaseBrowser
                 $table->integer($column)->nullable();
             }
             $table->integer('nzbstatus')->default(1);
-            foreach (['totalpart', 'grabs', 'comments', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus', 'videostatus', 'isrenamed'] as $column) {
+            // resolution and source: the redesigned rows (ReleaseRowFacts) read them on every list, the All list included
+            foreach (['totalpart', 'grabs', 'comments', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus', 'videostatus', 'isrenamed', 'resolution', 'source'] as $column) {
                 $table->integer($column)->default(0);
             }
             $table->bigInteger('size')->default(524288000);

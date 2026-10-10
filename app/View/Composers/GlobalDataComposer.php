@@ -138,7 +138,7 @@ class GlobalDataComposer
             $request->is('pc') => BrowseRoot::Games,
             $request->is('console') => BrowseRoot::Console,
             $request->is('audio') => BrowseRoot::Audio,
-            $request->is('browsegroup', 'browse/all', 'browse/All', 'browse/group') => BrowseRoot::All,
+            $request->is('browsegroup', 'browse/all', 'browse/All', 'browse/group', 'poster') => BrowseRoot::All,
             $request->routeIs('browse') => BrowseRoot::fromRoute((string) $request->route('parentCategory')),
             $request->routeIs('details') && $releaseCategoryId !== null => self::categoryRoot($releaseCategoryId),
             default => null,
