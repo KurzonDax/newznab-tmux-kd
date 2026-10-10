@@ -102,8 +102,15 @@ export function tvReleases() {
         async applyFilter(event) {
             const { name, values, single, params } = event.detail;
             const url = params ? paramsUrl(window.location.href, params) : filterUrl(window.location.href, name, values, single);
+            // An explicit Completion choice (Any included) retires today's minc link (the generic lists, issue #1032): it never resurfaces.
+            if (name === 'completion') url.searchParams.delete('minc');
             window.history.replaceState(null, '', url.toString());
             await this.reloadList(url);
+        },
+
+        /** The list reloaded at the current URL: a poster list's finished blacklist sweep (posterSweepStatus) asks for it. */
+        refreshList() {
+            return this.reloadList(new URL(window.location.href));
         },
 
         async reloadList(url) {

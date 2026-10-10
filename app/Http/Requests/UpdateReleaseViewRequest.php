@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Data\GenericReleaseFilters;
 use App\Data\MovieFilmWallFilters;
 use App\Data\ReleaseListFilters;
 use App\Data\TvShowFilters;
@@ -25,7 +26,11 @@ final class UpdateReleaseViewRequest extends FormRequest
             'size' => ['sometimes', 'string', Rule::in($root?->coverSizes() ?? ['s'])],
             'per' => ['sometimes', 'integer', 'in:24,48,100'],
             'thumbs' => ['sometimes', 'boolean'],
-            'sort' => ['sometimes', 'string', Rule::in(in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies, BrowseRoot::Adult, BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Console, BrowseRoot::Audio], true) ? array_keys(ReleaseListFilters::SORTS) : [])],
+            'sort' => ['sometimes', 'string', Rule::in(match (true) {
+                in_array($root, [BrowseRoot::All, BrowseRoot::Other], true) => array_keys(GenericReleaseFilters::SORTS),
+                in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies, BrowseRoot::Adult, BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Console, BrowseRoot::Audio], true) => array_keys(ReleaseListFilters::SORTS),
+                default => [],
+            })],
             'shows_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Tv ? array_keys(TvShowFilters::SORTS) : [])],
             'films_sort' => ['sometimes', 'string', Rule::in($root === BrowseRoot::Movies ? array_keys(MovieFilmWallFilters::SORTS) : [])],
         ];

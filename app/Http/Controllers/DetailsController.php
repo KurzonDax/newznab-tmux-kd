@@ -83,8 +83,8 @@ class DetailsController extends BasePageController
         if ($root === BrowseRoot::Console && $this->hasConsoleGame($data)) {
             return $this->showConsoleGame($request, $data, $comments);
         }
-        if ($root === BrowseRoot::Books || $root === BrowseRoot::Games || $root === BrowseRoot::Console) {
-            return $this->showShelf($data, $comments);
+        if (in_array($root, [BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Console, BrowseRoot::Other], true)) {
+            return $this->showShelf($request, $data, $comments);
         }
         if ($root === BrowseRoot::Audio) {
             return $this->showAudio($request, $data, $comments);
@@ -252,17 +252,19 @@ class DetailsController extends BasePageController
     }
 
     /**
-     * Books and PC releases, and Console releases with no game, get the release-only page
-     * (docs/proposals/books-console-pc-redesign/SPEC.md 5A); comments post back here as before.
+     * Books and PC releases, Console releases with no game, and Other releases get the
+     * release-only page (docs/proposals/books-console-pc-redesign/SPEC.md 5A,
+     * docs/proposals/generic-release-lists/SPEC.md 6); comments post back here as before. An
+     * Other release's breadcrumb names the generic list it was opened from (the Referer).
      */
-    private function showShelf(Release $release, mixed $comments): View
+    private function showShelf(Request $request, Release $release, mixed $comments): View
     {
         $this->releaseBrowseService->loadReleaseRows([$release]);
         /** @var ReleaseRowData $row */
         $row = $release->getAttribute('row_data');
         $exclusions = array_values(array_map('intval', (array) $this->userdata->categoryexclusions));
 
-        return view('details.shelf.index', array_merge($this->viewData, app(ShelfReleaseDetails::class)->forRelease($release, $row->category, $exclusions), [
+        return view('details.shelf.index', array_merge($this->viewData, app(ShelfReleaseDetails::class)->forRelease($release, $row->category, $exclusions, $request->headers->get('referer')), [
             'release' => $release,
             'comments' => $comments,
             'nzbLinkBase' => url('/api/v1/api'),

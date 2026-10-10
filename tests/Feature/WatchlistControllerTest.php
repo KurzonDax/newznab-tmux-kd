@@ -114,11 +114,15 @@ final class WatchlistControllerTest extends TestCase
         DB::table('movieinfo')->insert(['imdbid' => '0137523', 'title' => 'A Movie']);
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => 'NULL']);
         $this->release('Legacy all categories', ['imdbid' => '0137523']);
-        $rows = $this->actingAs($user)->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')->assertSee('Following')->assertSee('aria-label="Clear filters"', false)
-            ->assertSee('aria-label="Unfollow A Movie" title="Following · click to unfollow"><i class="fas fa-bookmark" aria-hidden="true"></i>', false);
+        // The All list keeps the Following scope as a filter with the breadcrumb "All releases › Following" and no new control (issue #1032).
+        $rows = $this->actingAs($user)->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')
+            ->assertSeeInOrder(['<nav class="tv-crumbs tv-list-crumbs" aria-label="Breadcrumb">', 'All releases</a>', '<span>Following</span>'], false)
+            ->assertDontSee('aria-label="Clear filters"', false)
+            ->assertSee('data-watch-key="movies:0137523" data-watch-title="A Movie" data-watched="1"', false)
+            ->assertSee('aria-label="Unfollow A Movie"><i class="fas fa-bookmark" aria-hidden="true"></i>', false);
         $this->assertNoWatchWording((string) $rows->getContent(), 'Movie release rows you follow');
         DB::table('user_movies')->update(['categories' => '2000|9999']);
-        $this->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')->assertSee('Following')->assertSee('aria-label="Clear filters"', false);
+        $this->get('/browse/all?watching=1')->assertOk()->assertSee('Legacy all categories')->assertSee('<span>Following</span>', false);
     }
 
     public function test_picker_rejects_invalid_categories_and_keeps_last_choice_after_removal(): void

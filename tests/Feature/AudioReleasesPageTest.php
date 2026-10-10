@@ -581,8 +581,10 @@ final class AudioReleasesPageTest extends TestCase
         $this->page('/audio', User::query()->findOrFail($user->id))->assertSeeInOrder(['Posted early added late', 'Posted late added early'])
             ->assertSee('<th class="tv-num">Added</th>', false);
         $this->postJson('/profile/update-view', ['root' => 'audio', 'sort' => 'grabs'])->assertUnprocessable();
+        // the All and Other lists have five sorts of their own (issue #1032); a sort no list has is still refused
         foreach (['other', 'all'] as $root) {
-            $this->postJson('/profile/update-view', ['root' => $root, 'sort' => 'posted'])->assertUnprocessable();
+            $this->postJson('/profile/update-view', ['root' => $root, 'sort' => 'posted'])->assertOk();
+            $this->postJson('/profile/update-view', ['root' => $root, 'sort' => 'grabs'])->assertUnprocessable();
         }
 
         $this->page('/audio?_fragment=list&category[]='.self::LOSSLESS.'&genre[]='.self::ROCK.'&decade[]=2010&completion=95&q=Posted', User::query()->findOrFail($user->id))->assertOk();

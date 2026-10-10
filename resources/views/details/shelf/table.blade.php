@@ -52,6 +52,9 @@
                             @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
                                 @include('shelf.releases.listen-chip')
                             @endif
+                            @if($row instanceof \App\Data\GenericReleaseRow)
+                                @include('tv.partials.report-chips', ['href' => route('details', $row->guid)])
+                            @endif
                         </div>
                     @endif
                 </td>

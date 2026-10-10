@@ -8,7 +8,6 @@ use App\Data\AdultReleaseRow;
 use App\Enums\BrowseRoot;
 use App\Models\Category;
 use App\Models\Release;
-use App\Models\ReleaseVideoClip;
 
 /**
  * The Adult release details page (docs/proposals/adult-redesign/SPEC.md 5A): the release as an
@@ -39,22 +38,11 @@ final class AdultReleaseDetails
             'row' => $row,
             'category' => $category,
             'subCategory' => $subCategory,
-            'clipSeconds' => $row->clip === null ? null : $this->clipSeconds((int) $release->id),
+            'clipSeconds' => $row->clip === null ? null : ReleaseDetailsFacts::clipSeconds((int) $release->id),
             'facts' => ReleaseDetailsFacts::grid($release, $row, $category),
             'predb' => ReleaseDetailsFacts::predb((int) $release->predb_id),
             'similar' => $this->similar($release, $exclusions),
         ];
-    }
-
-    /**
-     * The clip's length for the preview's "Clip · N s" tag (DATA-CONTRACT 4.3): its
-     * release_video_clips row's seconds, null with no row or no value.
-     */
-    private function clipSeconds(int $releaseId): ?int
-    {
-        $seconds = ReleaseVideoClip::query()->where('releases_id', $releaseId)->value('duration_seconds');
-
-        return $seconds === null || (int) $seconds <= 0 ? null : (int) $seconds;
     }
 
     /**

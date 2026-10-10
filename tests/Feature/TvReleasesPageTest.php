@@ -233,7 +233,9 @@ final class TvReleasesPageTest extends TestCase
         }
         $this->assertSame('posted', User::query()->findOrFail($user->id)->releaseViewPreferences('tv')['sort']);
         $this->postJson('/profile/update-view', ['root' => 'tv', 'sort' => 'grabs'])->assertUnprocessable();
-        $this->postJson('/profile/update-view', ['root' => 'other', 'sort' => 'posted'])->assertUnprocessable();
+        // Other has a list of its own now (issue #1032): its five list sorts are accepted, a sort no list has is still refused
+        $this->postJson('/profile/update-view', ['root' => 'other', 'sort' => 'posted'])->assertOk();
+        $this->postJson('/profile/update-view', ['root' => 'other', 'sort' => 'grabs'])->assertUnprocessable();
     }
 
     public function test_a_same_show_batch_longer_than_four_collapses_to_three_rows_and_an_expander(): void

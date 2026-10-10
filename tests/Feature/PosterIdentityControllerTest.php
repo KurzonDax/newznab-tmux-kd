@@ -13,7 +13,9 @@ use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\User;
 use App\Services\BlacklistSweepService;
+use App\Services\PosterIdentityBrowserContext;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseRowFacts;
 use App\View\Composers\GlobalDataComposer;
 use DOMDocument;
 use DOMElement;
@@ -31,6 +33,11 @@ use Tests\Support\InteractsWithPublicShell;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
+/**
+ * A poster's posts (GET /poster?name=) in the generic list form and the administrator's blacklist
+ * action on it (issue #1032; docs/proposals/generic-release-lists/SPEC.md 5.1, 5.5, 5.8 and 5.9, with
+ * corrections 1 and 5: the sweep status attributed to the started run and reporting actual results).
+ */
 final class PosterIdentityControllerTest extends TestCase
 {
     use InteractsWithPublicShell;
@@ -86,27 +93,29 @@ final class PosterIdentityControllerTest extends TestCase
         $this->release('Newest exact', $identity, '2026-08-03 12:00:00');
         $this->release('Middle exact', $identity, '2026-08-02 12:00:00');
         $this->release('Oldest exact', $identity, '2026-08-01 12:00:00');
-        for ($index = 1; $index <= 22; $index++) {
+        for ($index = 1; $index <= 49; $index++) {
             $this->release('Middle filler '.$index, $identity, '2026-08-02 00:00:00');
         }
         $this->release('Look alike', 'user <user@2.localdomain>', '2026-08-04 12:00:00');
         $this->release('Case variant', 'user <USER@x.localdomain>', '2026-08-05 12:00:00');
 
-        $firstPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'per' => 24]));
+        $firstPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity]));
 
         $firstPage->assertOk();
         $firstPage->assertSeeInOrder(['Newest exact', 'Middle exact']);
         $firstPage->assertDontSee('Oldest exact');
         $firstPage->assertDontSee('Look alike');
         $firstPage->assertDontSee('Case variant');
+        $firstPage->assertSee('Showing 1–50 of 52 releases')->assertSee('Page 1 of 2');
         $firstPage->assertSee('name=user%20%3Cuser%40x.localdomain%3E', false);
-        $firstPage->assertSee('All posts by '.$identity);
-        $firstPage->assertSee('bg-primary-100', false);
-        $firstPage->assertDontSee('bg-indigo-100', false);
+        $firstPage->assertSee('<title>Posts by user &lt;user@x.localdomain&gt;', false);
+        // the poster chip is left off a poster's list (SPEC 5.5); the old browser is gone
+        $firstPage->assertDontSee('All posts by')->assertDontSee('tv-origin-poster', false)->assertDontSee('x-release-browser', false)->assertDontSee('bg-primary-100', false);
+        $firstPage->assertSee('data-preference-root="all"', false);
 
-        $secondPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'per' => 24, 'page' => 2]));
+        $secondPage = $this->actingAs($user)->get(route('poster-identity', ['name' => $identity, 'page' => 2]));
         $secondPage->assertOk();
-        $secondPage->assertSee('Oldest exact');
+        $secondPage->assertSee('Oldest exact')->assertSee('Showing 51–52 of 52 releases');
         $secondPage->assertDontSee('Look alike');
         $secondPage->assertDontSee('Case variant');
     }
@@ -124,12 +133,16 @@ final class PosterIdentityControllerTest extends TestCase
             ->get(route('poster-identity', ['name' => 'excluded@example.test']))
             ->assertOk()
             ->assertDontSee('Excluded release')
-            ->assertSee('No releases match.');
+            ->assertSee('Showing 0 releases')
+            ->assertSee('No posts by this poster.');
 
         $this->actingAs($user)
             ->get(route('poster-identity'))
             ->assertOk()
-            ->assertSee('No releases match.');
+            ->assertSee('<h1 data-part="page title" class="is-poster">No Posted By identity supplied</h1>', false)
+            ->assertSee('Showing 0 releases')
+            ->assertDontSee('<table', false)
+            ->assertDontSee('tv-list-crumbs', false);
     }
 
     public function test_poster_identity_page_requires_authentication_and_verification(): void
@@ -149,8 +162,8 @@ final class PosterIdentityControllerTest extends TestCase
         $this->release('Canonical poster release', $identity, '2026-08-03 12:00:00');
 
         $response = $this->actingAs($admin)->get(route('browse.all', ['poster' => $identity]))->assertOk();
-        $response->assertSee('Posts by '.$identity)->assertSee('Blacklist this poster')
-            ->assertSee('Canonical poster release')->assertSee('data-release-table', false);
+        $response->assertSee('<title>Posts by '.e($identity), false)->assertSee('Blacklist this poster')->assertSee('data-blacklist', false)
+            ->assertSee('Canonical poster release')->assertSee('x-data="tvReleases"', false);
     }
 
     public function test_only_admins_see_the_poster_identity_blacklist_control(): void
@@ -162,7 +175,7 @@ final class PosterIdentityControllerTest extends TestCase
         $this->actingAs($user)
             ->get(route('poster-identity', ['name' => $identity]))
             ->assertOk()
-            ->assertDontSee('Blacklist this poster');
+            ->assertDontSee('Blacklist this poster')->assertDontSee('x-data="posterIdentityBlacklist"', false)->assertDontSee('tv-sweep-slot', false);
         $this->actingAs($user)
             ->post(route('admin.poster-identity.blacklist'), ['name' => $identity])
             ->assertForbidden();
@@ -171,7 +184,7 @@ final class PosterIdentityControllerTest extends TestCase
         $this->actingAs($this->verifiedUser('Admin'))
             ->get(route('poster-identity', ['name' => $identity]))
             ->assertOk()
-            ->assertSee('Blacklist this poster');
+            ->assertSee('Blacklist this poster')->assertSee('<span class="tv-sweep-slot">', false);
     }
 
     public function test_admin_sees_the_matching_enabled_posted_by_rule_instead_of_an_add_control(): void
@@ -190,9 +203,8 @@ final class PosterIdentityControllerTest extends TestCase
         $this->actingAs($this->verifiedUser('Admin'))
             ->get(route('poster-identity', ['name' => $identity]))
             ->assertOk()
-            ->assertSee('Blacklisted (rule #'.$ruleId.')')
-            ->assertSee(route('admin.binaryblacklist-edit', ['id' => $ruleId]), false)
-            ->assertDontSee('Blacklist this poster');
+            ->assertSee('<a class="tv-blacklist-link" href="'.route('admin.binaryblacklist-edit', ['id' => $ruleId]).'" data-blacklisted><i class="fas fa-ban" aria-hidden="true"></i>Blacklisted (rule #'.$ruleId.')</a>', false)
+            ->assertDontSee('Blacklist this poster')->assertDontSee('x-data="posterIdentityBlacklist"', false);
     }
 
     public function test_blacklist_confirmation_shows_the_exact_read_only_rule_and_optional_sweep(): void
@@ -205,18 +217,33 @@ final class PosterIdentityControllerTest extends TestCase
         $response = $this->actingAs($admin)
             ->get(route('poster-identity', ['name' => $identity]))
             ->assertOk()
-            ->assertSee('^poster\+tag\/user@example\.test$')
+            ->assertSee('<h2 id="blacklist-dialog-title" x-bind:data-part="partWhenOpen(\'dialog title\')">Blacklist this poster</h2>', false)
+            ->assertSee('Confirm the exact rule that will be saved.')
+            ->assertSee('<dd class="is-code">^poster\+tag\/user@example\.test$</dd>', false)
             ->assertSee('Posted By · Type: Black · Status: enabled')
-            ->assertSee('^(?:alt\.binaries\.movies|alt\.binaries\.tv)$')
+            ->assertSee('<dd class="is-code">^(?:alt\.binaries\.movies|alt\.binaries\.tv)$</dd>', false)
             ->assertSee('Poster identity blocked from poster page by '.$admin->username)
-            ->assertSee("Also permanently remove this poster's 2 existing releases now", false)
+            ->assertSee('Also permanently remove this poster’s 2 existing releases now', false)
             ->assertSee('name="delete_releases"', false)
+            ->assertSeeInOrder(['class="tv-dialog-actions"', 'x-on:click="close">Cancel</button>', 'class="tv-details-button is-danger"', 'Confirm blacklist'], false)
+            ->assertSee('class="tv-blacklist-button" data-blacklist x-on:click="openConfirmation"', false)
             ->assertDontSee('name="regex"', false)
             ->assertDontSee('name="groupname"', false);
 
-        $modal = $this->htmlElement($response->getContent(), '//*[@x-show="confirmationOpen"]');
-        $this->assertNotNull($modal);
-        $this->assertTrue($this->hasAlpineDataAncestor($modal, 'posterIdentityBlacklist'));
+        $dialog = $this->htmlElement($response->getContent(), '//*[@data-modal-dialog]//*[@role="dialog"]');
+        $this->assertNotNull($dialog);
+        $this->assertSame('tv-dialog is-blacklist', $dialog->getAttribute('class'));
+        $this->assertSame('blacklist-dialog-title', $dialog->getAttribute('aria-labelledby'));
+        $this->assertTrue($this->hasAlpineDataAncestor($dialog, 'posterIdentityBlacklist'));
+        $form = $this->htmlElement($response->getContent(), '//form[@data-blacklist-form]');
+        $this->assertNotNull($form);
+        $this->assertSame(route('admin.poster-identity.blacklist'), $form->getAttribute('action'));
+        $this->assertTrue($this->hasAlpineDataAncestor($form, 'posterIdentityBlacklist'));
+        $this->assertTrue($this->hasAlpineDataAncestor($form, 'tvReleases'));
+        // the Blacklist button sits in the heading row between the name search and the sort
+        $response->assertSeeInOrder(['tv-name-search', 'data-blacklist', '<span class="tv-grow"></span>', 'data-part="sort dropdown"'], false);
+        // the sweep slot is reserved in the pager line, empty while nothing was started
+        $this->assertMatchesRegularExpression('/<span class="pager-line-status"><span class="tv-sweep-slot">\s*<\/span><\/span>/', (string) $response->getContent());
     }
 
     public function test_admin_can_create_the_exact_enabled_posted_by_rule_without_starting_a_sweep(): void
@@ -238,7 +265,8 @@ final class PosterIdentityControllerTest extends TestCase
         $ruleId = (int) DB::table('binaryblacklist')->value('id');
         $response
             ->assertRedirect(route('poster-identity', ['name' => $identity]))
-            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep not started');
+            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep not started')
+            ->assertSessionMissing(PosterIdentityBrowserContext::SESSION_KEY);
         $this->assertDatabaseHas('binaryblacklist', [
             'id' => $ruleId,
             'groupname' => '^(?:alt\.binaries\.movies|alt\.binaries\.tv)$',
@@ -250,6 +278,7 @@ final class PosterIdentityControllerTest extends TestCase
         ]);
         $this->assertFalse($sweeps->status()['running']);
         $this->assertNull($sweeps->status()['current']);
+        $this->get(route('poster-identity', ['name' => $identity]))->assertOk()->assertSee('Blacklisted (rule #'.$ruleId.')')->assertDontSee('data-sweep-status', false);
     }
 
     public function test_tampered_regex_and_group_values_are_rejected(): void
@@ -366,7 +395,7 @@ final class PosterIdentityControllerTest extends TestCase
         ]);
     }
 
-    public function test_checked_confirmation_starts_a_single_rule_delete_sweep_and_shows_its_status(): void
+    public function test_checked_confirmation_starts_a_single_rule_delete_sweep_and_shows_its_status_in_the_pager_line_without_a_flash(): void
     {
         Process::fake(fn () => Process::result(output: getmypid()."\n"));
         $sweeps = new BlacklistSweepService($this->makeTempDirectory('poster-identity-sweeps'));
@@ -383,18 +412,144 @@ final class PosterIdentityControllerTest extends TestCase
         ]);
 
         $ruleId = (int) DB::table('binaryblacklist')->value('id');
-        $response
-            ->assertRedirect(route('poster-identity', ['name' => $identity]))
-            ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep started');
         $status = $sweeps->status();
         $this->assertTrue($status['running']);
         $this->assertSame('delete', $status['current']['mode']);
         $this->assertSame($ruleId, $status['current']['rule_id']);
+        $runId = (string) $status['current']['id'];
+        // a started sweep is reported only in the pager slot: no success flash doubles it (correction 5); the run id is kept with the rule and the exact poster
+        $response
+            ->assertRedirect(route('poster-identity', ['name' => $identity]))
+            ->assertSessionMissing('success')
+            ->assertSessionHas(PosterIdentityBrowserContext::SESSION_KEY, ['run' => $runId, 'rule' => $ruleId, 'poster' => $identity]);
 
-        $this->get(route('poster-identity', ['name' => $identity]))
-            ->assertOk()
-            ->assertSee('x-data="blacklistSweep"', false)
-            ->assertSee('Sweep controls are disabled while this run finishes.');
+        $page = $this->get(route('poster-identity', ['name' => $identity]))->assertOk();
+        $page->assertSee('Blacklisted (rule #'.$ruleId.')')->assertSee('Poster release')->assertSee('Showing 1–1 of 1 release')
+            ->assertDontSee('x-data="blacklistSweep"', false)->assertDontSee('Sweep controls are disabled while this run finishes.')
+            ->assertSee('<span class="pager-line-status"><span class="tv-sweep-slot">', false)
+            ->assertSee('<b>Rule #'.$ruleId.' added · sweep running.</b> Removing this poster’s releases…', false)
+            ->assertDontSee('releases…</b>', false);
+        $sweep = $this->htmlElement($page->getContent(), '//*[@data-sweep-status]');
+        $this->assertNotNull($sweep);
+        $this->assertSame(['running', 'posterSweepStatus', '1', $runId, route('admin.binaryblacklist-sweep.status', ['run' => $runId])],
+            [$sweep->getAttribute('data-sweep-status'), $sweep->getAttribute('x-data'), $sweep->getAttribute('data-running'), $sweep->getAttribute('data-run'), $sweep->getAttribute('data-status-url')]);
+        // the status sits between the count and Clear all, inside the pager line, before the filter bar and the table are reached
+        $page->assertSeeInOrder(['data-part="showing line"', 'data-sweep-status="running"', 'data-clear-all', '<table class="tv-feed is-shelf is-generic"'], false);
+        $page->assertSeeInOrder(['class="filter-row tv-bar-list is-shelf"', 'data-sweep-status="running"'], false);
+        // the list fragment carries the same status, so a reload after the poll renders the run's outcome
+        $this->get(route('poster-identity', ['name' => $identity, '_fragment' => 'list']))->assertOk()->assertSee('data-sweep-status="running"', false)->assertDontSee('tv-filters', false);
+        // the poll answers for this run only
+        $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $runId]))->assertOk()->assertJson(['running' => true, 'available' => true])->assertJsonPath('run.id', $runId)->assertJsonMissingPath('run.log_path');
+    }
+
+    public function test_a_finished_sweep_reports_its_actual_removals_and_keeps_a_protected_release(): void
+    {
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
+        $directory = $this->makeTempDirectory('poster-identity-finished-sweeps');
+        $sweeps = new BlacklistSweepService($directory);
+        app()->instance(BlacklistSweepService::class, $sweeps);
+        $identity = 'poster@example.test';
+        // a live additional-processing claim protects a release from automated deletion (ReleaseDeletionProtection); the sweep leaves it
+        $protected = $this->release('Protected release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        DB::table('releases')->where('id', $protected->id)->update(['additional_pp_claim_token' => 'live-claim']);
+        $unprotected = $this->release('Unprotected release', $identity, '2026-08-02 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), ['name' => $identity, 'preview_token' => $this->blacklistPreviewToken($admin, $identity), 'delete_releases' => '1']);
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $run = $sweeps->status()['current'];
+        $log = $directory.'/'.$run['id'].'.log';
+        $page = route('poster-identity', ['name' => $identity]);
+
+        // the sweep's real effect: the unprotected release goes, the protected one stays, the log says what was deleted
+        DB::table('releases')->where('id', $unprotected->id)->delete();
+        file_put_contents($log, 'Deleting: Blacklist ['.$ruleId."]: Unprotected release\nDeleted 1 release(s). This script ran for 2 seconds.\n");
+        $sweeps->complete($run['id'], 0);
+        $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $run['id']]))->assertOk()->assertJson(['running' => false, 'available' => true])->assertJsonPath('run.removed_count', 1);
+
+        $partial = $this->get($page)->assertOk();
+        $partial->assertSee('data-sweep-status="partial"', false)->assertSee('data-running="0"', false)
+            ->assertSee('<b>Rule #'.$ruleId.' added · sweep finished.</b> 1 release by this poster was removed · 1 release remains.', false)
+            ->assertSee('Protected release')->assertDontSee('Unprotected release')->assertSee('Showing 1–1 of 1 release')
+            ->assertDontSee('No releases remain');
+        // a filtered-empty list with a surviving release never reads as swept
+        $this->get(route('poster-identity', ['name' => $identity, 'q' => 'zzz']))->assertOk()->assertSee('No releases match names containing “zzz”.', false)->assertDontSee('No releases remain')
+            ->assertSee('data-sweep-status="partial"', false);
+        // another viewer's exclusions do not change the count the status reports: the remaining count is the exact poster's, unfiltered
+        DB::table('user_excluded_categories')->insert(['users_id' => $admin->id, 'categories_id' => 2030]);
+        Cache::flush();
+        $this->get($page)->assertOk()->assertSee('Showing 0 releases')->assertSee('No posts by this poster.')->assertSee('1 release remains.')->assertDontSee('No releases remain');
+        DB::table('user_excluded_categories')->where('users_id', $admin->id)->delete();
+        Cache::flush();
+
+        // a later removal of the protected release, confirmed by the same run's log, is the complete outcome and the only sweep-specific empty line
+        DB::table('releases')->where('id', $protected->id)->delete();
+        file_put_contents($log, 'Deleting: Blacklist ['.$ruleId."]: Unprotected release\nDeleting: Blacklist [".$ruleId."]: Protected release\nDeleted 2 release(s). This script ran for 3 seconds.\n");
+        $complete = $this->get($page)->assertOk();
+        $complete->assertSee('data-sweep-status="complete"', false)
+            ->assertSee('<b>Rule #'.$ruleId.' added · sweep finished.</b> 2 releases by this poster were removed.', false)
+            ->assertSee('<p class="tv-empty" data-empty>No releases remain: the blacklist sweep removed them.</p>', false)
+            ->assertDontSee('No posts by this poster.');
+        // nothing of the exact poster remains, whatever the list's filters: the sweep line stands even with a search set
+        $this->get(route('poster-identity', ['name' => $identity, 'q' => 'zzz']))->assertOk()->assertSee('No releases remain: the blacklist sweep removed them.')->assertDontSee('No releases match');
+        $this->get(route('browse.all'))->assertOk()->assertSee('Showing 0 releases')->assertDontSee('No releases remain');
+
+        // a non-zero exit reports failure and only the known removals
+        file_put_contents($log, 'Deleting: Blacklist ['.$ruleId."]: Only one\nDeleted 1 release(s).\n");
+        $this->release('Survivor', $identity, '2026-08-04 12:00:00', 'alt.binaries.movies');
+        $sweeps->complete($run['id'], 1);
+        $this->get($page)->assertOk()->assertSee('data-sweep-status="failed"', false)
+            ->assertSee('<b>Rule #'.$ruleId.' added · sweep failed.</b> 1 release by this poster was removed before it stopped (exit 1).', false)
+            ->assertSee('Survivor')->assertDontSee('No releases remain');
+
+        // run metadata that is gone (pruned) confirms nothing, once; the next open shows no status at all
+        unlink($directory.'/'.$run['id'].'.json');
+        $this->get($page)->assertOk()->assertSee('data-sweep-status="unavailable"', false)
+            ->assertSee('<b>Rule #'.$ruleId.' added · sweep result unavailable.</b> Its run could not be found, so nothing is confirmed.', false)
+            ->assertSessionMissing(PosterIdentityBrowserContext::SESSION_KEY);
+        $this->get($page)->assertOk()->assertDontSee('data-sweep-status', false)->assertSee('<span class="tv-sweep-slot">', false);
+        $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $run['id']]))->assertOk()->assertJson(['running' => false, 'available' => false, 'run' => null]);
+    }
+
+    public function test_the_sweep_status_follows_the_started_run_only_never_a_later_run(): void
+    {
+        Process::fake(fn () => Process::result(output: getmypid()."\n"));
+        $directory = $this->makeTempDirectory('poster-identity-correlated-sweeps');
+        $sweeps = new BlacklistSweepService($directory);
+        app()->instance(BlacklistSweepService::class, $sweeps);
+        $identity = 'poster@example.test';
+        $this->release('Poster release', $identity, '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $this->release('Another poster release', 'other@example.test', '2026-08-03 12:00:00', 'alt.binaries.movies');
+        $admin = $this->verifiedUser('Admin');
+        $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), ['name' => $identity, 'preview_token' => $this->blacklistPreviewToken($admin, $identity), 'delete_releases' => '1']);
+        $ruleId = (int) DB::table('binaryblacklist')->value('id');
+        $first = $sweeps->status()['current'];
+        $page = route('poster-identity', ['name' => $identity]);
+
+        // the first run finishes, having removed the poster's release
+        DB::table('releases')->where('fromname', $identity)->delete();
+        file_put_contents($directory.'/'.$first['id'].'.log', "Deleted 1 release(s).\n");
+        $sweeps->complete($first['id'], 0);
+        // another administrator starts a later run for the same rule, which is still running and reports other counts
+        $second = $sweeps->start('delete', $ruleId);
+        file_put_contents($directory.'/'.$second['id'].'.log', "Deleting: a\nDeleting: b\nDeleting: c\n");
+        $this->assertTrue($sweeps->status()['running']);
+        $this->assertSame($second['id'], $sweeps->status()['current']['id']);
+
+        $this->get($page)->assertOk()->assertSee('data-sweep-status="complete"', false)->assertSee('data-run="'.$first['id'].'"', false)
+            ->assertSee('1 release by this poster was removed.', false)->assertDontSee('3 releases')->assertDontSee('sweep running')
+            ->assertSee('No releases remain: the blacklist sweep removed them.');
+        $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $first['id']]))->assertOk()->assertJson(['running' => false, 'available' => true])
+            ->assertJsonPath('run.id', $first['id'])->assertJsonPath('run.removed_count', 1);
+        $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $second['id']]))->assertOk()->assertJson(['running' => true])->assertJsonPath('run.removed_count', 3);
+        // the global status (the admin page) still names the running run; the poster page never reads it
+        $this->getJson(route('admin.binaryblacklist-sweep.status'))->assertOk()->assertJsonPath('current.id', $second['id']);
+        // only a run id is accepted: a path, or an unknown id, is unavailable
+        foreach (['../../.env', '/etc/passwd', 'not-a-run', '20261009-120000-000000-zzzzzzzz'] as $bad) {
+            $this->getJson(route('admin.binaryblacklist-sweep.status', ['run' => $bad]))->assertOk()->assertJson(['running' => false, 'available' => false, 'run' => null]);
+        }
+        $this->assertNull($sweeps->run('../../.env'));
+        // another poster's page shows no status from this session's run
+        $this->get(route('poster-identity', ['name' => 'other@example.test']))->assertOk()->assertDontSee('data-sweep-status', false)->assertSee('Another poster release');
     }
 
     public function test_rule_is_saved_when_another_sweep_holds_the_runner(): void
@@ -418,12 +573,13 @@ final class PosterIdentityControllerTest extends TestCase
         $response
             ->assertRedirect(route('poster-identity', ['name' => $identity]))
             ->assertSessionHas('success', 'Rule #'.$ruleId.' added · sweep could not start')
-            ->assertSessionMissing('poster_identity_blacklist_sweep_started');
+            ->assertSessionMissing(PosterIdentityBrowserContext::SESSION_KEY);
         $this->assertDatabaseHas('binaryblacklist', [
             'id' => $ruleId,
             'status' => BlacklistConstants::BLACKLIST_ENABLED,
         ]);
         $this->assertNull($sweeps->status()['current']['rule_id']);
+        $this->get(route('poster-identity', ['name' => $identity]))->assertOk()->assertDontSee('data-sweep-status', false)->assertSee('Blacklisted (rule #'.$ruleId.')');
     }
 
     public function test_confirmation_saves_the_group_scope_that_was_displayed(): void
@@ -499,25 +655,23 @@ final class PosterIdentityControllerTest extends TestCase
         ]);
 
         $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'exact <poster@example.test>']));
-        $response->assertOk()->assertSee('500.00 MB');
-        $row = $response->viewData('results')->first()->row_data;
+        $response->assertOk()->assertSee('<td class="tv-num tv-size">500 MB</td>', false);
+        $row = $response->viewData('rows')[0] ?? null;
         $this->assertNotNull($row);
         $this->assertSame('Scene Name', $row->name);
-        $this->assertSame('Movies > SD', $row->category);
-        $this->assertSame('500.00 MB', $row->size);
-        $this->assertSame('Sep 12, 2026 23:30', $row->posted);
+        $this->assertSame(['Movies > SD', 'SD', 2030], [$row->categoryPath, $row->category, $row->categoryId]);
+        $this->assertSame('500 MB', $row->size);
+        $this->assertSame('Sep 12, 2026', $row->postedOn);
         $this->assertSame('alt.binaries.movies', $row->group);
-        $this->assertSame('exact <poster@example.test>', $row->poster);
-        $this->assertTrue($row->renamed);
-        $this->assertTrue($row->pp_done);
+        $this->assertSame('exact <poster@example.test>', $row->uploader);
+        // the rows come from the shared loader, which carries the DTO's processing decisions
         foreach ([[-1, 0, null, false], [-8, 0, null, false], [0, -1, null, false], [1, 0, 'active-claim', false], [-10, 0, null, true], [0, 0, null, true]] as [$nfo, $password, $claim, $done]) {
             DB::table('releases')->where('id', $release->id)->update([
                 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim,
             ]);
-            $response = $this->get(route('poster-identity', ['name' => 'exact <poster@example.test>']))->assertOk();
-            $this->assertSame($done, $response->viewData('results')->first()->row_data->pp_done);
+            $this->assertSame($done, app(ReleaseRowFacts::class)->load([(int) $release->id])[0]->row_data->pp_done, 'nfo '.$nfo.' password '.$password);
+            $this->get(route('poster-identity', ['name' => 'exact <poster@example.test>']))->assertOk()->assertSee('Scene Name');
         }
-
     }
 
     public function test_passworded_poster_rows_render_the_loaded_password_fact(): void
@@ -530,7 +684,7 @@ final class PosterIdentityControllerTest extends TestCase
         $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'locked-poster']))->assertOk();
         $document = new DOMDocument;
         @$document->loadHTML($response->getContent());
-        $chips = (new DOMXPath($document))->query('//span[@data-chip-variant="danger" and normalize-space(.)="Password"]');
+        $chips = (new DOMXPath($document))->query('//span[@data-chip-variant="password" and normalize-space(.)="Password"]');
         $this->assertSame(1, $chips->length);
     }
 
@@ -548,20 +702,21 @@ final class PosterIdentityControllerTest extends TestCase
         DB::table('users_releases')->insert(['users_id' => $user->id, 'releases_id' => $release->id]);
         DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '1234567']);
         $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'movie-poster']))->assertOk();
-        $row = $response->viewData('results')->first()->row_data;
-        $this->assertSame('movies', $row->entity?->root);
-        $this->assertSame('1234567', $row->entity?->id);
-        $this->assertSame('Example Movie', $row->entity?->title);
-        $this->assertSame('2026', $row->entity?->year);
-        $this->assertNull($row->entity?->artwork);
-        $this->assertTrue($row->in_basket);
+        $row = $response->viewData('rows')[0];
+        $this->assertSame(['film', 'Example Movie · 2026', 'movies', '1234567', 'Example Movie'], [$row->entityKind, $row->entityLine, $row->followRoot, $row->followId, $row->followTitle]);
+        $this->assertNull($row->entityUrl, 'no film page without a stored film');
+        $this->assertTrue($row->inCart);
         $this->assertTrue($row->watched);
+        $response->assertSee('<span class="tv-game-line" data-entity="film">Example Movie · 2026</span>', false)
+            ->assertSee('data-watch-key="movies:1234567" data-watch-title="Example Movie" data-watched="1"', false)
+            ->assertSee('data-cart="'.$release->guid.'" aria-pressed="true"', false);
 
         session()->flush();
         $response = $this->actingAs($this->verifiedUser())->get(route('poster-identity', ['name' => 'movie-poster']))->assertOk();
-        $otherRow = $response->viewData('results')->first()->row_data;
-        $this->assertFalse($otherRow->in_basket);
+        $otherRow = $response->viewData('rows')[0];
+        $this->assertFalse($otherRow->inCart);
         $this->assertFalse($otherRow->watched);
+        $response->assertSee('data-watched="0"', false)->assertSee('aria-pressed="false"', false);
     }
 
     public function test_anime_rows_use_the_matched_anidb_title_without_inventing_an_adult_entity(): void
@@ -586,16 +741,26 @@ final class PosterIdentityControllerTest extends TestCase
             ['anidbid' => 42, 'type' => 'official', 'lang' => 'ja', 'title' => 'Native title'],
         ]);
         DB::table('releases')->where('id', $release->id)->update(['anidbid' => 42, 'categories_id' => Category::TV_ANIME]);
-        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk();
-        $entity = $response->viewData('results')->first()->row_data->entity;
+        DB::table('root_categories')->insert(['id' => 5000, 'title' => 'TV']);
+        DB::table('categories')->insert(['id' => Category::TV_ANIME, 'title' => 'Anime', 'root_categories_id' => 5000]);
+        // the viewer may see TV (a root without its permission is hidden from every list)
+        $user->givePermissionTo(Permission::query()->firstOrCreate(['name' => 'view tv', 'guard_name' => 'web']));
+        Cache::flush();
+        // the shared loader names the anime; the generic row prints no entity line for it (SPEC 5.5 names films, shows, albums and games)
+        $entity = app(ReleaseRowFacts::class)->load([(int) $release->id])[0]->row_data->entity;
         $this->assertNotNull($entity);
         $this->assertSame('anime', $entity->root);
         $this->assertSame('Example Anime', $entity->title);
         $this->assertSame('2020', $entity->year);
+        $response = $this->actingAs($user)->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk();
+        $row = $response->viewData('rows')[0];
+        $this->assertSame([null, '', null], [$row->entityKind, $row->entityLine, $row->followRoot]);
+        $this->assertSame('TV > Anime', $row->categoryPath);
+        $response->assertDontSee('data-entity=', false)->assertDontSee('data-watch-picker', false);
 
         DB::table('releases')->where('id', $release->id)->update(['categories_id' => Category::XXX_ROOT]);
-        $response = $this->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk();
-        $this->assertNull($response->viewData('results')->first()->row_data->entity);
+        $this->assertNull(app(ReleaseRowFacts::class)->load([(int) $release->id])[0]->row_data->entity);
+        $this->assertSame('', $this->get(route('poster-identity', ['name' => 'anime-poster']))->assertOk()->viewData('rows')[0]->entityLine);
     }
 
     private function verifiedUser(string $roleName = 'User'): User
@@ -630,7 +795,7 @@ final class PosterIdentityControllerTest extends TestCase
     {
         $document = new DOMDocument;
         $previous = libxml_use_internal_errors(true);
-        $document->loadHTML($html);
+        $document->loadHTML('<?xml encoding="UTF-8">'.$html);
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
 
@@ -752,6 +917,7 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
             $table->string('session_token')->nullable();
+            $table->text('view_prefs')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('lastlogin')->nullable();
             $table->rememberToken();
@@ -818,6 +984,9 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('nfostatus')->default(false);
             $table->integer('videostatus')->default(0);
             $table->integer('isrenamed')->default(0);
+            // the redesigned rows read the resolution and source of every release
+            $table->unsignedTinyInteger('resolution')->default(0);
+            $table->unsignedTinyInteger('source')->default(0);
             $table->string('additional_pp_claim_token')->nullable();
             $table->string('imdbid')->nullable();
             foreach (['tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id'] as $column) {

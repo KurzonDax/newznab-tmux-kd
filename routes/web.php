@@ -72,6 +72,7 @@ use App\Http\Controllers\ContentController;
 use App\Http\Controllers\CoverController;
 use App\Http\Controllers\DetailsController;
 use App\Http\Controllers\FailedReleasesController;
+use App\Http\Controllers\GenericReleasesController;
 use App\Http\Controllers\GetNzbController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\MediaInfoController;
@@ -194,8 +195,8 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
 
     Route::prefix('browse')->group(function () {
         Route::match(['GET', 'POST'], 'group', [BrowseController::class, 'group'])->name('group');
-        Route::get('all', [BrowseController::class, 'index'])->name('browse.all');
-        Route::match(['GET', 'POST'], 'All', [BrowseController::class, 'index'])->name('All');
+        Route::get('all', [GenericReleasesController::class, 'all'])->name('browse.all');
+        Route::match(['GET', 'POST'], 'All', [GenericReleasesController::class, 'all'])->name('All');
         Route::match(['GET', 'POST'], '{parentCategory}/{id?}', [BrowseController::class, 'show'])->middleware('clearance')->name('browse');
     });
 
@@ -262,7 +263,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::post('privacy-center/erasure', [PrivacyCenterController::class, 'requestErasure'])->middleware('throttle:3,1')->name('privacy-center.erasure');
     Route::get('privacy-center/export/{gdprRequest}/download', [PrivacyCenterController::class, 'downloadExport'])->middleware('throttle:10,1')->name('privacy-center.export.download');
     Route::match(['GET', 'POST'], 'search', [SearchController::class, 'search'])->name('search');
-    Route::get('poster', PosterIdentityController::class)->name('poster-identity');
+    Route::get('poster', [GenericReleasesController::class, 'poster'])->name('poster-identity');
 
     // Release Report routes
     Route::post('release-report', [ReleaseReportController::class, 'store'])->name('release-report.store');

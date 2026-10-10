@@ -7,6 +7,7 @@ namespace App\Services\Releases;
 use App\Data\ReleaseRowData;
 use App\Enums\ReleaseResolution;
 use App\Enums\ReleaseSource;
+use App\Models\ReleaseVideoClip;
 use App\Support\ReleaseCompletion;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -105,6 +106,26 @@ final class ReleaseRowFacts
             'postedOn' => $release->postdate === null ? '' : userDate($release->postdate, 'M j, Y'),
             'group' => $row->group,
             'uploader' => $row->poster,
+        ];
+    }
+
+    /**
+     * The row's video clip (videostatus = 1), as the Adult list carries it (DATA-CONTRACT 4.3): today's
+     * player route, its type and its poster; null without a clip. The shared loader
+     * (ReleasePreviewDataLoader) marks the release and its type.
+     *
+     * @return array{url: string, type: string, poster: ?string}|null
+     */
+    public static function clip(object $release, string $guid): ?array
+    {
+        if (! (bool) ($release->has_video_preview ?? false)) {
+            return null;
+        }
+
+        return [
+            'url' => route('preview.video', $guid),
+            'type' => (string) ($release->video_preview_mime ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']),
+            'poster' => self::clipPoster($guid),
         ];
     }
 

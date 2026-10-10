@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Data\GenericReleaseFilters;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
+use App\Models\User;
 use App\Services\NNTP\NntpProviderPool;
+use App\Services\Releases\ReleaseRowFacts;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
-use App\Support\ReleaseCompletion;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -72,10 +74,10 @@ final class ReleaseBrowserControllerTest extends TestCase
             'releases_id' => $releaseId, 'videoheight' => 1080, 'videocodec' => 'x264', 'videoformat' => 'AVC',
         ]);
 
-        $this->actingAs($this->browserUser())->get('/browse/all?view=table')
-            ->assertOk()
-            ->assertSee('Video summary regression')
-            ->assertSee('1080p · x264');
+        // The generic list's media info chip reads the summary built on the release id (the resolution has its own place, the codec in plain words).
+        $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk()->assertSee('Video summary regression');
+        $row = $this->browserRow($response->getContent(), 'Video summary regression');
+        $this->assertMatchesRegularExpression('/mediainfo-badge[^>]*data-release-id="'.$releaseId.'"[^>]*>\s*<i class="fas fa-circle-info" aria-hidden="true"><\/i>\s*H\.264\s*<\/button>/', $row);
     }
 
     public function test_without_a_secondary_provider_no_row_shows_the_pending_chip(): void
@@ -85,11 +87,12 @@ final class ReleaseBrowserControllerTest extends TestCase
 
         $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
         $above = $this->browserRow($response->getContent(), 'Above target');
-        $this->assertStringContainsString('99%', $above);
-        $this->assertStringNotContainsString(ReleaseCompletion::PENDING_LABEL, $above);
+        $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $above);
+        $this->assertStringNotContainsString('late headers pending', $above);
         $this->assertStringNotContainsString('repair-badge', $above);
         $noVerdict = $this->browserRow($response->getContent(), 'No verdict');
-        $this->assertStringNotContainsString(ReleaseCompletion::PENDING_LABEL, $noVerdict);
+        $this->assertMatchesRegularExpression('/>\s*80% complete\s*</', $noVerdict);
+        $this->assertStringNotContainsString('late headers pending', $noVerdict);
         $this->assertStringNotContainsString('repair-badge', $noVerdict);
     }
 
@@ -102,7 +105,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->secondaryPosition(1, '2026-09-13 00:30:00');
 
         $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
-        $this->assertStringContainsString(ReleaseCompletion::PENDING_LABEL, $this->browserRow($response->getContent(), 'Above target'));
+        $this->assertMatchesRegularExpression('/>\s*99% complete · late headers pending\s*</', $this->browserRow($response->getContent(), 'Above target'));
     }
 
     public function test_release_facts_are_a_separate_block_after_the_complete_name(): void
@@ -112,44 +115,49 @@ final class ReleaseBrowserControllerTest extends TestCase
         $document = new \DOMDocument;
         @$document->loadHTML($response->getContent());
         $xpath = new \DOMXPath($document);
-        $this->assertSame(1, $xpath->query('//*[@data-release-title]/parent::*/following-sibling::*[@data-release-facts-row]')->length);
-        $this->assertSame(0, $xpath->query('//*[@data-release-title]/parent::*//*[contains(@class,"release-chip")]')->length);
+        // the chip line follows the complete name as its own block; no chip sits inside the name
+        $this->assertSame(1, $xpath->query('//a[contains(@class,"tv-release-name")]/following-sibling::div[contains(@class,"tv-chips")]')->length);
+        $this->assertSame(0, $xpath->query('//a[contains(@class,"tv-release-name")]//*[contains(@class,"release-chip")]')->length);
+        $this->assertSame('A short name', trim($xpath->query('//a[contains(@class,"tv-release-name")]')->item(0)->textContent));
     }
 
-    public function test_six_release_sorts_have_distinct_meanings(): void
+    public function test_five_release_sorts_have_distinct_meanings_and_grabs_is_gone(): void
     {
         $this->release('Zulu', ['postdate' => '2026-09-13', 'adddate' => '2026-09-10', 'grabs' => 2]);
         $this->release('Alpha', ['postdate' => '2026-09-11', 'adddate' => '2026-09-12', 'grabs' => 8]);
         $this->release('Middle', ['postdate' => '2026-09-12', 'adddate' => '2026-09-11', 'grabs' => 1]);
-        $this->actingAs($this->browserUser());
-        foreach (['posted' => 'Zulu', 'posted_oldest' => 'Alpha', 'newest' => 'Alpha', 'oldest' => 'Zulu', 'title' => 'Alpha', 'grabs' => 'Alpha'] as $sort => $first) {
-            $response = $this->get('/browse/all?sort='.$sort)->assertOk();
-            $this->assertSame($first, $response->viewData('results')->items()[0]->row_data->name, $sort);
-            $this->assertSame(['posted', 'posted_oldest', 'newest', 'oldest', 'title', 'grabs'], array_keys($response->viewData('sortOptions')));
+        $user = $this->browserUser();
+        $this->actingAs($user);
+        foreach (['posted' => 'Zulu', 'posted_oldest' => 'Alpha', 'newest' => 'Alpha', 'oldest' => 'Zulu', 'title' => 'Alpha'] as $sort => $first) {
+            $this->postJson('/profile/update-view', ['root' => 'all', 'sort' => $sort])->assertOk();
+            $response = $this->actingAs(User::query()->findOrFail($user->id))->get('/browse/all')->assertOk();
+            $this->assertSame($first, $response->viewData('rows')[0]->name, $sort);
+            $response->assertSee('<option value="'.$sort.'" selected', false);
         }
-        foreach (['year', 'rating', 'artist', 'size', 'files'] as $removed) {
-            $this->get('/browse/all?sort='.$removed)->assertOk()
-                ->assertViewHas('browserState', static fn ($state): bool => $state->sort === 'newest');
+        $this->assertSame(['posted', 'posted_oldest', 'newest', 'oldest', 'title'], array_keys(GenericReleaseFilters::SORTS));
+        foreach (['grabs', 'year', 'rating', 'artist', 'size', 'files'] as $removed) {
+            $this->postJson('/profile/update-view', ['root' => 'all', 'sort' => $removed])->assertUnprocessable();
         }
+        // ?sort= is not a list control: the remembered sort stands
+        $this->assertSame('Alpha', $this->get('/browse/all?sort=posted')->assertOk()->viewData('rows')[0]->name);
     }
 
     public function test_group_filter_counts_all_matching_rows_and_bounds_the_page(): void
     {
         $user = $this->browserUser();
         DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.binaries.movies'], ['id' => 2, 'name' => 'alt.binaries.movies.other']]);
-        for ($index = 1; $index <= 49; $index++) {
+        for ($index = 1; $index <= 51; $index++) {
             $this->release('Movie '.$index, ['groups_id' => 1]);
         }
         $this->release('Outside group', ['groups_id' => 2]);
 
-        $response = $this->actingAs($user)->get('/browse/all?group=alt.binaries.movies&per=24&page=2')->assertOk();
-        $page = $response->viewData('results');
-        $this->assertSame(49, $page->total());
-        $this->assertCount(24, $page->items());
-        $this->assertSame(2, $page->currentPage());
-        $response->assertSee('Releases in alt.binaries.movies')->assertDontSee('Outside group');
-        $this->get('/browse/all?group=alt.binaries.movies&per=24&page=999')
-            ->assertRedirect('/browse/all?group=alt.binaries.movies&per=24&page=3');
+        $response = $this->actingAs($user)->get('/browse/all?group=alt.binaries.movies&page=2')->assertOk();
+        $this->assertSame(51, $response->viewData('total'));
+        $this->assertCount(1, $response->viewData('rows'));
+        $this->assertSame(2, $response->viewData('filters')->page);
+        $response->assertSee('Releases in alt.binaries.movies')->assertSee('Showing 51–51 of 51 releases')->assertDontSee('Outside group');
+        $this->get('/browse/all?group=alt.binaries.movies&page=999')
+            ->assertRedirect(route('browse.all', ['group' => 'alt.binaries.movies', 'page' => 2]));
     }
 
     public function test_poster_identity_filter_is_byte_exact_including_spaces_and_case(): void
@@ -161,22 +169,25 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Extended identity', ['fromname' => $identity.'suffix']);
 
         $response = $this->actingAs($this->browserUser())->get('/browse/all?poster='.rawurlencode($identity))->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('Posts by '.$identity)->assertSee('Exact identity')
+        $this->assertSame(1, $response->viewData('total'));
+        $response->assertSee('<title>Posts by '.e($identity), false)->assertSee('Exact identity')
             ->assertDontSee('Trimmed identity')->assertDontSee('Case variant')->assertDontSee('Extended identity');
     }
 
     public function test_canonical_roots_and_numeric_subcategories_never_fall_back_to_all_releases(): void
     {
-        $roots = ['other' => 31];
+        // the Other list reads Misc and Hashed (10 and 20), the categories the Other root holds
+        DB::table('categories')->insert(['id' => 10, 'title' => 'Misc', 'root_categories_id' => 1]);
+        $roots = ['other' => 10];
         foreach ($roots as $root => $categoryId) {
             $this->release($root.' release', ['categories_id' => $categoryId]);
         }
         $this->actingAs($this->browserUser());
         foreach ($roots as $root => $categoryId) {
-            foreach (['/browse/'.$root, '/browse/'.$root.'/'.$categoryId] as $url) {
+            $this->get('/browse/'.$root.'/'.$categoryId)->assertRedirect(route('browse', ['parentCategory' => $root, 'category' => [$categoryId]]));
+            foreach (['/browse/'.$root, route('browse', ['parentCategory' => $root, 'category' => [$categoryId]])] as $url) {
                 $response = $this->get($url)->assertOk();
-                $this->assertSame(1, $response->viewData('results')->total(), $url);
+                $this->assertSame(1, $response->viewData('total'), $url);
                 $response->assertSee($root.' release');
             }
         }
@@ -228,7 +239,8 @@ final class ReleaseBrowserControllerTest extends TestCase
 
     public function test_retired_audio_pages_are_not_found(): void
     {
-        $this->release('Other release', ['categories_id' => 31]);
+        DB::table('categories')->insert(['id' => 10, 'title' => 'Misc', 'root_categories_id' => 1]);
+        $this->release('Other release', ['categories_id' => 10]);
         $this->actingAs($this->browserUser());
         foreach ([
             '/Audio', '/Audio/HD', '/browse/audio', '/browse/audio/3030', '/browse/audio/HD', '/browse/audio/All',
@@ -237,13 +249,15 @@ final class ReleaseBrowserControllerTest extends TestCase
         ] as $path) {
             $this->get($path)->assertNotFound();
         }
-        foreach (['/browse/other', '/browse/other/31'] as $path) {
-            $this->get($path)->assertOk()->assertSee('data-release-table', false);
+        foreach (['/browse/other', route('browse', ['parentCategory' => 'other', 'category' => [10]])] as $path) {
+            $this->get($path)->assertOk()->assertSee('<table class="tv-feed is-shelf is-generic is-other"', false);
         }
+        $this->get('/browse/other/10')->assertRedirect(route('browse', ['parentCategory' => 'other', 'category' => [10]]));
+        $this->get('/browse/other?clear=1')->assertRedirect(route('browse', ['parentCategory' => 'other']));
         $this->get('/browse/other?view=covers&letter=A&year=1975&label=X')->assertOk()
-            ->assertSee('data-release-table', false)->assertDontSee('aria-label="Jump by initial"', false)
+            ->assertSee('<table class="tv-feed is-shelf is-generic is-other"', false)->assertDontSee('aria-label="Jump by initial"', false)
             ->assertDontSee('data-cover-tile', false)->assertDontSee('data-year-picker', false);
-        $this->get('/browse/other?_fragment=cover&cover=12')->assertOk()->assertSee('data-release-table', false);
+        $this->get('/browse/other?_fragment=cover&cover=12')->assertOk()->assertSee('<table class="tv-feed is-shelf is-generic is-other"', false);
     }
 
     public function test_retired_browse_pages_still_show_the_denied_page_to_a_user_without_the_root(): void
@@ -259,65 +273,65 @@ final class ReleaseBrowserControllerTest extends TestCase
         }
     }
 
-    public function test_search_and_sort_apply_before_pagination_and_explicit_preferences_override_saved_values(): void
+    public function test_search_and_sort_apply_before_pagination_and_the_old_browser_preferences_stay_accepted(): void
     {
         $user = $this->browserUser();
-        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'all', 'per' => 24, 'thumbs' => true])->assertOk();
+        // home, search and basket still read view, per and thumbs under all; the list itself ignores them
+        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'all', 'per' => 24, 'thumbs' => true, 'sort' => 'title'])->assertOk();
         for ($index = 30; $index >= 1; $index--) {
             $this->release(sprintf('Wanted %02d', $index));
         }
         $this->release('Unwanted match', ['display_name' => 'Outside']);
         $this->release('Encoded name', ['display_name' => 'Wanted 00']);
 
-        $response = $this->get('/browse/all?q=Wanted&sort=title')->assertOk();
-        $page = $response->viewData('results');
-        $this->assertSame(31, $page->total());
-        $this->assertCount(24, $page->items());
-        $this->assertSame('Wanted 00', $page->items()[0]->row_data->name);
-        $this->assertSame('Wanted 23', $page->items()[23]->row_data->name);
-        $this->assertTrue($response->viewData('browserState')->thumbs);
-        $override = $this->get('/browse/all?q=Wanted&sort=title&per=48&thumbs=0')->assertOk();
-        $this->assertCount(31, $override->viewData('results')->items());
-        $this->assertFalse($override->viewData('browserState')->thumbs);
+        $response = $this->actingAs(User::query()->findOrFail($user->id))->get('/browse/all?q=Wanted')->assertOk();
+        $rows = $response->viewData('rows');
+        $this->assertSame(31, $response->viewData('total'));
+        $this->assertCount(31, $rows);
+        $this->assertSame('Wanted 00', $rows[0]->name);
+        $this->assertSame('Wanted 23', $rows[23]->name);
+        $response->assertSee('Showing 1–31 of 31 releases')->assertDontSee('Outside')->assertDontSee('data-shape', false);
+        $this->assertSame(['per' => 24, 'thumbs' => true], array_intersect_key(User::query()->findOrFail($user->id)->releaseViewPreferences('all'), ['per' => 1, 'thumbs' => 1]));
     }
 
-    public function test_table_renders_one_escaped_row_with_separate_dates_and_four_native_actions(): void
+    public function test_table_renders_one_escaped_row_with_the_date_and_the_two_by_two_actions(): void
     {
         $name = '<One & "release">';
         $identity = ' Sender <person+tag@Host.test> ';
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.movies']);
-        $id = $this->release('Internal name', ['display_name' => $name, 'fromname' => $identity, 'groups_id' => 1, 'totalpart' => 12]);
+        $this->release('Internal name', ['display_name' => $name, 'fromname' => $identity, 'groups_id' => 1, 'totalpart' => 12]);
         $response = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
         $document = new \DOMDocument;
-        @$document->loadHTML($response->getContent());
+        @$document->loadHTML('<?xml encoding="UTF-8">'.$response->getContent());
         $xpath = new \DOMXPath($document);
-        $table = '//table[@data-release-table]';
+        $table = '//table[contains(@class,"tv-feed")]';
         $this->assertSame(1, $xpath->query($table.'/tbody/tr')->length);
         $headers = array_map(static fn (\DOMNode $node): string => trim($node->textContent), iterator_to_array($xpath->query($table.'/thead/tr/th')));
-        $this->assertSame(['Select all', 'Release', 'Category', 'Size', 'Files', 'Added', 'Posted', 'Stats', 'Actions'], $headers);
-        $this->assertSame($name, $xpath->query($table.'//a[@data-release-title]')->item(0)->textContent);
-        $this->assertSame(4, $xpath->query($table.'//*[@data-row-action]')->length);
-        $this->assertSame(1, $xpath->query($table.'//button[@data-report-release-id="'.$id.'"]')->length);
-        $this->assertSame($name, $xpath->evaluate('string('.$table.'//button[@data-report-release-id="'.$id.'"]/@data-release-display-name)'));
-        $response->assertSee('Sep 12, 2026 23:30')
+        $this->assertSame(['', 'Release', 'Category', 'Size', 'Posted', 'Actions'], $headers);
+        $this->assertSame($name, $xpath->query($table.'//a[contains(@class,"tv-release-name")]')->item(0)->textContent);
+        $this->assertSame(['tv-action tv-action-download download-nzb', 'tv-action', 'tv-action', 'tv-action tv-action-slot'],
+            array_map(static fn (\DOMNode $node): string => $node->getAttribute('class'), iterator_to_array($xpath->query($table.'//div[@class="tv-actions"]/*'))));
+        $this->assertSame(0, $xpath->query($table.'//*[@data-report-release-id]')->length, 'no Report button in a row');
+        $this->assertSame(0, $xpath->query($table.'//a[@data-row-action="details"]')->length, 'no details button in a row');
+        $this->assertSame('Posted Sep 12, 2026, 11:30 PM · Added Sep 13, 2026, 12:00 PM', $xpath->query($table.'//td[contains(@class,"tv-date")]/@title')->item(0)->nodeValue);
+        $response->assertSee('>Sep 12, 2026</td>', false)
             ->assertSee(url('/browse/all').'?'.http_build_query(['group' => 'alt.binaries.movies']))
             ->assertSee(url('/browse/all').'?'.http_build_query(['poster' => $identity], '', '&', PHP_QUERY_RFC3986))
             ->assertDontSee('<One & "release">', false);
     }
 
-    public function test_toolbar_and_both_pagers_remain_available_on_empty_and_last_pages(): void
+    public function test_the_pager_line_and_clear_all_remain_available_on_an_empty_page(): void
     {
         $this->actingAs($this->browserUser());
-        $response = $this->get('/browse/all?q=missing&per=24')->assertOk();
+        $response = $this->get('/browse/all?q=missing')->assertOk();
         $document = new \DOMDocument;
         @$document->loadHTML($response->getContent());
         $xpath = new \DOMXPath($document);
-        $this->assertSame(2, $xpath->query('//nav[@aria-label="Release pages"]')->length);
-        $this->assertSame(4, $xpath->query('//nav[@aria-label="Release pages"]//button[@disabled]')->length);
-        $this->assertSame(6, $xpath->query('//nav[@aria-label="Release pages"]//button[@data-preference="per"]')->length);
-        $response->assertSee('Page 1 of 1')->assertSee('0 releases')
-            ->assertSee('Search in All releases')->assertSee('No releases match.')
-            ->assertSee('Clear filters')->assertDontSee('data-preference="view" data-value="cards"', false);
+        $this->assertSame(1, $xpath->query('//nav[@aria-label="Pages"]')->length, 'the pager line stays; the numbered pager needs a second page');
+        $this->assertSame(2, $xpath->query('//nav[@aria-label="Pages"]//span[@class="is-off"]')->length, 'both arrows off');
+        $response->assertSee('Page 1 of 1')->assertSee('Showing 0 releases')->assertSee('No releases match names containing “missing”.', false)
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false)
+            ->assertDontSee('data-preference="view" data-value="cards"', false)->assertDontSee('<table', false);
     }
 
     public function test_basket_add_and_remove_return_current_user_counts_without_changing_another_users_basket(): void
@@ -334,11 +348,13 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->flushSession();
         $this->actingAs($first)->postJson('/cart/delete/'.md5('One'))
             ->assertOk()->assertJsonPath('success', true)->assertJsonPath('cartCount', 1);
-        $firstPage = $this->get('/browse/all?sort=title')->assertOk();
-        $this->assertFalse($firstPage->viewData('results')->items()[0]->row_data->in_basket);
+        $firstPage = $this->get('/browse/all')->assertOk();
+        $this->assertStringContainsString('data-cart="'.md5('One').'" aria-pressed="false"', $this->browserRow($firstPage->getContent(), 'One'));
+        $this->assertStringContainsString('data-cart="'.md5('Two').'" aria-pressed="true"', $this->browserRow($firstPage->getContent(), 'Two'));
         $this->flushSession();
-        $secondPage = $this->actingAs($second)->get('/browse/all?sort=title')->assertOk();
-        $this->assertTrue($secondPage->viewData('results')->items()[0]->row_data->in_basket);
+        $secondPage = $this->actingAs($second)->get('/browse/all')->assertOk();
+        $this->assertStringContainsString('data-cart="'.md5('One').'" aria-pressed="true"', $this->browserRow($secondPage->getContent(), 'One'));
+        $this->assertStringContainsString('data-cart="'.md5('Two').'" aria-pressed="false"', $this->browserRow($secondPage->getContent(), 'Two'));
     }
 
     public function test_shared_lists_link_a_console_release_to_its_details_page_and_show_no_book_or_pc_title_chip(): void
@@ -364,13 +380,23 @@ final class ReleaseBrowserControllerTest extends TestCase
         app(SearchService::class)->extend('chip-test', static fn () => $driver);
         $this->actingAs($this->browserUser());
 
-        foreach (['/browse/all', '/browse/all?poster='.rawurlencode($poster), '/search?q=Chip'] as $path) {
+        // the generic lists print a console release's game line as plain text under the name and no book, PC or album title at all
+        foreach (['/browse/all', '/browse/all?poster='.rawurlencode($poster)] as $path) {
             $response = $this->get($path)->assertOk();
-            $this->assertSame(4, $response->viewData('results')->total(), $path);
+            $this->assertSame(4, $response->viewData('total'), $path);
             $html = (string) $response->getContent();
-            $this->assertShelfTitleChips($html, $path, md5('Chip.console.release'));
+            $this->assertStringContainsString('<span class="tv-game-line" data-entity="game">Console Game Title · 2024</span>', $this->browserRow($html, 'Chip.console.release'), $path);
+            $this->assertStringContainsString('href="'.route('details', md5('Chip.console.release')).'"', $html, $path);
+            foreach (['Printed Book Title', 'Computer Game Title', 'Album Title', 'data-chip-variant="entity"'] as $absent) {
+                $this->assertStringNotContainsString($absent, $html, $path.' '.$absent);
+            }
             $this->assertNoRetiredAddress($html, $path);
         }
+        $response = $this->get('/search?q=Chip')->assertOk();
+        $this->assertSame(4, $response->viewData('results')->total());
+        $html = (string) $response->getContent();
+        $this->assertShelfTitleChips($html, '/search?q=Chip', md5('Chip.console.release'));
+        $this->assertNoRetiredAddress($html, '/search?q=Chip');
     }
 
     public function test_legacy_group_link_redirects_to_the_canonical_exact_filter(): void
@@ -382,15 +408,18 @@ final class ReleaseBrowserControllerTest extends TestCase
     public function test_poster_pagination_preserves_the_untrimmed_identity(): void
     {
         $identity = ' Exact <poster@Host.test> ';
-        for ($index = 0; $index < 25; $index++) {
+        for ($index = 0; $index < 51; $index++) {
             $this->release('Exact '.$index, ['fromname' => $identity]);
         }
         $this->release('Trimmed', ['fromname' => trim($identity)]);
-        $first = $this->actingAs($this->browserUser())->get(route('browse.all', ['poster' => $identity, 'per' => 24]))->assertOk();
-        $second = $this->get($first->viewData('results')->nextPageUrl())->assertOk();
-        $this->assertSame(25, $second->viewData('results')->total());
-        $this->assertCount(1, $second->viewData('results')->items());
-        $second->assertSee('Posts by '.$identity)->assertDontSee('Trimmed');
+        $first = $this->actingAs($this->browserUser())->get(route('browse.all', ['poster' => $identity]))->assertOk();
+        $next = route('browse.all', $first->viewData('filters')->query(2));
+        $this->assertSame(route('browse.all', ['poster' => $identity, 'page' => 2]), $next);
+        $first->assertSee('href="'.e($next).'"', false);
+        $second = $this->get($next)->assertOk();
+        $this->assertSame(51, $second->viewData('total'));
+        $this->assertCount(1, $second->viewData('rows'));
+        $second->assertSee('<title>Posts by '.e($identity), false)->assertDontSee('Trimmed');
     }
 
     public function test_basket_page_uses_the_shared_table_and_only_current_users_releases(): void
@@ -475,19 +504,21 @@ final class ReleaseBrowserControllerTest extends TestCase
         $response->assertDontSee('Private answer');
     }
 
-    public function test_table_thumbnails_use_each_rows_root_shape_and_a_placeholder_for_missing_artwork(): void
+    public function test_the_all_list_draws_no_thumbnails_whatever_the_old_toggle_says(): void
     {
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('browser-covers')]);
         $this->release('A movie');
         $this->release('B album', ['categories_id' => 3030]);
         $this->release('C adult', ['categories_id' => 6030]);
-        $response = $this->actingAs($this->browserUser())->get('/browse/all?thumbs=1&sort=title')->assertOk();
+        // the generic list has no picture column and no Thumbnails toggle (SPEC 5.4): ?thumbs=1 draws nothing
+        $response = $this->actingAs($this->browserUser())->get('/browse/all?thumbs=1')->assertOk();
         $document = new \DOMDocument;
         @$document->loadHTML($response->getContent());
         $xpath = new \DOMXPath($document);
-        $shapes = array_map(static fn (\DOMNode $node): string => $node->nodeValue, iterator_to_array($xpath->query('//table[@data-release-table]//*[@data-shape]/@data-shape')));
-        $this->assertSame(['tall', 'square', 'wide'], $shapes);
-        $this->assertSame(0, $xpath->query('//table[@data-release-table]//img')->length);
+        $this->assertSame(3, $xpath->query('//table[contains(@class,"tv-feed")]/tbody/tr')->length);
+        $this->assertSame(0, $xpath->query('//table[contains(@class,"tv-feed")]//*[@data-shape]')->length);
+        $this->assertSame(0, $xpath->query('//table[contains(@class,"tv-feed")]//img')->length);
+        $response->assertDontSee('data-preference="thumbs"', false)->assertDontSee('Thumbnails');
     }
 
     public function test_audio_thumbnails_never_show_the_old_album_cover(): void
@@ -503,18 +534,20 @@ final class ReleaseBrowserControllerTest extends TestCase
         DB::table('musicinfo')->insert(['id' => 42, 'title' => 'Old Album Match', 'artist' => 'An artist', 'year' => '2021', 'cover' => 1]);
         $this->release('Matched album release', ['categories_id' => 3030, 'musicinfo_id' => 42, 'isrenamed' => 1, 'nfostatus' => 1]);
         $this->actingAs($this->browserUser());
-        foreach (['/browse/all?thumbs=1' => '//table[@data-release-table]', '/' => '//*[@data-release-cards]'] as $path => $list) {
-            $html = (string) $this->get($path)->assertOk()->assertSee('Matched album release')->getContent();
-            $document = new \DOMDocument;
-            @$document->loadHTML($html);
-            $xpath = new \DOMXPath($document);
-            $tiles = $xpath->query($list.'//*[@data-shape]');
-            $this->assertSame(1, $tiles->length, $path);
-            $this->assertSame('square', $tiles->item(0)->getAttribute('data-shape'), $path);
-            $this->assertSame(0, $xpath->query('.//img', $tiles->item(0))->length, $path);
-            $this->assertSame(1, $xpath->query('.//i[contains(@class, "fa-music")]', $tiles->item(0))->length, $path);
-            $this->assertStringNotContainsString('/covers/music/42', $html, $path);
-        }
+        $html = (string) $this->get('/browse/all?thumbs=1')->assertOk()->assertSee('Matched album release')->getContent();
+        $this->assertStringNotContainsString('/covers/music/42', $html, 'the All list');
+        $this->assertStringNotContainsString('<img', $this->browserRow($html, 'Matched album release'));
+        $this->assertStringNotContainsString('Old Album Match', $html, 'the old album match is never the music line');
+        $html = (string) $this->get('/')->assertOk()->assertSee('Matched album release')->getContent();
+        $document = new \DOMDocument;
+        @$document->loadHTML($html);
+        $xpath = new \DOMXPath($document);
+        $tiles = $xpath->query('//*[@data-release-cards]//*[@data-shape]');
+        $this->assertSame(1, $tiles->length, '/');
+        $this->assertSame('square', $tiles->item(0)->getAttribute('data-shape'), '/');
+        $this->assertSame(0, $xpath->query('.//img', $tiles->item(0))->length, '/');
+        $this->assertSame(1, $xpath->query('.//i[contains(@class, "fa-music")]', $tiles->item(0))->length, '/');
+        $this->assertStringNotContainsString('/covers/music/42', $html, '/');
     }
 
     public function test_table_sizes_use_megabytes_below_one_gigabyte(): void
@@ -522,7 +555,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Small release', ['size' => 524288000]);
         $this->release('Large release', ['size' => 1610612736]);
         $this->actingAs($this->browserUser())->get('/browse/all')->assertOk()
-            ->assertSee('500.00 MB')->assertSee('1.50 GB');
+            ->assertSee('<td class="tv-num tv-size">500 MB</td>', false)->assertSee('<td class="tv-num tv-size">1.50 GB</td>', false);
     }
 
     public function test_existing_minimum_completion_links_still_filter_the_whole_result_set(): void
@@ -530,8 +563,9 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Complete release', ['completion' => 100]);
         $this->release('Incomplete release', ['completion' => 90]);
         $response = $this->actingAs($this->browserUser())->get('/browse/all?minc=95')->assertOk();
-        $this->assertSame(1, $response->viewData('results')->total());
-        $response->assertSee('Complete release')->assertDontSee('Incomplete release')->assertSee('Clear filters');
+        $this->assertSame(1, $response->viewData('total'));
+        $response->assertSee('Complete release')->assertDontSee('Incomplete release')
+            ->assertSee('class="pager-line-clear" data-clear-all aria-hidden="false">Clear all</a>', false);
     }
 
     #[DataProvider('watchedRoots')]
@@ -548,7 +582,7 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Unwanted quality', ['categories_id' => $categoryId + 10, $key => 123]);
         $this->release('Unrestricted title', ['categories_id' => $categoryId + 10, $key => 456]);
         $response = $this->actingAs($user)->get('/browse/all?watching=1')->assertOk();
-        $this->assertSame(2, $response->viewData('results')->total());
+        $this->assertSame(2, $response->viewData('total'));
         $response->assertSee('Selected quality')->assertSee('Unrestricted title')->assertDontSee('Unwanted quality');
     }
 
@@ -575,18 +609,23 @@ final class ReleaseBrowserControllerTest extends TestCase
         foreach ($cases as $name => [$nfo, $password, $claim, $done]) {
             $this->release($name, ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim]);
         }
-        $table = $this->actingAs($this->browserUser())->get('/browse/all')->assertOk();
-        foreach ($table->viewData('results') as $release) {
+        // the list's rows are loaded through the shared row loader (ReleaseRowFacts), which carries the DTO's decisions
+        $this->actingAs($this->browserUser());
+        $ids = DB::table('releases')->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
+        $this->assertCount(count($cases), app(ReleaseRowFacts::class)->load($ids));
+        foreach (app(ReleaseRowFacts::class)->load($ids) as $release) {
             $this->assertSame($cases[$release->row_data->name][3], $release->row_data->pp_done, $release->row_data->name);
         }
+        $this->get('/browse/all')->assertOk()->assertSee('Found NFO');
     }
 
     public function test_cards_are_not_offered_for_all_other_group_or_poster_lists(): void
     {
         $this->actingAs($this->browserUser());
+        $this->release('A release', ['categories_id' => 31]);
         foreach (['/browse/all', '/browse/other', '/browse/all?group=example', '/browse/all?poster=example'] as $path) {
             $this->get($path.(str_contains($path, '?') ? '&' : '?').'view=cards')->assertOk()
-                ->assertSee('data-release-table', false)->assertDontSee('data-release-cards', false)
+                ->assertSee('x-data="tvReleases"', false)->assertDontSee('data-release-cards', false)->assertDontSee('x-release-browser', false)
                 ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
         }
     }

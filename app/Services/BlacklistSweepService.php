@@ -106,6 +106,33 @@ final class BlacklistSweepService
         return $status;
     }
 
+    /**
+     * One run by the id start() returned, with its live counts and without its log path, or null
+     * when the id is malformed or the run's metadata is gone (pruned). Only a run id is accepted,
+     * never a path.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function run(string $id): ?array
+    {
+        if (preg_match('/^[0-9]{8}-[0-9]{6}-[0-9]{6}-[a-z0-9]{8}$/', $id) !== 1) {
+            return null;
+        }
+
+        return $this->withLock(function () use ($id): ?array {
+            foreach ($this->recoverOrphanedRuns($this->readStatuses()) as $status) {
+                if (($status['id'] ?? null) === $id) {
+                    $status = $this->withCounts($status);
+                    unset($status['log_path']);
+
+                    return $status;
+                }
+            }
+
+            return null;
+        });
+    }
+
     public function complete(string $id, int $exitCode): void
     {
         $this->withLock(function () use ($id, $exitCode): void {
