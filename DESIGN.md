@@ -197,6 +197,8 @@ Green, red, yellow/orange and cyan are **literal and reserved**: success, danger
 
 **The Chip Is a Readout Rule.** Chips report state; they are not decoration and not navigation-by-another-name. A chip that does not tell the reader something they would otherwise have to open the release to learn does not belong on the row.
 
+**The Drag to Reorder Rule.** Any list the user can reorder is reordered by drag and drop: a grip on each item, a lifted ghost, live reflow, and the drop saves. The grip carries the keyboard path: Space grabs, arrow keys move the item and announce "<item> · position N of M", Space drops, Escape restores. Up / down arrow buttons are never a reorder control. The home page's Shelves dialog is the reference; the admin content list also reorders by drag.
+
 ## Typography
 
 **Text Font:** Manrope (with `ui-sans-serif, system-ui, sans-serif` and the emoji stack), a variable face declared once for weights `400 800`, self-hosted from `resources/fonts/Manrope.ttf` with its SIL Open Font License in `resources/fonts/OFL.txt`.

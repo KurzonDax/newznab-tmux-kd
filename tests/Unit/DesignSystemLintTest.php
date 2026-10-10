@@ -54,6 +54,20 @@ class DesignSystemLintTest extends TestCase
             'JS active palette' => ['resources/js/alpine/components/example.js', "button.classList.add('bg-blue-600');", 'JavaScript blue-*'],
             'colour scheme attribute' => ['resources/views/layouts/main.blade.php', '<html data-color-scheme="{{ $scheme }}">', 'colour scheme reference'],
             'colour scheme store' => ['resources/js/alpine/stores/theme.js', "this.\$store.theme.setScheme('violet');", 'colour scheme reference'],
+            'arrow reorder label' => ['resources/views/home/shelves-dialog.blade.php', '<button aria-label="Move Movies up"><i class="fas fa-arrow-up"></i></button>', 'arrow-button reorder'],
+            'arrow reorder title' => ['resources/views/home/shelves-dialog.blade.php', '<button title="Move {{ $shelf->name }} down">Down</button>', 'arrow-button reorder'],
+            'arrow reorder bound label' => ['resources/views/home/shelves-dialog.blade.php', '<button :aria-label="\'Move \' + shelf.name + \' up\'">Up</button>', 'arrow-button reorder'],
+            'arrow reorder in admin' => ['resources/views/admin/content/index.blade.php', '<button aria-label="Move up">Up</button>', 'arrow-button reorder'],
+            'arrow reorder in forum' => ['resources/forum/blade-tailwind/views/category/show.blade.php', '<button title="Move down">Down</button>', 'arrow-button reorder'],
+            'arrow reorder JS label' => ['resources/js/alpine/components/example.js', "button.setAttribute('aria-label', `Move \${name} down`);", 'arrow-button reorder'],
+            'arrow icon button in reorder list' => ['resources/views/home/shelves-dialog.blade.php', "<ul data-reorder>\n<li>Movies\n<button type=\"button\">\n<i class=\"fas fa-chevron-up\"></i>\n</button></li></ul>", 'arrow-button reorder'],
+            'arrow icon button in sortable list' => ['resources/views/home/shelves-dialog.blade.php', '<ul data-sortable><li><button><i class="fa-solid fa-arrow-down"></i></button></li></ul>', 'arrow-button reorder'],
+            'arrow reorder label, any case' => ['resources/views/home/shelves-dialog.blade.php', '<button aria-label="Move Up">Up</button>', 'arrow-button reorder'],
+            'arrow reorder translated label' => ['resources/views/home/shelves-dialog.blade.php', '<button title="{{ __(\'Move down\') }}">Down</button>', 'arrow-button reorder'],
+            'arrow reorder JS property' => ['resources/js/alpine/components/example.js', "button.ariaLabel = 'Move ' + name + ' up';", 'arrow-button reorder'],
+            'arrow icon button beside a shelf grip' => ['resources/views/home/shelves-dialog.blade.php', '<ul data-drag-zone><li><button data-grip></button><button @click="up({{ $shelf->id }})"><i class="fas fa-arrow-up"></i><span class="sr-only">Earlier</span></button></li></ul>', 'arrow-button reorder'],
+            'arrow icon button beside a drag handle' => ['resources/views/admin/content/index.blade.php', '<tr><td><button data-drag-handle draggable="true"></button><button :disabled="index > 0"><i class="fas fa-caret-down"></i></button></td></tr>', 'arrow-button reorder'],
+            'arrow icon move button' => ['resources/js/alpine/components/example.js', 'row.innerHTML = `<button data-shelf-mv="up"><i class="fas fa-arrow-up"></i></button>`;', 'arrow-button reorder'],
         ];
     }
 
@@ -78,6 +92,13 @@ class DesignSystemLintTest extends TestCase
             'forum category color' => ['resources/forum/blade-tailwind/views/category/show.blade.php', '<div style="background: {{ $category->color }}"></div>'],
             'modern FA suffix' => ['resources/views/browse/index.blade.php', '<i class="fas fa-external-link-alt"></i>'],
             'JS primary state' => ['resources/js/alpine/components/example.js', "button.classList.add('bg-primary-600');"],
+            'stat arrow beside a number' => ['resources/views/admin/dashboard.blade.php', '<span class="text-sm text-green-600 dark:text-green-400"><i class="fas fa-arrow-up"></i> <span data-stat="releases-today">12</span> today</span>'],
+            'stat arrow in a file with a reorder list' => ['resources/views/admin/dashboard.blade.php', '<ul data-reorder><li>Movies</li></ul><span><i class="fas fa-arrow-up"></i> <span data-stat="releases-today">12</span> today</span>'],
+            'two labels on one line' => ['resources/js/alpine/components/example.js', "const item = { title: 'Move it', hint: 'scroll up' };"],
+            'drag grip' => ['resources/views/admin/content/index.blade.php', '<ul data-reorder><li><button draggable="true" aria-label="Drag to reorder shelves"><i class="fas fa-grip-vertical"></i></button></li></ul>'],
+            'offsite link icon in reorder list' => ['resources/views/home/shelves-dialog.blade.php', '<ul data-reorder><li><button><i class="fas fa-arrow-up-right-from-square"></i></button></li></ul>'],
+            'collapse chevron outside a reorder list' => ['resources/views/browse/index.blade.php', '<button aria-label="Collapse filters"><i class="fas fa-chevron-up"></i></button>'],
+            'move label that is not a direction' => ['resources/views/browse/index.blade.php', '<button aria-label="Move to another list">Move</button>'],
         ];
     }
 
