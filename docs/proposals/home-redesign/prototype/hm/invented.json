@@ -1,0 +1,114 @@
+{
+ "_note": "INVENTED for the mockup: the followed shows and films, the basket, the recent downloads, the saved views and the front-page notes. Every name in this copy is invented; the pictures are drawn placeholders.",
+ "followShows": [
+  5,
+  2,
+  21,
+  12,
+  8,
+  18,
+  9,
+  15,
+  1,
+  16,
+  14,
+  6,
+  19,
+  4
+ ],
+ "followFilms": [
+  41,
+  39,
+  38,
+  44,
+  1,
+  36,
+  37,
+  35,
+  43
+ ],
+ "basket": [
+  7600497,
+  7600499,
+  7600262,
+  7600412,
+  7600365,
+  7600475
+ ],
+ "downloads": [
+  [
+   7600362,
+   1789861497
+  ],
+  [
+   7600378,
+   1789834737
+  ],
+  [
+   7600331,
+   1789811157
+  ],
+  [
+   7600254,
+   1789786737
+  ],
+  [
+   7600259,
+   1789761657
+  ],
+  [
+   7600273,
+   1789734537
+  ],
+  [
+   7600504,
+   1789708797
+  ],
+  [
+   7600377,
+   1789685577
+  ],
+  [
+   7600285,
+   1789660077
+  ]
+ ],
+ "savedViews": [
+  {
+   "id": "tv1080",
+   "name": "TV · 1080p web",
+   "root": "TV",
+   "res": [
+    2
+   ],
+   "src": [
+    1
+   ]
+  },
+  {
+   "id": "uhd",
+   "name": "Movies · 4K",
+   "root": "Movies",
+   "res": [
+    1
+   ],
+   "src": []
+  },
+  {
+   "id": "flac",
+   "name": "Audio · Lossless",
+   "root": "Audio",
+   "sub": [
+    "Lossless",
+    "FLAC"
+   ]
+  }
+ ],
+ "content": [
+  {
+   "id": 1,
+   "title": "Welcome to the site.",
+   "body": "<p>This is invented front-page text: the admin writes it on the Content page.</p>"
+  }
+ ]
+}
