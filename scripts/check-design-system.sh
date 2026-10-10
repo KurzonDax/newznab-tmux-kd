@@ -95,6 +95,30 @@ hits=$(grep -rnE 'data-color-scheme|color-scheme-preference|colorScheme|color_sc
     | grep -vE "$VIEWS_EXCLUDE" || true)
 [ -n "$hits" ] && report "colour scheme reference (coral is the only accent)" "$hits"
 
+# 6. Reordering is drag and drop (DESIGN.md > Named Rules > The Drag to
+#    Reorder Rule). Admin views and scripts are checked too. Two forms fail:
+#    a label or title reading "Move … up" / "Move … down", and a button that
+#    holds only an up / down arrow icon in a file that marks a reorderable
+#    list (the gate is the file; the script does not parse nesting).
+REORDER_ROOTS=("${VIEW_ROOTS[@]}" resources/js)
+Q="[\"'\`]"
+NQ="[^\"'\`]"
+hits=$(grep -rniE "(aria-label|ariaLabel|title).{1,14}${Q}Move ((${NQ}|${Q} *\\+${NQ}*\\+ *${Q})* )?(up|down)${Q}" \
+    "${REORDER_ROOTS[@]}" --include='*.blade.php' --include='*.js' | grep -vE "$VIEWS_EXCLUDE" || true)
+icon_hits=$(grep -rlE 'data-(reorder|sortable|[a-z-]*mv|drag-zone|drag-handle|grip)([^[:alnum:]_-]|$)|draggable=' \
+    "${REORDER_ROOTS[@]}" --include='*.blade.php' --include='*.js' | grep -vE "$VIEWS_EXCLUDE" \
+    | while IFS= read -r file; do
+        perl -0777 -ne '
+            my $tag = qr/(?:[^>"\x27]|"[^"]*"|\x27[^\x27]*\x27)*>/;
+            my $hidden = qr/(?:\s*<span\b[^>]*\bsr-only\b[^>]*>[^<]*<\/span>)?/;
+            while (/<button\b$tag$hidden\s*<i\b[^>]*\bfa-(?:arrow|chevron|caret|angle)-(?:up|down)(?![\w-])[^>]*>\s*<\/i>$hidden\s*<\/button>/g) {
+                my $line = 1 + (substr($_, 0, $-[0]) =~ tr/\n//);
+                print "$ARGV:$line:arrow-only button in a reorderable list\n";
+            }' "$file"
+    done)
+hits=$(printf '%s\n%s\n' "$hits" "$icon_hits" | grep -v '^$' || true)
+[ -n "$hits" ] && report "arrow-button reorder control (reordering is drag and drop; DESIGN.md > The Drag to Reorder Rule)" "$hits"
+
 if [ "$fail" -ne 0 ]; then
     echo "design-system: see AGENTS.md > Frontend > Design system" >&2
     exit 1

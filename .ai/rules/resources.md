@@ -64,3 +64,4 @@ confirmations belong in `resources/js/alpine/components/content-toggle.js`.
 `AdminContentController::reorder()` accepts the exact ID set of one group and
 rejects partial or mixed-type requests. New items receive the next bottom ordinal
 server-side; the add form intentionally hides it. Deletion leaves ordinal gaps.
+Any reorder control follows DESIGN.md's Named Rule "The Drag to Reorder Rule".
