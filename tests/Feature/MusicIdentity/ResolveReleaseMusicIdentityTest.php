@@ -10,22 +10,32 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
+use App\Models\ReleaseMusicRename;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
 use App\Services\MusicIdentity\AcousticFingerprintCandidates;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
+use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\CoverArt\CoverArtPacer;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateHypothesis;
+use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
 use App\Services\MusicIdentity\DTO\CandidateIdentity;
 use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\CandidatePool;
 use App\Services\MusicIdentity\DTO\CandidateSignal;
+use App\Services\MusicIdentity\DTO\RecordingCandidates;
+use App\Services\MusicIdentity\DTO\RecordingQuery;
+use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
+use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Evidence\AudioEvidenceSetFactory;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
+use App\Services\MusicIdentity\Matching\ReleaseNameAlbumParser;
 use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use App\Services\MusicIdentity\MusicIdentityResolver;
@@ -33,6 +43,7 @@ use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use App\Services\MusicIdentity\Persistence\MusicIdentitySynthesisLeaseManager;
+use App\Services\MusicIdentity\ReleaseNameAlbumCandidates;
 use App\Services\MusicIdentity\Rename\MusicRenameProjection;
 use App\Services\MusicIdentity\ResolveReleaseMusicIdentity;
 use App\Services\Runners\PostProcessRunner;
@@ -429,6 +440,106 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
+    public function a_release_without_tracks_is_identified_by_its_name_and_keeps_that_name(): void
+    {
+        Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $this->namedEvidence($release, 'Candy Dulfer - Crazy (2011)(flac)');
+
+        $identification = $this->worker(
+            new EmptyCandidateGenerator,
+            releaseNameAlbums: new ReleaseNameAlbumCandidates(new NamedAlbumGateway, new ReleaseNameAlbumParser),
+        )->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $identification->state);
+        $this->assertSame(NamedAlbumGateway::RELEASE_GROUP_ID, $identification->musicbrainz_release_group_id);
+        $this->assertSame('Crazy', $identification->fresh()?->accepted_title);
+        $this->assertDatabaseHas('release_music_candidate_attempts', [
+            'release_music_identification_id' => $identification->id,
+            'rank' => 1,
+            'musicbrainz_release_group_id' => NamedAlbumGateway::RELEASE_GROUP_ID,
+        ]);
+        $this->assertDatabaseHas('release_music_renames', [
+            'release_music_identification_id' => $identification->id,
+            'outcome' => 'declined',
+            'reason' => 'score_below_minimum',
+        ]);
+        $this->assertSame('Artist - Album 2024 FLAC', DB::table('releases')->where('id', $release->id)->value('searchname'));
+        $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release-group', 'musicbrainz_id' => NamedAlbumGateway::RELEASE_GROUP_ID, 'outcome' => 'stored']);
+    }
+
+    #[Test]
+    public function a_name_that_settles_two_close_albums_does_not_open_the_rename_gate(): void
+    {
+        Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $evidence = $this->namedEvidence($release, 'Example Artist - Example Album (2020) [FLAC]', archiveManifestComplete: true);
+        foreach (CloseAlbumsCandidateGenerator::TITLES as $index => $title) {
+            $evidence->tracks()->create([
+                'source_kind' => 'archive',
+                'source_ordinal' => $index + 1,
+                'raw_filename' => sprintf('%02d - %s.flac', $index + 1, $title),
+                'track_number' => $index + 1,
+                'album' => 'Example Album',
+                'album_artist' => 'Example Artist',
+                'title' => $title,
+                'recorded_date' => '2020',
+                'whole_duration_seconds' => $index === 0 ? 180 : 210,
+                'whole_duration_reliable' => true,
+            ]);
+        }
+        $this->assertSame(
+            IdentificationStatus::NeedsReview,
+            (new MusicIdentityResolver(new CloseAlbumsCandidateGenerator))->resolve((new AudioEvidenceSetFactory)->make($evidence))->status,
+            'the files alone cannot tell the two albums apart',
+        );
+
+        $identification = $this->worker(
+            new CloseAlbumsCandidateGenerator,
+            releaseNameAlbums: new ReleaseNameAlbumCandidates(
+                new NamedAlbumGateway('Example Artist', 'Example Album', CloseAlbumsCandidateGenerator::RELEASE_GROUP_ID),
+                new ReleaseNameAlbumParser,
+            ),
+        )->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($identification);
+        $stored = $identification->fresh();
+        $this->assertNotNull($stored);
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $stored->state);
+        $this->assertSame(CloseAlbumsCandidateGenerator::RELEASE_GROUP_ID, $stored->musicbrainz_release_group_id);
+        $this->assertGreaterThanOrEqual(92, $stored->score, 'the score alone would let the rename through');
+        $this->assertSame(0, $stored->runner_up_margin);
+        $this->assertDatabaseHas('release_music_renames', [
+            'release_music_identification_id' => $identification->id,
+            'outcome' => 'declined',
+            'reason' => 'runner_up_margin_below_minimum',
+        ]);
+        $this->assertSame('Artist - Album 2024 FLAC', DB::table('releases')->where('id', $release->id)->value('searchname'));
+    }
+
+    #[Test]
+    public function a_name_the_music_rename_wrote_is_not_read_back_as_evidence(): void
+    {
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $identification = $this->acceptedGroup($release, $evidence, '11111111-1111-4111-8111-111111111111', 'music-identity-v1');
+        $rename = ReleaseMusicRename::query()->create([
+            'releases_id' => $release->id,
+            'release_music_identification_id' => $identification,
+            'outcome' => 'applied',
+            'before' => ['searchname' => 'Artist - Album 2024 FLAC'],
+            'after' => ['searchname' => 'Some Other Artist - Some Other Album (1999) FLAC'],
+        ]);
+
+        $this->assertSame('Artist - Album 2024 FLAC', (new AudioEvidenceSetFactory)->make($evidence)->releaseTitle, 'a rename to another name does not hide the captured one');
+
+        $rename->update(['after' => ['searchname' => 'Artist - Album 2024 FLAC']]);
+
+        $this->assertNull((new AudioEvidenceSetFactory)->make($evidence)->releaseTitle);
+    }
+
+    #[Test]
     public function an_accepted_album_decision_fetches_its_cover_after_it_is_persisted(): void
     {
         Http::fake(['https://caa.test/release/'.AcceptingCandidateGenerator::RELEASE_ID.'/front-500' => Http::response($this->image(), 200)]);
@@ -590,6 +701,8 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $release = $this->release();
         $this->evidence($release);
         $this->app->instance(CandidateGenerator::class, new EmptyCandidateGenerator);
+        // The release name is searched too (#1033); MusicBrainz knows no such album.
+        Http::fake(['https://musicbrainz.test/ws/2/release-group*' => Http::response(['count' => 0, 'offset' => 0, 'release-groups' => []])]);
 
         $status = Artisan::call('postprocess:guid', [
             'type' => 'mus',
@@ -606,6 +719,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     private function worker(
         CandidateGenerator $candidateGenerator,
         ?AcousticFingerprintCandidates $fingerprintCandidates = null,
+        ?ReleaseNameAlbumCandidates $releaseNameAlbums = null,
     ): ResolveReleaseMusicIdentity {
         $retryPolicy = new MusicIdentityRetryPolicy;
 
@@ -617,6 +731,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
                 candidateGenerator: $candidateGenerator,
                 algorithmVersion: (string) config('music-identity.algorithm_version'),
                 fingerprintCandidates: $fingerprintCandidates,
+                releaseNameAlbums: $releaseNameAlbums,
             ),
             leases: new MusicIdentityLeaseManager,
             synthesisLeases: new MusicIdentitySynthesisLeaseManager($retryPolicy),
@@ -675,6 +790,24 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         ]);
 
         return $evidence;
+    }
+
+    /** An evidence revision with no track rows, captured while the release carried the given name. */
+    private function namedEvidence(Release $release, string $searchName, ?bool $archiveManifestComplete = null): ReleaseAudioEvidence
+    {
+        return ReleaseAudioEvidence::query()->create([
+            'releases_id' => $release->id,
+            'revision' => 1,
+            'evidence_hash' => str_repeat('c', 64),
+            'schema_version' => 1,
+            'provenance' => 'captured',
+            'release_snapshot' => ['name' => 'obfuscated', 'searchname' => $searchName],
+            'archive_manifest_complete' => $archiveManifestComplete,
+            'nzb_manifest' => [],
+            'archive_manifest' => [],
+            'sidecar_manifest' => [],
+            'captured_at' => now(),
+        ]);
     }
 
     private function albumEvidence(Release $release): ReleaseAudioEvidence
@@ -789,6 +922,117 @@ final readonly class AcceptingCandidateGenerator implements CandidateGenerator
             ]]),
             [new CandidateSignal(CandidateSignalKind::EmbeddedReleaseId, self::RELEASE_ID, $evidence->trackEvidence[0]->provenanceFamily ?? 'tag', true, $identity)],
         )]);
+    }
+}
+
+/** Two albums the files fit equally well: the same three tracks, each found by a search on three files. */
+final readonly class CloseAlbumsCandidateGenerator implements CandidateGenerator
+{
+    public const string RELEASE_GROUP_ID = '66666666-6666-4666-8666-666666666666';
+
+    public const array TITLES = ['Rare One', 'Rare Two', 'Rare Three'];
+
+    public function generate(AudioEvidenceSet $evidence): CandidatePool
+    {
+        return new CandidatePool([
+            $this->album('44444444-4444-4444-8444-444444444444', self::RELEASE_GROUP_ID),
+            $this->album('55555555-5555-4555-8555-555555555555', '99999999-9999-4999-8999-999999999999'),
+        ]);
+    }
+
+    private function album(string $releaseId, string $releaseGroupId): CandidateHypothesis
+    {
+        $releaseTracks = [];
+        $signals = [];
+        foreach (self::TITLES as $index => $title) {
+            $length = $index === 0 ? 180_000 : 210_000;
+            $recordingId = sprintf('22222222-2222-4222-8222-%012d', $index + 1);
+            $releaseTracks[] = [
+                'musicBrainzReleaseTrackId' => sprintf('33333333-3333-4333-8333-%012d', $index + 1),
+                'title' => $title, 'position' => $index + 1, 'number' => (string) ($index + 1), 'lengthMs' => $length,
+                'artistCredit' => 'Example Artist',
+                'recording' => [
+                    'recordingId' => $recordingId, 'title' => $title, 'artistCredit' => 'Example Artist', 'lengthMs' => $length, 'video' => false,
+                    'isrcs' => [], 'releaseIds' => [$releaseId], 'releaseGroupIds' => [$releaseGroupId], 'providerScore' => null, 'sources' => ['fixture'],
+                ],
+            ];
+            $signals[] = new CandidateSignal(
+                CandidateSignalKind::TrackEvidenceSearch,
+                'search-result-'.$index,
+                'search-file:'.$index,
+                false,
+                new CandidateIdentity(recordingId: $recordingId, releaseGroupId: $releaseGroupId),
+            );
+        }
+
+        return new CandidateHypothesis(
+            new CandidateIdentity(releaseId: $releaseId, releaseGroupId: $releaseGroupId),
+            new CandidateMetadata([], [[
+                'releaseId' => $releaseId, 'title' => 'Example Album', 'artistCredit' => 'Example Artist', 'releaseGroupId' => $releaseGroupId,
+                'status' => 'Official', 'date' => '2020-01-01', 'country' => 'US', 'barcode' => null, 'labels' => [], 'aliases' => [],
+                'media' => [['position' => 1, 'title' => null, 'format' => 'CD', 'releaseTrackCount' => 3, 'discIds' => [], 'releaseTracks' => $releaseTracks]],
+            ]], [[
+                'releaseGroupId' => $releaseGroupId, 'title' => 'Example Album', 'artistCredit' => 'Example Artist', 'primaryType' => 'Album',
+                'secondaryTypes' => [], 'firstReleaseDate' => '2020-01-01', 'aliases' => [],
+            ]]),
+            $signals,
+        );
+    }
+}
+
+/** MusicBrainz holding one album: found by a release-group search for its artist and title, and hydrated to one edition. */
+final readonly class NamedAlbumGateway implements MusicBrainzGateway
+{
+    public const string RELEASE_GROUP_ID = '77777777-7777-4777-8777-777777777777';
+
+    private const string RELEASE_ID = '88888888-8888-4888-8888-888888888888';
+
+    public function __construct(
+        private string $artist = 'Candy Dulfer',
+        private string $title = 'Crazy',
+        private string $releaseGroupId = self::RELEASE_GROUP_ID,
+    ) {}
+
+    public function candidatesFor(RecordingQuery $query): RecordingCandidates
+    {
+        return RecordingCandidates::empty();
+    }
+
+    public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
+    {
+        return ReleaseCandidates::empty();
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return [$query->artist, $query->title] === [$this->artist, $this->title]
+            ? new ReleaseGroupCandidates($this->album()->releaseGroups, 1, ['musicbrainz:response:search'])
+            : ReleaseGroupCandidates::empty();
+    }
+
+    public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata
+    {
+        return $identifiers->releaseGroupId === $this->releaseGroupId ? $this->album() : CandidateMetadata::empty();
+    }
+
+    public function releaseGroup(string $releaseGroupId): ?array
+    {
+        return null;
+    }
+
+    private function album(): CandidateMetadata
+    {
+        return new CandidateMetadata([], [[
+            'releaseId' => self::RELEASE_ID, 'title' => $this->title, 'artistCredit' => $this->artist, 'releaseGroupId' => $this->releaseGroupId,
+            'status' => 'Official', 'date' => '2011-09-30', 'country' => 'NL', 'barcode' => null, 'labels' => [],
+            'media' => [['position' => 1, 'title' => null, 'format' => 'CD', 'releaseTrackCount' => 1, 'discIds' => [], 'releaseTracks' => [[
+                'musicBrainzReleaseTrackId' => '33333333-3333-4333-8333-000000000009', 'title' => $this->title, 'position' => 1, 'number' => '1',
+                'lengthMs' => 240_000, 'artistCredit' => $this->artist, 'recording' => null,
+            ]]]],
+        ]], [[
+            'releaseGroupId' => $this->releaseGroupId, 'title' => $this->title, 'artistCredit' => $this->artist, 'primaryType' => 'Album',
+            'secondaryTypes' => [], 'firstReleaseDate' => '2011-09-30',
+        ]]);
     }
 }
 

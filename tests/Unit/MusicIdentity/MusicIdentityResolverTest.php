@@ -16,6 +16,8 @@ use App\Services\MusicIdentity\DTO\CandidateSignal;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
 use App\Services\MusicIdentity\Enums\AcceptedIdentityScope;
@@ -1263,6 +1265,11 @@ final class GenreLookupGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return RecordingCandidates::empty();
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates

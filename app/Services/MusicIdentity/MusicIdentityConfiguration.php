@@ -11,9 +11,10 @@ final readonly class MusicIdentityConfiguration
     /**
      * The algorithm version, the one place it is written: config/music-identity.php reads it, and
      * every fallback goes through algorithmVersion(). Raising it re-resolves every eligible audio
-     * release (v2: accepted search text, #308; v3: album genres, track lists and artists, #313).
+     * release (v2: accepted search text, #308; v3: album genres, track lists and artists, #313;
+     * v4: release-name album matching, #1033).
      */
-    public const string DEFAULT_ALGORITHM_VERSION = 'music-identity-v3';
+    public const string DEFAULT_ALGORITHM_VERSION = 'music-identity-v4';
 
     public bool $enabled;
 

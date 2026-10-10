@@ -9,6 +9,8 @@ use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 
 /**
@@ -19,6 +21,9 @@ interface MusicBrainzGateway
     public function candidatesFor(RecordingQuery $query): RecordingCandidates;
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates;
+
+    /** The release groups a search by artist and album title returns, in the provider's order. */
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates;
 
     public function hydrate(CandidateIdentifiers $identifiers): CandidateMetadata;
 

@@ -6,7 +6,8 @@ use App\Services\MusicIdentity\MusicIdentityConfiguration;
 return [
     // Raising the version re-resolves every eligible audio release against MusicBrainz; it is
     // written once, in MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION (v2: accepted search
-    // text, #308; v3: an accepted album's genres, track list and credited artists, #313).
+    // text, #308; v3: an accepted album's genres, track list and credited artists, #313;
+    // v4: release-name album matching, #1033).
     'algorithm_version' => MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION,
     'resolver_version' => 'resolver-v1',
     'normalizer_version' => 'normalizer-v1',

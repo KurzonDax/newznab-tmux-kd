@@ -48,6 +48,7 @@ use App\Services\MusicIdentity\MusicCandidateGenerator;
 use App\Services\MusicIdentity\MusicIdentityConfiguration;
 use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
+use App\Services\MusicIdentity\ReleaseNameAlbumCandidates;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Support\ReleaseRepairingContext;
@@ -150,6 +151,7 @@ class AppServiceProvider extends ServiceProvider
             minimumRunnerUpMargin: (int) config('music-identity.scoring.minimum_runner_up_margin', 5),
             fingerprintCandidates: $app->make(AcousticFingerprintCandidates::class),
             musicBrainz: $app->make(MusicBrainzGateway::class),
+            releaseNameAlbums: $app->make(ReleaseNameAlbumCandidates::class),
         ));
     }
 }
