@@ -53,10 +53,12 @@ else: sys.exit('unexpected gh: '+repr(args))
 import json,os,pathlib,sys
 pathlib.Path('.codegraph').mkdir(exist_ok=True)
 if sys.argv[1] == 'status': print(json.dumps(dict(initialized=True, projectPath=os.getcwd(), fileCount=1, index=dict(state='complete'), pendingChanges={})))
+elif sys.argv[1] == 'explore': print('probe exploration source'); print('probe exploration notice', file=sys.stderr)
 else: print('usable fixture index')
 ''',
             'docker': '#!/bin/sh\necho "unexpected runtime startup" >&2\nexit 91\n',
         }
+        self.codegraph_fixture = commands['codegraph']
         for name, body in commands.items():
             path = fake / name
             path.write_text(body)
@@ -146,6 +148,29 @@ else: print('usable fixture index')
         result = subprocess.run(['scripts/agent-codegraph'], cwd=self.primary,
                                 env=dict(self.env, AGENT_CODEGRAPH_APPROVED_ISSUE='issue/123'), capture_output=True, text=True)
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_codegraph_probe_reports_only_its_status(self):
+        result = subprocess.run(['scripts/agent-codegraph'], cwd=self.primary,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual('CODEGRAPH_STATUS=ready\n', result.stdout)
+        self.assertNotIn('probe exploration', result.stderr)
+        result = self.start('123')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertNotIn('probe exploration', result.stdout + result.stderr)
+        self.assertEqual(['CODEGRAPH_STATUS', 'ISSUE_NUMBER', 'BRANCH', 'WORKTREE_PATH', 'COMPOSE_PROJECT_NAME'],
+                         [line.partition('=')[0] for line in result.stdout.splitlines()[-5:]])
+
+    def test_failed_codegraph_probe_keeps_its_error_visible(self):
+        (self.root / 'bin/codegraph').write_text(self.codegraph_fixture.replace(
+            "print('probe exploration notice', file=sys.stderr)",
+            "sys.exit('probe exploration failed')"))
+        result = subprocess.run(['scripts/agent-codegraph'], cwd=self.primary,
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual(2, result.returncode)
+        self.assertEqual('', result.stdout)
+        self.assertIn('probe exploration failed', result.stderr)
+        self.assertIn('CODEGRAPH_STATUS=approval-required', result.stderr)
 
     def test_explicit_worktree_is_independent(self):
         result = self.start('--worktree', '123')

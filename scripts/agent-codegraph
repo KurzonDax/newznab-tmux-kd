@@ -18,17 +18,22 @@ except (ValueError, TypeError): sys.exit(1)
 '
 }
 if command -v codegraph >/dev/null; then
+    # Stdout carries only the status line; the tool's progress goes to stderr.
     if [[ -d .codegraph ]]; then
-        codegraph sync "$root" || true
+        codegraph sync "$root" >&2 || true
     else
-        codegraph init "$root" || true
+        codegraph init "$root" >&2 || true
     fi
     if ! usable; then
-        codegraph index "$root" || true
+        codegraph index "$root" >&2 || true
     fi
-    if usable && codegraph explore 'scripts/ci_runtime.py'; then
-        printf 'CODEGRAPH_STATUS=ready\n'
-        exit 0
+    # Only the probe's exit code matters; its error output is shown on failure alone.
+    if usable; then
+        if probe_stderr="$(codegraph explore 'scripts/ci_runtime.py' 2>&1 >/dev/null)"; then
+            printf 'CODEGRAPH_STATUS=ready\n'
+            exit 0
+        fi
+        printf '%s\n' "$probe_stderr" >&2
     fi
 fi
 if [[ "${AGENT_CODEGRAPH_APPROVED_ISSUE:-}" == "$(git branch --show-current)" ]]; then
