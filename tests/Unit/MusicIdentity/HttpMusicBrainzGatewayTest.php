@@ -6,6 +6,7 @@ namespace Tests\Unit\MusicIdentity;
 
 use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
@@ -15,6 +16,7 @@ use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 final class HttpMusicBrainzGatewayTest extends TestCase
@@ -119,6 +121,78 @@ final class HttpMusicBrainzGatewayTest extends TestCase
         $this->expectExceptionMessage('MusicBrainz response missing required field "count".');
 
         $this->gateway()->releaseCandidatesFor(new ReleaseQuery(title: 'OK Computer'));
+    }
+
+    public function test_a_release_group_search_sends_the_artist_as_a_phrase_and_the_title_as_terms(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('release-group-search.json'))]);
+
+        $this->gateway()->releaseGroupCandidatesFor(new ReleaseGroupQuery(
+            artist: 'The Cranberries',
+            title: 'Stars- The Best of 1992-2002',
+        ));
+
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return parse_url($request->url(), PHP_URL_PATH) === '/ws/2/release-group'
+                && $query['query'] === 'artist:"Cranberries" AND releasegroup:(stars the best of 1992 2002)'
+                && $query['limit'] === '25'
+                && $query['offset'] === '0'
+                && $query['fmt'] === 'json';
+        });
+    }
+
+    public function test_a_release_group_search_normalizes_its_groups_in_the_provider_order(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('release-group-search.json'))]);
+
+        $result = $this->gateway()->releaseGroupCandidatesFor(new ReleaseGroupQuery(artist: 'Rammstein', title: 'Rosenrot'));
+
+        $this->assertSame(2, $result->providerTotal);
+        $this->assertSame(
+            ['7bfae355-44ea-3be6-89de-40147131be51', '15e65e08-85d1-3145-85b2-e18b9fbd4cba'],
+            array_column($result->releaseGroups, 'releaseGroupId'),
+        );
+        $this->assertSame(['Single', 'Album'], array_column($result->releaseGroups, 'primaryType'));
+        $this->assertSame([[], []], array_column($result->releaseGroups, 'secondaryTypes'));
+        $this->assertSame(['Rammstein', 'Rammstein'], array_column($result->releaseGroups, 'artistCredit'));
+        $this->assertSame(['2005-12-09', '2005-10-14'], array_column($result->releaseGroups, 'firstReleaseDate'));
+        $this->assertCount(1, $result->responseCacheKeys);
+    }
+
+    public function test_release_group_search_rejects_browse_pagination_fields(): void
+    {
+        $payload = $this->fixture('release-group-search.json');
+        unset($payload['count']);
+        $payload['release-group-count'] = 2;
+        Http::fake(['*' => Http::response($payload)]);
+
+        $this->expectException(InvalidMusicBrainzResponse::class);
+        $this->expectExceptionMessage('MusicBrainz response missing required field "count".');
+
+        $this->gateway()->releaseGroupCandidatesFor(new ReleaseGroupQuery(artist: 'Rammstein', title: 'Rosenrot'));
+    }
+
+    #[DataProvider('releaseGroupQueriesWithoutText')]
+    public function test_a_release_group_search_without_a_letter_or_digit_makes_no_request(string $artist, string $title): void
+    {
+        Http::fake();
+
+        $result = $this->gateway()->releaseGroupCandidatesFor(new ReleaseGroupQuery(artist: $artist, title: $title));
+
+        $this->assertSame([], $result->releaseGroups);
+        $this->assertSame(0, $result->providerTotal);
+        Http::assertNothingSent();
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function releaseGroupQueriesWithoutText(): iterable
+    {
+        yield 'a punctuation artist' => ['!!!', 'Rosenrot'];
+        yield 'a punctuation title' => ['Rammstein', '-- ?'];
+        yield 'an apostrophe artist' => ["'", 'Rosenrot'];
+        yield 'an apostrophe title' => ['Rammstein', '’`'];
     }
 
     public function test_recording_search_rejects_a_browse_offset_field(): void

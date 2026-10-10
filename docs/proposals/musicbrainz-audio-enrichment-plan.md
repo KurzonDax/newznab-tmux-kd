@@ -315,7 +315,8 @@ Resolution order is strongest-to-weakest and stops when an unambiguous structura
 5. Search normalized album/artist/year hints to recover candidates not found by individual recordings.
 6. Hydrate only the bounded top candidate groups/editions and compare their complete media structures locally.
 7. If still unresolved and eligible fingerprint evidence exists, query AcoustID and add its recording candidates.
-8. Re-score the bounded candidate set, persist the explanation and runner-up margin, and emit a decision.
+8. If the decision still accepts no album, parse artist, album title and year from the release name captured with the evidence, search release groups, and accept the release group when the name identifies exactly one and the file evidence does not point elsewhere.
+9. Re-score the bounded candidate set, persist the explanation and runner-up margin, and emit a decision.
 
 Search scores only retrieve candidates. They are never accepted as confidence probabilities.
 
@@ -359,6 +360,8 @@ No score may bypass structural gates. Automatic album acceptance requires at lea
 - at least two distinct recording matches plus strongly agreeing album artist/title/year evidence.
 
 A single fuzzy text result, ISRC, or AcoustID match may identify one recording. It may improve the sampled-track display, but it cannot select an album or rename the posted release. Exact-edition acceptance additionally requires edition evidence such as disc ID, barcode, catalog number, country/date, or a uniquely compatible medium structure. Otherwise the honest result is an accepted release group with unresolved edition.
+
+The release name is the one exception to the score bands and structural gates above. When the file evidence accepts no album, the release group that the release name identifies is accepted as a release group whatever its score. The name identifies a group only when exactly one group is left: every release-group search for the name returned all of its results, the group agrees with the artist and title read from the name, and the group's title or MusicBrainz type answers every work qualifier in the name (live, remix, demo, EP, single and the like). The name does not decide when the best candidate from the file evidence scores 75 or more and belongs to another release group, when the scorer finds a hard contradiction with the named group, or when a validated embedded identifier does not belong to it. The stored score and band still describe how far the files agree with the album, and the stored runner-up margin is measured against the best candidate of another release group. Renaming keeps its own gate, so a release identified by its name alone keeps that name.
 
 Provider errors are not decisions:
 

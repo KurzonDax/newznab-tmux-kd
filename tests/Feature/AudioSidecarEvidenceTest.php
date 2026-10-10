@@ -18,6 +18,8 @@ use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Enums\CandidateSignalKind;
 use App\Services\MusicIdentity\Evidence\AudioEvidenceSetFactory;
@@ -45,7 +47,7 @@ final class AudioSidecarEvidenceTest extends TestCase
         DB::purge();
         DB::reconnect();
         ProductionTables::fromAuthority()->create('releases', ['id', 'guid', 'name', 'searchname', 'categories_id', 'groups_id', 'size', 'postdate']);
-        foreach (['*_create_release_audio_evidence_tables.php', '*_add_acoustic_fingerprints_to_release_audio_evidence_tracks.php'] as $pattern) {
+        foreach (['*_create_release_audio_evidence_tables.php', '*_add_acoustic_fingerprints_to_release_audio_evidence_tracks.php', '*_create_release_music_renames_table.php'] as $pattern) {
             $this->migration($pattern)->up();
         }
         DB::table('releases')->insert(['id' => 1, 'guid' => 'sidecar-guid', 'name' => 'Example.Release', 'searchname' => 'Example Release',
@@ -291,6 +293,11 @@ final class SidecarGatewayFake implements MusicBrainzGateway
             'video' => false, 'isrcs' => [], 'releaseIds' => ['77777777-7777-4777-8777-777777777777'], 'releaseGroupIds' => ['88888888-8888-4888-8888-888888888888'],
             'providerScore' => 100, 'sources' => ['disc_id_lookup'],
         ]], 1);
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates

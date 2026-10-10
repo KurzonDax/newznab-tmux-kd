@@ -1,0 +1,20 @@
+{
+  "count": 2,
+  "offset": 0,
+  "release-groups": [
+    {
+      "id": "7bfae355-44ea-3be6-89de-40147131be51",
+      "title": "Rosenrot",
+      "primary-type": "Single",
+      "first-release-date": "2005-12-09",
+      "artist-credit": [{"name": "Rammstein", "artist": {"id": "b2d122f9-eadb-4930-a196-8f221eeb0c66", "name": "Rammstein", "sort-name": "Rammstein"}}]
+    },
+    {
+      "id": "15e65e08-85d1-3145-85b2-e18b9fbd4cba",
+      "title": "Rosenrot",
+      "primary-type": "Album",
+      "first-release-date": "2005-10-14",
+      "artist-credit": [{"name": "Rammstein", "artist": {"id": "b2d122f9-eadb-4930-a196-8f221eeb0c66", "name": "Rammstein", "sort-name": "Rammstein"}}]
+    }
+  ]
+}

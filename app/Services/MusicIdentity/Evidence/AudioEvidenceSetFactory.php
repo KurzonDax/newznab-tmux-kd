@@ -6,6 +6,7 @@ namespace App\Services\MusicIdentity\Evidence;
 
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseAudioEvidenceTrack;
+use App\Models\ReleaseMusicRename;
 use App\Services\AudioProcessing\AudioEvidenceRecorder;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
@@ -33,13 +34,12 @@ final class AudioEvidenceSetFactory
         $albumTrackEvidence = $evidence->tracks->first(
             fn (ReleaseAudioEvidenceTrack $trackEvidenceRecord): bool => $this->text($trackEvidenceRecord->getAttribute('album')) !== null,
         ) ?? $evidence->tracks->first();
-        $snapshot = $evidence->release_snapshot;
         [$records, $overrides, $listComplete] = $this->resolverTracks($evidence);
 
         return new AudioEvidenceSet(
             evidenceId: $evidence->id,
             evidenceHash: $evidence->evidence_hash,
-            releaseTitle: $this->text($snapshot['searchname'] ?? $snapshot['name'] ?? null),
+            releaseTitle: $this->releaseTitle($evidence),
             albumTitle: $albumTrackEvidence === null ? null : $this->text($albumTrackEvidence->getAttribute('album')),
             albumArtist: $albumTrackEvidence === null ? null : $this->text(
                 $albumTrackEvidence->getAttribute('album_artist') ?? $albumTrackEvidence->getAttribute('performer'),
@@ -58,6 +58,26 @@ final class AudioEvidenceSetFactory
             mediaFormat: $albumTrackEvidence === null ? null : $this->text($albumTrackEvidence->getAttribute('container')),
             ripLogDiscIds: $this->ripLogDiscIds($evidence),
         );
+    }
+
+    /**
+     * The release name as captured with the evidence, the name the resolver may read an album from
+     * (issue #1033). A name the music rename wrote from an accepted album is no evidence for that
+     * album, so a snapshot holding one gives no name.
+     */
+    private function releaseTitle(ReleaseAudioEvidence $evidence): ?string
+    {
+        $snapshot = $evidence->release_snapshot;
+        $searchName = $snapshot['searchname'] ?? null;
+        if (is_string($searchName)) {
+            foreach (ReleaseMusicRename::query()->where('releases_id', $evidence->releases_id)->get() as $rename) {
+                if (($rename->after['searchname'] ?? null) === $searchName) {
+                    return null;
+                }
+            }
+        }
+
+        return $this->text($searchName ?? $snapshot['name'] ?? null);
     }
 
     /**

@@ -11,6 +11,8 @@ use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\DTO\TrackEvidence;
 use App\Services\MusicIdentity\Matching\CandidateTextNormalizer;
@@ -539,6 +541,11 @@ final class AmbiguousCandidateGatewayFake implements MusicBrainzGateway
         return new RecordingCandidates($recordings, 3);
     }
 
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
+    }
+
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
     {
         unset($query);
@@ -660,6 +667,11 @@ final class CandidateGeneratorGatewayFake implements MusicBrainzGateway
         );
     }
 
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
+    }
+
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
     {
         $this->releaseQueries[] = $query;
@@ -688,6 +700,11 @@ final class EmptyCandidateGatewayFake implements MusicBrainzGateway
         $this->recordingQueries[] = $query;
 
         return RecordingCandidates::empty();
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
@@ -721,6 +738,11 @@ final class CanonicalIdentifierGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return RecordingCandidates::empty();
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
@@ -769,6 +791,11 @@ final class ConflictingIdentifierGatewayFake implements MusicBrainzGateway
         unset($query);
 
         return RecordingCandidates::empty();
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
@@ -840,6 +867,11 @@ final class ReleaseGroupConvergenceGatewayFake implements MusicBrainzGateway
         ]], 1);
     }
 
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
+    }
+
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates
     {
         unset($query);
@@ -886,6 +918,11 @@ final class EvidenceRankingGatewayFake implements MusicBrainzGateway
             'providerScore' => 100,
             'sources' => ['recording_search'],
         ]], 1);
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        return ReleaseGroupCandidates::empty();
     }
 
     public function releaseCandidatesFor(ReleaseQuery $query): ReleaseCandidates

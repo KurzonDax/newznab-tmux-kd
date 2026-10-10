@@ -38,6 +38,7 @@ final readonly class MusicIdentityResolver
         private int $minimumRunnerUpMargin = 5,
         private ?AcousticFingerprintCandidates $fingerprintCandidates = null,
         private ?MusicBrainzGateway $musicBrainz = null,
+        private ?ReleaseNameAlbumCandidates $releaseNameAlbums = null,
     ) {}
 
     public function resolve(AudioEvidenceSet $evidence): IdentificationDecision
@@ -49,22 +50,95 @@ final readonly class MusicIdentityResolver
         }
 
         $decision = $this->decide($evidence, $pool);
-        if (! in_array($decision->status, [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview], true)
-            || $this->fingerprintCandidates === null
-            || ! $this->fingerprintCandidates->applicable($evidence)) {
-            return $this->withAlbumGenres($decision);
+        if (in_array($decision->status, [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview], true)
+            && $this->fingerprintCandidates !== null
+            && $this->fingerprintCandidates->applicable($evidence)) {
+            // Resolution step 7: only a release still unresolved or ambiguous is looked up by fingerprint.
+            try {
+                $pool = $this->fingerprintCandidates->supplement($evidence, $pool);
+            } catch (AcousticFingerprintLookupException $exception) {
+                return $this->terminalDecision(IdentificationStatus::RetryableError, 'acoustid_retryable_error', $exception->getMessage());
+            } catch (MusicBrainzGatewayException $exception) {
+                return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
+            }
+            $decision = $this->decide($evidence, $pool)->withAcoustIdLookedUpAt(CarbonImmutable::now());
         }
 
-        // Resolution step 7: only a release still unresolved or ambiguous is looked up by fingerprint.
         try {
-            $pool = $this->fingerprintCandidates->supplement($evidence, $pool);
-        } catch (AcousticFingerprintLookupException $exception) {
-            return $this->terminalDecision(IdentificationStatus::RetryableError, 'acoustid_retryable_error', $exception->getMessage());
+            $decision = $this->withReleaseNameAlbum($evidence, $pool, $decision);
         } catch (MusicBrainzGatewayException $exception) {
             return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
         }
 
-        return $this->withAlbumGenres($this->decide($evidence, $pool)->withAcoustIdLookedUpAt(CarbonImmutable::now()));
+        return $this->withAlbumGenres($decision);
+    }
+
+    /**
+     * Resolution step 8: when the file evidence accepted no album, the release group the release
+     * name identifies is accepted, unless the file evidence points to another group or contradicts
+     * this one. The accepted score stays the scorer's, so it says how far the files agree.
+     *
+     * @throws MusicBrainzGatewayException
+     */
+    private function withReleaseNameAlbum(AudioEvidenceSet $evidence, CandidatePool $pool, IdentificationDecision $decision): IdentificationDecision
+    {
+        if ($this->releaseNameAlbums === null || ! in_array($decision->status, [
+            IdentificationStatus::Unresolved,
+            IdentificationStatus::NeedsReview,
+            IdentificationStatus::AcceptedRecording,
+        ], true)) {
+            return $decision;
+        }
+
+        $match = $this->releaseNameAlbums->match($evidence);
+        if ($match === null) {
+            return $decision;
+        }
+        $best = $decision->candidates[0] ?? null;
+        if ($best !== null
+            && $best->score >= 75
+            && $best->identity->releaseGroupId !== null
+            && $best->identity->releaseGroupId !== $match->releaseGroupId) {
+            return $decision;
+        }
+
+        $evaluations = array_map(
+            fn ($candidate): CandidateEvaluation => $this->scorer->score($evidence, $candidate),
+            $this->releaseNameAlbums->supplement($evidence, $pool, $match)->candidates,
+        );
+        $embeddedReleases = $this->validatedEmbeddedReleases($evaluations);
+        $embeddedReleaseGroups = $this->validatedEmbeddedReleaseGroups($evaluations);
+        $embeddedRecordings = $this->validatedEmbeddedRecordings($evaluations);
+        $accepted = null;
+        foreach ($evaluations as $evaluation) {
+            if ($evaluation->alignedIdentity->releaseGroupId === $match->releaseGroupId
+                && ! $evaluation->hasHardContradiction()
+                && $this->supportsEmbeddedIdentities($evaluation, $embeddedReleases, $embeddedReleaseGroups, $embeddedRecordings)
+                && ($accepted === null || $evaluation->score > $accepted->score)) {
+                $accepted = $evaluation;
+            }
+        }
+        if ($accepted === null) {
+            return $decision;
+        }
+
+        $others = array_values(array_filter($evaluations, static fn (CandidateEvaluation $evaluation): bool => $evaluation !== $accepted));
+        usort($others, static fn (CandidateEvaluation $left, CandidateEvaluation $right): int => $right->score <=> $left->score);
+        $ranked = [$accepted, ...$others];
+        // As for any accepted group, the margin is to the best candidate of another group: the rename gate reads it.
+        $runnerUp = $this->runnerUpForScope($ranked, $accepted, IdentificationStatus::AcceptedReleaseGroup);
+        $nameDecision = $this->decision(
+            IdentificationStatus::AcceptedReleaseGroup,
+            $accepted,
+            new CandidateIdentity(releaseGroupId: $match->releaseGroupId),
+            [new DecisionReason('release_name_match', 'The release name identifies one MusicBrainz release group ('.$match->rule.').')],
+            array_map(static fn (CandidateEvaluation $evaluation): CandidateSummary => $evaluation->summary, $ranked),
+            $runnerUp === null ? null : $accepted->score - $runnerUp->score,
+        );
+
+        return $decision->acoustIdLookedUpAt === null
+            ? $nameDecision
+            : $nameDecision->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
     }
 
     /**

@@ -10,7 +10,7 @@ use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
-/** Issue #313 raised the version once; it is written in one place and every fallback reads it. */
+/** The version is written in one place and every fallback reads it; issue #1033 raised it last. */
 final class MusicIdentityAlgorithmVersionTest extends TestCase
 {
     #[Test]
@@ -19,7 +19,7 @@ final class MusicIdentityAlgorithmVersionTest extends TestCase
         $root = dirname(__DIR__, 3);
         /** @var array{algorithm_version: string} $config */
         $config = require $root.'/config/music-identity.php';
-        $this->assertSame('music-identity-v3', MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION);
+        $this->assertSame('music-identity-v4', MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION);
         $this->assertSame(MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION, $config['algorithm_version']);
 
         $literals = [];

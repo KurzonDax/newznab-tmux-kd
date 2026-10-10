@@ -10,6 +10,8 @@ use App\Services\MusicIdentity\DTO\CandidateMetadata;
 use App\Services\MusicIdentity\DTO\RecordingCandidates;
 use App\Services\MusicIdentity\DTO\RecordingQuery;
 use App\Services\MusicIdentity\DTO\ReleaseCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupCandidates;
+use App\Services\MusicIdentity\DTO\ReleaseGroupQuery;
 use App\Services\MusicIdentity\DTO\ReleaseQuery;
 use App\Services\MusicIdentity\Exceptions\InvalidMusicBrainzResponse;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
@@ -197,6 +199,48 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         return new ReleaseCandidates(
             $releases,
             max($providerTotal, count($releases)),
+            [$this->cacheKey($endpoint, $request)],
+        );
+    }
+
+    public function releaseGroupCandidatesFor(ReleaseGroupQuery $query): ReleaseGroupCandidates
+    {
+        $endpoint = $this->endpoint();
+        if ($endpoint === null) {
+            return ReleaseGroupCandidates::empty();
+        }
+        $this->assertPublicConfiguration($endpoint);
+
+        // MusicBrainz indexes "The Bee Gees" as "Bee Gees": a leading article breaks the artist phrase.
+        $artist = $this->releaseGroupSearchText($query->artist);
+        $artist = preg_replace('/^the (?=.)/i', '', $artist) ?? $artist;
+        // Lowercased so AND, OR and NOT in an upper-case name are terms, not operators.
+        $title = mb_strtolower($this->releaseGroupSearchText($query->title));
+        if (preg_match('/[\p{L}\p{N}]/u', $artist) !== 1 || preg_match('/[\p{L}\p{N}]/u', $title) !== 1) {
+            return ReleaseGroupCandidates::empty();
+        }
+
+        // The title is searched as terms: a phrase misses titles indexed with joined tokens ("1992–2002").
+        $request = $this->descriptor('release-group', [
+            'query' => sprintf('artist:"%s" AND releasegroup:(%s)', $this->escapeLucene($artist), $this->escapeLucene($title)),
+            'limit' => (int) ($query->limit ?? config('music-identity.musicbrainz.search_limit', 25)),
+            'offset' => 0,
+            'fmt' => 'json',
+        ], exact: false, shape: 'release_group_search');
+        $payload = $this->fetchOne($endpoint, $request, $this->budget());
+        if ($payload === []) {
+            return ReleaseGroupCandidates::empty();
+        }
+
+        $providerTotal = $this->normalizer->requiredCount($payload, 'count');
+        $releaseGroups = array_map(
+            fn (array $releaseGroup): array => $this->normalizer->releaseGroup($releaseGroup),
+            $this->normalizer->objects($payload, 'release-groups'),
+        );
+
+        return new ReleaseGroupCandidates(
+            $releaseGroups,
+            max($providerTotal, count($releaseGroups)),
             [$this->cacheKey($endpoint, $request)],
         );
     }
@@ -449,6 +493,14 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         );
 
         return sprintf('(%s OR (%s))', $exact, implode(' AND ', $fuzzyClauses));
+    }
+
+    /** Search text for a release-group query: letters, digits and apostrophes, single-spaced. */
+    private function releaseGroupSearchText(string $value): string
+    {
+        $value = str_replace(['’', '`'], "'", $value);
+
+        return trim((string) preg_replace('/[^\p{L}\p{N}\']+/u', ' ', $value));
     }
 
     private function escapeLucene(string $value): string
@@ -795,6 +847,16 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 $this->normalizer->requiredCount($payload, 'offset');
                 foreach ($this->normalizer->objects($payload, 'releases') as $release) {
                     $this->normalizer->releaseCandidate($release, 'validation');
+                }
+
+                return;
+            }
+
+            if ($shape === 'release_group_search') {
+                $this->normalizer->requiredCount($payload, 'count');
+                $this->normalizer->requiredCount($payload, 'offset');
+                foreach ($this->normalizer->objects($payload, 'release-groups') as $releaseGroup) {
+                    $this->normalizer->releaseGroup($releaseGroup);
                 }
 
                 return;
