@@ -9,6 +9,7 @@
      * @var \App\Data\GenericReleaseRow $row
      * @var \App\Data\GenericListContext $context
      * @var 'group'|'poster'|null $originOmits
+     * @var bool|null $selectable false leaves the select cell out (the home page's panels); the lists never pass it
      */
     $details = route('details', $row->guid);
     // The first chip on the page is measured as "chip base"; every other chip by its kind (the prototype comparison).
@@ -25,7 +26,7 @@
     $followNoun = $row->followRoot === 'tv' ? 'show' : 'film';
 @endphp
 <tr data-release-row>
-    <td @if($first) data-part="release row cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>
+    @if($selectable ?? true)<td @if($first) data-part="release row cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>@endif
     <td class="tv-what">
         <a class="tv-release-name" href="{{ $details }}" title="{{ $row->name }}" data-part="release name">{{ $row->name }}</a>
         @if($row->hasEntityLine())
