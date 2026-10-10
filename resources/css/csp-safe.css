@@ -1355,14 +1355,8 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 .account-page thead th { background: var(--surface-panel-alt); color: var(--account-muted); }
 .dark .account-page thead th { background: var(--surface-panel-alt-dark); }
 .basket-footer { color: inherit; position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--account-border); border-radius: 0 0 12px 12px; font-size: 12px; }
-.home-section { margin-bottom: 20px; min-width: 0; }
 .home-section-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
 .home-section-heading a:not(.ui-control) { font-size: 12px; }
-.home-watchlist { padding: 16px; }
-.home-watch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--account-border); }
-.home-watch-row > div { min-width: 0; }
-.home-watch-title { display: block; font-size: 13px; font-weight: 600; }
-.home-watch-release { display: block; font-size: 11px; color: var(--account-muted); overflow-wrap: anywhere; }
 .home-content { padding: 16px; margin-bottom: 14px; }
 .home-content h2 { margin-bottom: 10px; }
 .basket-page [data-browser-empty] > div { padding: 36px 20px; }

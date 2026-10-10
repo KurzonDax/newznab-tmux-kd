@@ -6,14 +6,18 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateReleaseViewRequest;
 use App\Models\User;
+use App\Services\Releases\HomeShelfPreferences;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 final class ReleaseViewPreferencesController extends Controller
 {
-    public function __invoke(UpdateReleaseViewRequest $request): JsonResponse
+    public function __invoke(UpdateReleaseViewRequest $request, HomeShelfPreferences $home): JsonResponse
     {
+        if ($request->isHome()) {
+            return response()->json(['success' => true, 'preferences' => $home->save((int) $request->user()->id, ...$request->homeShelves())]);
+        }
         $root = $request->string('root')->toString();
         $preferences = DB::transaction(function () use ($request, $root): array {
             $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);

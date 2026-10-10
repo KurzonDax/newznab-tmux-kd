@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\GenericListContext;
+use App\Enums\HomeShelf;
 use App\Enums\UserRole;
 use App\Models\Content;
-use App\Services\Releases\HomeDashboard;
+use App\Services\Releases\HomeShelfPreferences;
+use App\Services\Releases\HomeShelves;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -81,10 +84,51 @@ class ContentController extends BasePageController
         ]);
 
         if ($isFront) {
-            return view('content.home', [...$this->viewData, ...app(HomeDashboard::class)->forUser($this->userdata)]);
+            return $this->home($request);
         }
 
         return view('content.index', $this->viewData);
+    }
+
+    /**
+     * The home page (docs/proposals/home-redesign/SPEC.md): the user's ticked shelves in the user's
+     * order, with the admin's front-page content under them. Two fragments of the same address, in
+     * the lists' `?_fragment=` convention: `shelves`, the shelves drawn again after the dialog saved
+     * a change, and `panel` (with `shelf`, `kind` and `id`), the releases of one opened tile. Only
+     * the full page counts as a visit (SPEC 3.4).
+     */
+    private function home(Request $request): View
+    {
+        $user = $this->userdata;
+        $exclusions = array_values(array_map('intval', (array) $user->categoryexclusions));
+        $preferences = app(HomeShelfPreferences::class);
+        $viewable = $preferences->viewable($user);
+        $fragment = $request->query('_fragment');
+        if ($fragment === 'panel') {
+            $shelf = HomeShelf::tryFrom($this->scalarInput($request, 'shelf'));
+            $panel = $shelf === null ? null : app(HomeShelves::class)
+                ->panel($shelf, $this->scalarInput($request, 'kind'), $this->integerInput($request, 'id'), $viewable, $user, $exclusions);
+            abort_if($shelf === null || $panel === null, 404);
+
+            // the Category cell: "Root > Sub" in Following, the sub-category alone inside one section (the generic row's two forms)
+            return view('home.panel', ['panel' => $panel, 'mixed' => $shelf === HomeShelf::Following,
+                'context' => $shelf === HomeShelf::Following ? GenericListContext::all() : GenericListContext::other()]);
+        }
+        $stored = HomeShelfPreferences::read($user->view_prefs);
+        // only a full-page GET is a visit: a fragment, or a POST to the address, writes neither time
+        $lastVisit = $fragment === null && $request->isMethod('GET') ? $preferences->visit((int) $user->id) : $stored['lastVisit'];
+        $listed = array_values(array_filter($stored['order'], static fn (HomeShelf $shelf): bool => in_array($shelf, $viewable, true)));
+        $shown = array_values(array_filter($listed, static fn (HomeShelf $shelf): bool => in_array($shelf, $stored['ticked'], true)));
+        $data = ['shelves' => app(HomeShelves::class)->shelves($shown, $viewable, $user, $exclusions, $lastVisit)];
+        if ($fragment === 'shelves') {
+            return view('home.shelves', $data);
+        }
+
+        return view('content.home', [...$this->viewData, ...$data,
+            'shelfRows' => array_map(static fn (HomeShelf $shelf): array => ['shelf' => $shelf, 'ticked' => in_array($shelf, $stored['ticked'], true)], $listed),
+            'nzbLinkBase' => url('/api/v1/api'),
+            'apiToken' => (string) $user->api_token,
+        ]);
     }
 
     private function contentRole(): int

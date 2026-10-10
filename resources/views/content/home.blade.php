@@ -1,30 +1,48 @@
 @extends('layouts.main')
+
+@section('main_class', 'tv-page')
+
 @push('modals')
-    @include('partials.release-modals')
+    @include('tv.partials.dialogs')
 @endpush
+
 @section('content')
-<div class="home-dashboard">
-    <x-breadcrumb :items="[['label' => 'Home']]" />
-    <x-page-header title="Home" />
-    <section class="home-section">
-        <div class="home-section-heading"><h2>Latest releases</h2><a href="{{ route('browse.all') }}">Browse all <i class="fas fa-arrow-right" aria-hidden="true"></i></a></div>
-        <x-release-browser :rows="$latest" :state="$latestState" :toolbar="false" :pager="false" empty-title="No releases yet." empty-message="New releases will appear here as they finish processing." />
-    </section>
-    <section class="card home-section home-watchlist">
-        <div class="home-section-heading"><h2>Following</h2><a href="{{ url('/watchlist') }}">View all <i class="fas fa-arrow-right" aria-hidden="true"></i></a></div>
-        @forelse($homeWatched as $release)
-            @php($row = $release->row_data)
-            <div class="home-watch-row"><div><a class="home-watch-title" href="{{ $row->entity?->titleUrl() ?? route('details', $row->guid) }}">{{ $row->entity?->title ?? $row->name }}</a><a class="home-watch-release" href="{{ route('details', $row->guid) }}">{{ $row->name }}</a></div><span class="account-muted">{{ $row->added }}</span></div>
-        @empty
-            <p class="account-muted">Follow a movie or show to see its latest release here.</p>
-        @endforelse
-    </section>
-    @foreach($content as $item)
-        <article class="card home-content surface-prose">
-            @if(filled($item->title))<h2>{{ $item->title }}</h2>@endif
-            @if(isset($item->body)){!! html_entity_decode(trim($item->body, '\'"')) !!}@endif
-            @if(filled($item->metadescription))<p class="account-muted">{{ $item->metadescription }}</p>@endif
-        </article>
-    @endforeach
+@php
+    /**
+     * The home page (docs/proposals/home-redesign/SPEC.md 2): the heading row with its one control, Shelves; the
+     * user's ticked shelves in the user's order (home.shelves, drawn again by homeShelves after the dialog saves a
+     * change); the admin's front-page content under them (SPEC 8); the Shelves dialog.
+     *
+     * @var list<array{shelf: \App\Enums\HomeShelf, count: string, tiles: list<\App\Data\HomeShelfTile>}> $shelves
+     * @var list<array{shelf: \App\Enums\HomeShelf, ticked: bool}> $shelfRows
+     */
+@endphp
+<div class="tv-screen home-screen" data-part="page ground and body text" x-data="homeShelves"
+     data-home-url="{{ route('home') }}" data-preference-url="{{ route('profile.update-view') }}"
+     data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
+     x-on:click="handleClick" x-on:keydown="handleKeydown" x-on:pointerdown="startDrag">
+    <div class="tv-wrap" data-part="content width wrapper">
+        <div class="tv-filters home-heading">
+            <h1 data-part="page title">Home</h1>
+            <span class="tv-grow"></span>
+            <button type="button" class="tv-details-button is-secondary home-tool" data-shelves-open><i class="fas fa-sliders" aria-hidden="true"></i>Shelves</button>
+        </div>
+        <div x-ref="shelves">
+            @include('home.shelves')
+        </div>
+        @if($content !== [])
+            {{-- the admin's front-page content, as before the shelves: its own wrapper keeps the old page's type sizes --}}
+            <div class="home-dashboard">
+                @foreach($content as $item)
+                    <article class="card home-content surface-prose">
+                        @if(filled($item->title))<h2>{{ $item->title }}</h2>@endif
+                        @if(isset($item->body)){!! html_entity_decode(trim($item->body, '\'"')) !!}@endif
+                        @if(filled($item->metadescription))<p class="account-muted">{{ $item->metadescription }}</p>@endif
+                    </article>
+                @endforeach
+            </div>
+        @endif
+    </div>
+    @include('home.shelves-dialog')
 </div>
 @endsection

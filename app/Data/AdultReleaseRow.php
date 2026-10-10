@@ -73,11 +73,24 @@ final readonly class AdultReleaseRow
      */
     public function picture(): ?array
     {
-        if (($this->preview['thumb'] ?? null) !== null) {
-            return ['url' => $this->preview['thumb'], 'kind' => 'preview'];
+        return self::pictureOf($this->preview, $this->sample);
+    }
+
+    /**
+     * The picture rule for a release's Preview and Sample images, shared with the home page's
+     * Adult shelf.
+     *
+     * @param  array{thumb: ?string, full?: ?string}|null  $preview
+     * @param  array{thumb: ?string, full?: ?string}|null  $sample
+     * @return array{url: string, kind: 'preview'|'sample'}|null
+     */
+    public static function pictureOf(?array $preview, ?array $sample): ?array
+    {
+        if (($preview['thumb'] ?? null) !== null) {
+            return ['url' => $preview['thumb'], 'kind' => 'preview'];
         }
-        if (($this->sample['thumb'] ?? null) !== null) {
-            return ['url' => $this->sample['thumb'], 'kind' => 'sample'];
+        if (($sample['thumb'] ?? null) !== null) {
+            return ['url' => $sample['thumb'], 'kind' => 'sample'];
         }
 
         return null;

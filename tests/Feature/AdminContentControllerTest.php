@@ -113,8 +113,8 @@ class AdminContentControllerTest extends TestCase
             ->assertOk()
             ->assertViewIs('content.home')
             ->assertSee('<!DOCTYPE html>', false)
-            ->assertSee('Latest releases')
-            ->assertSee('No releases yet.')
+            ->assertSee('<h1 data-part="page title">Home</h1>', false)
+            ->assertSee('No shelves.')
             ->assertDontSee('No Content Available');
     }
 
@@ -612,6 +612,7 @@ class AdminContentControllerTest extends TestCase
             $table->boolean('verified')->default(true);
             $table->boolean('can_post')->default(true);
             $table->string('theme_preference', 10)->default('light');
+            $table->json('view_prefs')->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->timestamp('lastlogin')->nullable();
             $table->rememberToken();

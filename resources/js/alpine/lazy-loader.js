@@ -58,6 +58,7 @@ const lazyComponentMap = {
     'releaseMultiOps': () => import('./components/cart-page.js'),  // same file
     'releaseBrowser':  () => import('./components/release-browser.js'),
     'tvReleases':      () => import('./components/tv-releases.js'),
+    'homeShelves':     () => import('./components/home-shelves.js'),
     'checkboxMenu':    () => import('./components/checkbox-menu.js'),
     'yearMenu':        () => import('./components/year-menu.js'),
     'tvShows':         () => import('./components/tv-shows.js'),

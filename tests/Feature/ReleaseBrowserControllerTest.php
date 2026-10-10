@@ -538,16 +538,19 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->assertStringNotContainsString('/covers/music/42', $html, 'the All list');
         $this->assertStringNotContainsString('<img', $this->browserRow($html, 'Matched album release'));
         $this->assertStringNotContainsString('Old Album Match', $html, 'the old album match is never the music line');
+        // the home page's Audio shelf: the square typographic tile (a disc icon, no cover picture), never the old album match
         $html = (string) $this->get('/')->assertOk()->assertSee('Matched album release')->getContent();
         $document = new \DOMDocument;
         @$document->loadHTML($html);
         $xpath = new \DOMXPath($document);
-        $tiles = $xpath->query('//*[@data-release-cards]//*[@data-shape]');
+        $tiles = $xpath->query('//section[@data-shelf="Audio"]//button[@data-tile]');
         $this->assertSame(1, $tiles->length, '/');
-        $this->assertSame('square', $tiles->item(0)->getAttribute('data-shape'), '/');
+        $this->assertStringContainsString('is-album', $tiles->item(0)->getAttribute('class'), '/');
+        $this->assertSame('Matched album release', $tiles->item(0)->getAttribute('title'), '/');
         $this->assertSame(0, $xpath->query('.//img', $tiles->item(0))->length, '/');
-        $this->assertSame(1, $xpath->query('.//i[contains(@class, "fa-music")]', $tiles->item(0))->length, '/');
+        $this->assertSame(1, $xpath->query('.//i[contains(@class, "fa-compact-disc")]', $tiles->item(0))->length, '/');
         $this->assertStringNotContainsString('/covers/music/42', $html, '/');
+        $this->assertStringNotContainsString('Old Album Match', $html, '/');
     }
 
     public function test_table_sizes_use_megabytes_below_one_gigabyte(): void
