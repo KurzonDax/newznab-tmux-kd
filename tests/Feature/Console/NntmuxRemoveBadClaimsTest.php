@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console;
 
 use App\Facades\Search;
+use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseImageService;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,8 @@ class NntmuxRemoveBadClaimsTest extends TestCase
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
+        // This fixture's releases table has no NZB-creation claim columns: drop what an earlier test's schema left memoized.
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->createSchema();
         $this->nzbRoot = $this->makeTempDirectory('remove-bad-nzb').'/';
         $this->coversRoot = $this->makeTempDirectory('remove-bad-covers');
@@ -36,6 +39,7 @@ class NntmuxRemoveBadClaimsTest extends TestCase
 
     protected function tearDown(): void
     {
+        NzbCreationCandidateQuery::flushCapabilityCache();
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
