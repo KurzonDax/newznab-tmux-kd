@@ -64,22 +64,6 @@ class DnzbFailure extends Model
         return $this->belongsTo(User::class, 'users_id');
     }
 
-    /**
-     * Read failed downloads count for requested release_id.
-     *
-     *
-     * @return bool|mixed
-     */
-    public static function getFailedCount(mixed $relId)
-    {
-        $result = self::query()->where('release_id', $relId)->value('failed');
-        if (! empty($result)) {
-            return $result;
-        }
-
-        return false;
-    }
-
     public static function getCount(): int
     {
         return self::query()->count('release_id');

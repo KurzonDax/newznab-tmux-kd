@@ -4,17 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Data\ReleaseEntityData;
-use App\Data\ReleaseRowData;
 use App\Models\Content;
-use App\Models\Release;
+use App\Services\Releases\ReleaseSearchService;
 use App\View\Composers\GlobalDataComposer;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use ReflectionProperty;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsOffsiteLinks;
 use Tests\Support\InteractsWithPublicShell;
+use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class DetailsDocumentViewTest extends TestCase
@@ -22,7 +23,11 @@ class DetailsDocumentViewTest extends TestCase
     use AssertsOffsiteLinks;
     use InteractsWithAdminListPages;
     use InteractsWithPublicShell;
+    use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
+
+    /** A category under none of the eight roots: its release gets the generic release page (issue #1051 section 2). */
+    private const UNROOTED = 8010;
 
     protected function setUp(): void
     {
@@ -34,7 +39,7 @@ class DetailsDocumentViewTest extends TestCase
 
         $this->bootAdminListPage();
         $this->createPublicShellCountTables();
-        $this->actingAs($this->createUserWithRole('User'));
+        $this->actingAs($this->browserUser());
 
         config(['nntmux_settings.covers_path' => $this->makeTempDirectory('details-covers')]);
     }
@@ -47,35 +52,20 @@ class DetailsDocumentViewTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_details_renders_a_complete_document_with_one_working_image_modal(): void
+    public function test_details_renders_a_complete_document_with_one_working_image_dialog(): void
     {
-        $release = Release::factory()->make([
-            'id' => 1,
-            'guid' => 'details-document',
-            'searchname' => 'Example.Release',
-            'size' => 41943040,
-            'nfostatus' => 1,
-            'adddate' => now(),
-            'postdate' => now(),
-        ]);
-        $release->setRelation('audioTags', null);
-        $release->row_data = new ReleaseRowData(
-            id: 1, guid: 'details-document', name: 'Example.Release', category: 'Movies > HD',
-            size: '40.00 MB', files: 3, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 2, comments: 0,
-            completion: 100, passworded: false, imported: false,
-            has_media_info: false, media_info_summary: null, nfo: true, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
-            renamed: true, pp_done: true, entity: new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
-            in_basket: false, watched: false,
-        );
+        $this->releasePageFixtures();
+        $this->release('Example.Release', ['guid' => 'details-document', 'size' => 41943040, 'nfostatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5,
+            'fromname' => 'A Poster', 'imdbid' => '1234567', 'movieinfo_id' => 21]);
 
-        $html = view('details.index', ['release' => $release,
-            'titleEntity' => new ReleaseEntityData('movies', '1234567', 'A Movie', '2024', null, filmId: 21),
-        ])->render();
+        // a release outside the eight roots gets the generic release page (issue #1051), whatever it was once matched to
+        $html = (string) $this->get('/details/details-document')->assertOk()->assertViewIs('details.shelf.index')->getContent();
         $this->assertStringNotContainsString('href="'.route('movies.film', ['movieinfoId' => 21]).'"', $html);
         $this->assertStringNotContainsString('/title/movies/', $html);
 
         $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($html));
-        $this->assertSame(1, substr_count($html, 'x-data="imageModal"'));
+        $this->assertSame(1, substr_count($html, 'x-data="tvImageDialog"'));
+        $this->assertStringNotContainsString('x-data="imageModal"', $html);
         $this->assertStringNotContainsString('id="imageModal"', $html);
         $this->assertStringContainsString('Download NZB', $html);
 
@@ -83,21 +73,22 @@ class DetailsDocumentViewTest extends TestCase
         $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
         $xpath = new \DOMXPath($document);
         $this->assertSame('Example.Release', trim($xpath->query('//h1')->item(0)->textContent));
-        $this->assertSame(1, $xpath->query('//*[@data-details-header]')->length);
-        $this->assertStringContainsString('40.00 MB', $xpath->query('//*[@data-details-header]')->item(0)->textContent);
+        $this->assertSame(0, $xpath->query('//*[@data-details-header]')->length);
+        $this->assertSame(1, $xpath->query('//dl[contains(@class, "tv-details-facts")]//dd[normalize-space(.)="40 MB"]')->length);
         $this->assertStringNotContainsString('detail-info-sidebar', $html);
-        foreach (['overview', 'files', 'media', 'nfo', 'comments'] as $tab) {
-            $this->assertNotNull($document->getElementById($tab));
-            $this->assertSame(1, $xpath->query('//nav[@aria-label="Release details"]//a[@href="#'.$tab.'"]')->length);
+        foreach (['overview', 'files', 'nfo', 'comments'] as $tab) {
+            $this->assertNotNull($document->getElementById('tab-'.$tab));
         }
-        $this->assertSame(1, $xpath->query('//*[@data-details-header]//a[@href="#nfo"]')->length);
-        $this->assertStringContainsString('No media info for this release.', $html);
+        $this->assertNull($document->getElementById('tab-media'), 'no Media info tab without media info');
         $this->assertStringNotContainsString('Other releases of this title', $html);
-        $dialogs = $xpath->query('//*[@data-modal-dialog]');
-        $this->assertCount(8, $dialogs);
+        // every dialog frame holds one dialog (the frame itself, or the redesigned dialogs' panel inside it)
+        $frames = $xpath->query('//*[@data-modal-dialog]');
+        $this->assertCount(7, $frames);
         $this->assertSame(1, $xpath->query('//*[@aria-labelledby="watchlist-modal-title"]')->length);
-        foreach ($dialogs as $dialog) {
-            $this->assertSame('dialog', $dialog->getAttribute('role'));
+        foreach ($frames as $frame) {
+            $dialogs = $xpath->query('descendant-or-self::*[@role="dialog"]', $frame);
+            $this->assertSame(1, $dialogs->length);
+            $dialog = $dialogs->item(0);
             $this->assertSame('true', $dialog->getAttribute('aria-modal'));
             $this->assertNotNull($document->getElementById($dialog->getAttribute('aria-labelledby')));
             $this->assertSame(1, $xpath->query('.//header//button[@title="Close (Esc)"]', $dialog)->length);
@@ -111,25 +102,13 @@ class DetailsDocumentViewTest extends TestCase
             Content::query()->create(['title' => $title, 'url' => $url, 'body' => '<p>Plain text only.</p>',
                 'contenttype' => Content::TYPE_USEFUL, 'status' => Content::STATUS_ENABLED, 'ordinal' => $ordinal, 'role' => Content::ROLE_EVERYONE]);
         }
-        $release = Release::factory()->make(['id' => 2, 'guid' => 'offsite-links', 'searchname' => 'Offsite.Release',
-            'size' => 1048576, 'adddate' => now(), 'postdate' => now()]);
-        $release->setRelation('audioTags', null);
-        $release->row_data = new ReleaseRowData(
-            id: 2, guid: 'offsite-links', name: 'Offsite.Release', category: 'Movies > HD',
-            size: '1.00 MB', files: 1, added: '1 hour ago', posted: 'Sep 13, 2026 13:00', grabs: 0, comments: 0,
-            completion: 100, passworded: false, imported: false,
-            has_media_info: false, media_info_summary: null, nfo: false, preview: 'none', group: 'alt.binaries.example', poster: 'A Poster',
-            renamed: true, pp_done: true, entity: null, in_basket: false, watched: false,
-        );
+        $this->releasePageFixtures();
+        $this->release('Offsite.Release', ['guid' => 'offsite-links', 'size' => 1048576, 'categories_id' => self::UNROOTED, 'groups_id' => 5, 'fromname' => 'A Poster']);
 
-        $html = view('details.index', ['release' => $release, 'site' => ['dereferrer_link' => ''],
-            'show' => ['title' => 'A Show', 'started' => '2020-01-01', 'tvdb' => 81189],
-            'anidb' => ['title' => 'An Anime', 'country' => 'JP', 'media_type' => 'TV', 'anilist_id' => 21, 'mal_id' => 22],
-        ])->render();
+        $html = (string) $this->get('/details/offsite-links')->assertOk()->assertViewIs('details.shelf.index')->getContent();
 
         $offsite = $this->assertOffsiteLinksOpenInANewTab($html, 'The details page');
-        foreach (['https://github.com/NNTmux/newznab-tmux', 'https://help.example.org/guide', 'https://simplegate.space/',
-            'https://thetvdb.com/?tab=series&id=81189', 'https://anilist.co/anime/21', 'https://myanimelist.net/anime/22'] as $expected) {
+        foreach (['https://github.com/NNTmux/newznab-tmux', 'https://help.example.org/guide', 'https://simplegate.space/'] as $expected) {
             $this->assertNotSame([], array_filter($offsite, fn (string $href): bool => str_contains($href, $expected)), 'Missing offsite link '.$expected);
         }
         $this->assertCount(2, array_filter($offsite, fn (string $href): bool => $href === 'https://github.com/NNTmux/newznab-tmux'));
@@ -138,6 +117,29 @@ class DetailsDocumentViewTest extends TestCase
         $this->assertSameTabLink($html, url('/inside-help/'), 'The footer');
         $this->assertSameTabLink($html, route('browse.all', ['group' => 'alt.binaries.example']), 'The details page');
         $this->assertSameTabLink($html, route('browse.all', ['poster' => 'A Poster']), 'The details page');
+    }
+
+    /**
+     * What the generic release page of a release outside the eight roots reads: the release with its group, a category
+     * under none of the eight roots, and the tables its row, its facts and its comments are loaded from.
+     */
+    private function releasePageFixtures(): void
+    {
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
+            'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
+            'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id', 'is_imported']);
+        foreach (['usenet_groups', 'videos', 'tv_episodes', 'movieinfo', 'consoleinfo', 'release_audio_tags', 'release_video_clips', 'predb', 'releases_groups', 'release_comments'] as $table) {
+            $tables->create($table);
+        }
+        foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table'] as $migration) {
+            (require database_path('migrations/'.$migration.'.php'))->up();
+        }
+        DB::table('root_categories')->insert(['id' => 8000, 'title' => 'Unrooted']);
+        DB::table('categories')->insert(['id' => self::UNROOTED, 'title' => 'Legacy', 'root_categories_id' => 8000]);
+        DB::table('usenet_groups')->insert(['id' => 5, 'name' => 'alt.binaries.example', 'active' => 1]);
+        $this->mock(ReleaseSearchService::class)->shouldReceive('searchSimilar')->andReturn([]);
     }
 
     public function test_nfo_modal_response_preserves_plain_text_and_release_identity(): void

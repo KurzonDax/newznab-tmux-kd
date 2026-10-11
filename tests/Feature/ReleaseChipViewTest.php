@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Models\Release;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Facades\Blade;
@@ -25,71 +24,6 @@ class ReleaseChipViewTest extends TestCase
     {
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
-    }
-
-    public function test_release_facts_share_semantic_colors_and_the_existing_modal_targets(): void
-    {
-        $release = Release::factory()->make([
-            'id' => 42, 'guid' => 'facts-release', 'searchname' => 'Example Release',
-            'completion' => 100, 'passwordstatus' => 1, 'nfostatus' => 1,
-            'haspreview' => 0, 'jpgstatus' => 1, 'has_media_info' => true,
-            'media_info_summary' => '1080p · x264 · DTS-HD 5.1',
-            'has_video_preview' => true, 'video_preview_mime' => 'video/mp4',
-        ]);
-        $html = Blade::render('<x-release-facts :release="$release" />', compact('release'));
-        $document = new DOMDocument;
-        $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
-        $xpath = new DOMXPath($document);
-
-        $this->assertSame('100%', trim($xpath->evaluate('string(//span[@data-chip-variant="success"])')));
-        $this->assertSame('Password', trim($xpath->evaluate('string(//span[@data-chip-variant="danger"])')));
-        $this->assertSame('1080p · x264 · DTS-HD 5.1', trim($xpath->evaluate('string(//button[@data-release-id="42"])')));
-        $this->assertSame('NFO', trim($xpath->evaluate('string(//button[@data-chip-variant="warning"])')));
-        $this->assertSame('Clip', trim($xpath->evaluate('string(//button[@data-video-url])')));
-        $this->assertSame('info', $xpath->evaluate('string(//button[@data-video-url]/@data-chip-variant)'));
-        $this->assertSame('Sample', trim($xpath->evaluate('string(//button[@data-chip-variant="success"])')));
-        $this->assertSame(3, $xpath->query('//button[@data-guid="facts-release"]')->length);
-    }
-
-    public function test_origin_and_entity_chips_escape_labels_and_preserve_the_supplied_destination(): void
-    {
-        $html = Blade::render(<<<'BLADE'
-            <x-origin-chip kind="group" value="alt.binaries.movies" />
-            <x-origin-chip kind="poster" :value="$poster" />
-            <x-entity-chip root="movies" title="Example Film" year="2024" href="/movies/view/1234567" />
-            <x-entity-chip root="tv" title="Example Show" year="2020" href="/series/42" />
-            <x-entity-chip root="adult" title="Hidden entity" href="/unused" />
-            BLADE, ['poster' => 'User <user@example.test>']);
-        $document = new DOMDocument;
-        $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
-        $xpath = new DOMXPath($document);
-
-        $this->assertSame(2, $xpath->query('//a[@data-chip-variant="origin"]')->length);
-        $this->assertSame(url('/browse/group').'?g=alt.binaries.movies', $xpath->evaluate('string(//a[contains(@title,"All releases in")]/@href)'));
-        $this->assertSame(route('poster-identity', ['name' => 'User <user@example.test>']), $xpath->evaluate('string(//a[contains(@title,"All posts by")]/@href)'));
-        $this->assertSame('Example Film · 2024', trim($xpath->evaluate('string(//a[@href="/movies/view/1234567"])')));
-        $this->assertSame('Example Show', trim($xpath->evaluate('string(//a[@href="/series/42"])')));
-        $this->assertStringNotContainsString('Hidden entity', $html);
-    }
-
-    public function test_entity_chip_hides_audio_titles(): void
-    {
-        $this->assertSame('', trim(Blade::render('<x-entity-chip root="audio" title="An Album" year="2021" href="/details/audio-guid" />')));
-    }
-
-    public function test_entity_chip_hides_books_and_pc_titles_and_keeps_the_console_link(): void
-    {
-        $this->assertSame('', trim(Blade::render('<x-entity-chip root="books" title="A Printed Book" year="2022" href="/details/book-guid" />')));
-        $this->assertSame('', trim(Blade::render('<x-entity-chip root="games" title="A Computer Game" year="2023" href="/details/pc-guid" />')));
-        $html = Blade::render('<x-entity-chip root="console" title="A Console Game" year="2024" href="/details/console-guid" />');
-        $document = new DOMDocument;
-        $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
-        $xpath = new DOMXPath($document);
-
-        $this->assertSame(1, $xpath->query('//a[@data-chip-variant="entity"]')->length);
-        $this->assertSame('/details/console-guid', $xpath->evaluate('string(//a[@data-chip-variant="entity"]/@href)'));
-        $this->assertSame('A Console Game · 2024', trim($xpath->evaluate('string(//a[@data-chip-variant="entity"])')));
-        $this->assertSame(1, $xpath->query('//a[@data-chip-variant="entity"]/i[contains(@class,"fa-gamepad")]')->length);
     }
 
     public function test_chips_keep_text_safe_and_expose_native_links_and_modal_buttons(): void

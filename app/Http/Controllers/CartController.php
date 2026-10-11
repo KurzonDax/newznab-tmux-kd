@@ -4,39 +4,62 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Data\GenericReleaseFilters;
 use App\Data\ReleaseBrowserState;
+use App\Data\ReleaseListFilters;
 use App\Enums\BrowseRoot;
 use App\Models\Release;
 use App\Models\UsersRelease;
+use App\Services\Releases\GenericReleaseList;
+use App\Services\Releases\GenericReleaseRows;
 use App\Services\Releases\HiddenCategoryGate;
 use App\Services\Releases\ReleaseBrowserQuery;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 class CartController extends BasePageController
 {
     /**
-     * @throws \Exception
+     * The basket (issue #1051): the generic release list (GenericReleasesController's list form) in
+     * the basket context. It differs from All releases in its heading, in having no name search
+     * field, filter bar or sort menu (its order is the lists' default, newest posted first), in
+     * the heading row's Empty basket and Download N NZBs, and in remembering nothing.
      */
-    public function index(Request $request): mixed
+    public function index(Request $request, GenericReleaseList $list, GenericReleaseRows $rows): View|RedirectResponse
     {
-        $state = $this->basketState($request);
-        $results = app(ReleaseBrowserQuery::class)->paginate($state, $this->userdata);
-        if ($state->page > $results->lastPage()) {
-            return redirect()->to($state->pageUrl($request, $results->lastPage()));
+        $user = $this->userdata;
+        $exclusions = array_values(array_map('intval', (array) $user->categoryexclusions));
+        $filters = GenericReleaseFilters::forBasket($request);
+        $context = $filters->context;
+        $total = $list->count($filters, $exclusions, (int) $user->id);
+        $lastPage = max(1, (int) ceil($total / ReleaseListFilters::PER_PAGE));
+        if ($filters->page > $lastPage) {
+            return redirect()->route($context->route, $filters->query($lastPage));
         }
 
-        return view('cart.index', array_merge($this->viewData, [
-            'results' => $results, 'browserState' => $state, 'meta_title' => 'Basket',
-        ]));
-    }
-
-    public function legacyIndex(Request $request): RedirectResponse
-    {
-        return redirect()->route('basket', $request->only(['per', 'page']));
+        return view($request->query('_fragment') === 'list' ? 'generic.releases.list' : 'generic.releases.index', [...$this->viewData,
+            'meta_title' => $context->heading(),
+            'heading' => $context->heading(),
+            'context' => $context,
+            'listRoute' => $context->route,
+            'preferenceRoot' => $context->preferenceRoot(),
+            'emptyText' => $context->emptyText(),
+            'filters' => $filters,
+            'matching' => '',
+            'categoryMenu' => [],
+            'excludableOther' => null,
+            'total' => $total,
+            'lastPage' => $lastPage,
+            'rows' => $total === 0 ? [] : $rows->load($list->pageIds($filters, $exclusions, (int) $user->id, $total), $filters->sortsByAdded()),
+            'nzbLinkBase' => url('/api/v1/api'),
+            'apiToken' => (string) $user->api_token,
+            'filtersClock' => 0,
+            'posterIdentity' => '', 'blacklistRule' => null, 'blacklistPreview' => null, 'blacklistPreviewToken' => null, 'sweep' => null,
+        ]);
     }
 
     public function empty(Request $request): RedirectResponse

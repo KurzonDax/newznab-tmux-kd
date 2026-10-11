@@ -15,7 +15,8 @@
      * chip. An Audio release adds its MusicBrainz button, its Overview's preview, its Tracks tab and a
      * music video's Preview chip playing its clip. An Other release (docs/proposals/generic-release-lists/SPEC.md 6)
      * crumbs back to the generic list it was opened from ("All releases" on direct entry) then "Other > Misc", carries
-     * its Reported / Response chips, its pictures and the report note on Overview.
+     * its Reported / Response chips, its pictures and the report note on Overview. A release whose category belongs to
+     * none of the eight roots (issue #1051) gets the same page, its breadcrumb and Category naming the category's title alone.
      *
      * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow|\App\Data\GenericReleaseRow $row
      * @var array{label: string, url: string}|null $origin
@@ -33,7 +34,7 @@
         \App\Enums\BrowseRoot::Books => [route('books.releases'), 'Book releases', $subCategory],
         \App\Enums\BrowseRoot::Games => [route('pc.releases'), 'PC releases', $subCategory],
         \App\Enums\BrowseRoot::Audio => [route('audio.releases'), 'Audio releases', $subCategory],
-        \App\Enums\BrowseRoot::Other => [$origin['url'] ?? route('browse.all'), $origin['label'] ?? 'All releases', $category],
+        \App\Enums\BrowseRoot::Other, \App\Enums\BrowseRoot::All => [$origin['url'] ?? route('browse.all'), $origin['label'] ?? 'All releases', $category],
         default => [route('console.releases'), 'Console releases', $subCategory],
     };
 @endphp

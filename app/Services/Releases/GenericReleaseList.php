@@ -23,7 +23,8 @@ use Illuminate\Support\Facades\Schema;
  * Misc / Hashed on Other) and the name search. These lists have no band index: the count is live
  * and a page is read by offset in the index MariaDB picks. The Category menu is probed per root
  * and cached for an hour under every predicate the probes apply, so one viewer's exclusions never
- * shape another's menu.
+ * shape another's menu. The basket (issue #1051) is the same read narrowed to the releases in the
+ * viewer's basket, under the same visibility.
  */
 final class GenericReleaseList
 {
@@ -191,7 +192,7 @@ final class GenericReleaseList
         }
     }
 
-    /** The list's identity: the group by name, the poster byte for byte, the Other band, the Following scope. */
+    /** The list's identity: the group by name, the poster byte for byte, the Other band, the viewer's basket, the Following scope. */
     private function whereContext(Builder $query, GenericListContext $context, int $userId): void
     {
         if ($context->isGroup()) {
@@ -200,6 +201,8 @@ final class GenericReleaseList
             $this->wherePoster($query, $context->key);
         } elseif ($context->isOther()) {
             $query->whereIn('releases.categories_id', GenericListContext::otherCategories());
+        } elseif ($context->isBasket()) {
+            $query->whereIn('releases.id', DB::table('users_releases')->select('releases_id')->where('users_id', $userId));
         }
         if ($context->watching) {
             $this->whereWatching($query, $userId);

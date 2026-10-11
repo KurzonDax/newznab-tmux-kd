@@ -15,7 +15,8 @@ use App\Models\Release;
 /**
  * The release details page of a Books or PC release, of a Console release with no game
  * (docs/proposals/books-console-pc-redesign/SPEC.md 5A) and of an Other release
- * (docs/proposals/generic-release-lists/SPEC.md 6): the release as its list's row, its
+ * (docs/proposals/generic-release-lists/SPEC.md 6), which a release whose category belongs to
+ * none of the eight roots shares (issue #1051): the release as its list's row, its
  * sub-category for the breadcrumb, the facts grid (a Console release adds Genre "—" after
  * Category), the PreDB block and Similar releases (today's ReleaseSearchService::searchSimilar(),
  * DATA-CONTRACT 4.3). An Other release is a generic-list row (its Reported / Response chips, its
@@ -33,18 +34,24 @@ final class ShelfReleaseDetails
 
     /**
      * @param  list<int>  $exclusions
-     * @param  string|null  $referer  the Referer header, which names the generic list an Other release was opened from
+     * @param  string|null  $referer  the Referer header, which names the generic list an Other release, or one outside the eight roots, was opened from
      * @return array<string, mixed>
      */
     public function forRelease(Release $release, string $category, array $exclusions, ?string $referer = null): array
     {
         $root = BrowseRoot::fromCategoryId((int) $release->categories_id);
-        $kind = $root === BrowseRoot::Console ? 'console' : ($root === BrowseRoot::Other ? 'generic' : 'shelf');
+        // An Other release and a release whose category belongs to none of the eight roots (BrowseRoot::All) are generic-list rows.
+        $kind = $root === BrowseRoot::Console ? 'console' : (in_array($root, [BrowseRoot::Other, BrowseRoot::All], true) ? 'generic' : 'shelf');
         $row = $this->rows($kind, [(int) $release->id])[0] ?? null;
         abort_if($row === null, 404);
         // The breadcrumb names the sub-category alone ("Ebook"); the facts read the root by its label ("PC", not "Games").
+        // A category under none of the eight roots has no root to name: its title alone.
         $subCategory = (string) (Category::query()->whereKey((int) $release->categories_id)->value('title') ?? '');
-        $category = $subCategory === '' ? $category : $root->label().' > '.$subCategory;
+        $category = match (true) {
+            $subCategory === '' => $category,
+            $root === BrowseRoot::All => $subCategory,
+            default => $root->label().' > '.$subCategory,
+        };
         $facts = ReleaseDetailsFacts::grid($release, $row, $category);
         if ($kind === 'console') {
             // A Console release with no game lists its Genre as unknown, right after Category (the prototype's facts).

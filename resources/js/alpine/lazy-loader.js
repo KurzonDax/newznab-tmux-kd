@@ -29,7 +29,6 @@ const lazyComponentMap = {
     'watchlistPicker': () => import('./components/watchlist.js'),
     'watchlistPage': () => import('./components/watchlist.js'),
     'trailerModal': () => import('./components/trailer-modal.js'),
-    'releaseDetails': () => import('./components/release-details.js'),
     // --- Components only needed on specific pages ---
     'adminSubmenu':    () => import('./components/admin-submenu.js'),
     'passwordToggle':  () => import('./components/password-toggle.js'),
@@ -54,9 +53,6 @@ const lazyComponentMap = {
     'recoveredReleases': () => import('./components/admin/recovered-releases.js'),
     'showAddForm':     () => import('./components/admin/show-add.js'),
     'copyToClipboard': () => import('./components/profile-edit.js'),    // same file
-    'cartPage':        () => import('./components/cart-page.js'),
-    'releaseMultiOps': () => import('./components/cart-page.js'),  // same file
-    'releaseBrowser':  () => import('./components/release-browser.js'),
     'tvReleases':      () => import('./components/tv-releases.js'),
     'homeShelves':     () => import('./components/home-shelves.js'),
     'checkboxMenu':    () => import('./components/checkbox-menu.js'),

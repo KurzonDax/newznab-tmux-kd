@@ -7,9 +7,7 @@ namespace Tests\Feature;
 use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\Support\ManticoreIndexRegistry;
-use App\Support\ReleaseCompletion;
 use App\Support\ReleaseSearchIndexDocument;
-use App\View\Components\CompletionFilter;
 use Tests\TestCase;
 
 /**
@@ -19,29 +17,6 @@ use Tests\TestCase;
  */
 final class ReleaseCompletionFilterTest extends TestCase
 {
-    public function test_the_toolbar_offers_the_documented_menu_and_defaults_to_all(): void
-    {
-        $filter = new CompletionFilter(baseUrl: 'http://localhost/browse/All', queryParams: []);
-
-        $this->assertSame([0, 80, 95, 100], array_keys($filter->thresholds));
-        $this->assertSame('All releases', $filter->currentLabel);
-        $this->assertSame(0, $filter->currentThreshold);
-    }
-
-    public function test_the_toolbar_preserves_the_other_query_parameters(): void
-    {
-        $filter = new CompletionFilter(
-            currentThreshold: 95,
-            baseUrl: 'http://localhost/browse/All',
-            queryParams: ['ob' => 'size_desc', 't' => '5030'],
-        );
-
-        $this->assertSame('At least 95%', $filter->currentLabel);
-        $this->assertSame('http://localhost/browse/All?ob=size_desc&t=5030', $filter->thresholdUrls[0]);
-        $this->assertSame('http://localhost/browse/All?ob=size_desc&t=5030&minc=80', $filter->thresholdUrls[80]);
-        $this->assertSame(ReleaseCompletion::REQUEST_KEY, 'minc');
-    }
-
     public function test_the_search_query_carries_the_threshold_to_the_drivers(): void
     {
         $query = ReleaseSearchQuery::fromCriteria(['min_completion' => 95], 100);

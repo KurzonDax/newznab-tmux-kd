@@ -428,11 +428,13 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->release('Saved release');
         $this->release('Outside basket');
         $this->actingAs($user)->postJson('/cart/add', ['id' => md5('Saved release')])->assertOk();
-        $this->get('/cart/index')->assertRedirect('/basket');
+        $this->get('/cart/index')->assertNotFound();
+        // the basket is the generic list (issue #1051): the shared table, the row's cart button pressed, the posted date
         $response = $this->get('/basket')->assertOk();
-        $response->assertSee('data-release-table', false)->assertSee('Saved release')->assertDontSee('Outside basket')
-            ->assertSee('data-in-basket="1"', false)->assertSee('Sep 12, 2026 23:30');
-        $this->assertSame(1, $response->viewData('results')->total());
+        $response->assertSee('<table class="tv-feed is-shelf is-generic"', false)->assertSee('Saved release')->assertDontSee('Outside basket')
+            ->assertSee('data-cart="'.md5('Saved release').'" aria-pressed="true"', false)->assertSee('title="Posted Sep 12, 2026, 11:30 PM · Added Sep 13, 2026, 12:00 PM"', false)
+            ->assertDontSee('data-release-table', false)->assertDontSee('x-release-browser', false);
+        $this->assertSame(1, $response->viewData('total'));
     }
 
     public function test_search_accepts_q_and_uses_the_root_preferences_and_shared_browser(): void

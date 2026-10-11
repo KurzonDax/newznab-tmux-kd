@@ -25,7 +25,6 @@ import './components/confirm-modal.js';
 import './components/confirm-link.js';
 import './components/toast-notification.js';
 import './components/tab-switcher.js';
-import './components/cart-button.js';
 import './components/sort-dropdown.js';
 import './components/dismissible.js';
 

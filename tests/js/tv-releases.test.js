@@ -241,6 +241,95 @@ test('cart buttons toggle one release and the bar adds the whole selection', asy
     assert.equal(component.selectedCount, 0);
 });
 
+/** The basket page (issue #1051): the screen says it is the basket, its heading row holds the two actions and the Download count, and the list fragment carries the count. */
+function basketScreen(guids, total) {
+    const made = screen(guids);
+    const count = { textContent: total };
+    const actions = [{ removed: false, remove() { this.removed = true; } }, { removed: false, remove() { this.removed = true; } }];
+    const root = made.component.screen, queryAll = root.querySelectorAll, query = root.querySelector;
+    root.dataset.basket = '';
+    root.querySelectorAll = selector => (selector === '[data-basket-action]' ? actions : queryAll(selector));
+    root.querySelector = selector => (selector === '[data-download-count]' ? count : query(selector));
+    made.cartButtons.forEach(button => button.setAttribute('aria-pressed', 'true'));
+    const list = made.component.$refs.list;
+    list.total = total;
+    list.querySelector = selector => (selector === '[data-basket-total]' ? { dataset: { basketTotal: list.total } } : null);
+    const click = button => made.component.handleClick({ target: { closest: selector => (selector === '[data-cart]' ? button : null) } });
+    return { ...made, count, actions, list, click };
+}
+
+test('on the basket a row\'s cart button takes the release out, the list is drawn again and Download N NZBs follows its count', async () => {
+    const { requests, toasts, history } = browser({ href: 'https://nntmux.test/basket?page=2' });
+    const { component, cartButtons, count, actions, list, click } = basketScreen(['a', 'b'], '1,234');
+    list.total = '1,233';
+    await click(cartButtons[0]);
+    assert.equal(requests[0].url, '/cart/delete/a');
+    assert.equal(component.$store.cart.count, 7);
+    const redraw = new URL(requests[1].url);
+    assert.deepEqual([redraw.pathname, redraw.searchParams.get('page'), redraw.searchParams.get('_fragment')], ['/basket', '2', 'list']);
+    assert.equal(list.innerHTML, '<nav>new list</nav>');
+    assert.equal(count.textContent, '1,233');
+    assert.deepEqual(actions.map(action => action.removed), [false, false]);
+    assert.deepEqual(toasts, [{ message: 'Removed from cart.', type: 'success' }]);
+    assert.deepEqual(history, []);
+
+    // until the list is drawn again the removed row's button is unpressed: a click on it never adds the release back
+    await click(cartButtons[0]);
+    assert.equal(requests.length, 2);
+
+    // the last release gone: neither action stays
+    list.total = '0';
+    await click(cartButtons[1]);
+    assert.equal(requests[2].url, '/cart/delete/b');
+    assert.deepEqual(actions.map(action => action.removed), [true, true]);
+});
+
+test('on the basket a removal that leaves its page past the last opens the address again, and a failed removal redraws nothing', async () => {
+    const { requests, toasts, history } = browser({ href: 'https://nntmux.test/basket?page=3' });
+    const { cartButtons, count, list, click } = basketScreen(['a'], '101');
+    const answer = globalThis.fetch;
+    // the fragment of a page that no longer exists redirects to the last page: the browser follows the address instead
+    globalThis.fetch = async (url, options) => ({ ...(await answer(url, options)), redirected: String(url).includes('_fragment') });
+    await click(cartButtons[0]);
+    assert.deepEqual(history, [['assign', 'https://nntmux.test/basket?page=3']]);
+    assert.equal(list.innerHTML, '');
+    assert.equal(count.textContent, '101');
+    assert.deepEqual(toasts.map(toast => toast.type), ['success']);
+
+    // the removal itself failing: the button stays pressed and nothing is drawn again
+    cartButtons[0].setAttribute('aria-pressed', 'true');
+    history.length = 0;
+    requests.length = 0;
+    globalThis.fetch = async (url, options) => ({ ...(await answer(url, options)), ok: false });
+    await click(cartButtons[0]);
+    assert.equal(requests.length, 1);
+    assert.equal(cartButtons[0].getAttribute('aria-pressed'), 'true');
+    assert.deepEqual(history, []);
+    assert.equal(toasts.at(-1).type, 'error');
+});
+
+test('off the basket a row\'s cart button toggles in place and draws nothing again', async () => {
+    const { requests } = browser({ href: 'https://nntmux.test/browse/all' });
+    const { component, cartButtons } = screen(['a']);
+    cartButtons[0].setAttribute('aria-pressed', 'true');
+    await component.handleClick({ target: { closest: selector => (selector === '[data-cart]' ? cartButtons[0] : null) } });
+    assert.deepEqual(requests.map(request => request.url), ['/cart/delete/a']);
+    assert.equal(cartButtons[0].getAttribute('aria-pressed'), 'false');
+});
+
+test('the basket heading row keeps its 66 px with or without its two 38 px pills', () => {
+    const rules = cssRules('../../resources/css/tv.css');
+    assert.match(rules.get('.tv-filters.is-basket'), /min-height: 66px/);
+    assert.match(rules.get('.tv-filters'), /padding: 22px 0 6px/);
+    const pill = rules.get('.tv-basket-button');
+    for (const part of ['height: 38px', 'padding: 0 16px', 'border-radius: 19px', 'font-size: 13.5px']) assert.ok(pill.includes(part), part);
+    // Empty basket is the heading row's secondary pill, the same height
+    assert.match(rules.get('.tv-feed-button'), /height: 38px/);
+    assert.match(rules.get('.tv-feed-button'), /background: var\(--tv-panel-alt\)/);
+    // Download N NZBs is the coral primary button
+    assert.match(rules.get('.tv-button'), /background: var\(--tv-accent\)/);
+});
+
 function cssRules(file) {
     const rules = new Map();
     for (const [, selectors, body] of readFileSync(new URL(file, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {

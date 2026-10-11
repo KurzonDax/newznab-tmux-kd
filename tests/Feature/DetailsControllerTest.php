@@ -26,9 +26,9 @@ use Tests\TestCase;
 
 /**
  * The release details page of an Other release (the shelf page since issue #1032,
- * docs/proposals/generic-release-lists/SPEC.md 6) and today's page, which a release outside every
- * root keeps (every root has its own page: TvReleaseDetailsPageTest, MovieReleaseDetailsPageTest,
- * ShelfReleaseDetailsPageTest and the others).
+ * docs/proposals/generic-release-lists/SPEC.md 6) and of a release outside every root, which gets
+ * the same generic page since issue #1051 (every root has its own page: TvReleaseDetailsPageTest,
+ * MovieReleaseDetailsPageTest, ShelfReleaseDetailsPageTest and the others).
  */
 final class DetailsControllerTest extends TestCase
 {
@@ -45,7 +45,7 @@ final class DetailsControllerTest extends TestCase
 
     private const BOOKS_EBOOK = 7020;
 
-    /** A category under no root: such a release keeps today's details page (every root has its own page). */
+    /** A category under none of the eight roots: such a release gets the generic release page (issue #1051 section 2). */
     private const UNROOTED = 8010;
 
     protected function setUp(): void
@@ -156,6 +156,9 @@ final class DetailsControllerTest extends TestCase
             url('/search?q=dune+actor%3ABlunt&t=2000,5000&completion=95&page=3') => ['Results for “dune”', route('search', ['q' => 'dune actor:Blunt', 't' => '2000,5000', 'completion' => '95'])],
             url('/search?t=2040&minage=3') => ['Search results', route('search', ['t' => '2040', 'minage' => '3'])],
             url('/search?search=dune') => ['Results for “dune”', route('search', ['search' => 'dune'])],
+            // the basket (issue #1051) is named Basket and links back to it
+            url('/basket') => ['Basket', route('basket')],
+            url('/basket?page=2') => ['Basket', route('basket')],
             'https://elsewhere.test/browse/all?group=x' => ['All releases', route('browse.all')],
         ] as $referer => [$label, $url]) {
             $html = (string) $this->get('/details/'.md5('Other.Release'), ['Referer' => $referer])->assertOk()->getContent();
@@ -200,40 +203,44 @@ final class DetailsControllerTest extends TestCase
         $this->get($url)->assertOk()->assertSee('Comments (1)');
     }
 
-    public function test_movie_trailers_use_the_shared_player_and_predb_and_public_reports_remain_visible(): void
+    public function test_a_release_outside_the_eight_roots_gets_the_generic_release_page_with_its_category_title_alone(): void
     {
         $this->unrootedCategory();
         DB::table('settings')->updateOrInsert(['name' => 'trailers_display'], ['value' => '1']);
         DB::table('movieinfo')->insert(['imdbid' => '0111161', 'title' => 'Trailer Movie', 'trailer' => 'https://youtu.be/Way9Dexny3w']);
         DB::table('predb')->insert(['id' => 5, 'title' => 'Original.Scene.Release']);
-        $id = $this->detailRelease('Trailer.Release', ['imdbid' => '0111161', 'predb_id' => 5, 'categories_id' => self::UNROOTED]);
+        $id = $this->detailRelease('Unrooted.Release', ['imdbid' => '0111161', 'predb_id' => 5, 'categories_id' => self::UNROOTED]);
         $user = $this->browserUser();
         ReleaseReport::factory()->create(['releases_id' => $id, 'users_id' => $user->id, 'description' => 'Original report text',
             'response' => 'Public staff response', 'response_is_public' => true, 'responded_by' => $user->id]);
-        $response = $this->actingAs($user)->get('/details/'.md5('Trailer.Release'))->assertOk();
-        $response->assertSee('data-trailer-url="https://www.youtube-nocookie.com/embed/Way9Dexny3w"', false)
-            ->assertDontSee('<iframe', false)->assertSee('x-data="trailerModal"', false)
-            ->assertSee('Original.Scene.Release')->assertSee('Original report text')->assertSee('Public staff response')
-            ->assertDontSee('data-watch-picker', false);
-        $this->assertNoWatchWording((string) $response->getContent(), 'Today\'s details page with a film trailer');
-    }
 
-    public function test_movie_genre_director_and_cast_are_escaped_plain_text_limited_to_eight_names(): void
-    {
-        $this->unrootedCategory();
-        $markup = '"><script>alert(1)</script>';
-        DB::table('movieinfo')->insert(['imdbid' => '0111162', 'title' => 'Plain Movie', 'genre' => 'Drama, '.$markup,
-            'director' => 'Tom & Jerry', 'actors' => implode(', ', ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10'])]);
-        $this->detailRelease('Plain.Movie.Release', ['imdbid' => '0111162', 'categories_id' => self::UNROOTED]);
-        $response = $this->actingAs($this->browserUser())->get('/details/'.md5('Plain.Movie.Release'))->assertOk();
-        $content = (string) $response->getContent();
-        $response->assertSee('Drama, '.e($markup), false)->assertSee('Tom &amp; Jerry', false);
-        $this->assertSame(1, preg_match_all('~>Cast</dt>\s*<dd[^>]*>([^<]*)</dd>~', $content, $castMatches), 'The page shows one Cast entry.');
-        $this->assertSame('A1, A2, A3, A4, A5, A6, A7, A8', $castMatches[1][0]);
-        $this->assertStringNotContainsString('<script>alert(1)', $content);
-        $this->assertStringNotContainsString('?genre=', $content);
-        $this->assertStringNotContainsString('?actors=', $content);
-        $this->assertStringNotContainsString('?director=', $content);
+        // the page an Other release gets: the release name as the heading, its chips, the tabs, the facts and the PreDB block
+        $response = $this->actingAs($user)->get('/details/'.md5('Unrooted.Release'))->assertOk()->assertViewIs('details.shelf.index');
+        $response->assertSee('<h1 class="is-release-name" data-part="details heading">Unrooted.Release</h1>', false)
+            ->assertSeeInOrder(['tv-details-chips', 'data-chip-variant="reported"', 'data-chip-variant="response"', 'id="tab-overview"', 'id="tab-files"', 'id="tab-nfo"', 'id="tab-comments"'], false)
+            ->assertSee('<b>Reported</b> · A staff response was posted.', false)
+            ->assertSee('Original.Scene.Release')
+            ->assertDontSee('data-details-header', false)->assertDontSee('x-data="releaseDetails"', false)->assertDontSee('x-data="trailerModal"', false)
+            ->assertDontSee('data-trailer-url', false)->assertDontSee('<iframe', false)->assertDontSee('Trailer Movie')->assertDontSee('data-watch-picker', false);
+        $html = (string) $response->getContent();
+        // the breadcrumb and the Category fact read the category's title alone: it has no root to name
+        $crumbs = (string) preg_replace('/>\s+</', '><', $this->between($html, '<nav class="tv-crumbs" aria-label="Breadcrumb">', '</nav>'));
+        $this->assertSame('<a href="'.route('browse.all').'">All releases</a><span aria-hidden="true">›</span><span>Legacy</span>', trim($crumbs));
+        $this->assertMatchesRegularExpression('/<dt[^>]*>Category<\/dt><dd[^>]*>Legacy<\/dd>/', $html, 'the Category fact');
+        $this->assertSame('Legacy', $response->viewData('category'));
+        $this->assertNoWatchWording($html, 'The generic page of a release outside the eight roots');
+        $this->assertNoRetiredAddress($html, 'The generic page of a release outside the eight roots');
+
+        // opened from a list, the breadcrumb names it, the basket included
+        foreach ([url('/basket?page=3') => ['Basket', route('basket')], url('/browse/all?group=alt.binaries.demo') => ['Releases in alt.binaries.demo', route('browse.all', ['group' => 'alt.binaries.demo'])]] as $referer => [$label, $url]) {
+            $opened = (string) $this->get('/details/'.md5('Unrooted.Release'), ['Referer' => $referer])->assertOk()->getContent();
+            $crumbs = (string) preg_replace('/>\s+</', '><', $this->between($opened, '<nav class="tv-crumbs" aria-label="Breadcrumb">', '</nav>'));
+            $this->assertSame('<a href="'.e($url).'">'.e($label).'</a><span aria-hidden="true">›</span><span>Legacy</span>', trim($crumbs), $referer);
+        }
+
+        // a comment posts back to the same page
+        $this->post('/details/'.md5('Unrooted.Release'), ['txtAddComment' => 'Works well.'])->assertRedirect('/details/'.md5('Unrooted.Release').'#comments');
+        $this->get('/details/'.md5('Unrooted.Release'))->assertOk()->assertViewIs('details.shelf.index')->assertSee('Works well.')->assertSee('Comments (1)');
     }
 
     public function test_completion_stays_in_the_header_above_the_tabs(): void
@@ -365,18 +372,18 @@ final class DetailsControllerTest extends TestCase
         $this->assertNoImportedChip($this->detailsChipLine((string) $this->get('/details/'.md5('Indexed.Release'))->assertOk()->getContent()), 'The header of a release that was not imported');
     }
 
-    public function test_the_older_release_page_header_ends_its_facts_with_the_imported_chip_ahead_of_the_group(): void
+    public function test_the_page_of_an_imported_release_outside_the_eight_roots_ends_its_chips_with_the_imported_chip(): void
     {
         $this->unrootedCategory();
         DB::table('usenet_groups')->insert(['id' => 5, 'name' => 'alt.binaries.example', 'active' => 1]);
-        $this->detailRelease('Imported.Legacy.Release', ['is_imported' => 1, 'nfostatus' => 1, 'jpgstatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
-        $this->detailRelease('Indexed.Legacy.Release', ['nfostatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
+        $this->detailRelease('Imported.Unrooted.Release', ['is_imported' => 1, 'nfostatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
+        $this->detailRelease('Indexed.Unrooted.Release', ['nfostatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
 
-        $html = (string) $this->actingAs($this->browserUser())->get('/details/'.md5('Imported.Legacy.Release'))->assertOk()->assertViewIs('details.index')->getContent();
-        $facts = $this->between($html, '<div class="details-facts">', '<div class="details-subline">');
-        $this->assertImportedChip($facts, 'The older release page header');
-        $this->assertImportedChipPlaced($facts, ['nfo-badge', 'sample-badge'], ['data-chip-variant="origin"'], 'The older release page header');
-        $other = (string) $this->get('/details/'.md5('Indexed.Legacy.Release'))->assertOk()->getContent();
-        $this->assertNoImportedChip($this->between($other, '<div class="details-facts">', '<div class="details-subline">'), 'The older header of a release that was not imported');
+        $html = (string) $this->actingAs($this->browserUser())->get('/details/'.md5('Imported.Unrooted.Release'))->assertOk()->assertViewIs('details.shelf.index')->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'The page header of a release outside the eight roots');
+        $this->assertImportedChipPlaced($header, ['nfo-badge'], [], 'The page header of a release outside the eight roots');
+        $other = (string) $this->get('/details/'.md5('Indexed.Unrooted.Release'))->assertOk()->getContent();
+        $this->assertNoImportedChip($this->detailsChipLine($other), 'The header of a release outside the eight roots that was not imported');
     }
 }

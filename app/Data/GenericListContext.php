@@ -17,6 +17,10 @@ use App\Models\Category;
  * identity the search's own address parameters (the scope and the completion among them: a
  * search's cells live in its address only), its heading `Results for “words”`. It has no
  * breadcrumb and no remembered filters; its sort is the All releases list's.
+ *
+ * The basket (issue #1051) is the same list in a sixth context: the releases in the viewer's
+ * basket at /basket, headed `Basket`, newest posted first. It has no breadcrumb, no name search,
+ * no filter bar, no sort menu and no remembered filters: its only address parameter is the page.
  */
 final readonly class GenericListContext
 {
@@ -30,8 +34,10 @@ final readonly class GenericListContext
 
     public const string SEARCH = 'search';
 
+    public const string BASKET = 'basket';
+
     /**
-     * @param  self::ALL|self::GROUP|self::POSTER|self::OTHER|self::SEARCH  $kind
+     * @param  self::ALL|self::GROUP|self::POSTER|self::OTHER|self::SEARCH|self::BASKET  $kind
      * @param  string  $key  the group name or the poster identity as stored, or a search's words; '' otherwise
      * @param  string  $route  the list's route name
      * @param  'group'|'poster'|'name'|null  $identityKey  the URL key the group or poster travels under
@@ -78,6 +84,12 @@ final readonly class GenericListContext
         return new self(self::SEARCH, $words, 'search', parameters: $parameters);
     }
 
+    /** The viewer's basket. */
+    public static function basket(): self
+    {
+        return new self(self::BASKET, route: 'basket');
+    }
+
     public function isOther(): bool
     {
         return $this->kind === self::OTHER;
@@ -86,6 +98,11 @@ final readonly class GenericListContext
     public function isSearch(): bool
     {
         return $this->kind === self::SEARCH;
+    }
+
+    public function isBasket(): bool
+    {
+        return $this->kind === self::BASKET;
     }
 
     public function isGroup(): bool
@@ -106,11 +123,15 @@ final readonly class GenericListContext
             self::POSTER => $this->key === '' ? 'No Posted By identity supplied' : 'Posts by '.$this->key,
             self::OTHER => 'Other releases',
             self::SEARCH => $this->key === '' ? 'Search results' : 'Results for “'.$this->key.'”',
+            self::BASKET => 'Basket',
             default => 'All releases',
         };
     }
 
-    /** The list's view-preference root: `other` for Other, `all` for the All, group and poster lists (SPEC 5.2) and for a search, whose sort is the All list's. */
+    /**
+     * The list's view-preference root: `other` for Other, `all` for the All, group and poster lists (SPEC 5.2) and for
+     * a search, whose sort is the All list's. The basket has no sort menu and remembers nothing: nothing is saved under its root.
+     */
     public function preferenceRoot(): string
     {
         return $this->isOther() ? self::OTHER : self::ALL;
@@ -123,6 +144,7 @@ final readonly class GenericListContext
             self::GROUP => 'No releases from this group.',
             self::POSTER => $this->key === '' ? 'No Posted By identity supplied.' : 'No posts by this poster.',
             self::OTHER => 'There are no Other releases yet.',
+            self::BASKET => 'Your basket is empty.',
             default => $this->watching ? 'No releases of the titles you follow.' : 'There are no releases yet.',
         };
     }
@@ -169,9 +191,10 @@ final readonly class GenericListContext
     }
 
     /**
-     * The list a details page was opened from, read from the Referer header: one of these lists
-     * or a search on this site, or null (SPEC 6: "All releases" on direct entry). A search is
-     * named by its words and links back to itself on its first page.
+     * The list a details page was opened from, read from the Referer header: one of these lists,
+     * a search or the basket on this site, or null (SPEC 6: "All releases" on direct entry). A
+     * search is named by its words and links back to itself on its first page; the basket is
+     * named Basket.
      */
     public static function fromReferer(?string $referer): ?self
     {
@@ -198,6 +221,7 @@ final readonly class GenericListContext
                 default => self::all(($query['watching'] ?? null) === '1'),
             },
             $path === '/browse/other' || str_starts_with($path, '/browse/other/') => self::other(),
+            $path === '/basket' => self::basket(),
             $path === '/search' => self::search(WebSearchState::wordsOf($query), array_diff_key(array_filter($query, 'is_string'), ['page' => true, '_fragment' => true])),
             default => null,
         };

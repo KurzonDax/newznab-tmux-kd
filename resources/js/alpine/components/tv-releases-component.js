@@ -16,6 +16,11 @@ import { rowActions } from './tv-row-actions.js';
  * parameter (data-scope-param) and the ticked roots travel in it, comma separated. The reloaded
  * fragment brings the query row; what it says the header's scope picker shows is passed on in a
  * `search-scope` event. Leaving a legacy scope (data-scope-custom) redraws the whole page.
+ *
+ * On the basket (issue #1051, data-basket) every row is in the basket, so a row's cart button only
+ * takes its release out: the list is then drawn again without the row, and the heading row's
+ * Download N NZBs follows the count the redrawn pager line carries (both actions leave with the
+ * last release).
  */
 export function tvReleases() {
     return {
@@ -53,7 +58,7 @@ export function tvReleases() {
             const copy = event.target.closest('[data-copy-nzb]');
             if (copy) return this.copyLink(copy);
             const cart = event.target.closest('[data-cart]');
-            if (cart) return this.toggleCart(cart);
+            if (cart) return this.screen.dataset.basket === undefined ? this.toggleCart(cart) : this.removeFromBasket(cart);
             return undefined;
         },
 
@@ -137,18 +142,66 @@ export function tvReleases() {
             return this.reloadList(new URL(window.location.href));
         },
 
+        /**
+         * The basket's row button only takes a release out: once it has, the button reads unpressed until the list
+         * is drawn again without its row, and a click on it then does nothing (it never adds the release back).
+         */
+        async removeFromBasket(button) {
+            if (button.getAttribute('aria-pressed') !== 'true') return;
+            if (await this.toggleCart(button)) await this.redrawBasket();
+        },
+
+        /**
+         * The basket's list at the current address, then the heading row's count from the redrawn pager line. When
+         * the list cannot be read (the removed release was the last on the last page, so that page is gone and the
+         * server redirects) the address is opened again.
+         */
+        async redrawBasket() {
+            let drawn;
+            try {
+                drawn = await this.drawList(new URL(window.location.href));
+            } catch {
+                window.location.assign(window.location.href);
+                return;
+            }
+            if (!drawn) return;
+            const total = this.$refs.list.querySelector('[data-basket-total]')?.dataset.basketTotal;
+            if (total === undefined) return;
+            if (total === '0') {
+                this.screen.querySelectorAll('[data-basket-action]').forEach(action => action.remove());
+                return;
+            }
+            const count = this.screen.querySelector('[data-download-count]');
+            if (count) count.textContent = total;
+        },
+
         async reloadList(url) {
+            try {
+                await this.drawList(url);
+            } catch {
+                window.showToast('Could not load the releases. Reload the page and try again.', 'error');
+            }
+        },
+
+        /**
+         * Reads the list at a URL and draws it in place of the current one. Resolves true when it was drawn and false
+         * when a later request took its place; rejects when the list could not be read.
+         */
+        async drawList(url) {
             this.request?.abort();
             const request = new AbortController();
             this.request = request;
+            let html;
             try {
-                const html = await fetchList(this.stamped(url), request.signal);
-                if (request.signal.aborted) return;
-                this.$refs.list.innerHTML = html;
-                this.selectionChanged();
+                html = await fetchList(this.stamped(url), request.signal);
             } catch (error) {
-                if (error.name !== 'AbortError') window.showToast('Could not load the releases. Reload the page and try again.', 'error');
+                if (error.name === 'AbortError') return false;
+                throw error;
             }
+            if (request.signal.aborted) return false;
+            this.$refs.list.innerHTML = html;
+            this.selectionChanged();
+            return true;
         },
 
         /** The name search's input: shows its clear button and reloads the list after today's 180 ms pause. */
