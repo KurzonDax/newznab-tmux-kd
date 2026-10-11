@@ -205,7 +205,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::post('basket/download', [CartController::class, 'download'])->name('basket.download');
 
     Route::prefix('cart')->group(function () {
-        Route::match(['GET', 'POST'], 'index', [CartController::class, 'legacyIndex'])->name('cart.index');
         Route::match(['GET', 'POST'], 'add', [CartController::class, 'store'])->name('cart.add');
         Route::match(['GET', 'POST'], 'delete/{id}', [CartController::class, 'destroy'])->name('cart.delete');
     });

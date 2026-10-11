@@ -10,6 +10,9 @@
      * cells; the pager stops at the last page the index can reach, with the reach note in the status slot; Clear all
      * clears the whole search; an index that cannot answer leaves "Search unavailable" and no pager.
      *
+     * The basket (issue #1051) has nothing to clear, so its pager line has no Clear all; the line carries the basket's
+     * count as the heading row's Download N NZBs writes it (data-basket-total), for the page to follow after a removal.
+     *
      * @var \App\Data\GenericListContext $context
      * @var \App\Data\GenericReleaseFilters $filters
      * @var list<\App\Data\GenericReleaseRow> $rows
@@ -26,7 +29,8 @@
     // The picture column (issue #1050 section 2) is on every list but Other.
     $pictures = ! $context->isOther();
     $search = $context->isSearch();
-    $clearAll = $search ? $searchState->clearUrl() : route($listRoute, [...$context->routeParameters(), \App\Services\Releases\RememberedListFilters::CLEAR => 1]);
+    $basket = $context->isBasket();
+    $clearAll = $basket ? null : ($search ? $searchState->clearUrl() : route($listRoute, [...$context->routeParameters(), \App\Services\Releases\RememberedListFilters::CLEAR => 1]));
 @endphp
 @if($search)
     @include('search.query-row')
@@ -36,7 +40,7 @@
     <p class="tv-empty" data-empty>Search unavailable</p>
 @else
 <x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\ReleaseListFilters::PER_PAGE" noun="release" :url="$pageUrl"
-              :clear-all="$clearAll" :filtered="$filters->any()">
+              :clear-all="$clearAll" :filtered="$filters->any()" :fixed="$basket" :data-basket-total="$basket ? number_format($total) : null">
     @if($context->isPoster() && $context->key !== '' && (auth()->user()?->hasRole('Admin') ?? false))
         <x-slot:status>@include('generic.releases.sweep-status')</x-slot:status>
     @elseif($search && $results->beyondReach)

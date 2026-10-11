@@ -20,6 +20,11 @@
      * clock). A legacy scope naming a sub-category reads "Custom scope" until roots are chosen, which replaces it and
      * redraws the page (data-scope-custom). The query row and the feed dialog are in the list fragment: both follow the cells.
      *
+     * The basket (issue #1051) is the same page: no breadcrumb, name search field, filter bar or sort menu, and
+     * nothing remembered. While it holds anything its heading row ends with Empty basket and Download N NZBs (today's
+     * two actions); the row keeps its height without them. Its rows' cart buttons take a release out of the basket and
+     * the list is drawn again (data-basket); the floating bar has no Add to cart.
+     *
      * @var \App\Data\GenericListContext $context
      * @var \App\Data\GenericReleaseFilters $filters
      */
@@ -34,9 +39,10 @@
     $dialog = $admin && $blacklistRule === null && $blacklistPreview !== null;
     $search = $context->isSearch();
     $customScope = $search && $searchState->customScope();
+    $basket = $context->isBasket();
 @endphp
 <div class="tv-screen" data-part="page ground and body text" x-data="tvReleases"
-     data-preference-url="{{ route('profile.update-view') }}" data-preference-root="{{ $preferenceRoot }}" @if($search) data-scope-param="t" @if($customScope) data-scope-custom @endif @else data-filters-clock="{{ $filtersClock }}" @endif
+     data-preference-url="{{ route('profile.update-view') }}" data-preference-root="{{ $preferenceRoot }}" @if($search) data-scope-param="t" @if($customScope) data-scope-custom @endif @elseif($basket) data-basket @else data-filters-clock="{{ $filtersClock }}" @endif
      data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
      x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter" x-on:blacklist-sweep-finished="refreshList">
     <div class="tv-wrap" data-part="content width wrapper">
@@ -47,10 +53,10 @@
             </nav>
         @endif
         <div @if($dialog) x-data="posterIdentityBlacklist" @endif>
-        <div class="tv-filters">
+        <div @class(['tv-filters', 'is-basket' => $basket])>
             <h1 data-part="page title"@if($context->isPoster()) class="is-poster"@endif>{!! $headingHtml !!}</h1>
-            {{-- The name search (SPEC 5.6): narrows the list to names containing the text; never remembered. A search has none. --}}
-            @unless($search)
+            {{-- The name search (SPEC 5.6): narrows the list to names containing the text; never remembered. A search and the basket have none. --}}
+            @unless($search || $basket)
             <div class="tv-search tv-name-search">
                 <label>
                     <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
@@ -68,9 +74,14 @@
                 @endif
             @endif
             <span class="tv-grow"></span>
+            @if($basket && $total > 0)
+                <form method="POST" action="{{ route('basket.empty') }}" data-basket-action>@csrf<button type="submit" class="tv-feed-button">Empty basket</button></form>
+                <form method="POST" action="{{ route('basket.download') }}" data-basket-action>@csrf<button type="submit" class="tv-button tv-basket-button"><i class="fas fa-download" aria-hidden="true"></i><span>Download <span data-download-count>{{ number_format($total) }}</span> NZBs</span></button></form>
+            @endif
             @if($search)
                 <button type="button" class="tv-feed-button" data-search-feed-button x-on:click="$dispatch('search-feed-open')"><i class="fas fa-rss" aria-hidden="true"></i>RSS for this search</button>
             @endif
+            @unless($basket)
             <label class="tv-sort">
                 <select aria-label="Sort releases" data-part="sort dropdown" x-on:change="changeSort">
                     @foreach(\App\Data\GenericReleaseFilters::SORTS as $value => $text)
@@ -79,12 +90,14 @@
                 </select>
                 <i class="fas fa-chevron-down" aria-hidden="true"></i>
             </label>
+            @endunless
         </div>
         @if($dialog)
             @include('generic.releases.blacklist-dialog')
         @endif
         </div>
-        {{-- Two release cells (SPEC 5.2), each as wide as a Movie releases release-bar cell: Category (roots, or Misc / Hashed on Other) and Completion. --}}
+        {{-- Two release cells (SPEC 5.2), each as wide as a Movie releases release-bar cell: Category (roots, or Misc / Hashed on Other) and Completion. The basket has no filter bar. --}}
+        @unless($basket)
         <div class="filter-row tv-bar-list is-shelf">
             <x-filter-bar label="The release" class="is-release">
                 <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" :exclude-other="$excludableOther"
@@ -92,6 +105,7 @@
                 <x-checkbox-menu cell single name="completion" label="Completion" any="Any completion" :options="\App\Data\ReleaseListFilters::completionOptions()" :short="\App\Data\ReleaseListFilters::completionCells()" :selected="$filters->completion === null ? [] : [$filters->completion]" />
             </x-filter-bar>
         </div>
+        @endunless
         <div x-ref="list" class="tv-list-end">
             @include('generic.releases.list')
         </div>
@@ -99,7 +113,9 @@
     <div class="tv-bulk" x-show="selectedCount" x-cloak>
         <span><span x-text="selectedCount"></span> selected</span>
         <button type="button" class="tv-button" x-on:click="downloadSelected"><i class="fas fa-download" aria-hidden="true"></i>Download NZBs</button>
+        @unless($basket)
         <button type="button" class="tv-button tv-button-secondary" x-on:click="addSelectedToCart"><i class="fas fa-cart-shopping" aria-hidden="true"></i>Add to cart</button>
+        @endunless
         <button type="button" class="tv-button tv-button-secondary" x-on:click="clearSelection">Clear selection</button>
     </div>
 </div>

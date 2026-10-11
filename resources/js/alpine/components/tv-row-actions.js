@@ -73,8 +73,9 @@ export function rowActions() {
             });
         },
 
+        /** Adds the release to the cart or takes it out; resolves true when the cart changed. */
         async toggleCart(button) {
-            if (button.disabled) return;
+            if (button.disabled) return false;
             const guid = button.dataset.cart, removing = button.getAttribute('aria-pressed') === 'true';
             button.disabled = true;
             try {
@@ -83,8 +84,10 @@ export function rowActions() {
                 this.markCart([guid], !removing);
                 if (result.cartCount !== undefined) this.$store.cart.setCount(result.cartCount);
                 window.showToast(removing ? 'Removed from cart.' : 'Added to cart.', 'success');
+                return true;
             } catch {
                 window.showToast('Could not update your cart. Please try again.', 'error');
+                return false;
             } finally {
                 button.disabled = false;
             }

@@ -693,6 +693,14 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-feed-button { background: var(--tv-panel-alt); color: var(--tv-ink); }
 .tv-feed-button:hover { background: var(--tv-line); }
 .tv-feed-button:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 1px; }
+/*
+ * The basket (issue #1051): the generic list in the basket context. Its heading row ends with Empty basket (the
+ * heading row's neutral secondary pill, .tv-feed-button) and Download N NZBs (the coral primary button at that pill's
+ * size), both 38 px high, the sort menu's height; the row keeps the height they give it (22 + 38 + 6) when an empty
+ * basket shows neither, so nothing below it moves.
+ */
+.tv-filters.is-basket { min-height: 66px; }
+.tv-basket-button { height: 38px; padding: 0 16px; border-radius: 19px; font-size: 13.5px; white-space: nowrap; }
 .tv-query-row { display: flex; min-height: 32px; margin-top: 12px; }
 .tv-query-chips { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .tv-query-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 32px; padding: 0 5px 0 14px; border-radius: 16px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 13px; font-weight: 600; line-height: 1.5; white-space: nowrap; }

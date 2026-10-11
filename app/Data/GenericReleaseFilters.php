@@ -18,6 +18,9 @@ use Illuminate\Http\Request;
  *
  * On a search (issue #1050) the Category cell is the search's scope and the two cells live in the
  * search's address: forSearch() reads them from the search, and the page URLs are the search's own.
+ *
+ * The basket (issue #1051) has no filter, no name search and one order, newest posted first:
+ * forBasket() reads the page alone.
  */
 final readonly class GenericReleaseFilters extends ShelfReleaseFilters
 {
@@ -96,6 +99,14 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
             excludeOther: $cell['excludeOther'],
             minCompletion: $search->completion() === null ? $search->legacyThreshold() : 0,
         );
+    }
+
+    /** The basket's page: nothing is filtered, searched or remembered, and the order is the lists' default, newest posted first. */
+    public static function forBasket(Request $request): self
+    {
+        $page = $request->query('page');
+
+        return new self(context: GenericListContext::basket(), page: is_string($page) && ctype_digit($page) ? max(1, (int) $page) : 1);
     }
 
     /** One of the five sorts; anything else is Posted: newest first. */

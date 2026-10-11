@@ -121,7 +121,8 @@ final class HomeAndBasketTest extends TestCase
             DB::table('root_categories')->insert(['id' => $id, 'title' => $title]);
             DB::table('categories')->insert(['id' => $id + 30, 'title' => 'HD', 'root_categories_id' => $id]);
         }
-        foreach (['genres', 'musicinfo', 'consoleinfo', 'bookinfo', 'gamesinfo'] as $table) {
+        // the last three: what the basket's picture column reads for an Audio release (the generic list, issue #1051)
+        foreach (['genres', 'musicinfo', 'consoleinfo', 'bookinfo', 'gamesinfo', 'release_audio_evidence', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
             ProductionTables::fromAuthority()->create($table);
         }
         DB::table('consoleinfo')->insert(['id' => 12, 'title' => 'Console Game Title', 'platform' => 'PS5', 'releasedate' => '2024-01-01']);
@@ -153,12 +154,19 @@ final class HomeAndBasketTest extends TestCase
             $this->assertNoRetiredAddress($panel, 'A home panel');
         }
 
-        $html = (string) $this->get('/basket')->assertOk()->assertSee('Chip.book.release')->assertSee('Chip.pc.release')->getContent();
-        $this->assertShelfTitleChips($html, 'Basket', md5('Chip.console.release'));
+        // Basket: the generic list's rows. The console row's name opens the details page and its game is a plain line; no old match is a title
+        $html = (string) $this->get('/basket')->assertOk()->assertSee('Chip.book.release')->assertSee('Chip.pc.release')->assertSee('Chip.audio.release')
+            ->assertDontSee('Printed Book Title')->assertDontSee('Computer Game Title')->assertDontSee('Album Title')->assertDontSee('data-chip-variant="entity"', false)->getContent();
+        $console = $this->releaseRowNamed($html, 'Chip.console.release');
+        $this->assertStringContainsString('<a class="tv-release-name" href="'.route('details', md5('Chip.console.release')).'"', $console);
+        $this->assertStringContainsString('<span class="tv-game-line" data-entity="game">Console Game Title · 2024</span>', $console);
+        foreach (['book', 'pc', 'audio'] as $kind) {
+            $this->assertStringNotContainsString('data-entity=', $this->releaseRowNamed($html, 'Chip.'.$kind.'.release'), 'Basket');
+        }
         $this->assertNoRetiredAddress($html, 'Basket');
     }
 
-    public function test_basket_ignores_listing_filters_and_footer_actions_cover_all_pages_only_for_its_owner(): void
+    public function test_basket_ignores_listing_filters_and_its_heading_actions_cover_all_pages_only_for_its_owner(): void
     {
         $user = $this->browserUser();
         foreach (range(1, 26) as $index) {
@@ -167,10 +175,11 @@ final class HomeAndBasketTest extends TestCase
         }
         $id = $this->release('Someone else');
         DB::table('users_releases')->insert(['users_id' => 999, 'releases_id' => $id]);
-        $response = $this->actingAs($user)->get('/basket?per=24&q=nothing&watching=1')->assertOk()->assertSee('26 in basket')->assertSee('Download 26 NZBs')->assertSee('Empty basket')->assertDontSee('Someone else');
-        $this->assertSame(26, $response->viewData('results')->total());
+        $response = $this->actingAs($user)->get('/basket?per=24&q=nothing&watching=1')->assertOk()->assertSee('Showing 1–26 of 26 releases')
+            ->assertSee('<span>Download <span data-download-count>26</span> NZBs</span>', false)->assertSee('Empty basket')->assertDontSee('Someone else')->assertDontSee('26 in basket');
+        $this->assertSame(26, $response->viewData('total'));
         $response->assertDontSee('data-preference="view"', false);
-        $this->get('/cart/index')->assertRedirect('/basket');
+        $this->get('/cart/index')->assertNotFound();
         $expectedGuids = DB::table('releases')->where('id', '!=', $id)->pluck('guid')->all();
         $this->mock(GetNzbController::class, function ($mock) use ($expectedGuids, $user): void {
             $mock->shouldReceive('getNzb')->once()->withArgs(function (Request $request) use ($expectedGuids, $user): bool {
@@ -226,7 +235,7 @@ final class HomeAndBasketTest extends TestCase
         return $matches[1];
     }
 
-    public function test_a_basket_row_of_an_imported_release_ends_its_facts_with_the_imported_chip(): void
+    public function test_a_basket_row_of_an_imported_release_ends_its_chips_with_the_imported_chip(): void
     {
         $user = $this->browserUser();
         foreach (['Imported basket release' => ['is_imported' => 1, 'nfostatus' => 1], 'Indexed basket release' => ['nfostatus' => 1]] as $name => $attributes) {

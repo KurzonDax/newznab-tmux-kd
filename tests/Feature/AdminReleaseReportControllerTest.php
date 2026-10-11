@@ -356,21 +356,18 @@ class AdminReleaseReportControllerTest extends TestCase
      */
     public function test_details_and_browse_views_show_report_responses(): void
     {
-        $detailsViewPath = resource_path('views/details/index.blade.php');
+        // The generic release page (issue #1051): its Overview tab holds the report note with the staff-response line.
+        $detailsViewPath = resource_path('views/details/shelf/tabs.blade.php');
         $browseServicePath = app_path('Services/Releases/ReleaseBrowseService.php');
 
         $this->assertFileExists($detailsViewPath);
         $this->assertFileExists($browseServicePath);
 
-        // The details view is split into partials under details/partials/; assert against the combined source.
         $detailsView = file_get_contents($detailsViewPath);
-        foreach (glob(resource_path('views/details/partials/*.blade.php')) ?: [] as $detailsPartial) {
-            $detailsView .= file_get_contents($detailsPartial);
-        }
         $browseService = file_get_contents($browseServicePath);
 
-        $this->assertStringContainsString('Staff response', $detailsView);
-        $this->assertStringContainsString('Original report', $detailsView);
+        $this->assertStringContainsString('data-report-note', $detailsView);
+        $this->assertStringContainsString('A staff response was posted.', $detailsView);
         $this->assertStringContainsString('total_report_count', $browseService);
         $this->assertStringContainsString('latest_report_description', $browseService);
         $this->assertStringContainsString('all_report_reasons', $browseService);
