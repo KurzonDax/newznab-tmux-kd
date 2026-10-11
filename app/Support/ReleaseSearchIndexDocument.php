@@ -30,7 +30,7 @@ final class ReleaseSearchIndexDocument
             'media_container_format', 'media_video_format', 'media_video_codec',
             'media_video_width', 'media_video_height', 'media_audio_format',
             'media_audio_channels', 'media_audio_language', 'media_subtitle_language',
-            'has_media_info',
+            'has_media_info', 'is_imported',
             'movie_title', 'show_title', 'album_title', 'artist', 'music_tracks', 'console_title', 'game_title', 'book_title', 'anime_titles', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'sort_name', 'poster_identity',
         ];
     }
@@ -146,6 +146,7 @@ final class ReleaseSearchIndexDocument
             'media_audio_language' => (string) ($row['media_audio_language'] ?? ''),
             'media_subtitle_language' => (string) ($row['media_subtitle_language'] ?? ''),
             'has_media_info' => (int) ($row['has_media_info'] ?? 0),
+            'is_imported' => (int) ($row['is_imported'] ?? 0),
             'movie_title' => (string) ($row['movie_title'] ?? ''),
             'show_title' => (string) ($row['show_title'] ?? ''),
             'album_title' => (string) ($row['album_title'] ?? ''),

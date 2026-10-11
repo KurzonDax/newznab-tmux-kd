@@ -105,6 +105,22 @@ final class WebSearchDriverPaginationTest extends TestCase
         $this->assertCount(1, $this->requests);
     }
 
+    /** Imported only on a search (issue #1050): one equality filter on the document's imported flag, absent without the choice. */
+    #[DataProvider('drivers')]
+    public function test_imported_only_filters_on_the_documents_imported_flag(string $name): void
+    {
+        $driver = $this->driver($name);
+        $driver->searchReleasesFiltered(['web_search' => true, 'phrases' => ['searchname' => 'Dune'], 'imported_only' => true], 50);
+        $driver->searchReleasesFiltered(['web_search' => true, 'phrases' => ['searchname' => 'Dune'], 'imported_only' => false], 50);
+        $driver->searchReleasesFiltered(['web_search' => true, 'phrases' => ['searchname' => 'Dune']], 50);
+        $this->assertCount(3, $this->requests);
+        $filtered = json_encode($this->requests[0]['query'], JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString($name === 'manticore' ? '{"equals":{"is_imported":1}}' : '{"term":{"is_imported":1}}', $filtered);
+        foreach ([1, 2] as $request) {
+            $this->assertStringNotContainsString('is_imported', json_encode($this->requests[$request], JSON_THROW_ON_ERROR));
+        }
+    }
+
     /** Similar releases on a Movies details page leave the film out in the search itself, fuzzy retry included (SPEC 5C.5). */
     #[DataProvider('drivers')]
     public function test_a_film_left_out_is_filtered_in_the_exact_search_and_its_fuzzy_retry(string $name): void

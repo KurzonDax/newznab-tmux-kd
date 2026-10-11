@@ -12,6 +12,11 @@ use App\Models\Category;
  * name or poster identity (byte for byte: "Bob <bob@home.mex>" is not "bob <bob@home.mex>"),
  * the route the list lives at and the Following scope kept from today's `/browse/all?watching=1`.
  * Every page, filter and Clear all URL of the list carries this identity.
+ *
+ * A search (issue #1050) is the same list in a fifth context: its key is the search's words, its
+ * identity the search's own address parameters (the scope and the completion among them: a
+ * search's cells live in its address only), its heading `Results for “words”`. It has no
+ * breadcrumb and no remembered filters; its sort is the All releases list's.
  */
 final readonly class GenericListContext
 {
@@ -23,12 +28,15 @@ final readonly class GenericListContext
 
     public const string OTHER = 'other';
 
+    public const string SEARCH = 'search';
+
     /**
-     * @param  self::ALL|self::GROUP|self::POSTER|self::OTHER  $kind
-     * @param  string  $key  the group name or the poster identity as stored; '' otherwise
+     * @param  self::ALL|self::GROUP|self::POSTER|self::OTHER|self::SEARCH  $kind
+     * @param  string  $key  the group name or the poster identity as stored, or a search's words; '' otherwise
      * @param  string  $route  the list's route name
      * @param  'group'|'poster'|'name'|null  $identityKey  the URL key the group or poster travels under
      * @param  bool  $watching  the All list's Following scope (?watching=1)
+     * @param  array<string, string>  $parameters  a search's address parameters, the page left out
      */
     public function __construct(
         public string $kind,
@@ -36,6 +44,7 @@ final readonly class GenericListContext
         public string $route = 'browse.all',
         public ?string $identityKey = null,
         public bool $watching = false,
+        public array $parameters = [],
     ) {}
 
     public static function all(bool $watching = false): self
@@ -59,9 +68,24 @@ final readonly class GenericListContext
         return new self(self::OTHER, route: 'browse');
     }
 
+    /**
+     * A search: its words (the heading) and its address parameters, the page left out.
+     *
+     * @param  array<string, string>  $parameters
+     */
+    public static function search(string $words, array $parameters = []): self
+    {
+        return new self(self::SEARCH, $words, 'search', parameters: $parameters);
+    }
+
     public function isOther(): bool
     {
         return $this->kind === self::OTHER;
+    }
+
+    public function isSearch(): bool
+    {
+        return $this->kind === self::SEARCH;
     }
 
     public function isGroup(): bool
@@ -81,11 +105,12 @@ final readonly class GenericListContext
             self::GROUP => 'Releases in '.$this->key,
             self::POSTER => $this->key === '' ? 'No Posted By identity supplied' : 'Posts by '.$this->key,
             self::OTHER => 'Other releases',
+            self::SEARCH => $this->key === '' ? 'Search results' : 'Results for “'.$this->key.'”',
             default => 'All releases',
         };
     }
 
-    /** The list's view-preference root: `other` for Other, `all` for the All, group and poster lists (SPEC 5.2). */
+    /** The list's view-preference root: `other` for Other, `all` for the All, group and poster lists (SPEC 5.2) and for a search, whose sort is the All list's. */
     public function preferenceRoot(): string
     {
         return $this->isOther() ? self::OTHER : self::ALL;
@@ -104,12 +129,15 @@ final readonly class GenericListContext
 
     /**
      * The route parameters that keep the list's identity: the group or poster under its key, the
-     * Following scope, and Other's route segment.
+     * Following scope, and Other's route segment; a search's own address parameters.
      *
      * @return array<string, string|int>
      */
     public function routeParameters(): array
     {
+        if ($this->isSearch()) {
+            return $this->parameters;
+        }
         $parameters = [];
         if ($this->isOther()) {
             $parameters['parentCategory'] = self::OTHER;
@@ -142,7 +170,8 @@ final readonly class GenericListContext
 
     /**
      * The list a details page was opened from, read from the Referer header: one of these lists
-     * on this site, or null (SPEC 6: "All releases" on direct entry).
+     * or a search on this site, or null (SPEC 6: "All releases" on direct entry). A search is
+     * named by its words and links back to itself on its first page.
      */
     public static function fromReferer(?string $referer): ?self
     {
@@ -169,6 +198,7 @@ final readonly class GenericListContext
                 default => self::all(($query['watching'] ?? null) === '1'),
             },
             $path === '/browse/other' || str_starts_with($path, '/browse/other/') => self::other(),
+            $path === '/search' => self::search(WebSearchState::wordsOf($query), array_diff_key(array_filter($query, 'is_string'), ['page' => true, '_fragment' => true])),
             default => null,
         };
     }

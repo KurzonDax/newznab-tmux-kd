@@ -69,6 +69,7 @@ class UpdateReleasesIndexSchema extends Command
         'media_audio_language' => ['type' => 'text'],
         'media_subtitle_language' => ['type' => 'text'],
         'has_media_info' => ['type' => 'int'],
+        'is_imported' => ['type' => 'int'],
     ];
 
     protected Client $client;
@@ -235,6 +236,7 @@ class UpdateReleasesIndexSchema extends Command
                 'groups_id' => 'int',
                 'nzbstatus' => 'int',
                 'haspreview' => 'int',
+                'is_imported' => 'int',
             ];
 
             $fieldsToAdd = [];

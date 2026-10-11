@@ -419,6 +419,7 @@ class NntmuxOffsetPopulate extends Command
                     'media_audio_language' => ['type' => 'text', 'analyzer' => 'standard'],
                     'media_subtitle_language' => ['type' => 'text', 'analyzer' => 'standard'],
                     'has_media_info' => ['type' => 'integer'],
+                    'is_imported' => ['type' => 'integer'],
                 ],
             ];
         } else {

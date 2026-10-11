@@ -112,7 +112,7 @@ final class GenericReleasesController extends BasePageController
             'excludableOther' => $context->isOther() ? null : GenericReleaseFilters::excludableRoot(array_keys($menu)),
             'total' => $total,
             'lastPage' => $lastPage,
-            'rows' => $total === 0 ? [] : $this->rows->load($this->list->pageIds($filters, $exclusions, (int) $user->id, $total), $filters->sortsByAdded()),
+            'rows' => $total === 0 ? [] : $this->rows->load($this->list->pageIds($filters, $exclusions, (int) $user->id, $total), $filters->sortsByAdded(), pictures: ! $context->isOther()),
             'nzbLinkBase' => url('/api/v1/api'),
             'apiToken' => (string) $user->api_token,
             'filtersClock' => RememberedListFilters::clock(),

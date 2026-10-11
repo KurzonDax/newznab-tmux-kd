@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
+use App\Data\ReleaseListFilters;
 use App\Data\WebSearchState;
 use App\Enums\ReleaseSort;
 use App\Models\User;
@@ -18,16 +19,19 @@ final class WebSearchIndex
     public function __construct(private readonly SearchServiceInterface $search, private readonly ReleaseBrowseService $releases) {}
 
     /**
+     * One page of a search from the index, at the generic lists' page size and in the list's sort,
+     * never past the last page the index can reach (`max_matches`; 10,000 results on Elasticsearch).
+     *
      * @param  array<string, list<int|string>>  $entityFilters
      * @return array<string, mixed>
      */
-    public function page(WebSearchState $state, User $user, array $entityFilters = []): array
+    public function page(WebSearchState $state, User $user, array $entityFilters, ReleaseSort $order): array
     {
         $text = $state->terms->freeText();
         $parameters = $state->parameters;
-        [$column, $direction] = ReleaseSort::resolve($state->browser->sort)->order();
+        [$column, $direction] = $order->order();
         $sort = match ($column) {
-            'r.postdate' => 'postdate_ts', 'r.adddate' => 'adddate_ts', 'r.grabs' => 'grabs', default => 'sort_name',
+            'r.postdate' => 'postdate_ts', 'r.adddate' => 'adddate_ts', default => 'sort_name',
         };
         $criteria = [
             'phrases' => $text === '' ? null : ['searchname' => $text],
@@ -72,12 +76,14 @@ final class WebSearchIndex
                 $criteria[$criterion] = (int) round((float) $parameters[$parameter] * 1024 * 1024);
             }
         }
-        if (isset($parameters['minc'])) {
-            $criteria['min_completion'] = (int) $parameters['minc'];
+        if ($state->importedOnly()) {
+            $criteria['imported_only'] = true;
+        } elseif ($state->threshold() !== null) {
+            $criteria['min_completion'] = $state->threshold();
         }
         $maximum = config('search.default') === 'elasticsearch' ? 10000 : max(1, (int) config('search.drivers.manticore.max_matches', 10000));
-        $per = $state->browser->per;
-        $page = min($state->browser->page, (int) ceil($maximum / $per));
+        $per = ReleaseListFilters::PER_PAGE;
+        $page = min($state->page, (int) ceil($maximum / $per));
         $offset = ($page - 1) * $per;
         $limit = min($per, $maximum - $offset);
         $result = $this->search->searchReleasesFiltered($criteria, $limit, $offset);

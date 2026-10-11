@@ -152,6 +152,10 @@ final class DetailsControllerTest extends TestCase
             url('/browse/all?poster=Bob%20%3Cb%40x%3E') => ['Posts by Bob <b@x>', route('browse.all', ['poster' => 'Bob <b@x>'])],
             url('/browse/other/20?page=2') => ['Other releases', route('browse', ['parentCategory' => 'other'])],
             url('/browse/all?watching=1') => ['All releases', route('browse.all', ['watching' => 1])],
+            // a search (issue #1050) is named by its words and links back to itself on its first page
+            url('/search?q=dune+actor%3ABlunt&t=2000,5000&completion=95&page=3') => ['Results for “dune”', route('search', ['q' => 'dune actor:Blunt', 't' => '2000,5000', 'completion' => '95'])],
+            url('/search?t=2040&minage=3') => ['Search results', route('search', ['t' => '2040', 'minage' => '3'])],
+            url('/search?search=dune') => ['Results for “dune”', route('search', ['search' => 'dune'])],
             'https://elsewhere.test/browse/all?group=x' => ['All releases', route('browse.all')],
         ] as $referer => [$label, $url]) {
             $html = (string) $this->get('/details/'.md5('Other.Release'), ['Referer' => $referer])->assertOk()->getContent();

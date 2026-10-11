@@ -48,6 +48,10 @@ final class ReleaseBrowserControllerTest extends TestCase
         foreach (['2026_08_21_090000_create_release_audio_tags_table', '2026_08_27_150100_create_release_video_clips_table'] as $migration) {
             (require database_path('migrations/'.$migration.'.php'))->up();
         }
+        // the generic lists' picture column reads an Audio row's stored album cover (issue #1050)
+        foreach (['release_audio_evidence', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
+            ProductionTables::fromAuthority()->create($table);
+        }
     }
 
     protected function tearDown(): void
@@ -381,7 +385,8 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->actingAs($this->browserUser());
 
         // the generic lists print a console release's game line as plain text under the name and no book, PC or album title at all
-        foreach (['/browse/all', '/browse/all?poster='.rawurlencode($poster)] as $path) {
+        // search results render the same list (issue #1050)
+        foreach (['/browse/all', '/browse/all?poster='.rawurlencode($poster), '/search?q=Chip'] as $path) {
             $response = $this->get($path)->assertOk();
             $this->assertSame(4, $response->viewData('total'), $path);
             $html = (string) $response->getContent();
@@ -392,11 +397,6 @@ final class ReleaseBrowserControllerTest extends TestCase
             }
             $this->assertNoRetiredAddress($html, $path);
         }
-        $response = $this->get('/search?q=Chip')->assertOk();
-        $this->assertSame(4, $response->viewData('results')->total());
-        $html = (string) $response->getContent();
-        $this->assertShelfTitleChips($html, '/search?q=Chip', md5('Chip.console.release'));
-        $this->assertNoRetiredAddress($html, '/search?q=Chip');
     }
 
     public function test_legacy_group_link_redirects_to_the_canonical_exact_filter(): void
@@ -447,10 +447,11 @@ final class ReleaseBrowserControllerTest extends TestCase
         app(SearchService::class)->extend('browser-test', static fn () => $driver);
         $this->actingAs($this->browserUser())->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24, 'view' => 'cards'])->assertOk();
 
+        // the search renders the generic list (issue #1050): no saved per-page or view applies, and the old browser is gone from it
         $response = $this->get('/search?q=Requested%20title&t=2030&subject=Old%20title&ob=size_desc&sort=title&view=cards')->assertOk();
-        $response->assertSee('data-release-table', false)->assertSee('Requested title')->assertSee('No releases match.')
-            ->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
-        $this->assertSame(24, $response->viewData('results')->perPage());
+        $response->assertSee('Results for “Requested title”')->assertSee('No releases match “Requested title” · Scope: Movies · HD.')
+            ->assertDontSee('data-release-table', false)->assertDontSee('data-value="cards"', false)->assertDontSee('renamed and post-processed only');
+        $this->assertSame(1, $response->viewData('lastPage'));
         $response->assertSee('q=Corrected%20title', false)->assertDontSee('search=Corrected', false);
     }
 
@@ -460,11 +461,13 @@ final class ReleaseBrowserControllerTest extends TestCase
         $driver = Mockery::mock(SearchDriverInterface::class);
         $driver->shouldReceive('searchReleasesFiltered')->once()->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => false]);
         app(SearchService::class)->extend('browser-test', static fn () => $driver);
-        for ($index = 1; $index <= 49; $index++) {
+        for ($index = 1; $index <= 101; $index++) {
             $this->release('Title '.$index);
         }
+        // 50 a page, the generic lists' page size (issue #1050); the old per-page choice is no longer read
         $response = $this->actingAs($this->browserUser())->get('/search?q=Title&per=24&page=999')->assertRedirect();
         parse_str(parse_url($response->headers->get('Location'), PHP_URL_QUERY), $parameters);
+        $this->assertArrayNotHasKey('per', $parameters);
         $this->assertSame('3', $parameters['page']);
         $this->assertSame('Title', $parameters['q']);
     }

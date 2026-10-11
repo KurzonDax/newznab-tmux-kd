@@ -18,6 +18,17 @@ enum BrowseRoot: string
     case Adult = 'xxx';
     case Other = 'other';
 
+    /**
+     * The category roots in the header bar's order: the order of the header's buttons, of the
+     * lists' Category menus and of a search's scope.
+     *
+     * @return list<self>
+     */
+    public static function headerOrder(): array
+    {
+        return [self::Movies, self::Tv, self::Audio, self::Books, self::Console, self::Games, self::Adult, self::Other];
+    }
+
     public static function fromRoute(string $value): ?self
     {
         return match (strtolower($value)) {

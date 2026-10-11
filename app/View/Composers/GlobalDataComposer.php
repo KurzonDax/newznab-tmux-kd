@@ -160,7 +160,7 @@ class GlobalDataComposer
     {
         $byId = array_column($categories, null, 'id');
         $roots = [];
-        foreach ([BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Books, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Adult, BrowseRoot::Other] as $root) {
+        foreach (BrowseRoot::headerOrder() as $root) {
             if (isset($byId[$root->categoryId()])) {
                 $roots[] = ['root' => $root, 'categories' => $byId[$root->categoryId()]['categories']];
             }

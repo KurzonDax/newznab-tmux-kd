@@ -15,6 +15,9 @@ use Illuminate\Http\Request;
  * Completion, the name search, one of five sorts, the page, the list's identity (the context) and
  * today's `?minc=N` links, honoured as a completion threshold that an explicit Completion value
  * (Any included) overrides and that is never remembered.
+ *
+ * On a search (issue #1050) the Category cell is the search's scope and the two cells live in the
+ * search's address: forSearch() reads them from the search, and the page URLs are the search's own.
  */
 final readonly class GenericReleaseFilters extends ShelfReleaseFilters
 {
@@ -71,6 +74,30 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
         );
     }
 
+    /**
+     * A search's filters: the Category cell ticks the scope's roots that the menu lists (Exclude
+     * Other when they are every root but Other), the Completion cell reads the search's choice and
+     * a `minc` link is honoured as on All releases. Nothing is remembered: the context carries the
+     * search's whole address.
+     *
+     * @param  list<int>  $menuValues  the roots the Category cell lists, in menu order
+     * @param  ReleaseSort  $sort  one of the five sorts (listSort()): the All releases list's remembered sort
+     */
+    public static function forSearch(WebSearchState $search, array $menuValues, ReleaseSort $sort): self
+    {
+        $cell = $search->scopeCell($menuValues);
+
+        return new self(
+            context: GenericListContext::search($search->words(), $search->parameters),
+            categories: $cell['categories'],
+            sort: $sort,
+            page: $search->page,
+            completion: $search->completion(),
+            excludeOther: $cell['excludeOther'],
+            minCompletion: $search->completion() === null ? $search->legacyThreshold() : 0,
+        );
+    }
+
     /** One of the five sorts; anything else is Posted: newest first. */
     public static function listSort(mixed $value): ReleaseSort
     {
@@ -122,9 +149,16 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
         return $this->describedWithSearch($parts);
     }
 
-    /** Whether Clear all has something to clear: a dropdown filter, the legacy threshold or the name search; never the list's identity. */
+    /**
+     * Whether Clear all has something to clear: a dropdown filter, the legacy threshold or the name
+     * search, never the list's identity; on a search anything its address sets, the words included.
+     */
     public function any(): bool
     {
+        if ($this->context->isSearch()) {
+            return $this->context->parameters !== [];
+        }
+
         return $this->anyWithSearch($this->anyRelease() || $this->minCompletion > 0);
     }
 
@@ -136,12 +170,18 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
 
     /**
      * The URL query for this page: the filters, the name search, the page, the list's identity
-     * and the legacy threshold while no Completion is explicit (choosing one drops it).
+     * and the legacy threshold while no Completion is explicit (choosing one drops it). A search's
+     * is its own address, the scope as written, with the page.
      *
      * @return array<string, list<int|string>|int|string>
      */
     public function query(?int $page = null): array
     {
+        if ($this->context->isSearch()) {
+            $page ??= $this->page;
+
+            return [...$this->context->parameters, ...($page > 1 ? ['page' => $page] : [])];
+        }
         $filters = $this->releaseQuery();
         if ($this->completion === null && $this->minCompletion > 0) {
             $filters[self::MINC] = $this->minCompletion;

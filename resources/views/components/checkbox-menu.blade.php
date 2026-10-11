@@ -1,4 +1,4 @@
-@props(['name', 'label', 'options' => [], 'selected' => [], 'kind' => 'text', 'any' => null, 'summary' => 'list', 'fixed' => false, 'part' => null, 'cell' => false, 'single' => false, 'short' => [], 'noun' => null, 'excludeOther' => null])
+@props(['name', 'label', 'options' => [], 'selected' => [], 'kind' => 'text', 'any' => null, 'summary' => 'list', 'fixed' => false, 'part' => null, 'cell' => false, 'single' => false, 'short' => [], 'noun' => null, 'excludeOther' => null, 'cellText' => null, 'note' => null])
 {{--
     A multi-select checkbox menu (SPEC section 2 rule 10): OR within the menu, the button reads
     "Label: A, B" and turns coral when set, "Any …" clears. It stays open while ticking and
@@ -17,6 +17,10 @@
     `exclude-other` (a releases list's Category cell, issue #886) is the Other option's value
     when the menu offers "Exclude Other": an item under "Any …", then a separator. It ticks every
     option but Other; that set, however ticked, reads "Exclude Other" and is sent as the mode.
+
+    `cell-text` (a search's legacy scope, issue #1050) is what the cell reads instead of its ticked
+    values, until the menu changes: the cell counts as set, "Any …" is not ticked and picking it
+    is a change. `note` is a line at the top of the panel, also the button's description.
 --}}
 @php
     $ticked = array_map('strval', $selected);
@@ -31,21 +35,25 @@
         $counted => count($on).' chosen',
         default => implode(', ', $on),
     };
-    $buttonPart = $part ?? ($on === [] ? 'filter menu button' : 'filter menu button, set');
+    $set = $on !== [] || $cellText !== null;
+    $buttonPart = $part ?? ($set ? 'filter menu button, set' : 'filter menu button');
     $searchable = count($options) > 10;
     $role = $single ? 'menuitemradio' : 'menuitemcheckbox';
     $mark = $single ? '<span class="checkbox-menu-dot"></span>' : '<span class="checkbox-menu-box"><i class="fas fa-check" aria-hidden="true"></i></span>';
 @endphp
-<div {{ $attributes->class(['checkbox-menu', 'is-cell' => $cell, 'is-fixed' => $fixed, 'is-set' => $on !== []]) }} x-data="checkboxMenu" data-name="{{ $name }}" data-label="{{ $label }}" data-summary="{{ $counted ? 'count' : $summary }}"@if($single) data-single="true"@endif
+<div {{ $attributes->class(['checkbox-menu', 'is-cell' => $cell, 'is-fixed' => $fixed, 'is-set' => $set]) }} x-data="checkboxMenu" data-name="{{ $name }}" data-label="{{ $label }}" data-summary="{{ $counted ? 'count' : $summary }}"@if($single) data-single="true"@endif @if($cellText !== null) data-cell-text="true"@endif
      x-on:keydown.escape.window="closeAndFocus" x-on:focusout="focusLeft" x-on:click.outside="close">
     <button type="button" class="checkbox-menu-button" x-ref="button" x-on:click="toggle" aria-haspopup="{{ $searchable ? 'dialog' : 'true' }}" x-bind:aria-expanded="open"
-            @if($counted) title="{{ $on === [] ? '' : $label.': '.($excluding ? 'Exclude Other' : implode(', ', $on)) }}" @endif @if($buttonPart !== false) data-part="{{ $buttonPart }}" @endif><span class="checkbox-menu-label"><span class="checkbox-menu-name">{{ $label }}</span><span class="checkbox-menu-sep">: </span><span @class(['checkbox-menu-value', 'is-any' => $on === []]) x-ref="value">{{ $reads }}</span></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
+            @if($counted) title="{{ $on === [] ? '' : $label.': '.($excluding ? 'Exclude Other' : implode(', ', $on)) }}" @endif @if($buttonPart !== false) data-part="{{ $buttonPart }}" @endif @if($note !== null) aria-describedby="{{ $name }}-menu-note" @endif><span class="checkbox-menu-label"><span class="checkbox-menu-name">{{ $label }}</span><span class="checkbox-menu-sep">: </span><span @class(['checkbox-menu-value', 'is-any' => ! $set]) x-ref="value">{{ $cellText ?? $reads }}</span></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>
     <div @class(['checkbox-menu-panel', 'is-searchable' => $searchable]) role="{{ $searchable ? 'dialog' : 'menu' }}" aria-label="{{ $label }}" x-ref="panel" x-show="open" x-cloak>
         @if($searchable)
             <div class="checkbox-menu-search"><i class="fas fa-magnifying-glass" aria-hidden="true"></i><input type="text" x-ref="search" x-on:input="narrow" placeholder="Search {{ $noun ?? strtolower($label) }}" aria-label="Search {{ $noun ?? strtolower($label) }}" autocomplete="off"></div>
             <div role="menu" aria-label="{{ $label }}">
         @endif
-        <button type="button" class="checkbox-menu-item" role="{{ $role }}" data-any aria-checked="{{ $on === [] ? 'true' : 'false' }}" x-on:click="clear">{!! $mark !!}{{ $any ?? 'Any '.strtolower($label) }}</button>
+        @if($note !== null)
+            <div class="checkbox-menu-note" id="{{ $name }}-menu-note">{{ $note }}</div>
+        @endif
+        <button type="button" class="checkbox-menu-item" role="{{ $role }}" data-any aria-checked="{{ $set ? 'false' : 'true' }}" x-on:click="clear">{!! $mark !!}{{ $any ?? 'Any '.strtolower($label) }}</button>
         @if($excludeOther !== null)
             <button type="button" class="checkbox-menu-item" role="menuitemcheckbox" data-exclude-other="{{ $excludeOther }}" data-mode="{{ \App\Data\ReleaseListFilters::EXCLUDE_OTHER }}" aria-checked="{{ $excluding ? 'true' : 'false' }}" x-on:click="excludeOther">{!! $mark !!}Exclude Other</button>
             <div class="checkbox-menu-rule is-ink" role="separator"></div>

@@ -100,7 +100,7 @@ final class GenericReleaseList
             return $menu;
         }
         $roots = [];
-        foreach ([BrowseRoot::Movies, BrowseRoot::Tv, BrowseRoot::Audio, BrowseRoot::Books, BrowseRoot::Console, BrowseRoot::Games, BrowseRoot::Adult, BrowseRoot::Other] as $root) {
+        foreach (BrowseRoot::headerOrder() as $root) {
             if (isset($visible[$root->categoryId()])) {
                 $roots[] = $root;
             }

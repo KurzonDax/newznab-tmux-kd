@@ -176,7 +176,7 @@ abstract readonly class ReleaseListFilters
     }
 
     /** A request's Completion value as a key of COMPLETIONS: a listed threshold, or IMPORTED_ONLY; null for anything else. */
-    private static function completionChoice(mixed $value): int|string|null
+    public static function completionChoice(mixed $value): int|string|null
     {
         if ($value === self::IMPORTED_ONLY) {
             return self::IMPORTED_ONLY;

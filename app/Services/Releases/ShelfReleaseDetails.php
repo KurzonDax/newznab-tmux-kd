@@ -123,7 +123,7 @@ final class ShelfReleaseDetails
     {
         return match ($kind) {
             'console' => $this->consoleRows->load($ids, false),
-            'generic' => $this->genericRows->load($ids, false),
+            'generic' => $this->genericRows->load($ids, false, pictures: false),
             default => $this->shelfRows->load($ids, false),
         };
     }

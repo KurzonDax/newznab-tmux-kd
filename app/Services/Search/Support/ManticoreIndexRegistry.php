@@ -62,7 +62,7 @@ final class ManticoreIndexRegistry
                 'media_video_width' => ['type' => 'integer'], 'media_video_height' => ['type' => 'integer'],
                 'media_audio_format' => ['type' => 'text'], 'media_audio_channels' => ['type' => 'text'],
                 'media_audio_language' => ['type' => 'text'], 'media_subtitle_language' => ['type' => 'text'],
-                'has_media_info' => ['type' => 'integer'],
+                'has_media_info' => ['type' => 'integer'], 'is_imported' => ['type' => 'integer'],
             ]],
             'predb' => ['settings' => $settings, 'columns' => [
                 'title' => ['type' => 'text', 'attribute' => true],

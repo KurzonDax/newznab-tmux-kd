@@ -434,7 +434,7 @@ final class HomeShelves
     /** @return PanelView */
     private function titlePanel(string $title, Builder $releases, string $label, string $url): array
     {
-        $rows = $this->rows->load($releases->limit(self::RAIL)->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(), true);
+        $rows = $this->rows->load($releases->limit(self::RAIL)->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(), true, pictures: false);
 
         return [
             'title' => $title,
@@ -461,7 +461,7 @@ final class HomeShelves
             if (in_array($id, $ids, true)) {
                 $title = $group['album'] === '' ? release_display_name($group['releases'][0]) : implode(' · ', array_filter([$group['performer'], $group['album']]));
 
-                return ['title' => $title, 'count' => null, 'rows' => $this->rows->load($ids, true), 'more' => null];
+                return ['title' => $title, 'count' => null, 'rows' => $this->rows->load($ids, true, pictures: false), 'more' => null];
             }
         }
 
@@ -478,7 +478,7 @@ final class HomeShelves
     private function releasePanel(HomeShelf $shelf, int $id, array $exclusions): ?array
     {
         $visible = $this->visible()->where('id', $id)->where('category_band', $shelf->band())->whereNotIn('categories_id', $exclusions)->exists();
-        $rows = $visible ? $this->rows->load([$id], true) : [];
+        $rows = $visible ? $this->rows->load([$id], true, pictures: false) : [];
 
         return $rows === [] ? null : ['title' => $rows[0]->name, 'count' => null, 'rows' => $rows, 'more' => null];
     }
