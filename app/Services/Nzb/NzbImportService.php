@@ -786,6 +786,7 @@ class NzbImportService
                     'categories_id' => $categoryId,
                     'isrenamed' => $renamed,
                     'is_trusted_name' => $properlyNamed || $predbIdInt > 0,
+                    'is_imported' => true,
                     'predb_id' => $predbIdInt,
                     'nzbstatus' => NzbService::NZB_ADDED,
                     'completion' => $nzbDetails['completion'],

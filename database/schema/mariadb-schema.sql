@@ -3127,6 +3127,7 @@ CREATE TABLE `releases` (
   `iscategorized` tinyint(1) NOT NULL DEFAULT 0,
   `isrenamed` tinyint(1) NOT NULL DEFAULT 0,
   `is_trusted_name` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Current search name came from evidence safe for donor propagation',
+  `is_imported` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'NZB import created this release',
   `name_source` varchar(64) DEFAULT NULL COMMENT 'Source that set the current search name; NULL when unrecorded',
   `proc_pp` tinyint(1) NOT NULL DEFAULT 0,
   `proc_par2` tinyint(1) NOT NULL DEFAULT 0,
@@ -4325,3 +4326,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (321,'2026_10_08_16
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (322,'2026_10_08_160100_create_musicbrainz_release_tracks_table',30);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (323,'2026_10_08_160200_create_musicbrainz_artist_tables',30);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (324,'2026_10_09_120000_add_incomplete_release_grace_hours_setting',31);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (325,'2026_10_11_120000_add_is_imported_to_releases_table',32);

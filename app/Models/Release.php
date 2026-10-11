@@ -345,6 +345,7 @@ class Release extends Model
                     'completion' => $parameters['completion'] ?? 0,
                     'isrenamed' => $parameters['isrenamed'],
                     'is_trusted_name' => (bool) ($parameters['is_trusted_name'] ?? ((int) $parameters['predb_id'] > 0)),
+                    'is_imported' => (bool) ($parameters['is_imported'] ?? false),
                     'iscategorized' => 1,
                     'predb_id' => $parameters['predb_id'],
                     'collectionhash' => $parameters['collectionhash'] ?? null,
