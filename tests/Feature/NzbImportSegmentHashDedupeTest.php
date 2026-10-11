@@ -91,6 +91,72 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertSame(0, DB::table('releases')->value('declaredfiles'));
     }
 
+    public function test_a_release_created_by_import_is_marked_imported(): void
+    {
+        $result = $this->import($this->makeNzb([
+            ['subject' => 'Marked.Import.Release', 'segments' => ['m1@example.com', 'm2@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $result['status']);
+        $this->assertSame([1], $this->importedFlags());
+    }
+
+    public function test_an_import_that_matches_an_imported_release_leaves_it_imported(): void
+    {
+        $nzbFiles = [['subject' => 'Imported.Twice.Release', 'segments' => ['t1@example.com', 't2@example.com']]];
+        $this->assertSame(NzbImportStatus::Inserted, $this->import($this->makeNzb($nzbFiles))['status']);
+
+        $result = $this->import($this->makeNzb($nzbFiles));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame([1], $this->importedFlags());
+    }
+
+    public function test_an_import_that_matches_a_release_formed_from_headers_leaves_it_not_imported(): void
+    {
+        $segments = ['f1@example.com', 'f2@example.com'];
+        Release::insertRelease([
+            'name' => 'Formed.From.Headers', 'searchname' => 'Formed.From.Headers', 'totalpart' => 1,
+            'groups_id' => 1, 'guid' => sha1('formed-from-headers'), 'postdate' => '2026-01-01 00:00:00',
+            'fromname' => 'poster@example.com', 'size' => 2000, 'categories_id' => 1,
+            'nzbstatus' => NzbService::NZB_ADDED, 'isrenamed' => 0, 'predb_id' => 0,
+            'collectionhash' => sha1(implode("\n", $segments), true),
+        ]);
+
+        $result = $this->import($this->makeNzb([
+            ['subject' => 'Rewritten.Import.Subject', 'segments' => $segments],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame([0], $this->importedFlags());
+    }
+
+    public function test_an_import_absorbed_into_a_release_formed_from_headers_leaves_it_not_imported(): void
+    {
+        $partial = $this->makeNzb([
+            [
+                'subject' => '[1/1] Absorbed.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "old-{$part}@example.test", range(1, 19)),
+            ],
+        ]);
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
+        // Stand in for a release header formation created: the same row, not marked imported.
+        DB::table('releases')->update(['is_imported' => 0]);
+        $anchor = Release::query()->firstOrFail();
+        file_put_contents(app(NzbService::class)->getNzbPath((string) $anchor->guid, 0, true), gzencode((string) $partial->asXML()));
+
+        $result = $this->import($this->makeNzb([
+            [
+                'subject' => '[1/1] Absorbed.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "new-{$part}@example.test", range(1, 20)),
+            ],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertTrue($result['absorbed']);
+        $this->assertSame([0], $this->importedFlags());
+    }
+
     public function test_reimport_with_rewritten_subject_is_duplicate_via_hash(): void
     {
         $first = $this->scan($this->makeNzb([
@@ -511,6 +577,16 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         )->once();
     }
 
+    /**
+     * `is_imported` of every release, in id order.
+     *
+     * @return list<int>
+     */
+    private function importedFlags(): array
+    {
+        return DB::table('releases')->orderBy('id')->pluck('is_imported')->map(intval(...))->all();
+    }
+
     private function scan(\SimpleXMLElement $nzbXML): NzbImportStatus
     {
         $service = new class(['Browser' => true]) extends NzbImportService
@@ -665,6 +741,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             proc_media_movie INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
+            is_imported INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
             collectionhash BLOB NULL

@@ -217,6 +217,18 @@ class PendingReconciliationTest extends TestCase
 
     }
 
+    public function test_a_release_formed_by_pending_reconciliation_is_not_marked_imported(): void
+    {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        [$service, $id] = $this->ingestCourse();
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+
+        $this->assertSame('associated', $service->reconcile($id, 1));
+
+        $this->assertSame([0], DB::table('releases')->pluck('is_imported')->map(intval(...))->all());
+    }
+
     #[DataProvider('lateWriterClocks')]
     public function test_late_addition_preserves_current_replacement_and_unproved_opaque_file(string $timezone): void
     {

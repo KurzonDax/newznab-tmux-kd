@@ -39,7 +39,7 @@ trait CreatesRecoveryReleaseSchema
             foreach (['totalpart', 'declaredfiles', 'firstarticle', 'lastarticle', 'groups_id', 'size', 'categories_id', 'predb_id'] as $name) {
                 $table->unsignedBigInteger($name)->nullable();
             }
-            foreach (['passwordstatus', 'haspreview', 'nfostatus', 'nzbstatus', 'isrenamed', 'is_trusted_name', 'iscategorized'] as $name) {
+            foreach (['passwordstatus', 'haspreview', 'nfostatus', 'nzbstatus', 'isrenamed', 'is_trusted_name', 'is_imported', 'iscategorized'] as $name) {
                 $table->integer($name)->default(0);
             }
             $table->string('name_source', 64)->nullable();

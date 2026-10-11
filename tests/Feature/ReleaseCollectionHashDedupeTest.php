@@ -581,6 +581,7 @@ class ReleaseCollectionHashDedupeTest extends TestCase
             proc_media_movie INTEGER NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
+            is_imported INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
             collectionhash BLOB NULL

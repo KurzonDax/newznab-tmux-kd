@@ -313,6 +313,17 @@ class ReleaseCreationCompletionTest extends TestCase
         $this->assertSame(1, DB::table('releases')->count());
     }
 
+    #[Test]
+    public function a_release_formed_from_headers_is_not_marked_imported(): void
+    {
+        $this->insertCollection(100, 'hash-formed', 'Formed.Release.S01E01', totalfiles: 1);
+        $this->insertBinary(100, 1000, 'Formed.Release.S01E01.mkv', declaredParts: 10, presentParts: 10);
+
+        $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
+
+        $this->assertSame([0], DB::table('releases')->pluck('is_imported')->map(intval(...))->all());
+    }
+
     private function service(): ReleaseCreationService
     {
         return new ReleaseCreationService(
@@ -430,6 +441,7 @@ class ReleaseCreationCompletionTest extends TestCase
             completion DOUBLE NOT NULL DEFAULT 0,
             isrenamed INTEGER,
             is_trusted_name INTEGER DEFAULT 0,
+            is_imported INTEGER NOT NULL DEFAULT 0,
             iscategorized INTEGER,
             predb_id INTEGER,
             collectionhash BLOB NULL
