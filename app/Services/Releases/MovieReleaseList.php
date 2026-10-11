@@ -48,7 +48,11 @@ final class MovieReleaseList extends BandReleaseList
     /** @param MovieReleaseFilters $filters */
     protected function countIndex(ReleaseListFilters $filters): string
     {
-        return $filters->films->any() ? self::FILM_INDEX : 'ix_releases_band_count';
+        if ($filters->films->any()) {
+            return self::FILM_INDEX;
+        }
+
+        return $filters->importedOnly() ? $this->importedIndex($filters) : 'ix_releases_band_count';
     }
 
     /**

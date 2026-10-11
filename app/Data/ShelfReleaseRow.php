@@ -38,6 +38,7 @@ final readonly class ShelfReleaseRow
         public int $comments,
         public ?array $completion,
         public bool $passworded,
+        public bool $imported,
         public ?string $mediaInfo,
         public bool $nfo,
         public ?array $preview,

@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -28,6 +29,7 @@ use Tests\TestCase;
 final class MovieReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -74,7 +76,7 @@ final class MovieReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'people', 'genres', 'movie_genres',
             'movie_people', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -424,7 +426,7 @@ final class MovieReleasesPageTest extends TestCase
         }
 
         $completion = (string) strstr((string) strstr($html, 'data-name="completion"'), 'data-name="genre"', true);
-        $this->assertSame(['Any completion', '100% only', '95% or more'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
+        $this->assertSame(['Any completion', '100% only', '95% or more', 'Imported only'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
             array_slice(explode('<button type="button" class="checkbox-menu-item" role="menuitemradio"', $completion), 1)));
         $this->assertStringContainsString('data-single="true"', $completion);
 
@@ -1146,5 +1148,68 @@ final class MovieReleasesPageTest extends TestCase
         preg_match('/data-name="'.$name.'".*?<span class="checkbox-menu-label">(.*?)<\/span><i /s', (string) $response->getContent(), $match);
 
         return html_entity_decode(strip_tags($match[1]), ENT_QUOTES);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.movies']);
+        $this->movie('Imported with chips', ['is_imported' => 1, 'completion' => 80, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->movie('Imported alone', ['is_imported' => 1]);
+        $this->movie('Indexed with chips', ['nfostatus' => 1, 'groups_id' => 1]);
+
+        $response = $this->page('/movies')->assertOk();
+        $row = $this->rowOf($response, 'Imported with chips');
+        $this->assertImportedChip($row, 'A Movies row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge', 'preview-badge', 'sample-badge'], ['tv-origin-pair'], 'A Movies row');
+        $alone = $this->rowOf($response, 'Imported alone');
+        $this->assertImportedChip($alone, 'A Movies row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $alone);
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed with chips'), 'A Movies row that was not imported');
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index_and_a_film_filter_keeps_its_own_read(): void
+    {
+        $this->genre(self::DRAMA, 'Drama', [21]);
+        $this->movie('Imported drama', ['is_imported' => 1, 'movieinfo_id' => 21, 'completion' => 40]);
+        $this->movie('Imported other film', ['is_imported' => 1, 'movieinfo_id' => 22, 'resolution' => 3]);
+        $this->movie('Imported no film', ['is_imported' => 1]);
+        $this->movie('Imported locked drama', ['is_imported' => 1, 'movieinfo_id' => 21, 'passwordstatus' => 1]);
+        $this->movie('Indexed drama', ['movieinfo_id' => 21]);
+        $this->movie('Indexed no film', ['completion' => 96]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/movies?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Imported drama', 'Imported no film', 'Imported other film'], $this->listedNames($response));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+        $this->assertListed('/movies?completion=95', ['Imported no film', 'Imported other film', 'Indexed drama', 'Indexed no film']);
+        $this->assertListed('/movies?completion=imported&resolution[]=720p', ['Imported other film']);
+        $this->page('/movies?completion=imported&resolution[]=4k')->assertOk()->assertSee('Showing 0 releases')->assertSee('No releases match 4K · imported only.');
+        $this->assertSame(['resolution' => ['4k'], 'completion' => 'imported'], $this->remembered($user, 'movies'));
+
+        // the film-led read stays as it is: the film filter and the choice both hold, in the page and in the count
+        $drama = $this->page('/movies?completion=imported&genre[]='.self::DRAMA)->assertOk()->assertSee('Showing 1–1 of 1 release');
+        $this->assertSame(['Imported drama'], $this->listedNames($drama));
+
+        $list = app(MovieReleaseList::class);
+        $count = fn (MovieReleaseFilters $filters): string => (fn (MovieReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $imported = ['completion' => MovieReleaseFilters::IMPORTED_ONLY];
+        foreach ([[], ['categories' => [self::UHD]], ['resolutions' => ['4k']], ['sources' => ['bluray']], ['audio' => ['unknown']]] as $set) {
+            foreach (['posted' => [ReleaseSort::PostedNewest, ReleaseSort::PostedOldest], 'added' => [ReleaseSort::AddedNewest, ReleaseSort::AddedOldest]] as $date => $sorts) {
+                foreach ($sorts as $sort) {
+                    $filters = new MovieReleaseFilters(...$set, ...$imported, sort: $sort);
+                    $this->assertSame('ix_releases_imported_'.$date, $list->readIndex($filters, []), json_encode([array_keys($set), $sort->value]));
+                    $this->assertContains($count($filters), ['ix_releases_imported_posted', 'ix_releases_imported_added']);
+                }
+            }
+        }
+        foreach ([['genres' => [self::DRAMA]], ['decades' => [1990]], ['yearFrom' => 2024], ['scores' => ['few']], ['ratings' => ['R']], ['languages' => ['en']]] as $film) {
+            $with = new MovieReleaseFilters(...$imported, films: new MovieFilmFilters(...$film));
+            $without = new MovieReleaseFilters(films: new MovieFilmFilters(...$film));
+            $this->assertSame('ix_releases_movieinfo_cat', $list->readIndex($with, []), json_encode($film, JSON_THROW_ON_ERROR));
+            $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
+            $this->assertSame($count($without), $count($with));
+        }
     }
 }

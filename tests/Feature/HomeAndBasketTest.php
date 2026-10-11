@@ -12,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -21,6 +22,7 @@ use Tests\TestCase;
 final class HomeAndBasketTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -222,5 +224,19 @@ final class HomeAndBasketTest extends TestCase
         preg_match_all('/<section class="home-shelf" data-shelf="([^"]+)"/', $html, $matches);
 
         return $matches[1];
+    }
+
+    public function test_a_basket_row_of_an_imported_release_ends_its_facts_with_the_imported_chip(): void
+    {
+        $user = $this->browserUser();
+        foreach (['Imported basket release' => ['is_imported' => 1, 'nfostatus' => 1], 'Indexed basket release' => ['nfostatus' => 1]] as $name => $attributes) {
+            DB::table('users_releases')->insert(['users_id' => $user->id, 'releases_id' => $this->release($name, $attributes)]);
+        }
+
+        $html = (string) $this->actingAs($user)->get('/basket')->assertOk()->getContent();
+        $row = $this->releaseRowNamed($html, 'Imported basket release');
+        $this->assertImportedChip($row, 'A basket row');
+        $this->assertImportedChipPlaced($row, ['nfo-badge'], [], 'A basket row');
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Indexed basket release'), 'A basket row that was not imported');
     }
 }

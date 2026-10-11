@@ -46,10 +46,11 @@
         @if($row->hasShow())
             <a class="tv-show-line" href="{{ $row->showUrl }}" title="Go to the show" @if($parts) data-part="show line under the name" @endif>{{ $row->showLine() }}</a>
         @endif
-        {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 3.1). --}}
+        {{-- One chip line: the release chips, the Imported chip, then the group and poster pair that never splits (SPEC 3.1). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
                 @include('tv.partials.release-chip-list', ['clip' => null])
+                @include('tv.partials.imported-chip')
                 @include('tv.partials.release-origin')
             </div>
         @endif

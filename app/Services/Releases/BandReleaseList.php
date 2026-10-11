@@ -23,6 +23,12 @@ use Illuminate\Support\Facades\DB;
  * conditions on the chosen index, never the driving read. Each section adds its title filters
  * (TvReleaseList's shows, MovieReleaseList's films) and the read they drive.
  *
+ * The Completion menu's Imported only choice (issue #1049) is the exception: the band indexes do
+ * not hold `is_imported`, so the page and the count are read from the imported index of the
+ * sort's date, whatever the other release filters, the show filters or the name search. A read
+ * driven from the titles (a film, game or tag filter) stays as it is, the choice one more
+ * condition on it. The imported index is read forwards on every page, never mirrored.
+ *
  * @template TFilters of ReleaseListFilters
  */
 abstract class BandReleaseList
@@ -118,12 +124,26 @@ abstract class BandReleaseList
     }
 
     /**
-     * The band index, or the _cat_ / _res_ / _src_ index the release filters choose.
+     * The index an Imported only list is read from: `is_imported` first, then the sort's date.
+     *
+     * @param  TFilters  $filters
+     */
+    protected function importedIndex(ReleaseListFilters $filters): string
+    {
+        return 'ix_releases_imported_'.($filters->sortsByAdded() ? 'added' : 'posted');
+    }
+
+    /**
+     * The band index, or the _cat_ / _res_ / _src_ index the release filters choose; the imported
+     * index while the Completion choice is Imported only.
      *
      * @param  TFilters  $filters
      */
     protected function releaseIndex(ReleaseListFilters $filters): string
     {
+        if ($filters->importedOnly()) {
+            return $this->importedIndex($filters);
+        }
         $date = $filters->sortsByAdded() ? 'added' : 'posted';
         $counts = $this->valueCounts();
         $chosen = array_filter([
@@ -235,8 +255,10 @@ abstract class BandReleaseList
         if ($filters->sources !== []) {
             $query->whereIn('releases.source', $filters->sourceValues());
         }
-        if ($filters->completion !== null) {
-            $query->where('releases.completion', '>=', $filters->completion);
+        if ($filters->importedOnly()) {
+            $query->where('releases.is_imported', 1);
+        } elseif ($filters->completionThreshold() !== null) {
+            $query->where('releases.completion', '>=', $filters->completionThreshold());
         }
         $this->whereAudio($query, $filters);
 

@@ -11,12 +11,15 @@ use App\Models\Settings;
 use App\Models\User;
 use App\Services\Releases\GenericReleaseList;
 use App\Services\Releases\GenericReleaseRows;
+use App\Services\Releases\ReleaseRowFacts;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -30,6 +33,7 @@ use Tests\TestCase;
 final class GenericReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -68,7 +72,7 @@ final class GenericReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_episodes', 'movieinfo', 'consoleinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -705,5 +709,90 @@ final class GenericReleasesPageTest extends TestCase
         $this->lastUserId = $user->id;
 
         return $this->actingAs($user)->get($uri);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_after_reported_and_response_and_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.example']);
+        $busy = $this->generic('Imported.With.Chips', ['is_imported' => 1, 'completion' => 80, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->generic('Imported.Alone', ['is_imported' => 1]);
+        $this->generic('Indexed.With.Chips', ['nfostatus' => 1, 'groups_id' => 1]);
+        $this->generic('Indexed.Alone');
+        $reporter = $this->user = $this->browserUser();
+        DB::table('release_reports')->insert(['releases_id' => $busy, 'reason' => 'spam', 'users_id' => $reporter->id, 'status' => 'pending', 'response' => 'Public answer', 'response_is_public' => true, 'created_at' => now(), 'updated_at' => now()]);
+
+        $response = $this->page('/browse/all')->assertOk();
+        $row = $this->rowOf($response, 'Imported.With.Chips');
+        $this->assertImportedChip($row, 'A generic row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge', 'preview-badge', 'sample-badge', 'data-report-summary', 'data-public-response'], ['tv-origin-pair'], 'A generic row');
+        $alone = $this->rowOf($response, 'Imported.Alone');
+        $this->assertLoneImportedChipLine($alone, 'A generic row with no other chip');
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed.With.Chips'), 'A generic row that was not imported');
+        $this->assertStringNotContainsString('tv-chips', $this->rowOf($response, 'Indexed.Alone'));
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_on_every_generic_list_and_drops_a_minc_threshold(): void
+    {
+        DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.binaries.demo'], ['id' => 2, 'name' => 'alt.binaries.other']]);
+        $poster = 'bob <bob@home.mex>';
+        $this->generic('Imported.Movie', ['is_imported' => 1, 'completion' => 40, 'groups_id' => 1, 'fromname' => $poster]);
+        $this->generic('Imported.Show', ['is_imported' => 1, 'categories_id' => self::TV_HD, 'groups_id' => 2]);
+        $this->generic('Imported.Misc', ['is_imported' => 1, 'categories_id' => self::MISC, 'groups_id' => 1]);
+        $this->generic('Imported.Locked', ['is_imported' => 1, 'passwordstatus' => 1, 'groups_id' => 1, 'fromname' => $poster]);
+        $this->generic('Indexed.Movie', ['groups_id' => 1, 'fromname' => $poster]);
+        $this->generic('Indexed.Partial', ['completion' => 96, 'categories_id' => self::MISC]);
+        $user = $this->user = $this->browserUser();
+
+        // the menu: Any completion, then the three choices, Imported only last and the only one ticked
+        $response = $this->page('/browse/all?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Imported.Misc', 'Imported.Movie', 'Imported.Show'], $this->listedNames($response));
+        $this->assertSame(3, $response->viewData('total'));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+
+        // another choice replaces it; it combines with the Category filter, the name search and each list's own context
+        $this->assertSame(['Imported.Misc', 'Imported.Show', 'Indexed.Movie', 'Indexed.Partial'], $this->listedNames($this->page('/browse/all?completion=95')));
+        $this->assertSame(['Imported.Show'], $this->listedNames($this->page('/browse/all?completion=imported&category[]=5000')));
+        $this->assertSame(['Imported.Movie'], $this->listedNames($this->page('/browse/all?completion=imported&q=movie')));
+        $this->assertSame(['Imported.Misc', 'Imported.Movie'], $this->listedNames($this->page('/browse/all?group=alt.binaries.demo&completion=imported')->assertSee('Showing 1–2 of 2 releases')));
+        $this->assertSame(['Imported.Movie'], $this->listedNames($this->page('/browse/all?poster='.rawurlencode($poster).'&completion=imported')->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Imported.Misc'], $this->listedNames($this->page('/browse/other?completion=imported')->assertSee('Showing 1–1 of 1 release')));
+        $this->page('/browse/all?completion=imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('No releases match imported only · names containing');
+
+        // an explicit Completion value: a minc link's threshold is dropped while it is set, from the list and from its links
+        $withMinc = $this->page('/browse/all?minc=95&completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Imported.Misc', 'Imported.Movie', 'Imported.Show'], $this->listedNames($withMinc), 'Imported.Movie is 40% complete');
+        $this->assertSame(['completion' => 'imported', 'page' => 2], $withMinc->viewData('filters')->query(2));
+        $this->assertStringNotContainsString('minc', (string) $withMinc->getContent());
+        $this->assertSame(['completion' => 'imported'], $this->page('/browse/all?_fragment=list&minc=95&completion=imported')->viewData('filters')->query());
+
+        // remembered, recalled on a bare open, cleared by Any completion and by Clear all
+        $this->assertSame(['completion' => 'imported'], $this->remembered($user, 'all'));
+        $this->page('/browse/all')->assertRedirect(route('browse.all', ['completion' => 'imported']));
+        $this->page('/browse/all?_fragment=list&completion=')->assertOk()->assertSee('Showing 1–5 of 5 releases');
+        $this->assertSame([], $this->remembered($user, 'all'));
+        $this->page('/browse/all?completion=imported')->assertOk();
+        $this->page('/browse/all?clear=1')->assertRedirect(route('browse.all'));
+        $this->assertSame([], $this->remembered($user, 'all'));
+        $this->assertFalse($this->page('/browse/all')->assertOk()->viewData('filters')->any());
+    }
+
+    public function test_the_list_s_own_read_carries_the_imported_flag_so_the_row_loader_refetches_nothing(): void
+    {
+        $imported = $this->generic('Imported.Row', ['is_imported' => 1]);
+        $indexed = $this->generic('Indexed.Row');
+        $reads = [];
+        DB::listen(static function (QueryExecuted $query) use (&$reads): void {
+            // the row columns are read by the list's own select and by the loader's refetch of a row that lacks one
+            if (str_contains($query->sql, 'from "releases"') && str_contains($query->sql, '"guid"')) {
+                $reads[] = $query->sql;
+            }
+        });
+
+        $rows = app(ReleaseRowFacts::class)->load([$indexed, $imported]);
+
+        $this->assertCount(1, $reads, 'one read of the row columns: the loader finds every column it needs');
+        $this->assertStringContainsString('"is_imported"', $reads[0]);
+        $this->assertSame([false, true], array_map(static fn (object $row): bool => $row->row_data->imported, $rows));
     }
 }

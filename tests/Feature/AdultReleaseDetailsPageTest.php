@@ -18,6 +18,7 @@ use Illuminate\Testing\TestResponse;
 use Mockery;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -30,6 +31,7 @@ use Tests\TestCase;
 final class AdultReleaseDetailsPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -66,7 +68,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id',
-            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source']);
+            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data',
             'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks', 'predb', 'release_tv_episodes', 'tv_episodes', 'tv_info', 'networks', 'video_genres', 'video_people'] as $table) {
@@ -483,5 +485,24 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $start += strlen($from);
 
         return trim(substr($html, $start, strpos($html, $to, $start) - $start));
+    }
+
+    public function test_an_imported_release_shows_the_imported_chip_last_in_the_header_and_in_the_similar_table(): void
+    {
+        $current = $this->adult('Imported.With.Chips.XXX-GRP', ['is_imported' => 1, 'completion' => 94, 'nfostatus' => 1, 'jpgstatus' => 1, 'fromname' => 'someone@example.invalid']);
+        $alone = $this->adult('Imported.Alone.XXX-GRP', ['is_imported' => 1]);
+        $indexed = $this->adult('Indexed.XXX-GRP', ['nfostatus' => 1]);
+        $this->similarIds = [$alone, $indexed];
+
+        $html = (string) $this->details($current)->assertOk()->assertViewIs('details.adult.index')->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'The adult release page header');
+        $this->assertImportedChipPlaced($header, ['94% complete', 'nfo-badge', 'sample-badge'], [], 'The adult release page header');
+        $this->assertImportedChipPlaced($html, [], ['tv-details-origin'], 'The adult release page header');
+        $lone = $this->releaseRowNamed($html, 'Imported.Alone.XXX-GRP');
+        $this->assertImportedChip($lone, 'A similar row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $lone);
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Indexed.XXX-GRP'), 'A similar row that was not imported');
+        $this->assertNoImportedChip($this->detailsChipLine((string) $this->details($indexed)->assertOk()->getContent()), 'The header of a release that was not imported');
     }
 }

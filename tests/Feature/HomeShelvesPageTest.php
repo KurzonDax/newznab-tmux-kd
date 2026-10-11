@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -27,6 +28,7 @@ use Tests\TestCase;
 final class HomeShelvesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -75,7 +77,7 @@ final class HomeShelvesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_episodes', 'movieinfo', 'consoleinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -739,5 +741,16 @@ final class HomeShelvesPageTest extends TestCase
         }
 
         return $tiles;
+    }
+
+    public function test_a_panel_row_of_an_imported_release_carries_the_imported_chip(): void
+    {
+        $user = $this->userWith([]);
+        $this->rel('Glass.Imported', ['categories_id' => self::TV_HD, 'videos_id' => 11, 'adddate' => '2026-09-25 09:00:00', 'is_imported' => 1]);
+        $this->rel('Glass.Indexed', ['categories_id' => self::TV_HD, 'videos_id' => 11, 'adddate' => '2026-09-24 09:00:00', 'nfostatus' => 1]);
+
+        $html = (string) $this->page('/?_fragment=panel&shelf=TV&kind=show&id=11', $user)->assertOk()->getContent();
+        $this->assertImportedChip($this->releaseRowNamed($html, 'Glass.Imported'), 'A home panel row');
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Glass.Indexed'), 'A home panel row that was not imported');
     }
 }

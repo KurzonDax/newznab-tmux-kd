@@ -26,7 +26,7 @@ final readonly class AdultReleaseFilters extends ReleaseListFilters
      * @param  list<int>  $categories  ticked Adult sub-category ids, in menu order
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      */
@@ -36,7 +36,7 @@ final readonly class AdultReleaseFilters extends ReleaseListFilters
         ReleaseSort $sort = ReleaseSort::PostedNewest,
         int $page = 1,
         array $audio = [],
-        ?int $completion = null,
+        int|string|null $completion = null,
         bool $excludeOther = false,
         public string $search = '',
     ) {

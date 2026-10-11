@@ -3202,7 +3202,9 @@ CREATE TABLE `releases` (
   KEY `ix_releases_band_res_added` (`category_band`,`resolution`,`adddate`,`id`,`source`,`categories_id`,`passwordstatus`,`completion`),
   KEY `ix_releases_band_src_posted` (`category_band`,`source`,`postdate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`),
   KEY `ix_releases_band_src_added` (`category_band`,`source`,`adddate`,`id`,`resolution`,`categories_id`,`passwordstatus`,`completion`),
-  KEY `ix_releases_consoleinfo_cat` (`consoleinfo_id`,`categories_id`,`passwordstatus`,`postdate`,`adddate`,`completion`)
+  KEY `ix_releases_consoleinfo_cat` (`consoleinfo_id`,`categories_id`,`passwordstatus`,`postdate`,`adddate`,`completion`),
+  KEY `ix_releases_imported_posted` (`is_imported`,`postdate`,`id`,`category_band`,`categories_id`,`resolution`,`source`,`passwordstatus`,`videos_id`,`completion`,`groups_id`),
+  KEY `ix_releases_imported_added` (`is_imported`,`adddate`,`id`,`category_band`,`categories_id`,`resolution`,`source`,`passwordstatus`,`videos_id`,`completion`,`groups_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `releases_groups`;
@@ -4327,3 +4329,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (322,'2026_10_08_16
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (323,'2026_10_08_160200_create_musicbrainz_artist_tables',30);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (324,'2026_10_09_120000_add_incomplete_release_grace_hours_setting',31);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (325,'2026_10_11_120000_add_is_imported_to_releases_table',32);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (326,'2026_10_11_130000_add_imported_indexes_to_releases_table',33);

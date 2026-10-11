@@ -33,7 +33,7 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
         array $categories = [],
         ReleaseSort $sort = ReleaseSort::PostedNewest,
         int $page = 1,
-        ?int $completion = null,
+        int|string|null $completion = null,
         bool $excludeOther = false,
         string $search = '',
         public int $minCompletion = 0,
@@ -88,11 +88,14 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
         return in_array(Category::OTHER_ROOT, $menuValues, true) && count($menuValues) > 1 ? Category::OTHER_ROOT : null;
     }
 
-    /** The completion threshold applied: the Completion choice, else the legacy `minc`; null for none. */
+    /**
+     * The completion threshold applied: the Completion choice, else the legacy `minc`; null for
+     * none, and for Imported only (an explicit choice that is no threshold).
+     */
     public function threshold(): ?int
     {
         if ($this->completion !== null) {
-            return $this->completion;
+            return $this->completionThreshold();
         }
 
         return $this->minCompletion > 0 ? $this->minCompletion : null;

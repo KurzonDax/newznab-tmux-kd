@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
  * row loader's data read in display order, and each release's chips, sizes and dates in the
  * redesigned screens' formats. The sections add their title (show or film) to these.
  *
- * @phpstan-type RowFacts array{id: int, guid: string, name: string, resolution: ReleaseResolution, source: string, size: string, files: int, date: string, dateTitle: string, day: string, grabs: int, comments: int, completion: array{percent: int, band: string, repairing: bool}|null, passworded: bool, mediaInfo: ?string, nfo: bool, preview: array{thumb: ?string, full: ?string}|null, sample: array{thumb: ?string, full: ?string}|null, inCart: bool, watched: bool, bytes: float, postedAt: int, postedOn: string, group: string, uploader: string}
+ * @phpstan-type RowFacts array{id: int, guid: string, name: string, resolution: ReleaseResolution, source: string, size: string, files: int, date: string, dateTitle: string, day: string, grabs: int, comments: int, completion: array{percent: int, band: string, repairing: bool}|null, passworded: bool, imported: bool, mediaInfo: ?string, nfo: bool, preview: array{thumb: ?string, full: ?string}|null, sample: array{thumb: ?string, full: ?string}|null, inCart: bool, watched: bool, bytes: float, postedAt: int, postedOn: string, group: string, uploader: string}
  */
 final class ReleaseRowFacts
 {
@@ -95,6 +95,7 @@ final class ReleaseRowFacts
             'comments' => $row->comments,
             'completion' => $completion,
             'passworded' => $row->passworded,
+            'imported' => $row->imported,
             'mediaInfo' => $row->has_media_info ? $this->mediaInfo($row->media_info_summary) : null,
             'nfo' => $row->nfo,
             'preview' => (int) $release->haspreview === 1 ? ['thumb' => getImageAssetUrl('preview', $row->guid.'_thumb'), 'full' => getImageAssetUrl('preview', $row->guid)] : null,

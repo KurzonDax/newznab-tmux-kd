@@ -19,6 +19,7 @@ final readonly class ReleaseRowData
         public int $comments,
         public float $completion,
         public bool $passworded,
+        public bool $imported,
         public bool $has_media_info,
         public ?string $media_info_summary,
         public bool $nfo,

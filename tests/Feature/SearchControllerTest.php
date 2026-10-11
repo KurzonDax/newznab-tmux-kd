@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -24,6 +25,7 @@ use Tests\TestCase;
 
 final class SearchControllerTest extends TestCase
 {
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -403,5 +405,19 @@ final class SearchControllerTest extends TestCase
             ->andReturn(['ids' => [$wanted], 'total' => 1, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         $this->actingAs($this->browserUser())->get('/search?'.http_build_query($parameters))->assertOk()->assertSee('A lexical match');
         $this->get('/search?'.http_build_query([...$parameters, 'per' => 24, 'sort' => 'title']))->assertOk()->assertSee('A lexical match');
+    }
+
+    public function test_a_search_result_of_an_imported_release_ends_its_facts_with_the_imported_chip(): void
+    {
+        $this->release('Imported search result', ['is_imported' => 1, 'nfostatus' => 1, 'jpgstatus' => 1]);
+        $this->release('Imported lone search result', ['is_imported' => 1, 'nfostatus' => 0]);
+        $this->release('Indexed search result', ['nfostatus' => 1]);
+
+        $html = (string) $this->actingAs($this->browserUser())->get('/search?'.http_build_query(['q' => 'search result']))->assertOk()->getContent();
+        $row = $this->releaseRowNamed($html, 'Imported search result');
+        $this->assertImportedChip($row, 'A search result');
+        $this->assertImportedChipPlaced($row, ['nfo-badge', 'sample-badge'], [], 'A search result');
+        $this->assertImportedChip($this->releaseRowNamed($html, 'Imported lone search result'), 'A search result with no other chip');
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Indexed search result'), 'A search result that was not imported');
     }
 }

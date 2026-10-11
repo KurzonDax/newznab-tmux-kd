@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsOffsiteLinks;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -24,6 +25,7 @@ use Tests\TestCase;
 final class MovieFilmPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use AssertsOffsiteLinks;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -63,7 +65,7 @@ final class MovieFilmPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'people', 'genres', 'movie_genres',
             'movie_people', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -605,5 +607,25 @@ final class MovieFilmPageTest extends TestCase
         preg_match_all('/data-film="(\d+)"/', $this->between($response, 'class="tv-similar"', '</section>'), $ids);
 
         return array_map('intval', $ids[1]);
+    }
+
+    public function test_a_release_row_of_an_imported_release_ends_its_chips_with_the_imported_chip(): void
+    {
+        $this->film(self::FILM, 'Heat', '1995');
+        $busy = $this->movie(self::FILM, name: 'Heat.Imported.With.Chips');
+        $alone = $this->movie(self::FILM, name: 'Heat.Imported.Alone');
+        $indexed = $this->movie(self::FILM, name: 'Heat.Indexed');
+        DB::table('releases')->where('id', $busy)->update(['is_imported' => 1, 'nfostatus' => 1, 'jpgstatus' => 1]);
+        DB::table('releases')->where('id', $alone)->update(['is_imported' => 1]);
+        DB::table('releases')->where('id', $indexed)->update(['nfostatus' => 1]);
+
+        $html = (string) $this->page('/movies/film/'.self::FILM)->assertOk()->getContent();
+        $row = $this->releaseRowNamed($html, 'Heat.Imported.With.Chips');
+        $this->assertImportedChip($row, 'A film page row');
+        $this->assertImportedChipPlaced($row, ['nfo-badge', 'sample-badge'], [], 'A film page row');
+        $lone = $this->releaseRowNamed($html, 'Heat.Imported.Alone');
+        $this->assertImportedChip($lone, 'A film page row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $lone);
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Heat.Indexed'), 'A film page row that was not imported');
     }
 }

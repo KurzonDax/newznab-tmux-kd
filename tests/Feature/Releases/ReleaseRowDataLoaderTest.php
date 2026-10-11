@@ -87,9 +87,25 @@ final class ReleaseRowDataLoaderTest extends TestCase
         self::assertSame('Display title', $rows[0]->display_name);
         self::assertSame(7, $rows[0]->total_report_count);
         self::assertSame(
-            '{"id":100,"guid":"release-100","name":"Display title","category":"","size":"500.00 MB","files":3,"added":"","posted":"","grabs":4,"comments":2,"completion":99.5,"passworded":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"preview":"audio","group":"","poster":"Poster","renamed":true,"pp_done":false,"entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
+            '{"id":100,"guid":"release-100","name":"Display title","category":"","size":"500.00 MB","files":3,"added":"","posted":"","grabs":4,"comments":2,"completion":99.5,"passworded":false,"imported":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"preview":"audio","group":"","poster":"Poster","renamed":true,"pp_done":false,"entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
             json_encode($rows[0]->row_data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         );
+    }
+
+    public function test_the_row_says_whether_the_release_was_imported_on_loaded_and_refetched_rows(): void
+    {
+        DB::table('releases')->insert([[...$this->attributes(3), 'is_imported' => 1], $this->attributes(4)]);
+        $loaded = (object) [...$this->attributes(1), 'is_imported' => 1];
+        $notImported = (object) $this->attributes(2);
+        $refetched = (object) ['id' => 3];
+        $refetchedNotImported = (object) ['id' => 4];
+
+        (new ReleaseRowDataLoader)->load([$loaded, $notImported, $refetched, $refetchedNotImported]);
+
+        self::assertTrue($loaded->row_data->imported);
+        self::assertFalse($notImported->row_data->imported);
+        self::assertTrue($refetched->row_data->imported);
+        self::assertFalse($refetchedNotImported->row_data->imported);
     }
 
     public function test_mixed_rows_preserve_explicit_nulls_and_omit_deleted_partial_rows(): void
@@ -170,7 +186,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
         return json_encode([
             'id' => $id, 'guid' => 'release-'.$id, 'name' => $name, 'category' => '', 'size' => '500.00 MB',
             'files' => 3, 'added' => '', 'posted' => '', 'grabs' => 4, 'comments' => 2, 'completion' => 99.5,
-            'passworded' => false,
+            'passworded' => false, 'imported' => false,
             'has_media_info' => false, 'media_info_summary' => null, 'nfo' => false, 'preview' => 'none',
             'group' => '', 'poster' => 'Poster', 'renamed' => true, 'pp_done' => false, 'entity' => null,
             'in_basket' => false, 'watched' => false, 'reports' => 0, 'public_responses' => 0,
@@ -186,7 +202,7 @@ final class ReleaseRowDataLoaderTest extends TestCase
             'declaredfiles' => null, 'nzbstatus' => 1, 'passwordstatus' => null, 'nfostatus' => null, 'haspreview' => 0, 'jpgstatus' => 0, 'groups_id' => null,
             'fromname' => 'Poster', 'isrenamed' => 1, 'additional_pp_claim_token' => null, 'imdbid' => null,
             'videos_id' => null, 'tv_episodes_id' => null, 'musicinfo_id' => null, 'consoleinfo_id' => null,
-            'gamesinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, 'movieinfo_id' => null,
+            'gamesinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, 'movieinfo_id' => null, 'is_imported' => 0,
         ];
     }
 }

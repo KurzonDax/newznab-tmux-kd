@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -31,6 +32,7 @@ use Tests\TestCase;
 final class AudioReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -76,7 +78,7 @@ final class AudioReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'genres', 'audio_genres', 'release_audio_genres',
             'release_audio_evidence', 'release_music_identifications', 'musicbrainz_release_group_genres', 'musicbrainz_release_tracks', 'musicbrainz_artists', 'musicbrainz_artist_aliases', 'release_music_identification_artists', 'music_cover_art_lookups'] as $table) {
@@ -858,5 +860,76 @@ final class AudioReleasesPageTest extends TestCase
         $this->resetGlobalComposerState();
 
         return $this->actingAs($user ?? $this->user ??= $this->browserUser())->get($uri);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_after_listen_and_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.sounds.mp3']);
+        $preview = ['has_preview' => 1, 'preview_extension' => 'mp3', 'preview_mime' => 'audio/mpeg', 'preview_seconds' => 30];
+        $this->tag($this->audio('Imported.With.Listen', ['is_imported' => 1, 'completion' => 90, 'nfostatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']), $preview);
+        $this->audio('Imported.Alone', ['is_imported' => 1]);
+        $this->tag($this->audio('Indexed.With.Listen', ['groups_id' => 1]), $preview);
+
+        $response = $this->page('/audio')->assertOk();
+        $row = $this->rowOf($response, 'Imported.With.Listen');
+        $this->assertImportedChip($row, 'An Audio row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge', 'listen-badge'], ['tv-origin-pair'], 'An Audio row');
+        $alone = $this->rowOf($response, 'Imported.Alone');
+        $this->assertImportedChip($alone, 'An Audio row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $alone);
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed.With.Listen'), 'An Audio row that was not imported');
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index_and_a_tag_led_read_keeps_its_own(): void
+    {
+        $this->genre(self::ROCK, 'Rock');
+        $this->tag($this->audio('Imported.Rock', ['is_imported' => 1, 'completion' => 40]), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $this->tag($this->audio('Imported.Nineties', ['is_imported' => 1, 'categories_id' => self::LOSSLESS]), ['recorded_year' => 1995]);
+        $this->audio('Imported.No.Tag', ['is_imported' => 1]);
+        $this->tag($this->audio('Imported.Locked.Rock', ['is_imported' => 1, 'passwordstatus' => 1]), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $this->tag($this->audio('Indexed.Rock'), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $this->audio('Indexed.No.Tag', ['completion' => 96]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/audio?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Imported.Nineties', 'Imported.No.Tag', 'Imported.Rock'], $this->listedNames($response));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+        $this->assertListed('/audio?completion=95', ['Imported.Nineties', 'Imported.No.Tag', 'Indexed.No.Tag', 'Indexed.Rock']);
+        $this->assertListed('/audio?completion=imported&category[]='.self::LOSSLESS, ['Imported.Nineties']);
+        $this->page('/audio?completion=imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('imported only · release names, artists or albums containing');
+        $this->assertSame('imported', $this->remembered($user, 'audio')['completion']);
+
+        // the tag-led reads stay as they are: the Year or genres and the choice both hold, in the page and in the count
+        $this->assertSame(['Imported.Rock'], $this->listedNames($this->page('/audio?completion=imported&genre[]='.self::ROCK)->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Imported.Nineties'], $this->listedNames($this->page('/audio?completion=imported&decade[]=1990')->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Imported.Rock'],
+            $this->listedNames($this->page('/audio?completion=imported&genre[]='.self::ROCK.'&year_from=2009&year_to=2011')->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        // genres with Unknown, without a Year, are release-led: the anti-join runs on the imported index
+        $this->assertSame(['Imported.Nineties', 'Imported.No.Tag', 'Imported.Rock'],
+            $this->listedNames($this->page('/audio?completion=imported&genre[]='.self::ROCK.'&genre[]='.AudioReleaseFilters::GENRE_UNKNOWN)->assertOk()->assertSee('Showing 1–3 of 3 releases')));
+
+        $list = app(AudioReleaseList::class);
+        $count = fn (AudioReleaseFilters $filters): string => (fn (AudioReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $imported = ['completion' => AudioReleaseFilters::IMPORTED_ONLY];
+        $unknown = AudioReleaseFilters::GENRE_UNKNOWN;
+        foreach ([[], ['categories' => [self::MP3]], ['search' => 'x'], ['genres' => [$unknown]], ['genres' => [self::ROCK, $unknown], 'categories' => [self::MP3], 'search' => 'x']] as $set) {
+            foreach (['posted' => [ReleaseSort::PostedNewest, ReleaseSort::PostedOldest], 'added' => [ReleaseSort::AddedNewest, ReleaseSort::AddedOldest]] as $date => $sorts) {
+                foreach ($sorts as $sort) {
+                    $filters = new AudioReleaseFilters(...$set, ...$imported, sort: $sort);
+                    $this->assertSame('ix_releases_imported_'.$date, $list->readIndex($filters, []), json_encode([array_keys($set), $sort->value]));
+                    $this->assertContains($count($filters), ['ix_releases_imported_posted', 'ix_releases_imported_added']);
+                }
+            }
+        }
+        foreach ([['genres' => [self::ROCK]], ['genres' => [self::ROCK, self::METAL]], ['decades' => [1990]], ['yearFrom' => 2024], ['genres' => [$unknown], 'decades' => [1990]],
+            ['genres' => [self::ROCK, $unknown], 'yearFrom' => 1998, 'yearTo' => 2001]] as $tagLed) {
+            $with = new AudioReleaseFilters(...$tagLed, ...$imported);
+            $without = new AudioReleaseFilters(...$tagLed);
+            $this->assertSame('PRIMARY', $list->readIndex($with, []), json_encode($tagLed, JSON_THROW_ON_ERROR));
+            $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
+            $this->assertSame($count($without), $count($with));
+        }
     }
 }

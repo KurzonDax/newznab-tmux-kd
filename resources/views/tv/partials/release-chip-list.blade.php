@@ -1,4 +1,4 @@
-{{-- The release chips of a chip line (SPEC section 4), in order; $chipPart names each chip's data-part, or returns null; every caller passes $clip, the row's video clip or null. --}}
+{{-- The release chips of a chip line (SPEC section 4), in order; $chipPart names each chip's data-part, or returns null; every caller passes $clip, the row's video clip or null. The Imported chip (tv.partials.imported-chip) closes the release's own chips, after the chips a caller adds to these. --}}
 @if($row->completion !== null)
     <x-chip :variant="'completion-'.$row->completion['band']" :data-part="$chipPart($row->completion['band'] === 'mid' ? 'completion chip' : 'completion chip, '.$row->completion['band'])"
             :title="$row->completion['percent'].'% of this release\'s articles were seen by the indexer. '.($row->completion['repairing'] ? 'The site may still recover more of it.' : 'The site will not try to recover more of it.')">{{ $row->completion['percent'] }}% complete{{ $row->completion['repairing'] ? ' · late headers pending' : '' }}</x-chip>

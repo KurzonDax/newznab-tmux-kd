@@ -138,6 +138,11 @@
     --chip-response-bg-dark: oklch(0.31 0.07 245);
     --chip-response-fg: oklch(0.42 0.13 245);
     --chip-response-fg-dark: oklch(0.87 0.09 245);
+    /* The Imported chip, gold 90 (issue #1049): an icon with no text on a release that came from an imported NZB. */
+    --chip-imported-bg: oklch(0.93 0.06 90);
+    --chip-imported-bg-dark: oklch(0.33 0.06 90);
+    --chip-imported-fg: oklch(0.42 0.09 85);
+    --chip-imported-fg-dark: oklch(0.89 0.11 90);
     /* Labels and the play button that sit on a picture: the same dark ground and white ink in both themes. */
     --picture-label-bg: rgb(10 10 14 / 80%);
     --picture-play-bg: rgb(10 10 14 / 72%);
@@ -891,6 +896,7 @@ a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):ho
 .chip-tone-reported { background-color: var(--chip-reported-bg); color: var(--chip-reported-fg); }
 .chip-tone-response { background-color: var(--chip-response-bg); color: var(--chip-response-fg); }
 .chip-tone-password { background-color: var(--surface-panel-alt); color: var(--text-default); }
+.chip-tone-imported { background-color: var(--chip-imported-bg); color: var(--chip-imported-fg); }
 .chip-tone-completion-ok { background-color: var(--chip-completion-ok-bg); color: var(--chip-completion-ok-fg); }
 .chip-tone-completion-mid { background-color: var(--chip-completion-mid-bg); color: var(--chip-completion-mid-fg); }
 .chip-tone-completion-low { background-color: var(--chip-completion-low-bg); color: var(--chip-completion-low-fg); }
@@ -902,6 +908,7 @@ a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):ho
 .dark .chip-tone-reported { background-color: var(--chip-reported-bg-dark); color: var(--chip-reported-fg-dark); }
 .dark .chip-tone-response { background-color: var(--chip-response-bg-dark); color: var(--chip-response-fg-dark); }
 .dark .chip-tone-password { background-color: var(--surface-panel-alt-dark); color: var(--text-default-dark); }
+.dark .chip-tone-imported { background-color: var(--chip-imported-bg-dark); color: var(--chip-imported-fg-dark); }
 .dark .chip-tone-completion-ok { background-color: var(--chip-completion-ok-bg-dark); color: var(--chip-completion-ok-fg-dark); }
 .dark .chip-tone-completion-mid { background-color: var(--chip-completion-mid-bg-dark); color: var(--chip-completion-mid-fg-dark); }
 .dark .chip-tone-completion-low { background-color: var(--chip-completion-low-bg-dark); color: var(--chip-completion-low-fg-dark); }

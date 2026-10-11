@@ -6,6 +6,7 @@
      * for an Audio music video release, playing its clip), then the group and poster outline chips
      * on their own line. Every caller passes $clip, the page's clip or null. An Other release
      * (generic-release-lists SPEC 6) keeps its Preview / Sample chips and adds Reported and Response.
+     * The Imported chip (issue #1049) closes the release's own chips on every one of these pages.
      *
      * @var \App\Data\ShelfReleaseRow|\App\Data\ConsoleReleaseRow|\App\Data\AudioReleaseRow|\App\Data\GenericReleaseRow $row
      * @var array{url: string, type: string, poster: ?string}|null $clip
@@ -18,6 +19,7 @@
     @if($row instanceof \App\Data\GenericReleaseRow)
         @include('tv.partials.report-chips', ['href' => null])
     @endif
+    @include('tv.partials.imported-chip')
 </div>
 @if($row->group !== '' || $row->uploader !== '')
     <div class="tv-chips tv-details-origin">

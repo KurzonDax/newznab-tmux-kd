@@ -80,6 +80,7 @@
                         <x-chip variant="sample" action class="sample-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->sample['thumb'] ?? ''"
                                 :data-full-url="$row->sample['full']" data-image-title="Sample image" title="View sample image">Sample</x-chip>
                     @endif
+                    @include('tv.partials.imported-chip')
                 </div>
                 @if($row->group !== '' || $row->uploader !== '')
                     <div class="tv-chips tv-details-origin">
