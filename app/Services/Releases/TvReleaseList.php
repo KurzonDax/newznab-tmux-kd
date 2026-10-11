@@ -47,6 +47,10 @@ final class TvReleaseList extends BandReleaseList
     /** @param TvReleaseFilters $filters */
     protected function countIndex(ReleaseListFilters $filters): string
     {
+        if ($filters->importedOnly()) {
+            return $this->importedIndex($filters);
+        }
+
         return $filters->shows->any() ? 'ix_releases_videos_posted' : 'ix_releases_band_count';
     }
 
@@ -58,24 +62,31 @@ final class TvReleaseList extends BandReleaseList
      */
     public function readIndex(ReleaseListFilters $filters, array $exclusions): string
     {
-        return $this->pageIndex($filters, $filters->shows->any() ? $this->count(new TvReleaseFilters(shows: $filters->shows), $exclusions) : 0);
+        return $this->pageIndex($filters, $this->readsFromShows($filters) ? $this->count(new TvReleaseFilters(shows: $filters->shows), $exclusions) : 0);
     }
 
     /**
      * The index a page of the list is read from. $showReleases is the visible releases the show
      * filters match on their own (the release filters left out), the count that decides the
      * show-filtered read: measured on the catalogue, English shows plus UHD (12,583 releases of
-     * 94,088) read 59 ms from the shows and 0.7-12 ms from the band index.
+     * 94,088) read 59 ms from the shows and 0.7-12 ms from the band index. An Imported only list
+     * is read from the imported index whatever the show filters (they are applied on any index).
      */
     public function pageIndex(TvReleaseFilters $filters, int $showReleases): string
     {
-        if ($filters->shows->any()) {
+        if ($this->readsFromShows($filters)) {
             $date = $filters->sortsByAdded() ? 'added' : 'posted';
 
             return $showReleases < $this->showReadLimit ? 'ix_releases_videos_'.$date : 'ix_releases_band_'.$date;
         }
 
         return $this->releaseIndex($filters);
+    }
+
+    /** Whether the show filters may drive the page's read: one is set, and the list is not Imported only. */
+    private function readsFromShows(TvReleaseFilters $filters): bool
+    {
+        return $filters->shows->any() && ! $filters->importedOnly();
     }
 
     /**

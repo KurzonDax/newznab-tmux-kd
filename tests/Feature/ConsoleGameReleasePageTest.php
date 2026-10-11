@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Mockery;
 use Tests\Support\Admin\InteractsWithAdminListPages;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -29,6 +30,7 @@ use Tests\TestCase;
  */
 final class ConsoleGameReleasePageTest extends TestCase
 {
+    use AssertsImportedChip;
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -70,7 +72,7 @@ final class ConsoleGameReleasePageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id',
-            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source']);
+            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data',
             'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks', 'predb', 'release_tv_episodes', 'tv_episodes', 'tv_info', 'networks',
@@ -543,5 +545,24 @@ final class ConsoleGameReleasePageTest extends TestCase
         $start += strlen($from);
 
         return trim(substr($html, $start, strpos($html, $to, $start) - $start));
+    }
+
+    public function test_an_imported_release_shows_the_imported_chip_last_in_the_header_and_in_the_game_s_release_table(): void
+    {
+        $this->game();
+        $current = $this->console('Game.Imported.With.Chips-GRP', ['is_imported' => 1, 'completion' => 94, 'nfostatus' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->console('Game.Imported.Alone-GRP', ['is_imported' => 1]);
+        $indexed = $this->console('Game.Indexed-GRP', ['nfostatus' => 1]);
+
+        $html = (string) $this->details($current)->assertOk()->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'The console release page header');
+        $this->assertImportedChipPlaced($header, ['94% complete', 'nfo-badge'], [], 'The console release page header');
+        $this->assertImportedChipPlaced($html, [], ['tv-details-origin'], 'The console release page header');
+        $lone = $this->releaseRowNamed($html, 'Game.Imported.Alone-GRP');
+        $this->assertImportedChip($lone, 'A game table row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $lone);
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Game.Indexed-GRP'), 'A game table row that was not imported');
+        $this->assertNoImportedChip($this->detailsChipLine((string) $this->details($indexed)->assertOk()->getContent()), 'The header of a release that was not imported');
     }
 }

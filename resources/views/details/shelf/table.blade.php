@@ -55,6 +55,7 @@
                             @if($row instanceof \App\Data\GenericReleaseRow)
                                 @include('tv.partials.report-chips', ['href' => route('details', $row->guid)])
                             @endif
+                            @include('tv.partials.imported-chip')
                         </div>
                     @endif
                 </td>

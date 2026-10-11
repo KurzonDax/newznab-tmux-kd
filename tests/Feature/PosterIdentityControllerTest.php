@@ -984,6 +984,7 @@ final class PosterIdentityControllerTest extends TestCase
             $table->boolean('nfostatus')->default(false);
             $table->integer('videostatus')->default(0);
             $table->integer('isrenamed')->default(0);
+            $table->boolean('is_imported')->default(false);
             // the redesigned rows read the resolution and source of every release
             $table->unsignedTinyInteger('resolution')->default(0);
             $table->unsignedTinyInteger('source')->default(0);

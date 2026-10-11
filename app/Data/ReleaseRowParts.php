@@ -15,7 +15,7 @@ trait ReleaseRowParts
 {
     public function hasChips(): bool
     {
-        return $this->completion !== null || $this->passworded || $this->mediaInfo !== null || $this->nfo || $this->preview !== null || $this->sample !== null;
+        return $this->completion !== null || $this->passworded || $this->mediaInfo !== null || $this->nfo || $this->preview !== null || $this->sample !== null || $this->imported;
     }
 
     /** The releases list's group and poster chips close the chip line when the release has either. */

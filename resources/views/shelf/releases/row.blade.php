@@ -47,13 +47,14 @@
         @elseif($row instanceof \App\Data\AudioReleaseRow && $row->musicLine() !== '')
             @include('shelf.releases.music-line')
         @endif
-        {{-- One chip line: the release chips, then the group and poster pair that never splits (SPEC 5.5). --}}
+        {{-- One chip line: the release chips, Listen, the Imported chip, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
                 @include('tv.partials.release-chip-list', ['clip' => null])
                 @if($row instanceof \App\Data\AudioReleaseRow && $row->listen !== null)
                     @include('shelf.releases.listen-chip')
                 @endif
+                @include('tv.partials.imported-chip')
                 @include('tv.partials.release-origin')
             </div>
         @endif

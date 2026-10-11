@@ -6,4 +6,5 @@
 @if($row->public_responses > 0)
     <x-chip variant="primary" icon="fas fa-reply" :href="route('details', $row->guid)" data-public-response title="Staff response available on release details">Response</x-chip>
 @endif
+@include('tv.partials.imported-chip')
 </div>

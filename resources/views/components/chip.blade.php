@@ -20,6 +20,7 @@
         'reported' => 'chip-tone-reported',
         'response' => 'chip-tone-response',
         'password' => 'chip-tone-password',
+        'imported' => 'chip-tone-imported',
         'completion-ok' => 'chip-tone-completion-ok',
         'completion-mid' => 'chip-tone-completion-mid',
         'completion-low' => 'chip-tone-completion-low',

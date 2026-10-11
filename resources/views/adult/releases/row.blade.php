@@ -36,10 +36,11 @@
     </td>
     <td class="tv-what">
         <a class="tv-release-name" href="{{ $details }}" title="{{ $row->name }}" data-part="release name">{{ $row->name }}</a>
-        {{-- One chip line: the release chips, the Preview chip playing the clip when there is one, then the group and poster pair that never splits (SPEC 5.5). --}}
+        {{-- One chip line: the release chips, the Preview chip playing the clip when there is one, the Imported chip, then the group and poster pair that never splits (SPEC 5.5). --}}
         @if($row->hasChips() || $row->hasOrigin())
             <div class="tv-chips">
                 @include('tv.partials.release-chip-list', ['clip' => $row->clip])
+                @include('tv.partials.imported-chip')
                 @include('tv.partials.release-origin')
             </div>
         @endif

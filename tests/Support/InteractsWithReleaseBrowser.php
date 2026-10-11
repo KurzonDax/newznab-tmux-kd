@@ -50,7 +50,7 @@ trait InteractsWithReleaseBrowser
             $table->integer('category_band')->virtualAs('FLOOR(categories_id / 1000) * 1000');
             $table->integer('nzbstatus')->default(1);
             // resolution and source: the redesigned rows (ReleaseRowFacts) read them on every list, the All list included
-            foreach (['totalpart', 'grabs', 'comments', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus', 'videostatus', 'isrenamed', 'resolution', 'source'] as $column) {
+            foreach (['totalpart', 'grabs', 'comments', 'passwordstatus', 'nfostatus', 'haspreview', 'jpgstatus', 'videostatus', 'isrenamed', 'resolution', 'source', 'is_imported'] as $column) {
                 $table->integer($column)->default(0);
             }
             $table->bigInteger('size')->default(524288000);

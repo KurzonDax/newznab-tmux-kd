@@ -38,7 +38,7 @@ final class AdultReleaseList extends BandReleaseList
     /** @param AdultReleaseFilters $filters */
     protected function countIndex(ReleaseListFilters $filters): string
     {
-        return $filters->search === '' ? 'ix_releases_band_count' : $this->releaseIndex($filters);
+        return $filters->search === '' && ! $filters->importedOnly() ? 'ix_releases_band_count' : $this->releaseIndex($filters);
     }
 
     /**

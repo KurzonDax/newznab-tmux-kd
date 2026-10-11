@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -30,6 +31,7 @@ use Tests\TestCase;
 final class AdultReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -66,7 +68,7 @@ final class AdultReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -664,5 +666,56 @@ final class AdultReleasesPageTest extends TestCase
         $ids = array_keys($kept);
 
         return $filters->ascending() ? $ids : array_reverse($ids);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.example']);
+        $this->adult('Imported with chips', ['is_imported' => 1, 'completion' => 80, 'nfostatus' => 1, 'haspreview' => 1, 'jpgstatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->adult('Imported alone', ['is_imported' => 1]);
+        $this->adult('Indexed with chips', ['nfostatus' => 1, 'groups_id' => 1]);
+
+        $response = $this->page('/adult')->assertOk();
+        $row = $this->rowOf($response, 'Imported with chips');
+        $this->assertImportedChip($row, 'An Adult row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge', 'preview-badge', 'sample-badge'], ['tv-origin-pair'], 'An Adult row');
+        $alone = $this->rowOf($response, 'Imported alone');
+        $this->assertImportedChip($alone, 'An Adult row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $alone);
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed with chips'), 'An Adult row that was not imported');
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index(): void
+    {
+        $this->adult('Imported scene', ['is_imported' => 1, 'completion' => 40]);
+        $this->adult('Imported dvd', ['is_imported' => 1, 'categories_id' => self::DVD]);
+        $this->adult('Imported locked', ['is_imported' => 1, 'passwordstatus' => 1]);
+        $this->adult('Indexed scene');
+        $this->adult('Indexed partial', ['completion' => 96]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/adult?completion=imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame(['Imported dvd', 'Imported scene'], $this->listedNames($response));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+        $this->assertListed('/adult?completion=95', ['Imported dvd', 'Indexed partial', 'Indexed scene']);
+        $this->assertListed('/adult?completion=imported&category[]='.self::DVD, ['Imported dvd']);
+        $this->assertListed('/adult?completion=imported&q=scene', ['Imported scene']);
+        $this->page('/adult?completion=imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('imported only');
+        $this->assertSame('imported', $this->remembered($user)['completion']);
+
+        $list = app(AdultReleaseList::class);
+        $count = fn (AdultReleaseFilters $filters): string => (fn (AdultReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        foreach ([[], ['categories' => [self::DVD]], ['resolutions' => ['4k']], ['audio' => ['unknown']], ['search' => 'scene']] as $set) {
+            foreach (['posted' => [ReleaseSort::PostedNewest, ReleaseSort::PostedOldest], 'added' => [ReleaseSort::AddedNewest, ReleaseSort::AddedOldest]] as $date => $sorts) {
+                foreach ($sorts as $sort) {
+                    $filters = new AdultReleaseFilters(...$set, completion: AdultReleaseFilters::IMPORTED_ONLY, sort: $sort);
+                    $this->assertSame('ix_releases_imported_'.$date, $list->readIndex($filters, []), json_encode([array_keys($set), $sort->value]));
+                    $this->assertContains($count($filters), ['ix_releases_imported_posted', 'ix_releases_imported_added']);
+                }
+            }
+        }
+        $this->assertSame('ix_releases_band_count', $count(new AdultReleaseFilters(completion: 95)));
     }
 }

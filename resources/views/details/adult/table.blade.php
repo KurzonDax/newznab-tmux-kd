@@ -34,6 +34,7 @@
                     @if($row->hasChips())
                         <div class="tv-chips">
                             @include('tv.partials.release-chip-list', ['clip' => $row->clip])
+                            @include('tv.partials.imported-chip')
                         </div>
                     @endif
                 </td>

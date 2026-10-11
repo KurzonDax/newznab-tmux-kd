@@ -153,7 +153,9 @@ final class GenericReleaseList
         $this->whereVisible($query, $exclusions);
         $this->whereContext($query, $filters->context, $userId);
         $threshold = $filters->threshold();
-        if ($threshold !== null) {
+        if ($filters->importedOnly()) {
+            $query->where('releases.is_imported', 1);
+        } elseif ($threshold !== null) {
             $query->where('releases.completion', '>=', $threshold);
         }
         if ($filters->context->isOther()) {

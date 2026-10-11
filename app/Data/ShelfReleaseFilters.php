@@ -23,7 +23,7 @@ abstract readonly class ShelfReleaseFilters extends ReleaseListFilters
 
     /**
      * @param  list<int>  $categories  ticked sub-category ids, in menu order
-     * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      */
@@ -31,7 +31,7 @@ abstract readonly class ShelfReleaseFilters extends ReleaseListFilters
         array $categories = [],
         ReleaseSort $sort = ReleaseSort::PostedNewest,
         int $page = 1,
-        ?int $completion = null,
+        int|string|null $completion = null,
         bool $excludeOther = false,
         public string $search = '',
     ) {
@@ -46,7 +46,7 @@ abstract readonly class ShelfReleaseFilters extends ReleaseListFilters
      *
      * @param  list<int>  $menuCategories  the sub-category ids the menu lists, in menu order
      * @param  int  $root  the list's root category, whose Other "Exclude Other" leaves out
-     * @return array{categories: list<int>, sort: ReleaseSort, page: int, completion: ?int, excludeOther: bool, search: string}
+     * @return array{categories: list<int>, sort: ReleaseSort, page: int, completion: int|string|null, excludeOther: bool, search: string}
      */
     protected static function shelfArguments(Request $request, array $menuCategories, mixed $savedSort, int $root): array
     {

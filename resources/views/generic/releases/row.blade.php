@@ -2,8 +2,8 @@
     /**
      * One row of the generic release lists (docs/proposals/generic-release-lists/SPEC.md 5.4, 5.5): the name; the
      * entity line of a film or show (a link) or of an album or console game (plain text); the chip line (the release
-     * chips with Preview / Sample / Clip as the Adult list prints them, then Reported and Response, then the group and
-     * poster pair with the list's own context left off); the Category cell ("Root > Sub", the sub-category alone on
+     * chips with Preview / Sample / Clip as the Adult list prints them, then Reported and Response, then the Imported
+     * chip (issue #1049), then the group and poster pair with the list's own context left off); the Category cell ("Root > Sub", the sub-category alone on
      * Other); Size; the date; the 2 × 2 actions with Follow on a film or show row and an empty slot otherwise.
      *
      * @var \App\Data\GenericReleaseRow $row
@@ -43,6 +43,7 @@
                     @include('shelf.releases.listen-chip')
                 @endif
                 @include('tv.partials.report-chips', ['href' => $details])
+                @include('tv.partials.imported-chip')
                 @include('tv.partials.release-origin', ['originOmits' => $originOmits])
             </div>
         @endif

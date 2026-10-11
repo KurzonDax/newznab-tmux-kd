@@ -17,6 +17,7 @@ use Illuminate\Testing\TestResponse;
 use Mockery;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -32,6 +33,7 @@ use Tests\TestCase;
 final class AudioReleasePageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -81,7 +83,7 @@ final class AudioReleasePageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id',
-            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source']);
+            'videos_id', 'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'predb_id', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data',
             'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks', 'predb', 'release_tv_episodes', 'tv_episodes', 'tv_info', 'networks',
@@ -927,5 +929,23 @@ final class AudioReleasePageTest extends TestCase
         $start += strlen($from);
 
         return trim(substr($html, $start, strpos($html, $to, $start) - $start));
+    }
+
+    public function test_an_imported_release_shows_the_imported_chip_last_in_the_header_and_after_listen_in_the_album_s_release_table(): void
+    {
+        $current = $this->album('Nama-Fibir-2021-MP3', $this->preview(), [], ['postdate' => '2026-09-20 10:00:00', 'is_imported' => 1, 'completion' => 94, 'nfostatus' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->album('Nama-Fibir-2021-FLAC', $this->preview(), [], ['categories_id' => self::LOSSLESS, 'postdate' => '2026-09-21 10:00:00', 'is_imported' => 1]);
+        $indexed = $this->album('Nama-Fibir-2021-OGG', $this->preview(), [], ['postdate' => '2026-09-19 10:00:00']);
+
+        $html = (string) $this->details($current)->assertOk()->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'The audio release page header');
+        $this->assertImportedChipPlaced($header, ['94% complete', 'nfo-badge'], [], 'The audio release page header');
+        $this->assertImportedChipPlaced($html, [], ['tv-details-origin'], 'The audio release page header');
+        $row = $this->releaseRowNamed($html, 'Nama-Fibir-2021-FLAC');
+        $this->assertImportedChip($row, 'An album table row');
+        $this->assertImportedChipPlaced($row, ['listen-badge'], [], 'An album table row');
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Nama-Fibir-2021-OGG'), 'An album table row that was not imported');
+        $this->assertNoImportedChip($this->detailsChipLine((string) $this->details($indexed)->assertOk()->getContent()), 'The header of a release that was not imported');
     }
 }

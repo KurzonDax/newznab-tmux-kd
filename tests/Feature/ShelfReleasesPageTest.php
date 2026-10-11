@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Data\BookPcReleaseFilters;
+use App\Enums\ReleaseSort;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
 use App\Services\Releases\BookReleaseList;
@@ -16,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -29,6 +31,7 @@ use Tests\TestCase;
 final class ShelfReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -67,7 +70,7 @@ final class ShelfReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages'] as $table) {
             $tables->create($table);
@@ -557,5 +560,58 @@ final class ShelfReleasesPageTest extends TestCase
         $this->resetGlobalComposerState();
 
         return $this->actingAs($user ?? $this->user ??= $this->browserUser())->get($uri);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.example']);
+        $this->book('Imported with chips', ['is_imported' => 1, 'completion' => 80, 'nfostatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->book('Imported alone', ['is_imported' => 1]);
+        $this->book('Indexed with chips', ['nfostatus' => 1, 'groups_id' => 1]);
+
+        $response = $this->page('/books')->assertOk();
+        $row = $this->rowOf($response, 'Imported with chips');
+        $this->assertImportedChip($row, 'A Books row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge'], ['tv-origin-pair'], 'A Books row');
+        $alone = $this->rowOf($response, 'Imported alone');
+        $this->assertImportedChip($alone, 'A Books row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $alone);
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed with chips'), 'A Books row that was not imported');
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index(): void
+    {
+        $this->book('Imported ebook', ['is_imported' => 1, 'completion' => 40]);
+        $this->book('Imported comic', ['is_imported' => 1, 'categories_id' => self::COMICS]);
+        $this->book('Imported locked', ['is_imported' => 1, 'passwordstatus' => 1]);
+        $this->book('Indexed ebook');
+        $this->book('Indexed partial', ['completion' => 96]);
+        $this->pc('Imported pc', ['is_imported' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/books?completion=imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame(['Imported comic', 'Imported ebook'], $this->listedNames($response));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+        $this->assertListed('/books?completion=95', ['Imported comic', 'Indexed ebook', 'Indexed partial']);
+        $this->assertListed('/books?completion=imported&category[]='.self::COMICS, ['Imported comic']);
+        $this->assertListed('/books?completion=imported&q=ebook', ['Imported ebook']);
+        $this->page('/books?completion=imported&category[]='.self::COMICS.'&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('Comics · imported only · names containing');
+        $this->assertSame('imported', $this->remembered($user, 'books')['completion']);
+        $this->assertListed('/pc?completion=imported', ['Imported pc']);
+
+        $list = app(BookReleaseList::class);
+        $count = fn (BookPcReleaseFilters $filters): string => (fn (BookPcReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        foreach ([[], ['categories' => [self::COMICS]], ['search' => 'ebook'], ['categories' => [self::COMICS], 'search' => 'ebook']] as $set) {
+            foreach (['posted' => [ReleaseSort::PostedNewest, ReleaseSort::PostedOldest], 'added' => [ReleaseSort::AddedNewest, ReleaseSort::AddedOldest]] as $date => $sorts) {
+                foreach ($sorts as $sort) {
+                    $filters = new BookPcReleaseFilters(...$set, completion: BookPcReleaseFilters::IMPORTED_ONLY, sort: $sort);
+                    $this->assertSame('ix_releases_imported_'.$date, $list->readIndex($filters, []), json_encode([array_keys($set), $sort->value]));
+                    $this->assertContains($count($filters), ['ix_releases_imported_posted', 'ix_releases_imported_added']);
+                }
+            }
+        }
+        $this->assertSame('ix_releases_band_count', $count(new BookPcReleaseFilters(completion: 95)));
     }
 }

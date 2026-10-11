@@ -29,7 +29,7 @@ final readonly class AudioReleaseFilters extends ShelfReleaseFilters
 
     /**
      * @param  list<int>  $categories  ticked sub-category ids, in menu order
-     * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      * @param  list<int|string>  $genres  ticked audio_genres.id and GENRE_UNKNOWN, in menu order
@@ -41,7 +41,7 @@ final readonly class AudioReleaseFilters extends ShelfReleaseFilters
         array $categories = [],
         ReleaseSort $sort = ReleaseSort::PostedNewest,
         int $page = 1,
-        ?int $completion = null,
+        int|string|null $completion = null,
         bool $excludeOther = false,
         string $search = '',
         public array $genres = [],

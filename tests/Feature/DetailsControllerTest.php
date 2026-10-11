@@ -17,6 +17,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\AssertsNoRetiredAddress;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -32,6 +33,7 @@ use Tests\TestCase;
 final class DetailsControllerTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use AssertsNoRetiredAddress;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
@@ -343,5 +345,34 @@ final class DetailsControllerTest extends TestCase
     {
         return $this->release($name, ['categories_id' => self::OTHER_MISC, 'videos_id' => null, 'tv_episodes_id' => null, 'imdbid' => null, 'musicinfo_id' => null,
             'gamesinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null, ...$attributes]);
+    }
+
+    public function test_an_imported_other_release_page_ends_its_chips_with_the_imported_chip_after_reported_and_response(): void
+    {
+        $id = $this->detailRelease('Imported.Reported.Release', ['is_imported' => 1, 'nfostatus' => 1]);
+        $this->detailRelease('Indexed.Release', ['nfostatus' => 1]);
+        $user = $this->browserUser();
+        ReleaseReport::factory()->create(['releases_id' => $id, 'users_id' => $user->id, 'response' => 'A public answer', 'response_is_public' => true, 'responded_by' => $user->id]);
+
+        $html = (string) $this->actingAs($user)->get('/details/'.md5('Imported.Reported.Release'))->assertOk()->assertViewIs('details.shelf.index')->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'An Other release page header');
+        $this->assertImportedChipPlaced($header, ['nfo-badge', 'data-chip-variant="reported"', 'data-chip-variant="response"'], [], 'An Other release page header');
+        $this->assertNoImportedChip($this->detailsChipLine((string) $this->get('/details/'.md5('Indexed.Release'))->assertOk()->getContent()), 'The header of a release that was not imported');
+    }
+
+    public function test_the_older_release_page_header_ends_its_facts_with_the_imported_chip_ahead_of_the_group(): void
+    {
+        $this->unrootedCategory();
+        DB::table('usenet_groups')->insert(['id' => 5, 'name' => 'alt.binaries.example', 'active' => 1]);
+        $this->detailRelease('Imported.Legacy.Release', ['is_imported' => 1, 'nfostatus' => 1, 'jpgstatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
+        $this->detailRelease('Indexed.Legacy.Release', ['nfostatus' => 1, 'categories_id' => self::UNROOTED, 'groups_id' => 5]);
+
+        $html = (string) $this->actingAs($this->browserUser())->get('/details/'.md5('Imported.Legacy.Release'))->assertOk()->assertViewIs('details.index')->getContent();
+        $facts = $this->between($html, '<div class="details-facts">', '<div class="details-subline">');
+        $this->assertImportedChip($facts, 'The older release page header');
+        $this->assertImportedChipPlaced($facts, ['nfo-badge', 'sample-badge'], ['data-chip-variant="origin"'], 'The older release page header');
+        $other = (string) $this->get('/details/'.md5('Indexed.Legacy.Release'))->assertOk()->getContent();
+        $this->assertNoImportedChip($this->between($other, '<div class="details-facts">', '<div class="details-subline">'), 'The older header of a release that was not imported');
     }
 }

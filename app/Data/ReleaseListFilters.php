@@ -33,8 +33,15 @@ abstract readonly class ReleaseListFilters
     /** The four orders, default first; labels are the prototype's. */
     public const SORTS = ['posted' => 'Posted: newest first', 'posted_oldest' => 'Posted: oldest first', 'newest' => 'Added: newest first', 'oldest' => 'Added: oldest first'];
 
-    /** The Completion menu's choices after "Any completion": URL value => [menu item, cell text, empty line]. */
-    public const COMPLETIONS = [100 => ['100% only', '100%', '100% complete'], 95 => ['95% or more', '95%+', '95%+ complete']];
+    /**
+     * The Completion menu's Imported only choice (issue #1049), by its URL value. It is no threshold:
+     * the list holds the releases added from an imported NZB (`is_imported`), at any completion.
+     */
+    public const IMPORTED_ONLY = 'imported';
+
+    /** The Completion menu's choices after "Any completion", in menu order: URL value => [menu item, cell text, empty line]. */
+    public const COMPLETIONS = [100 => ['100% only', '100%', '100% complete'], 95 => ['95% or more', '95%+', '95%+ complete'],
+        self::IMPORTED_ONLY => ['Imported only', 'Imported', 'imported only']];
 
     /** The Audio menu's value for releases with no audio language. */
     public const AUDIO_UNKNOWN = 'unknown';
@@ -51,7 +58,7 @@ abstract readonly class ReleaseListFilters
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode: it applies while
      *                              $categories holds its ids, and sleeps (filters nothing, stays in
      *                              the URL) while the menu shows no Exclude Other item
@@ -63,7 +70,7 @@ abstract readonly class ReleaseListFilters
         public ReleaseSort $sort = ReleaseSort::PostedNewest,
         public int $page = 1,
         public array $audio = [],
-        public ?int $completion = null,
+        public int|string|null $completion = null,
         public bool $excludeOther = false,
     ) {}
 
@@ -96,13 +103,13 @@ abstract readonly class ReleaseListFilters
         return array_map(static fn (array $sources): string => $sources[0]->label(), self::SOURCES);
     }
 
-    /** @return array<int, string> Completion menu: URL value => item */
+    /** @return array<int|string, string> Completion menu: URL value => item */
     public static function completionOptions(): array
     {
         return array_map(static fn (array $texts): string => $texts[0], self::COMPLETIONS);
     }
 
-    /** @return array<int, string> Completion cell: URL value => what the cell reads */
+    /** @return array<int|string, string> Completion cell: URL value => what the cell reads */
     public static function completionCells(): array
     {
         return array_map(static fn (array $texts): string => $texts[1], self::COMPLETIONS);
@@ -145,13 +152,12 @@ abstract readonly class ReleaseListFilters
      * @param  list<int>  $menuCategories  the sub-category ids the user may see, in menu order
      * @param  list<int|string>|null  $audioMenu  the Audio menu's values, in menu order
      * @param  int|null  $root  the list's root category, whose Other the mode excludes; null: no mode
-     * @return array{categories: list<int>, resolutions: list<string>, sources: list<string>, sort: ReleaseSort, page: int, audio: list<string>, completion: ?int, excludeOther: bool}
+     * @return array{categories: list<int>, resolutions: list<string>, sources: list<string>, sort: ReleaseSort, page: int, audio: list<string>, completion: int|string|null, excludeOther: bool}
      */
     protected static function releaseArguments(Request $request, array $menuCategories, mixed $savedSort, ?array $audioMenu, ?int $root = null): array
     {
         $ticked = static fn (string $key): array => array_map('strval', array_filter((array) $request->query($key, []), 'is_scalar'));
         $page = $request->query('page');
-        $completion = $request->query('completion');
         $categories = array_values(array_intersect($menuCategories, array_map('intval', $ticked('category'))));
         $other = $root === null ? null : self::excludableOther($menuCategories, $root);
         $allButOther = $other === null ? [] : array_values(array_diff($menuCategories, [$other]));
@@ -164,9 +170,19 @@ abstract readonly class ReleaseListFilters
             'sort' => self::sort($savedSort),
             'page' => is_string($page) && ctype_digit($page) ? max(1, (int) $page) : 1,
             'audio' => $audioMenu === null ? [] : array_values(array_intersect(array_map('strval', $audioMenu), $ticked('audio'))),
-            'completion' => $audioMenu !== null && is_string($completion) && ctype_digit($completion) && array_key_exists((int) $completion, self::COMPLETIONS) ? (int) $completion : null,
+            'completion' => $audioMenu === null ? null : self::completionChoice($request->query('completion')),
             'excludeOther' => $excludeOther,
         ];
+    }
+
+    /** A request's Completion value as a key of COMPLETIONS: a listed threshold, or IMPORTED_ONLY; null for anything else. */
+    private static function completionChoice(mixed $value): int|string|null
+    {
+        if ($value === self::IMPORTED_ONLY) {
+            return self::IMPORTED_ONLY;
+        }
+
+        return is_string($value) && ctype_digit($value) && array_key_exists((int) $value, self::COMPLETIONS) ? (int) $value : null;
     }
 
     /**
@@ -227,6 +243,18 @@ abstract readonly class ReleaseListFilters
     public function ascending(): bool
     {
         return in_array($this->sort, [ReleaseSort::PostedOldest, ReleaseSort::AddedOldest], true);
+    }
+
+    /** Whether the Completion choice is Imported only. */
+    public function importedOnly(): bool
+    {
+        return $this->completion === self::IMPORTED_ONLY;
+    }
+
+    /** The lowest completion listed: the Completion choice when it is a threshold; null for Any and for Imported only. */
+    public function completionThreshold(): ?int
+    {
+        return is_int($this->completion) ? $this->completion : null;
     }
 
     /** Whether the Exclude Other mode applies: set, and not sleeping. */

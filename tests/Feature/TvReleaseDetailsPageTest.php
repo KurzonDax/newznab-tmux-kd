@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\InteractsWithSecondaryProviders;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -22,6 +23,7 @@ use Tests\TestCase;
 final class TvReleaseDetailsPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use InteractsWithSecondaryProviders;
@@ -51,7 +53,7 @@ final class TvReleaseDetailsPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'predb_id', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'predb_id', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_info', 'networks', 'people', 'genres',
             'video_genres', 'video_people', 'tv_episodes', 'release_tv_episodes', 'release_audio_tags', 'release_video_clips', 'languages', 'release_audio_languages',
             'releases_groups', 'release_regexes', 'release_comments', 'release_nfos', 'video_data', 'audio_data', 'release_subtitles', 'media_infos', 'media_info_probes', 'media_info_tracks'] as $table) {
@@ -338,5 +340,27 @@ final class TvReleaseDetailsPageTest extends TestCase
         $start += strlen($from);
 
         return trim(substr($html, $start, strpos($html, $to, $start) - $start));
+    }
+
+    public function test_an_imported_release_shows_the_imported_chip_last_in_the_header_and_in_the_show_s_release_table(): void
+    {
+        $current = $this->tv(7, 5, name: 'Show.Imported.With.Chips', fromname: 'someone@example.invalid');
+        $sibling = $this->tv(7, 5, name: 'Show.Imported.Alone');
+        $indexed = $this->tv(7, 5, name: 'Show.Indexed');
+        DB::table('releases')->where('id', $current)->update(['is_imported' => 1, 'nfostatus' => 1, 'jpgstatus' => 1, 'completion' => 94]);
+        DB::table('releases')->where('id', $sibling)->update(['is_imported' => 1]);
+        DB::table('releases')->where('id', $indexed)->update(['nfostatus' => 1]);
+
+        $html = (string) $this->details($current)->assertOk()->getContent();
+        $header = $this->detailsChipLine($html);
+        $this->assertImportedChip($header, 'The TV release page header');
+        $this->assertImportedChipPlaced($header, ['94% complete', 'nfo-badge', 'sample-badge'], [], 'The TV release page header');
+        $this->assertImportedChipPlaced($html, [], ['tv-details-origin'], 'The TV release page header');
+        $this->assertImportedChip($this->releaseRowNamed($html, 'Show.Imported.With.Chips'), 'The current row of the show table');
+        $lone = $this->releaseRowNamed($html, 'Show.Imported.Alone');
+        $this->assertImportedChip($lone, 'A show table row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $lone);
+        $this->assertNoImportedChip($this->releaseRowNamed($html, 'Show.Indexed'), 'A show table row that was not imported');
+        $this->assertNoImportedChip($this->chips($indexed), 'The header of a release that was not imported');
     }
 }

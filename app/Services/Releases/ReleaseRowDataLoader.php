@@ -27,7 +27,7 @@ final class ReleaseRowDataLoader
         'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
         'haspreview', 'jpgstatus', 'groups_id', 'fromname', 'isrenamed',
         'additional_pp_claim_token', 'imdbid', 'videos_id', 'tv_episodes_id', 'musicinfo_id',
-        'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id',
+        'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'movieinfo_id', 'is_imported',
     ];
 
     /**
@@ -109,6 +109,7 @@ final class ReleaseRowDataLoader
                 comments: (int) ($source->comments ?? 0),
                 completion: (float) ($source->completion ?? 0),
                 passworded: (int) ($source->passwordstatus ?? -1) > 0,
+                imported: (int) ($source->is_imported ?? 0) === 1,
                 has_media_info: (bool) ($release->has_media_info ?? false),
                 media_info_summary: $release->media_info_summary ?? null,
                 nfo: (int) ($source->nfostatus ?? -1) === NfoService::NFO_FOUND,

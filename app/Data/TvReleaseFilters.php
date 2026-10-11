@@ -22,7 +22,7 @@ final readonly class TvReleaseFilters extends ReleaseListFilters
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|null  $completion  a key of COMPLETIONS, the lowest completion listed
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      */
     public function __construct(
@@ -32,7 +32,7 @@ final readonly class TvReleaseFilters extends ReleaseListFilters
         ReleaseSort $sort = ReleaseSort::PostedNewest,
         int $page = 1,
         array $audio = [],
-        ?int $completion = null,
+        int|string|null $completion = null,
         public TvShowFilters $shows = new TvShowFilters,
         bool $excludeOther = false,
     ) {

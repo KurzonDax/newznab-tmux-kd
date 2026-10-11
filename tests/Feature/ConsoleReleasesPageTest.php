@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
+use Tests\Support\AssertsImportedChip;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -31,6 +32,7 @@ use Tests\TestCase;
 final class ConsoleReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
+    use AssertsImportedChip;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -75,7 +77,7 @@ final class ConsoleReleasesPageTest extends TestCase
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
-            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source']);
+            'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'movieinfo', 'release_audio_tags', 'release_video_clips',
             'languages', 'release_audio_languages', 'genres', 'consoleinfo', 'console_genres'] as $table) {
             $tables->create($table);
@@ -732,5 +734,72 @@ final class ConsoleReleasesPageTest extends TestCase
         $this->resetGlobalComposerState();
 
         return $this->actingAs($user ?? $this->user ??= $this->browserUser())->get($uri);
+    }
+
+    public function test_an_imported_release_ends_its_own_chips_with_the_imported_chip_ahead_of_the_group_and_poster(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.example']);
+        $this->console('Imported with chips', ['is_imported' => 1, 'completion' => 80, 'nfostatus' => 1, 'groups_id' => 1, 'fromname' => 'someone@example.invalid']);
+        $this->console('Imported alone', ['is_imported' => 1]);
+        $this->console('Indexed with chips', ['nfostatus' => 1, 'groups_id' => 1]);
+
+        $response = $this->page('/console')->assertOk();
+        $row = $this->rowOf($response, 'Imported with chips');
+        $this->assertImportedChip($row, 'A Console row');
+        $this->assertImportedChipPlaced($row, ['% complete', 'nfo-badge'], ['tv-origin-pair'], 'A Console row');
+        $alone = $this->rowOf($response, 'Imported alone');
+        $this->assertImportedChip($alone, 'A Console row with no other chip');
+        $this->assertStringContainsString('<div class="tv-chips">', $alone);
+        $this->assertNoImportedChip($this->rowOf($response, 'Indexed with chips'), 'A Console row that was not imported');
+    }
+
+    public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index_and_a_game_filter_keeps_its_own_read(): void
+    {
+        $this->genre(self::ACTION, 'Action');
+        $this->game(1, 'Blades of Varn', '2010-01-01', [self::ACTION]);
+        $this->game(2, 'Salt Harbour', '1995-01-01', []);
+        $this->console('Imported action', ['is_imported' => 1, 'consoleinfo_id' => 1, 'completion' => 40]);
+        $this->console('Imported other game', ['is_imported' => 1, 'consoleinfo_id' => 2, 'categories_id' => self::NDS]);
+        $this->console('Imported no game', ['is_imported' => 1]);
+        $this->console('Imported locked action', ['is_imported' => 1, 'consoleinfo_id' => 1, 'passwordstatus' => 1]);
+        $this->console('Indexed action', ['consoleinfo_id' => 1]);
+        $this->console('Indexed no game', ['completion' => 96]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/console?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Imported action', 'Imported no game', 'Imported other game'], $this->listedNames($response));
+        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
+        $this->assertListed('/console?completion=95', ['Imported no game', 'Imported other game', 'Indexed action', 'Indexed no game']);
+        $this->assertListed('/console?completion=imported&category[]='.self::NDS, ['Imported other game']);
+        $this->page('/console?completion=imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('imported only · release or game names containing');
+        $this->assertSame('imported', $this->remembered($user, 'console')['completion']);
+
+        // the game-led reads stay as they are: the game filter and the choice both hold, in the page and in the count
+        $this->assertSame(['Imported action'], $this->listedNames($this->page('/console?completion=imported&genre[]='.self::ACTION)->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Imported no game', 'Imported other game'],
+            $this->listedNames($this->page('/console?completion=imported&genre[]='.ConsoleReleaseFilters::GENRE_UNKNOWN)->assertOk()->assertSee('Showing 1–2 of 2 releases')));
+        $this->assertSame(['Imported other game'], $this->listedNames($this->page('/console?completion=imported&decade[]=1990')->assertOk()->assertSee('Showing 1–1 of 1 release')));
+
+        $list = app(ConsoleReleaseList::class);
+        $count = fn (ConsoleReleaseFilters $filters): string => (fn (ConsoleReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $imported = ['completion' => ConsoleReleaseFilters::IMPORTED_ONLY];
+        foreach ([[], ['categories' => [self::NDS]], ['search' => 'x'], ['categories' => [self::NDS], 'search' => 'x']] as $set) {
+            foreach (['posted' => [ReleaseSort::PostedNewest, ReleaseSort::PostedOldest], 'added' => [ReleaseSort::AddedNewest, ReleaseSort::AddedOldest]] as $date => $sorts) {
+                foreach ($sorts as $sort) {
+                    $filters = new ConsoleReleaseFilters(...$set, ...$imported, sort: $sort);
+                    $this->assertSame('ix_releases_imported_'.$date, $list->readIndex($filters, []), json_encode([array_keys($set), $sort->value]));
+                    $this->assertContains($count($filters), ['ix_releases_imported_posted', 'ix_releases_imported_added']);
+                }
+            }
+        }
+        foreach ([['genres' => [self::ACTION]], ['genres' => [ConsoleReleaseFilters::GENRE_UNKNOWN]], ['decades' => [1990]], ['yearFrom' => 2024]] as $game) {
+            $with = new ConsoleReleaseFilters(...$game, ...$imported);
+            $without = new ConsoleReleaseFilters(...$game);
+            $this->assertSame('ix_releases_consoleinfo_cat', $list->readIndex($with, []), json_encode($game, JSON_THROW_ON_ERROR));
+            $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
+            $this->assertSame($count($without), $count($with));
+        }
     }
 }
