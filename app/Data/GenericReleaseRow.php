@@ -10,8 +10,8 @@ use App\Enums\ReleaseResolution;
  * One release row of the generic release lists (docs/proposals/generic-release-lists/SPEC.md
  * 5.4 and 5.5), ready to render: the shelf row with its "Root > Sub" Category cell, the entity
  * line of a film, show, album or console game, the Follow target of a film or show, the report
- * counts behind the Reported and Response chips, and the Preview / Sample / Clip pictures as the
- * Adult list carries them.
+ * counts behind the Reported and Response chips, the Preview / Sample / Clip pictures as the
+ * Adult list carries them, and the picture column's picture (issue #1050 section 2).
  */
 final readonly class GenericReleaseRow
 {
@@ -36,7 +36,8 @@ final readonly class GenericReleaseRow
      * @param  int  $publicResponses  the public staff responses (the Response chip)
      * @param  array{url: string, type: string, poster: ?string}|null  $clip  the video clip, as the Adult list carries it
      * @param  array{url: string, type: string, title: ?string, artist: ?string, seconds: ?int}|null  $listen  the playable audio preview, as the Audio list carries it (the Listen chip)
-     * @param  string|null  $cover  the Listen dialog's cover: none on these lists (no picture column)
+     * @param  string|null  $cover  the Listen dialog's cover: none on these lists
+     * @param  array{shape: 'poster'|'square'|'wide', src: ?string, href: string, title: string, label: string, opens: 'preview'|'sample'|null}|null  $picture  the picture column's picture (GenericReleaseRows::picture()): `src` null is a name card of `title` and `label`, `opens` names the image dialog a wide picture opens; null for an empty cell
      */
     public function __construct(
         public int $id,
@@ -79,6 +80,7 @@ final readonly class GenericReleaseRow
         public ?array $clip = null,
         public ?array $listen = null,
         public ?string $cover = null,
+        public ?array $picture = null,
     ) {}
 
     public function hasChips(): bool
@@ -92,6 +94,16 @@ final readonly class GenericReleaseRow
         $seconds = $this->listen['seconds'] ?? null;
 
         return $seconds === null ? 'Play the preview' : 'Play the '.$seconds.'-second preview';
+    }
+
+    /** The hover title of a preview or sample picture, as the Adult list words it (AdultReleaseRow's row). */
+    public function pictureTitle(): string
+    {
+        return match (true) {
+            ($this->picture['opens'] ?? null) === 'sample' => 'View sample image',
+            $this->clip !== null => 'Play the video preview',
+            default => 'View the image preview',
+        };
     }
 
     public function hasEntityLine(): bool

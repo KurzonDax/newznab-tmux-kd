@@ -3231,6 +3231,10 @@ class ElasticSearchDriver implements SearchDriverInterface
             $filter[] = ['term' => ['has_media_info' => (bool) $criteria['has_media_info'] ? 1 : 0]];
         }
 
+        if ((bool) ($criteria['imported_only'] ?? false)) {
+            $filter[] = ['term' => ['is_imported' => 1]];
+        }
+
         $mediaUniqueId = ReleaseSearchQuery::normalizeMediaUniqueId($criteria['media_unique_id'] ?? null);
         if ($mediaUniqueId !== null) {
             $filter[] = ['term' => ['media_unique_id' => $mediaUniqueId]];

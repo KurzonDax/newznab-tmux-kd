@@ -1,5 +1,5 @@
 @auth
-<header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click="headerClick" x-on:click.outside="closeMenus">
+<header class="public-header" data-public-header x-data="publicNavigation" x-on:keydown.window="handleShortcut" x-on:click="headerClick" x-on:click.outside="closeMenus" x-on:search-scope.window="syncScope">
     <a href="{{ url('/') }}" class="public-logo"><i class="fas fa-cubes" aria-hidden="true"></i>{{ config('app.name') }}</a>
     <nav class="public-primary-nav" aria-label="Main navigation">
         @foreach($navigationRoots as $navigationRoot)
@@ -35,9 +35,10 @@
     </nav>
     <form action="{{ url('/search') }}" method="GET" role="search" class="public-search" x-ref="searchForm" data-suggest-url="{{ route('api.search.suggest') }}" x-on:submit="closeSuggestions">
         @php($scopeChoices = ['0' => 'All'] + collect($navigationRoots)->mapWithKeys(fn (array $navigationRoot): array => [(string) $navigationRoot['root']->categoryId() => $navigationRoot['root']->label()])->all())
-        @php($scopeValue = is_scalar(request('t')) && array_key_exists((string) request('t'), $scopeChoices) ? (string) request('t') : '0')
+        {{-- A search says what the picker shows and what the form sends (WebSearchState::headerScope(), issue #1050): a legacy scope naming a sub-category is kept while the picker reads All, until a scope is picked. --}}
+        @php($scopeValue = isset($headerScope) && array_key_exists($headerScope['choice'], $scopeChoices) ? $headerScope['choice'] : (is_scalar(request('t')) && array_key_exists((string) request('t'), $scopeChoices) ? (string) request('t') : '0'))
         <div class="public-scope" data-search-scope x-on:focusout="scopeFocusLeft">
-            <input type="hidden" name="t" value="{{ $scopeValue }}" x-ref="searchScope">
+            <input type="hidden" name="t" value="{{ isset($headerScope) && $headerScope['choice'] === $scopeValue ? $headerScope['value'] : $scopeValue }}" x-ref="searchScope">
             <button type="button" class="public-scope-button" x-ref="scopeTrigger" x-on:click="toggleScope" x-on:keydown.down.prevent="openScopeAndFocus" aria-haspopup="true" x-bind:aria-expanded="scopeOpen" aria-controls="header-search-scope-menu" aria-label="Search scope: {{ $scopeChoices[$scopeValue] }}"><span x-ref="scopeLabel">{{ $scopeChoices[$scopeValue] }}</span><i class="fas fa-chevron-down public-nav-chevron" aria-hidden="true"></i></button>
             <div id="header-search-scope-menu" class="checkbox-menu-panel public-scope-panel" role="menu" aria-label="Search scope" x-ref="scopePanel" x-cloak x-show="scopeOpen" x-on:keydown="scopeKey">
                 @foreach($scopeChoices as $value => $label)

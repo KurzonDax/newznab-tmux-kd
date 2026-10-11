@@ -434,6 +434,9 @@ final class HomeShelvesPageTest extends TestCase
             $this->assertSame(3, substr_count($html, $action), $action);
         }
         $this->assertStringContainsString('<colgroup><col><col class="home-col-category"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>', $html);
+        // the panels leave the generic row's picture cell out, as they leave its select cell out (issue #1050 section 2)
+        $this->assertStringNotContainsString('tv-art', $html);
+        $this->assertSame(15, substr_count($html, '<td'), 'five cells a row');
         $this->assertNoWatchWording($html, 'A home panel');
 
         $this->page('/?_fragment=panel&shelf=TV&kind=show&id=12', $user)->assertOk()->assertSee('data-panel-count>newest release</span>', false)->assertDontSee('newest releases');

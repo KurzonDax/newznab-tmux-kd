@@ -30,6 +30,9 @@ node check.mjs                        # must end "N/N passed"  (needs Google Chr
 Routes inside the page: `#/` All releases, `#/group/<name>`, `#/poster/<identity>`, `#/other` (and
 `#/other/Misc`, `#/other/Hashed`), `#/release/<id>`; the header's All and Other buttons open their menus.
 
+The prototype copy predates the picture column and the search results (issue #1050): it shows neither. For both, the
+issue is the reference.
+
 Every release name, guid, group, poster identity, NFO text, file name, PreDB title, film and show title, album and
 performer in the prototype is invented and neutral, and the 714 preview and sample thumbnails are drawn
 placeholders. Only the shape of the real data is kept: the newest 25,000 releases of the restored catalogue by posting

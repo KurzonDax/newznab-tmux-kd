@@ -673,15 +673,61 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-filters h1.is-poster { overflow-wrap: anywhere; }
 .tv-col-category-path { width: 160px; }
 .tv-feed.is-other col.tv-col-category-path { width: 92px; }
+/*
+ * The generic lists' picture column (issue #1050 section 2): the TV / Movies column (tv-col-art, 116 px) on All
+ * releases, a group's and a poster's list and the search results. A poster or name card takes the 88 x 132 cell, an
+ * album cover the Audio list's 88 x 88 square, a release's own preview or sample picture 16:9 at the column's width;
+ * a row with none has an empty cell. The date stays on one line beside it.
+ */
+.tv-feed.is-generic td.tv-art.is-picture { width: 88px; }
+.tv-feed.is-generic .tv-art.is-picture a { width: 88px; height: 50px; }
+.tv-feed.is-generic:not(.is-other, .is-home-panel) td.tv-date { white-space: nowrap; }
+/*
+ * Search results (issue #1050): the generic list in the search context. The heading row's "RSS for this search"
+ * button (the Blacklist button's pill, below, on the neutral secondary ground); the query row 12 px under the filter bar, 32 px high, wrapping when its chips do not fit; a query chip, a
+ * control and so a neutral pill (the secondary ground, ink text, the label then an x in a 22 px round), the whole chip
+ * one link; "+ Add filter", a pill of the same height with a hairline border and dim text, its menu in the list
+ * menus' form with the picked filter's form under a back row; "Did you mean …?" in the same row; the Category cell's
+ * note on a legacy scope; the feed dialog, whose Copy button keeps its width when it reads "Copied".
+ */
+.tv-feed-button { background: var(--tv-panel-alt); color: var(--tv-ink); }
+.tv-feed-button:hover { background: var(--tv-line); }
+.tv-feed-button:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 1px; }
+.tv-query-row { display: flex; min-height: 32px; margin-top: 12px; }
+.tv-query-chips { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.tv-query-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 32px; padding: 0 5px 0 14px; border-radius: 16px; background: var(--tv-panel-alt); color: var(--tv-ink); font-size: 13px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
+.tv-query-chip-label { overflow: hidden; text-overflow: ellipsis; }
+.tv-query-chip-x { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 11px; background: color-mix(in oklab, var(--tv-ink) 10%, transparent); font-size: 11px; }
+.tv-query-chip:hover .tv-query-chip-x { background: color-mix(in oklab, var(--tv-ink) 22%, transparent); }
+.tv-add-filter { position: relative; display: inline-flex; }
+.tv-add-filter-button { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px 0 11px; border: 1px solid var(--tv-line); border-radius: 16px; background: none; color: var(--tv-dim); font-size: 13px; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: pointer; }
+.tv-add-filter-button i { font-size: 11px; }
+.tv-add-filter-button:hover, .tv-add-filter.is-open .tv-add-filter-button { background: var(--tv-panel-alt); color: var(--tv-ink); }
+.tv-add-filter-panel { top: 38px; right: auto; left: 0; }
+.tv-add-filter-form.is-list { max-height: 402px; min-width: 260px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
+.tv-add-filter-head { display: flex; align-items: center; gap: 6px; padding: 4px 10px 6px; color: var(--tv-dim); font-size: 12px; font-weight: 600; line-height: 1.5; }
+.tv-add-filter-form.is-list .tv-add-filter-head { position: sticky; top: 0; z-index: 2; background: var(--tv-panel); }
+.tv-add-filter-form.is-list .checkbox-menu-search { top: 42px; }
+.tv-add-filter-form a.checkbox-menu-item:focus-visible, .tv-add-filter-panel button:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: -2px; }
+.year-menu-range.is-text input { width: 220px; padding: 0 14px; font-weight: 500; text-align: left; }
+.tv-query-suggestion { margin-left: 6px; color: var(--tv-dim); font-size: 14px; line-height: 32px; white-space: nowrap; }
+.tv-query-suggestion a { color: var(--tv-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.checkbox-menu-note { max-width: 250px; padding: 8px 10px 6px; color: var(--tv-dim); font-size: 12.5px; line-height: 1.4; white-space: normal; }
+.tv-dialog.is-feed { width: min(680px, 100%); }
+.tv-feed-only { margin: 14px 0 0; color: var(--tv-dim); font-size: 14px; }
+.tv-copy-words { display: grid; }
+.tv-copy-words > span { grid-area: 1 / 1; }
+.tv-copy-words > span:last-child, .is-copied .tv-copy-words > span:first-child { visibility: hidden; }
+.is-copied .tv-copy-words > span:last-child { visibility: visible; }
 .tv-screen { --tv-danger-bg: oklch(0.92 0.045 12); --tv-danger-fg: oklch(0.45 0.16 12); --tv-danger-hover-bg: oklch(0.87 0.07 12); --tv-danger-mark: oklch(0.62 0.19 12); }
 .dark .tv-screen { --tv-danger-bg: oklch(0.31 0.07 12); --tv-danger-fg: oklch(0.86 0.11 12); --tv-danger-hover-bg: oklch(0.37 0.09 12); --tv-danger-mark: oklch(0.72 0.17 12); }
-.tv-blacklist-button, .tv-blacklist-link { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border: 0; border-radius: 19px; font-size: 13.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: pointer; }
+.tv-blacklist-button, .tv-blacklist-link, .tv-feed-button { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; border: 0; border-radius: 19px; font-size: 13.5px; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: pointer; }
 .tv-blacklist-button { background: var(--tv-danger-bg); color: var(--tv-danger-fg); }
 .tv-blacklist-button:hover { background: var(--tv-danger-hover-bg); }
 .tv-blacklist-button:focus-visible { outline: 2px solid var(--tv-ink); outline-offset: 1px; }
 .tv-blacklist-link { background: var(--tv-panel-alt); color: var(--tv-dim); }
 .tv-blacklist-link:hover { color: var(--tv-ink); }
-.tv-blacklist-button i, .tv-blacklist-link i { font-size: 12px; }
+.tv-blacklist-button i, .tv-blacklist-link i, .tv-feed-button i { font-size: 12px; }
 .tv-details-button.is-danger { background: var(--tv-danger-bg); color: var(--tv-danger-fg); }
 .tv-details-button.is-danger:hover { background: var(--tv-danger-hover-bg); filter: none; }
 .pager-line-status { display: inline-flex; align-items: center; min-height: 34px; }

@@ -139,12 +139,23 @@ export const publicNavigation = () => ({
         event.preventDefault();
         items[next].focus();
     },
-    pickScope(event) {
-        const item = event.currentTarget, label = item.textContent.trim();
+    /** Marks one option as the scope: the picker's label, its accessible name and the value the form sends. */
+    showScope(item, value) {
+        const label = item.textContent.trim();
         this.scopeItems().forEach(other => other.setAttribute('aria-checked', other === item ? 'true' : 'false'));
-        this.$refs.searchScope.value = item.dataset.value;
+        this.$refs.searchScope.value = value;
         this.$refs.scopeLabel.textContent = label;
         this.$refs.scopeTrigger.setAttribute('aria-label', 'Search scope: ' + label);
+    },
+    /** A search page's Category cell changed in place (tvReleases): the picker shows its one ticked root, otherwise All. */
+    syncScope(event) {
+        const { choice, value } = event.detail;
+        const item = this.scopeItems().find(other => other.dataset.value === choice) ?? this.scopeItems()[0];
+        if (item) this.showScope(item, item.dataset.value === choice ? value : item.dataset.value);
+    },
+    pickScope(event) {
+        const item = event.currentTarget;
+        this.showScope(item, item.dataset.value);
         this.scopeOpen = false;
         this.$refs.scopeTrigger.focus();
         return this.fetchSuggestions();

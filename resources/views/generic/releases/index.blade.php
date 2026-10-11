@@ -14,6 +14,12 @@
      * scope "All releases › Following"); a poster's heading may break before "@" and "<"; an administrator sees the
      * Blacklist button or the muted "Blacklisted (rule #N)" link beside the name search (SPEC 5.8).
      *
+     * A search (issue #1050) is the same page: no breadcrumb and no name search field (its words are the text
+     * filter), the "RSS for this search" button before the sort menu, the Category cell as the search's scope
+     * (data-scope-param names the address parameter it writes, comma separated) and nothing remembered (no filters
+     * clock). A legacy scope naming a sub-category reads "Custom scope" until roots are chosen, which replaces it and
+     * redraws the page (data-scope-custom). The query row and the feed dialog are in the list fragment: both follow the cells.
+     *
      * @var \App\Data\GenericListContext $context
      * @var \App\Data\GenericReleaseFilters $filters
      */
@@ -26,9 +32,11 @@
     };
     $headingHtml = $context->isPoster() ? str_replace(['@', '&lt;'], ['<wbr>@', '<wbr>&lt;'], e($heading)) : e($heading);
     $dialog = $admin && $blacklistRule === null && $blacklistPreview !== null;
+    $search = $context->isSearch();
+    $customScope = $search && $searchState->customScope();
 @endphp
 <div class="tv-screen" data-part="page ground and body text" x-data="tvReleases"
-     data-preference-url="{{ route('profile.update-view') }}" data-preference-root="{{ $preferenceRoot }}" data-filters-clock="{{ $filtersClock }}"
+     data-preference-url="{{ route('profile.update-view') }}" data-preference-root="{{ $preferenceRoot }}" @if($search) data-scope-param="t" @if($customScope) data-scope-custom @endif @else data-filters-clock="{{ $filtersClock }}" @endif
      data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
      x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter" x-on:blacklist-sweep-finished="refreshList">
     <div class="tv-wrap" data-part="content width wrapper">
@@ -41,7 +49,8 @@
         <div @if($dialog) x-data="posterIdentityBlacklist" @endif>
         <div class="tv-filters">
             <h1 data-part="page title"@if($context->isPoster()) class="is-poster"@endif>{!! $headingHtml !!}</h1>
-            {{-- The name search (SPEC 5.6): narrows the list to names containing the text; never remembered. --}}
+            {{-- The name search (SPEC 5.6): narrows the list to names containing the text; never remembered. A search has none. --}}
+            @unless($search)
             <div class="tv-search tv-name-search">
                 <label>
                     <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
@@ -50,6 +59,7 @@
                     <button type="button" @class(['tv-name-search-clear', 'is-hidden' => $filters->search === '']) x-ref="nameClear" aria-label="Clear the name search" title="Clear the name search" x-on:click="clearNameSearch" @if($filters->search === '') aria-hidden="true" tabindex="-1" @endif><i class="fas fa-xmark" aria-hidden="true"></i></button>
                 </label>
             </div>
+            @endunless
             @if($admin)
                 @if($blacklistRule !== null)
                     <a class="tv-blacklist-link" href="{{ route('admin.binaryblacklist-edit', ['id' => $blacklistRule->id]) }}" data-blacklisted><i class="fas fa-ban" aria-hidden="true"></i>Blacklisted (rule #{{ $blacklistRule->id }})</a>
@@ -58,6 +68,9 @@
                 @endif
             @endif
             <span class="tv-grow"></span>
+            @if($search)
+                <button type="button" class="tv-feed-button" data-search-feed-button x-on:click="$dispatch('search-feed-open')"><i class="fas fa-rss" aria-hidden="true"></i>RSS for this search</button>
+            @endif
             <label class="tv-sort">
                 <select aria-label="Sort releases" data-part="sort dropdown" x-on:change="changeSort">
                     @foreach(\App\Data\GenericReleaseFilters::SORTS as $value => $text)
@@ -74,7 +87,8 @@
         {{-- Two release cells (SPEC 5.2), each as wide as a Movie releases release-bar cell: Category (roots, or Misc / Hashed on Other) and Completion. --}}
         <div class="filter-row tv-bar-list is-shelf">
             <x-filter-bar label="The release" class="is-release">
-                <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" :exclude-other="$excludableOther" />
+                <x-checkbox-menu cell name="category" label="Category" noun="categories" :options="$categoryMenu" :selected="$filters->categories" :exclude-other="$excludableOther"
+                                 :cell-text="$customScope ? 'Custom scope' : null" :note="$customScope ? 'Choosing roots replaces the custom scope.' : null" />
                 <x-checkbox-menu cell single name="completion" label="Completion" any="Any completion" :options="\App\Data\ReleaseListFilters::completionOptions()" :short="\App\Data\ReleaseListFilters::completionCells()" :selected="$filters->completion === null ? [] : [$filters->completion]" />
             </x-filter-bar>
         </div>

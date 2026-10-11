@@ -5,40 +5,76 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Data\ReleaseBrowserState;
+use App\Data\ReleaseListFilters;
+use App\Data\WebSearchPage;
 use App\Data\WebSearchState;
 use App\Enums\BrowseRoot;
 use App\Enums\ReleaseSort;
 use App\Models\User;
-use App\Support\ReleaseBrowserPage;
 use App\Support\WebSearchText;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Which releases a search page holds (issue #1050): the search index answers, at the generic
+ * lists' page size and in the list's sort; when it cannot and the database fallback is on
+ * (`nntmux.mysql_search_fallback`), the database answers with its own count and pages; a fallback
+ * that fails leaves the search unavailable. The rows themselves are built by GenericReleaseRows
+ * from the ids.
+ */
 final class WebReleaseSearch
 {
-    public function __construct(private readonly ReleaseBrowserQuery $browser, private readonly ReleaseBrowseService $releases, private readonly TitleMetadataLoader $titles, private readonly WebSearchIndex $index) {}
+    public function __construct(private readonly ReleaseBrowserQuery $browser, private readonly TitleMetadataLoader $titles, private readonly WebSearchIndex $index) {}
 
-    public function paginate(WebSearchState $search, User $user): ReleaseBrowserPage
+    public function paginate(WebSearchState $search, User $user, ReleaseSort $sort): WebSearchPage
     {
-        $state = $search->browser;
+        $per = ReleaseListFilters::PER_PAGE;
         $entityFilters = $this->index->entityFilters($search);
-        $result = $this->index->page($search, $user, $entityFilters);
-        if (($result['available'] ?? true) || ! config('nntmux.mysql_search_fallback', false)) {
-            $ids = array_slice($result['ids'], 0, $state->per);
-            $rows = $ids === [] ? collect() : DB::table('releases')->whereIn('id', $ids)->get()->keyBy('id');
-            $rows = collect($ids)->map(fn (int $id) => $rows->get($id))->filter()->values();
-            $this->releases->loadReleaseRows($rows);
+        $result = $this->index->page($search, $user, $entityFilters, $sort);
+        $available = (bool) ($result['available'] ?? true);
+        if ($available || ! config('nntmux.mysql_search_fallback', false)) {
+            $total = (int) $result['total'];
+            $maximum = $result['maximum'] ?? null;
 
-            return new ReleaseBrowserPage($rows, $result['total'], $state->per, $result['page'] ?? 1,
-                ['path' => route('search'), 'query' => $search->parameters],
-                available: $result['available'] ?? true, reachableTotal: $result['maximum'] ?? null);
+            return new WebSearchPage(
+                ids: array_values(array_map('intval', array_slice($result['ids'], 0, $per))),
+                total: $total,
+                page: (int) ($result['page'] ?? 1),
+                lastPage: max(1, (int) ceil(($maximum === null ? $total : min($total, (int) $maximum)) / $per)),
+                available: $available,
+                beyondReach: $available && $maximum !== null && $total > (int) $maximum,
+            );
         }
 
-        $query = $this->browser->matchingQuery(ReleaseBrowserState::fromRequest(new Request(array_intersect_key($search->parameters, array_flip(['minc', 'group']))), BrowseRoot::All, $user, tableOnly: true), $user);
+        try {
+            return $this->fromDatabase($search, $user, $sort, $entityFilters);
+        } catch (QueryException $exception) {
+            // An unsuccessful fallback leaves the search unavailable, as a fallback that is switched off does.
+            report($exception);
+
+            return new WebSearchPage([], 0, available: false);
+        }
+    }
+
+    /**
+     * The database fallback: the search's own conditions on `releases`, counted and paged by the database.
+     *
+     * @param  array<string, list<int|string>>  $entityFilters
+     */
+    private function fromDatabase(WebSearchState $search, User $user, ReleaseSort $sort, array $entityFilters): WebSearchPage
+    {
+        $per = ReleaseListFilters::PER_PAGE;
+        $threshold = $search->threshold();
+        $base = array_filter(['minc' => $threshold === null ? null : (string) $threshold, 'group' => $search->parameters['group'] ?? null], is_string(...));
+        $query = $this->browser->matchingQuery(ReleaseBrowserState::fromRequest(new Request($base), BrowseRoot::All, $user, tableOnly: true), $user);
+        if ($search->importedOnly()) {
+            $query->where('r.is_imported', 1);
+        }
         if (isset($search->parameters['t'])) {
-            $ids = array_map('intval', array_filter(explode(',', $search->parameters['t']), ctype_digit(...)));
+            $ids = $search->scopeIds();
             $query->whereIn('r.categories_id', DB::table('categories')->select('id')->whereIn('id', $ids)->orWhereIn('root_categories_id', $ids));
         }
         if (isset($search->parameters['cat'])) {
@@ -65,13 +101,13 @@ final class WebReleaseSearch
             $this->applyText($query, $text);
         }
         $total = $query->count();
-        $page = min($state->page, max(1, (int) ceil($total / $state->per)));
-        [$column, $direction] = ReleaseSort::resolve($state->sort)->order();
+        $lastPage = max(1, (int) ceil($total / $per));
+        $page = min($search->page, $lastPage);
+        [$column, $direction] = $sort->order();
         $query->orderByRaw($column.' '.$direction);
-        $rows = $query->orderByDesc('r.id')->offset(($page - 1) * $state->per)->limit($state->per)->get(['r.*']);
-        $this->releases->loadReleaseRows($rows);
+        $ids = $query->orderByDesc('r.id')->offset(($page - 1) * $per)->limit($per)->pluck('r.id')->map(static fn (mixed $id): int => (int) $id)->all();
 
-        return new ReleaseBrowserPage($rows, $total, $state->per, $page, ['path' => route('search'), 'query' => $search->parameters]);
+        return new WebSearchPage($ids, $total, $page, $lastPage);
     }
 
     private function applyText(Builder $query, string $text): void

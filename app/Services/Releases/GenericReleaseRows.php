@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
+use App\Data\AdultReleaseRow;
 use App\Data\GenericReleaseRow;
 use App\Data\ReleaseEntityData;
 use App\Data\ReleaseRowData;
 use App\Enums\BrowseRoot;
 use App\Models\Category;
+use App\Services\MusicIdentity\CoverArt\AlbumCoverImages;
+use App\Services\MusicIdentity\CurrentMusicIdentityReader;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -20,18 +23,27 @@ use Illuminate\Support\Facades\DB;
  * adds the Category cell (the sub-category titles read for the whole page in one query), the entity
  * line and the video clip. Two further reads are made only for the kinds on the page, each once
  * for the whole page: the Audio rows' tags (the Audio list's music line and the Listen chip's
- * length) and the first-aired date of a show's stored episode that has no number. Nothing is read
- * per row.
+ * length) and the first-aired date of a show's stored episode that has no number. The picture
+ * column (issue #1050 section 2) adds, again only for the kinds on the page and once for the page,
+ * the Audio rows' stored album covers (the Audio list's cover) and the Console rows' games that have
+ * a cover (the Console list's cover); the posters and the preview and sample pictures are already
+ * loaded. Nothing is read per row.
  */
 final class GenericReleaseRows
 {
-    public function __construct(private readonly ReleaseRowFacts $facts) {}
+    public function __construct(
+        private readonly ReleaseRowFacts $facts,
+        private readonly CurrentMusicIdentityReader $identities,
+        private readonly AlbumCoverImages $covers,
+    ) {}
 
     /**
      * @param  list<int>  $ids  in display order
+     * @param  bool  $pictures  false for a caller that shows no picture column (the Other list, the home
+     *                          page's panels, the details page): the rows carry no picture and nothing is read for one
      * @return list<GenericReleaseRow>
      */
-    public function load(array $ids, bool $byAdded): array
+    public function load(array $ids, bool $byAdded, bool $pictures = true): array
     {
         $releases = $this->facts->load($ids);
         if ($releases === []) {
@@ -42,8 +54,10 @@ final class GenericReleaseRows
             ->pluck('title', 'id');
         $tags = $this->audioTags($releases);
         $aired = $this->firstAired($releases);
+        $albumCovers = $pictures ? $this->albumCovers($releases) : [];
+        $gameCovers = $pictures ? $this->gameCovers($releases) : [];
 
-        return array_map(function (object $release) use ($byAdded, $now, $titles, $tags, $aired): GenericReleaseRow {
+        return array_map(function (object $release) use ($byAdded, $now, $titles, $tags, $aired, $pictures, $albumCovers, $gameCovers): GenericReleaseRow {
             /** @var ReleaseRowData $row */
             $row = $release->row_data;
             $facts = $this->facts->facts($release, $byAdded, $now);
@@ -60,12 +74,20 @@ final class GenericReleaseRows
                 'seconds' => $tag?->preview_seconds === null ? null : (int) $tag->preview_seconds,
             ] : null;
 
+            $entity = $this->entity($row->entity, $categoryId, $tag, $aired->get((int) ($release->tv_episodes_id ?? 0)));
+            $details = route('details', $facts['guid']);
+
             return new GenericReleaseRow(...[
                 ...$facts,
                 'category' => $title,
                 'categoryPath' => $root === BrowseRoot::All || $title === '' ? $row->category : $root->label().' > '.$title,
                 'categoryId' => $categoryId,
-                ...$this->entity($row->entity, $categoryId, $tag, $aired->get((int) ($release->tv_episodes_id ?? 0))),
+                ...$entity,
+                'picture' => ! $pictures ? null : self::picture($row->entity, $entity, $details, match ($root) {
+                    BrowseRoot::Audio => $albumCovers[(int) $release->id] ?? null,
+                    BrowseRoot::Console => $gameCovers[(int) ($release->consoleinfo_id ?? 0)] ?? null,
+                    default => null,
+                }, $root === BrowseRoot::Audio, AdultReleaseRow::pictureOf($facts['preview'], $facts['sample'])),
                 'reports' => $row->reports,
                 'publicResponses' => $row->public_responses,
                 'clip' => ReleaseRowFacts::clip($release, $facts['guid']),
@@ -118,6 +140,80 @@ final class GenericReleaseRows
         }
 
         return $none;
+    }
+
+    /**
+     * The picture column's picture (issue #1050 section 2), first match wins: a matched film's or
+     * show's poster, or its name card without one, linking to the film or show page (the release
+     * page for a film the release names no page of); the release's cover (an audio release's stored
+     * album cover, square, or a console release's game cover); else its own preview or sample
+     * picture; null for an empty cell.
+     *
+     * @param  array{entityKind: ?string, entityLine: string, entityUrl: ?string, followRoot: ?string, followId: string, followTitle: string}  $line  the row's entity line
+     * @param  array{url: string, kind: 'preview'|'sample'}|null  $own  the release's own picture (AdultReleaseRow::pictureOf())
+     * @return array{shape: 'poster'|'square'|'wide', src: ?string, href: string, title: string, label: string, opens: 'preview'|'sample'|null}|null
+     */
+    private static function picture(?ReleaseEntityData $entity, array $line, string $details, ?string $cover, bool $square, ?array $own): ?array
+    {
+        $picture = ['shape' => 'poster', 'src' => null, 'href' => $details, 'title' => '', 'label' => '', 'opens' => null];
+        if ($entity !== null && in_array($line['entityKind'], ['film', 'show'], true) && ($entity->artwork !== null || $entity->title !== '')) {
+            return [...$picture, 'src' => $entity->artwork, 'href' => $line['entityUrl'] ?? $details, 'title' => $entity->title,
+                'label' => $line['entityKind'] === 'film' ? (string) $entity->year : ''];
+        }
+        if ($cover !== null) {
+            return [...$picture, 'shape' => $square ? 'square' : 'poster', 'src' => $cover];
+        }
+
+        return $own === null ? null : [...$picture, 'shape' => 'wide', 'src' => $own['url'], 'opens' => $own['kind']];
+    }
+
+    /**
+     * The stored cover of each Audio row's current accepted album, as the Audio list shows it
+     * (AudioReleaseRows), read once for the page and only when it holds an Audio row.
+     *
+     * @param  list<object>  $releases
+     * @return array<int, string> the cover URL by release id
+     */
+    private function albumCovers(array $releases): array
+    {
+        $ids = [];
+        foreach ($releases as $release) {
+            if (Category::rootCategoryFor((int) $release->categories_id) === Category::MUSIC_ROOT) {
+                $ids[] = (int) $release->id;
+            }
+        }
+
+        return $ids === [] ? [] : $this->covers->urlsFor($this->identities->forReleases($ids));
+    }
+
+    /**
+     * The cover of each Console row's game, as the Console list shows it (ConsoleReleaseRows: the
+     * game's `cover` flag and its stored file), read once for the page and only when it holds a
+     * Console row with a game.
+     *
+     * @param  list<object>  $releases
+     * @return array<int, string> the cover URL by game id
+     */
+    private function gameCovers(array $releases): array
+    {
+        $ids = [];
+        foreach ($releases as $release) {
+            if (Category::rootCategoryFor((int) $release->categories_id) === Category::GAME_ROOT && (int) ($release->consoleinfo_id ?? 0) > 0) {
+                $ids[(int) $release->consoleinfo_id] = true;
+            }
+        }
+        if ($ids === []) {
+            return [];
+        }
+        $covers = [];
+        foreach (DB::table('consoleinfo')->whereIn('id', array_keys($ids))->where('cover', 1)->pluck('id') as $id) {
+            $url = getImageAssetUrl('console', (string) $id);
+            if ($url !== null) {
+                $covers[(int) $id] = $url;
+            }
+        }
+
+        return $covers;
     }
 
     /**

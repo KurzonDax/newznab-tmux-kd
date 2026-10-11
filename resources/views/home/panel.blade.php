@@ -2,7 +2,7 @@
     /**
      * The panel of one opened home tile (docs/proposals/home-redesign/SPEC.md 3.3), the home page's `panel` fragment:
      * the title, a show's or film's count, the close button, the releases in the generic lists' row without its
-     * select cell, and for a show or film the button to its page. The Category cell reads the sub-category alone
+     * select cell and its picture cell (the tile above the panel already shows the picture), and for a show or film the button to its page. The Category cell reads the sub-category alone
      * inside one section and "Root > Sub" in Following ($mixed).
      *
      * @var array{title: string, count: ?string, rows: list<\App\Data\GenericReleaseRow>, more: array{label: string, url: string}|null} $panel
@@ -35,7 +35,7 @@
             </thead>
             <tbody>
                 @foreach($panel['rows'] as $row)
-                    @include('generic.releases.row', ['row' => $row, 'first' => false, 'chipBaseId' => $chipBaseId, 'originOmits' => null, 'selectable' => false])
+                    @include('generic.releases.row', ['row' => $row, 'first' => false, 'chipBaseId' => $chipBaseId, 'originOmits' => null, 'selectable' => false, 'pictures' => false])
                 @endforeach
             </tbody>
         </table>

@@ -6,6 +6,10 @@
      * keeps the list's identity. The sweep-specific empty line appears only after a confirmed complete sweep that left
      * no release of the exact poster (issue #1032 correction 1).
      *
+     * On a search (issue #1050) the fragment opens with the query row and holds the feed dialog, so both follow the
+     * cells; the pager stops at the last page the index can reach, with the reach note in the status slot; Clear all
+     * clears the whole search; an index that cannot answer leaves "Search unavailable" and no pager.
+     *
      * @var \App\Data\GenericListContext $context
      * @var \App\Data\GenericReleaseFilters $filters
      * @var list<\App\Data\GenericReleaseRow> $rows
@@ -19,22 +23,39 @@
     // The chip naming the list's own context is left off every row (SPEC 5.5).
     $originOmits = $context->isGroup() ? 'group' : ($context->isPoster() ? 'poster' : null);
     $pagerQuery = array_diff_key($filters->query(1), ['parentCategory' => true]);
+    // The picture column (issue #1050 section 2) is on every list but Other.
+    $pictures = ! $context->isOther();
+    $search = $context->isSearch();
+    $clearAll = $search ? $searchState->clearUrl() : route($listRoute, [...$context->routeParameters(), \App\Services\Releases\RememberedListFilters::CLEAR => 1]);
 @endphp
+@if($search)
+    @include('search.query-row')
+    @include('search.feed-dialog')
+@endif
+@if($search && ! $results->available)
+    <p class="tv-empty" data-empty>Search unavailable</p>
+@else
 <x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\ReleaseListFilters::PER_PAGE" noun="release" :url="$pageUrl"
-              :clear-all="route($listRoute, [...$context->routeParameters(), \App\Services\Releases\RememberedListFilters::CLEAR => 1])" :filtered="$filters->any()">
+              :clear-all="$clearAll" :filtered="$filters->any()">
     @if($context->isPoster() && $context->key !== '' && (auth()->user()?->hasRole('Admin') ?? false))
         <x-slot:status>@include('generic.releases.sweep-status')</x-slot:status>
+    @elseif($search && $results->beyondReach)
+        <x-slot:status><span class="tv-sweep-slot"><span class="tv-sweep" role="status" data-search-reach>More results are available. Use a narrower search to reach the remaining results.</span></span></x-slot:status>
     @endif
 </x-pager-line>
 @if($rows === [])
     <p class="tv-empty" data-empty>{{ $swept ? 'No releases remain: the blacklist sweep removed them.' : ($matching === '' ? $emptyText : 'No releases match '.$matching.'.') }}</p>
 @else
     <table @class(['tv-feed is-shelf is-generic', 'is-other' => $context->isOther()]) data-list-page="{{ $filters->page }}">
-        <colgroup><col class="tv-col-select"><col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
+        <colgroup><col class="tv-col-select">@if($pictures)<col class="tv-col-art">@endif<col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions"></colgroup>
         <thead>
             <tr>
                 <th class="tv-select-all" data-part="releases table header cell"><input type="checkbox" data-select-all aria-label="Select all releases on this page"></th>
-                <th>Release</th>
+                @if($pictures)
+                    <th colspan="2">Release</th>
+                @else
+                    <th>Release</th>
+                @endif
                 <th class="tv-category">Category</th>
                 <th class="tv-num">Size</th>
                 <th class="tv-num">{{ $byAdded ? 'Added' : 'Posted' }}</th>
@@ -43,9 +64,10 @@
         </thead>
         <tbody>
             @foreach($rows as $row)
-                @include('generic.releases.row', ['row' => $row, 'first' => $loop->first, 'chipBaseId' => $chipBaseId, 'originOmits' => $originOmits])
+                @include('generic.releases.row', ['row' => $row, 'first' => $loop->first, 'chipBaseId' => $chipBaseId, 'originOmits' => $originOmits, 'pictures' => $pictures])
             @endforeach
         </tbody>
     </table>
     <x-pager :page="$filters->page" :last-page="$lastPage" :url="$pageUrl" :action="route($listRoute, $context->isOther() ? ['parentCategory' => 'other'] : [])" :query="$pagerQuery" />
+@endif
 @endif

@@ -79,6 +79,7 @@ class UpdateReleasesIndexSchemaES extends Command
         'media_audio_language' => ['type' => 'text', 'analyzer' => 'release_analyzer'],
         'media_subtitle_language' => ['type' => 'text', 'analyzer' => 'release_analyzer'],
         'has_media_info' => ['type' => 'integer'],
+        'is_imported' => ['type' => 'integer'],
     ];
 
     private ?ElasticsearchClient $client = null;

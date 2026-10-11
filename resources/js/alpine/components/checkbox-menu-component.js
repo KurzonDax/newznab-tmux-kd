@@ -95,7 +95,8 @@ export function checkboxMenu() {
         },
 
         clear() {
-            const ticked = this.items().some(item => item.getAttribute('aria-checked') === 'true');
+            // A cell reading its own text (a search's legacy scope) is set with nothing ticked: "Any …" clears it.
+            const ticked = this.items().some(item => item.getAttribute('aria-checked') === 'true') || this.menuRoot.dataset.cellText === 'true';
             this.items().forEach(item => item.setAttribute('aria-checked', 'false'));
             if (ticked) this.changed();
             if (this.single()) this.closeAndFocus();
@@ -143,6 +144,7 @@ export function checkboxMenu() {
             this.menuRoot.querySelector('[data-any]').setAttribute('aria-checked', ticked.length ? 'false' : 'true');
             const exclude = this.excludeItem();
             exclude?.setAttribute('aria-checked', excluding ? 'true' : 'false');
+            delete this.menuRoot.dataset.cellText;
             this.$refs.value.textContent = reads;
             this.$refs.value.classList.toggle('is-any', !ticked.length);
             if (counted) this.$refs.button.setAttribute('title', texts.length ? label + ': ' + (excluding ? 'Exclude Other' : texts.join(', ')) : '');

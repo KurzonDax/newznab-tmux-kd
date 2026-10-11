@@ -128,6 +128,33 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
         $this->assertSame(3, Cache::get('search:release-index-reconcile:cursor'));
     }
 
+    /** Issue #1050: the document carries the imported flag, and one written before the flag existed (it reads 0) is rewritten. */
+    public function test_an_imported_releases_document_carries_the_flag_and_an_older_document_is_rewritten(): void
+    {
+        $release = ['fromname' => 'poster', 'categories_id' => 0, 'groups_id' => 0, 'size' => 100, 'postdate' => '2026-01-01 00:00:00', 'adddate' => '2026-01-01 00:01:00',
+            'totalpart' => 10, 'grabs' => 0, 'comments' => 0, 'passwordstatus' => 0, 'nzbstatus' => 1, 'nfostatus' => 0, 'haspreview' => 0, 'jpgstatus' => 0,
+            'videos_id' => 0, 'tv_episodes_id' => 0, 'movieinfo_id' => 0, 'imdbid' => '', 'anidbid' => 0];
+        DB::table('releases')->insert([
+            ['id' => 1, 'guid' => 'imported-one', 'name' => 'Imported.One', 'searchname' => 'Imported One', 'is_imported' => 1, ...$release],
+            ['id' => 2, 'guid' => 'indexed-two', 'name' => 'Indexed.Two', 'searchname' => 'Indexed Two', 'is_imported' => 0, ...$release],
+        ]);
+        $imported = ReleaseIndexProjection::forId(1);
+        $indexed = ReleaseIndexProjection::forId(2);
+        $this->assertSame(1, $imported['is_imported'] ?? null);
+        $this->assertSame(0, $indexed['is_imported'] ?? null);
+
+        $driver = Mockery::mock(SearchDriverInterface::class);
+        $driver->shouldReceive('releaseDocumentsAfterId')->once()->with(0, 5)->andReturn([
+            1 => ReleaseSearchIndexDocument::normalizeForReconciliation([...$imported, 'is_imported' => 0], 1),
+            2 => ReleaseSearchIndexDocument::normalizeForReconciliation($indexed, 2),
+        ]);
+        $this->app->instance(SearchDriverInterface::class, $driver);
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        config(['search.reconciliation.batch_size' => 5]);
+
+        $this->artisan('nntmux:search-maintain')->assertSuccessful();
+    }
+
     public function test_cursor_wraps_after_both_database_and_index_reach_the_end(): void
     {
         Cache::forever('search:release-index-reconcile:cursor', 50);
@@ -179,6 +206,7 @@ final class NntmuxSearchMaintainCommandTest extends SearchConsoleCommandTestCase
                 $table->integer($column)->default(0);
             }
             $table->float('completion')->default(0);
+            $table->boolean('is_imported')->default(false);
             $table->integer('declaredfiles')->nullable();
             $table->string('fromname');
             $table->unsignedBigInteger('categories_id');

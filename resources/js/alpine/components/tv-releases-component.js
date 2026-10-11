@@ -11,6 +11,11 @@ import { rowActions } from './tv-row-actions.js';
  * name search (docs/proposals/adult-redesign/SPEC.md 5.9) reloads the list the same way after a
  * 180 ms pause, with the text in the URL (q) and the page dropped; focus and caret stay in the
  * field, which sits above the list that is replaced.
+ *
+ * On a search (issue #1050) the Category cell is the search's scope: the page names the address
+ * parameter (data-scope-param) and the ticked roots travel in it, comma separated. The reloaded
+ * fragment brings the query row; what it says the header's scope picker shows is passed on in a
+ * `search-scope` event. Leaving a legacy scope (data-scope-custom) redraws the whole page.
  */
 export function tvReleases() {
     return {
@@ -101,11 +106,30 @@ export function tvReleases() {
         /** A menu's change: {name, values, single}, or {params} setting several URL keys at once (the Year menu). */
         async applyFilter(event) {
             const { name, values, single, params } = event.detail;
-            const url = params ? paramsUrl(window.location.href, params) : filterUrl(window.location.href, name, values, single);
+            const scope = name === 'category' ? this.screen.dataset.scopeParam : undefined;
+            const url = scope ? paramsUrl(window.location.href, { [scope]: this.tickedValues(event.target).join(',') })
+                : params ? paramsUrl(window.location.href, params) : filterUrl(window.location.href, name, values, single);
             // An explicit Completion choice (Any included) retires today's minc link (the generic lists, issue #1032): it never resurfaces.
             if (name === 'completion') url.searchParams.delete('minc');
+            if (scope && this.screen.dataset.scopeCustom !== undefined) {
+                window.location.assign(url.toString());
+                return;
+            }
             window.history.replaceState(null, '', url.toString());
             await this.reloadList(url);
+            if (this.screen.dataset.scopeParam) this.announceScope();
+        },
+
+        /** The values a menu has ticked, in menu order: a search's scope is every ticked root, Exclude Other's set included. */
+        tickedValues(menu) {
+            return Array.from(menu.querySelectorAll('[data-value][aria-checked="true"]')).map(item => item.dataset.value);
+        },
+
+        /** Tells the header's scope picker what the reloaded query row says it shows and keeps. */
+        announceScope() {
+            const row = this.$refs.list.querySelector('[data-query-row]');
+            if (!row) return;
+            window.dispatchEvent(new CustomEvent('search-scope', { detail: { choice: row.dataset.scopeChoice, value: row.dataset.scopeValue } }));
         },
 
         /** The list reloaded at the current URL: a poster list's finished blacklist sweep (posterSweepStatus) asks for it. */

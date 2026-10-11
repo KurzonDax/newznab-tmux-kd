@@ -163,6 +163,7 @@ class NntmuxCreateESIndexes extends Command
                     'media_audio_language' => ['type' => 'text', 'analyzer' => 'metadata_analyzer'],
                     'media_subtitle_language' => ['type' => 'text', 'analyzer' => 'metadata_analyzer'],
                     'has_media_info' => ['type' => 'integer'],
+                    'is_imported' => ['type' => 'integer'],
                 ],
             ],
         ]);

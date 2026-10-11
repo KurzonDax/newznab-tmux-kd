@@ -28,9 +28,15 @@ The addresses stay as they are: nothing in this design renames them, and the hea
 are reached only from a row's group or poster chip (the maintainer's rule of 2026-09-30: the poster list is never linked
 from navigation).
 
-Out of scope: the group list page itself ("Browse by group", today's `/browsegroup`, unchanged); a picture or
-thumbnail column (section 5.4); a covers view, cards view or wall; title pages; phone layouts (desktop only); the API and
-RSS, which are frozen.
+**Amended by issue #1050 (2026-10-11).** The search results (`/search`) join these lists: a search renders this list
+form in a fifth context, with the differences issue #1050 lists (its heading, no name search field, the Category cell
+as the search's scope, nothing remembered, the query row, "RSS for this search", the index's reach and the "Search
+unavailable" state). A picture column is no longer out of scope: All releases, a group's list, a poster's list and the
+search results have one (section 5.4); the Other list has none. Issue #1050 is the reference for both; the prototype
+copy in `prototype/` predates them and shows neither.
+
+Out of scope: the group list page itself ("Browse by group", today's `/browsegroup`, unchanged); a covers view, cards
+view or wall; title pages; phone layouts (desktop only); the API and RSS, which are frozen.
 
 Hard constraints from the repository (`AGENTS.md`), unchanged from the earlier sections:
 
@@ -53,7 +59,9 @@ These lists have no section of their own and mix every category. Three facts sha
 category is the fact that varies from row to row, so it gets its own column; most rows are hashed or misc junk with no
 title entity (on production two in three releases are in the Other band), while a few rows are matched to a film or a
 show, where the Movies / TV lists' entity line and Follow apply; and nothing has artwork in common (a 2:3 poster, a 16:9
-picture, a square cover), so there is no picture column.
+picture, a square cover). The approved design of 2026-10-09 therefore had no picture column; issue #1050 (2026-10-11)
+replaces that: the lists show each row's own picture in the shape it has, and an empty cell where there is none
+(section 5.4).
 
 ---
 
@@ -126,8 +134,9 @@ poster's list, the blacklist sweep status (5.8) sits in this line, between the c
 
 ### 5.4 The table
 
-Columns, fixed widths: select box 34 · Release (auto) · **Category** (measured, 5.4.1) · Size 82 · Posted (or Added,
-following the sort) 112 · buttons 96.
+Columns, fixed widths: select box 34 · **picture 116** (issue #1050; not on the Other list) · Release (auto) ·
+**Category** (measured, 5.4.1) · Size 82 · Posted (or Added, following the sort) 112 · buttons 96. The "Release"
+heading spans the picture and the release cell.
 
 - **5.4.1 The Category column** reads **"Root > Sub"** ("TV > HD", "Movies > UHD", "Other > Hashed") in dim text on
   one line, never cut short. On the Other list it reads the sub-category alone ("Misc", "Hashed") in a 92 px column,
@@ -135,9 +144,14 @@ following the sort) 112 · buttons 96.
   produce, "Console > Xbox 360 DLC", measured at the column's font (13.5 px, the page's face, after the webfont has
   loaded) plus the cell padding (24 px): 160 px in the prototype. The root label is the header bar's ("PC", "TV",
   "Adult"), the sub-category the categories table's title.
-- **No picture column**, and today's Thumbnails toggle is not carried: a mixed list has no common artwork shape, and
-  two rows in three (Other) have none. Size in ink, the date dim, the date on one line. No Files, Grabs, Stats or
-  Resolution column.
+- **The picture column** (issue #1050, which replaces this section's earlier "no picture column" rule): the TV and
+  Movies lists' column on All releases, a group's list, a poster's list and the search results. A row matched to a
+  film or a show shows the title's poster (88 × 132) or, without one, the name card, linking to the film or show page;
+  an audio release shows its accepted album's stored cover (88 × 88) and a console release its game's cover, linking to
+  the release page; any other release shows its preview or else its sample picture (16:9, 88 × 50), which opens the
+  image dialog; a row with none has an empty cell, never a placeholder tile. The Other list has no picture column, and
+  the home page's panels leave the cell out. Issue #1050 section 2 is the reference. Today's Thumbnails toggle is not
+  carried. Size in ink, the date dim, the date on one line. No Files, Grabs, Stats or Resolution column.
 
 ### 5.5 The release cell, buttons and selection
 
@@ -254,3 +268,8 @@ and public responses, the cart. `DATA-NOTES.md` section 3 measures every list re
 The Files and Stats (grabs, comments) columns; the Category chip (now the column); per-page 24 / 48 / 100 (50 fixed);
 the Table view switch and the Thumbnails toggle; the Details and Report row buttons; the Grabs · Most sort; "Clear
 filter" (now the breadcrumb); today's "Browse" breadcrumb.
+
+Since issue #1050 the same rules apply to the search results, which render this list: of today's search page the Files
+and Stats columns, the Category chip, the per-page choice, the Thumbnails toggle, the Details and Report row buttons,
+the Grabs sort and the 80% completion step are not carried. A picture column is no longer among the things not carried:
+issue #1050 adds one (section 5.4).

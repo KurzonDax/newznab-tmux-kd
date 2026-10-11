@@ -16,6 +16,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
@@ -60,6 +61,8 @@ final class GenericReleasesPageTest extends TestCase
 
     private ?User $user = null;
 
+    private string $covers = '';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -68,13 +71,15 @@ final class GenericReleasesPageTest extends TestCase
         $this->withoutVite();
         $this->withoutMiddleware(TrustedDevice2FAMiddleware::class);
         Carbon::setTestNow('2026-09-25 12:00:00');
+        $this->covers = $this->makeTempDirectory('generic-covers');
+        config(['nntmux_settings.covers_path' => $this->covers]);
         $tables = ProductionTables::fromAuthority();
         $tables->create('releases', ['id', 'name', 'searchname', 'guid', 'display_name', 'categories_id', 'category_band', 'size', 'totalpart',
             'adddate', 'postdate', 'grabs', 'comments', 'completion', 'declaredfiles', 'nzbstatus', 'passwordstatus', 'nfostatus',
             'haspreview', 'jpgstatus', 'videostatus', 'groups_id', 'fromname', 'isrenamed', 'additional_pp_claim_token', 'imdbid', 'movieinfo_id', 'videos_id',
             'tv_episodes_id', 'musicinfo_id', 'consoleinfo_id', 'gamesinfo_id', 'bookinfo_id', 'anidbid', 'resolution', 'source', 'predb_id', 'is_imported']);
         foreach (['usenet_groups', 'users_releases', 'user_series', 'user_movies', 'videos', 'tv_episodes', 'movieinfo', 'consoleinfo', 'release_audio_tags', 'release_video_clips',
-            'languages', 'release_audio_languages'] as $table) {
+            'languages', 'release_audio_languages', 'release_audio_evidence', 'release_music_identifications', 'music_cover_art_lookups'] as $table) {
             $tables->create($table);
         }
         foreach (['2026_02_01_000000_create_release_reports_table', '2026_06_08_000000_add_response_fields_to_release_reports_table'] as $migration) {
@@ -517,16 +522,103 @@ final class GenericReleasesPageTest extends TestCase
                 $this->assertSame($poster, str_contains($row, 'title="All posts by poster@example.invalid"'), $uri.' poster chip');
             }
         }
-        $all = $this->page('/browse/all')->assertOk()->assertSee('<col class="tv-col-select"><col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions">', false)
-            ->assertSee('<table class="tv-feed is-shelf is-generic"', false)->assertSeeInOrder(['<th>Release</th>', '<th class="tv-category">Category</th>', '<th class="tv-num">Size</th>', '<th class="tv-num">Posted</th>'], false);
+        $all = $this->page('/browse/all')->assertOk()->assertSee('<col class="tv-col-select"><col class="tv-col-art"><col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions">', false)
+            ->assertSee('<table class="tv-feed is-shelf is-generic"', false)->assertSeeInOrder(['<th colspan="2">Release</th>', '<th class="tv-category">Category</th>', '<th class="tv-num">Size</th>', '<th class="tv-num">Posted</th>'], false);
+        $this->assertSame(6, substr_count($this->between((string) $all->getContent(), '<thead>', '</thead>'), '<th'), 'six headings: Release spans the picture and the release cell');
         $this->assertStringContainsString('<td class="tv-category" title="Console &gt; Xbox 360 DLC">Console &gt; Xbox 360 DLC</td>', $this->rowOf($all, 'Dlc.Release'));
         $this->assertStringContainsString('<td class="tv-category" title="PC &gt; 0day">PC &gt; 0day</td>', $this->rowOf($all, 'Pc.Release'));
         $this->assertStringContainsString('<td class="tv-category" title="Other &gt; Misc">Other &gt; Misc</td>', $this->rowOf($all, 'Misc.Release'));
         $this->assertStringContainsString('<td class="tv-category" title="Other &gt; Misc">Misc</td>', $this->rowOf($this->page('/browse/other')->assertSee('is-other', false), 'Misc.Release'));
-        $this->assertSame(6, substr_count($this->rowOf($all, 'Dlc.Release'), '<td'));
+        $this->assertSame(7, substr_count($this->rowOf($all, 'Dlc.Release'), '<td'), 'the picture cell is the seventh');
         $css = (string) file_get_contents(resource_path('css/tv.css'));
         $this->assertStringContainsString('.tv-col-category-path { width: 160px; }', $css);
         $this->assertStringContainsString('.tv-feed.is-other col.tv-col-category-path { width: 92px; }', $css);
+    }
+
+    /** Issue #1050 section 2: the picture column of the All, group and poster lists; the first rule that matches gives the row's picture. */
+    public function test_the_picture_column_gives_each_row_the_first_picture_that_matches_and_the_other_list_has_none(): void
+    {
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.demo']);
+        DB::table('movieinfo')->insert([['id' => 7, 'imdbid' => '0137523', 'title' => 'Poster Film', 'year' => '1999'], ['id' => 8, 'imdbid' => '0244244', 'title' => 'Cardboard Film', 'year' => '2004']]);
+        DB::table('videos')->insert([['id' => 11, 'title' => 'Glass Meridian', 'started' => '2019-03-01', 'type' => 0, 'countries_id' => 'US', 'source' => 0],
+            ['id' => 12, 'title' => 'Salt Harbour', 'started' => '2020-01-01', 'type' => 0, 'countries_id' => 'US', 'source' => 0]]);
+        DB::table('consoleinfo')->insert([['id' => 5, 'title' => 'Covered Game', 'platform' => 'XBOX360', 'releasedate' => '2024-02-03', 'cover' => 1],
+            ['id' => 6, 'title' => 'Unflagged Game', 'platform' => 'XBOX360', 'releasedate' => '2024-02-03', 'cover' => 0]]);
+        $origin = ['groups_id' => 1, 'fromname' => 'poster@example.invalid'];
+        $this->generic('Film.With.Poster', ['imdbid' => '0137523', 'movieinfo_id' => 7, 'haspreview' => 1, ...$origin]);
+        $this->generic('Film.Without.Poster', ['imdbid' => '0244244', 'movieinfo_id' => 8, ...$origin]);
+        $this->generic('Film.Without.Page', ['imdbid' => '0137523', ...$origin]);
+        $this->generic('Show.With.Poster', ['categories_id' => self::TV_HD, 'videos_id' => 11, ...$origin]);
+        $this->generic('Show.Without.Poster', ['categories_id' => self::TV_HD, 'videos_id' => 12, ...$origin]);
+        $album = $this->generic('Album.With.Cover', ['categories_id' => self::AUDIO_MP3, 'jpgstatus' => 1, ...$origin]);
+        $this->generic('Album.Without.Cover', ['categories_id' => self::AUDIO_MP3, ...$origin]);
+        $this->generic('Game.With.Cover', ['categories_id' => self::CONSOLE_XBOX360DLC, 'consoleinfo_id' => 5, ...$origin]);
+        $this->generic('Game.Cover.Not.Flagged', ['categories_id' => self::CONSOLE_XBOX360DLC, 'consoleinfo_id' => 6, 'jpgstatus' => 1, ...$origin]);
+        $this->generic('Preview.Only', ['categories_id' => self::XXX_X264, 'haspreview' => 1, 'jpgstatus' => 1, ...$origin]);
+        $this->generic('Preview.Flag.Without.File', ['categories_id' => self::BOOKS_EBOOK, 'haspreview' => 1, 'jpgstatus' => 1, ...$origin]);
+        $this->generic('No.Picture', ['categories_id' => self::PC_0DAY, ...$origin]);
+        $this->generic('Misc.With.Preview', ['categories_id' => self::MISC, 'haspreview' => 1, ...$origin]);
+        foreach (['movies/0137523-cover', 'tvshows/11', 'console/5', 'console/6', 'preview/'.md5('Film.With.Poster').'_thumb', 'sample/'.md5('Album.With.Cover').'_thumb', 'sample/'.md5('Game.Cover.Not.Flagged').'_thumb',
+            'preview/'.md5('Preview.Only').'_thumb', 'sample/'.md5('Preview.Only').'_thumb', 'sample/'.md5('Preview.Flag.Without.File').'_thumb', 'preview/'.md5('Misc.With.Preview').'_thumb'] as $file) {
+            $this->cover($file);
+        }
+        $group = '11111111-1111-4111-8111-111111111111';
+        $hash = hash('sha256', 'evidence '.$album);
+        $evidence = DB::table('release_audio_evidence')->insertGetId(['releases_id' => $album, 'revision' => 1, 'evidence_hash' => $hash, 'schema_version' => 1,
+            'provenance' => 'test', 'release_snapshot' => '{}', 'nzb_manifest' => '[]', 'archive_manifest' => '[]', 'sidecar_manifest' => '[]', 'captured_at' => now()]);
+        DB::table('release_music_identifications')->insert(['releases_id' => $album, 'release_audio_evidence_id' => $evidence, 'evidence_hash' => $hash,
+            'state' => 'accepted_release_group', 'band' => 'strong', 'musicbrainz_release_group_id' => $group, 'reasons' => '[]', 'feature_contributions' => '[]',
+            'algorithm_version' => (string) config('music-identity.algorithm_version'), 'resolver_version' => 'r1', 'normalizer_version' => 'n1', 'scorer_version' => 's1',
+            'policy_version' => 'p1', 'decided_at' => now()]);
+        DB::table('music_cover_art_lookups')->insert(['kind' => 'release-group', 'musicbrainz_id' => $group, 'outcome' => 'stored', 'image_musicbrainz_id' => $group, 'attempt_count' => 1, 'checked_at' => now()]);
+        $this->cover('audio/'.$group);
+
+        $all = $this->page('/browse/all')->assertOk()
+            ->assertSee('<col class="tv-col-select"><col class="tv-col-art"><col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions">', false)
+            ->assertSee('<th colspan="2">Release</th>', false);
+        $hidden = 'tabindex="-1" aria-hidden="true"';
+        $details = static fn (string $name): string => route('details', md5($name));
+        $cell = fn (string $name): string => $this->pictureCell($this->rowOf($all, $name));
+        // a film or a show with a poster: the 88 × 132 poster, linking to the film or show page; the poster wins over the release's own preview
+        $this->assertSame('<td class="tv-art"><a href="'.route('movies.film', ['movieinfoId' => 7]).'" '.$hidden.' data-title="Poster Film"><img src="'.url('/covers/movies/0137523-cover.jpg').'" alt="" loading="lazy"></a></td>', $cell('Film.With.Poster'));
+        $this->assertSame('<td class="tv-art"><a href="'.route('tv.show', ['videosId' => 11]).'" '.$hidden.' data-title="Glass Meridian"><img src="'.url('/covers/tvshows/11.jpg').'" alt="" loading="lazy"></a></td>', $cell('Show.With.Poster'));
+        // a film the release names no film page of (no movieinfo_id): its poster links to the release page, as its entity line is plain text
+        $this->assertSame('<td class="tv-art"><a href="'.$details('Film.Without.Page').'" '.$hidden.' data-title="Poster Film"><img src="'.url('/covers/movies/0137523-cover.jpg').'" alt="" loading="lazy"></a></td>', $cell('Film.Without.Page'));
+        // matched without a poster: the Movies / TV lists' name card, the matched title and a film's year
+        $this->assertSame('<td class="tv-art"><a class="tv-placeholder is-card" href="'.route('movies.film', ['movieinfoId' => 8]).'" '.$hidden.'><span class="tv-placeholder-title">Cardboard Film</span><span class="tv-placeholder-label">2004</span></a></td>', $cell('Film.Without.Poster'));
+        $this->assertSame('<td class="tv-art"><a class="tv-placeholder is-card" href="'.route('tv.show', ['videosId' => 12]).'" '.$hidden.'><span class="tv-placeholder-title">Salt Harbour</span></a></td>', $cell('Show.Without.Poster'));
+        // an audio release whose accepted album has a stored cover: the Audio list's square cover, linking to the release
+        $this->assertSame('<td class="tv-art is-square"><a href="'.$details('Album.With.Cover').'" '.$hidden.'><img src="'.url('/covers/audio/'.$group.'.jpg').'" alt="" loading="lazy"></a></td>', $cell('Album.With.Cover'));
+        $this->assertSame('<td class="tv-art"></td>', $cell('Album.Without.Cover'));
+        // a console release whose game has a cover: the Console list's cover; a cover file without the game's flag is not one
+        $this->assertSame('<td class="tv-art"><a href="'.$details('Game.With.Cover').'" '.$hidden.'><img src="'.url('/covers/console/5.jpg').'" alt="" loading="lazy"></a></td>', $cell('Game.With.Cover'));
+        $this->assertSame('<td class="tv-art is-picture"><a href="'.$details('Game.Cover.Not.Flagged').'" '.$hidden.' data-picture="sample" title="View sample image"><img src="'.url('/covers/sample/'.md5('Game.Cover.Not.Flagged').'_thumb.jpg').'" alt="" loading="lazy"></a></td>', $cell('Game.Cover.Not.Flagged'));
+        // any other release: the Adult list's picture rule (the preview, else the sample, each only when its file exists), 16:9, opening the image dialog
+        $this->assertSame('<td class="tv-art is-picture"><a href="'.$details('Preview.Only').'" '.$hidden.' data-picture="preview" title="View the image preview"><img src="'.url('/covers/preview/'.md5('Preview.Only').'_thumb.jpg').'" alt="" loading="lazy"></a></td>', $cell('Preview.Only'));
+        $this->assertSame('<td class="tv-art is-picture"><a href="'.$details('Preview.Flag.Without.File').'" '.$hidden.' data-picture="sample" title="View sample image"><img src="'.url('/covers/sample/'.md5('Preview.Flag.Without.File').'_thumb.jpg').'" alt="" loading="lazy"></a></td>', $cell('Preview.Flag.Without.File'));
+        // a click on such a picture opens the image dialog through the row's own Preview or Sample chip (tvImageDialog, as on the Adult list)
+        $this->assertStringContainsString('preview-badge', $this->rowOf($all, 'Preview.Only'));
+        $this->assertStringContainsString('sample-badge', $this->rowOf($all, 'Preview.Flag.Without.File'));
+        $this->assertStringContainsString('<div x-data="tvImageDialog"', (string) $all->getContent());
+        // anything else: an empty cell, never a placeholder tile
+        $this->assertSame('<td class="tv-art"></td>', $cell('No.Picture'));
+        $this->assertSame(7, substr_count($this->rowOf($all, 'No.Picture'), '<td'));
+        $this->assertStringNotContainsString('No picture', (string) $all->getContent());
+        $this->assertStringNotContainsString('No cover', (string) $all->getContent());
+        $this->assertStringNotContainsString('No poster', (string) $all->getContent());
+
+        foreach (['/browse/all?group=alt.binaries.demo', '/browse/all?poster=poster%40example.invalid', '/poster?name=poster%40example.invalid'] as $uri) {
+            $list = $this->page($uri)->assertOk()->assertSee('<col class="tv-col-select"><col class="tv-col-art"><col>', false)->assertSee('<th colspan="2">Release</th>', false);
+            $this->assertStringContainsString('<img src="'.url('/covers/movies/0137523-cover.jpg').'"', $this->pictureCell($this->rowOf($list, 'Film.With.Poster')), $uri);
+        }
+        $other = $this->page('/browse/other')->assertOk()
+            ->assertSee('<col class="tv-col-select"><col><col class="tv-col-category-path"><col class="tv-col-size"><col class="tv-col-date"><col class="tv-col-actions">', false)
+            ->assertSee('<th>Release</th>', false)->assertDontSee('tv-col-art', false)->assertDontSee('tv-art', false)->assertDontSee('data-picture', false);
+        $this->assertSame(6, substr_count($this->rowOf($other, 'Misc.With.Preview'), '<td'));
+        $css = (string) file_get_contents(resource_path('css/tv.css'));
+        $this->assertStringContainsString('.tv-col-art { width: 116px; }', $css);
+        $this->assertStringContainsString('.tv-feed.is-generic .tv-art.is-picture a { width: 88px; height: 50px; }', $css);
+        $this->assertStringContainsString('.tv-art.is-square a { width: 88px; height: 88px; }', $css);
     }
 
     public function test_every_page_says_which_rows_it_shows_and_a_page_past_the_last_redirects_to_the_last(): void
@@ -579,7 +671,8 @@ final class GenericReleasesPageTest extends TestCase
         $this->assertSame($fourMixed, $this->rowQueries($mixed), 'a mixed page: the same fixed batches for 4 and 50 rows');
         // The observed bound (SQLite, 2026-10-09): the releases read, the shared loader's report, preview, media, group, category, film, show, episode,
         // basket and watch reads, the sub-category titles, the Audio tags and the first-aired dates. Each kind adds a batch, never a row.
-        $this->assertLessThanOrEqual(21, $fourMixed, 'the mixed page ran '.$fourMixed.' queries');
+        // The picture column (issue #1050) adds the Audio rows' album covers: the newest evidence, the decisions and, when one accepts an album, the stored covers.
+        $this->assertLessThanOrEqual(24, $fourMixed, 'the mixed page ran '.$fourMixed.' queries');
     }
 
     public function test_the_header_marks_all_on_the_poster_page_and_the_list_fragment_is_the_list_alone(): void
@@ -610,6 +703,12 @@ final class GenericReleasesPageTest extends TestCase
         $this->assertSame('Other releases', GenericListContext::fromReferer(url('/browse/other/10?page=3'))?->heading());
         $this->assertSame('All releases', GenericListContext::fromReferer(url('/browse/all'))?->heading());
         $this->assertSame(route('browse.all', ['watching' => 1]), GenericListContext::fromReferer(url('/browse/all?watching=1'))?->url());
+        $search = GenericListContext::fromReferer(url('/search?q=%22part+two%22+-cam+title%3Adune&t=2000&page=4&_fragment=list'));
+        $this->assertSame('Results for “"part two" -cam”', $search?->heading());
+        $this->assertTrue($search?->isSearch());
+        $this->assertSame(route('search', ['q' => '"part two" -cam title:dune', 't' => '2000']), $search?->url());
+        $this->assertSame('all', $search?->preferenceRoot(), 'a search is sorted by the All releases list\'s sort');
+        $this->assertSame('Search results', GenericListContext::fromReferer(url('/search'))?->heading());
         $this->assertNull(GenericListContext::fromReferer('https://elsewhere.test/browse/all'));
         $this->assertNull(GenericListContext::fromReferer(url('/movies')));
         $this->assertNull(GenericListContext::fromReferer(null));
@@ -665,6 +764,21 @@ final class GenericReleasesPageTest extends TestCase
             }
         }
         $this->fail('No row for '.$name);
+    }
+
+    /** A row's picture cell, the whitespace between its tags removed. */
+    private function pictureCell(string $row): string
+    {
+        $this->assertSame(1, preg_match('/<td class="tv-art[^"]*">.*?<\/td>/s', $row, $cell), 'The row has no picture cell.');
+
+        return trim((string) preg_replace(['/>\s+</', '/\s+/'], ['><', ' '], $cell[0]));
+    }
+
+    /** A stored picture file under the test's covers folder: "movies/0137523-cover". */
+    private function cover(string $file): void
+    {
+        File::ensureDirectoryExists(dirname($this->covers.'/'.$file));
+        File::put($this->covers.'/'.$file.'.jpg', 'jpg');
     }
 
     /** @return list<string> */

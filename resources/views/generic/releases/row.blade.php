@@ -10,6 +10,11 @@
      * @var \App\Data\GenericListContext $context
      * @var 'group'|'poster'|null $originOmits
      * @var bool|null $selectable false leaves the select cell out (the home page's panels); the lists never pass it
+     * @var bool|null $pictures false leaves the picture cell out (the Other list, the home page's panels); it follows the
+     *                          select cell (issue #1050 section 2): a poster or name card linking to the film or show page, an
+     *                          album or game cover linking to the release, or the release's own preview or sample picture, which
+     *                          opens its image dialog as the Adult list's does; an empty cell otherwise. No picture link is a tab
+     *                          stop or exposed to assistive technology: the name and the entity line remain the links.
      */
     $details = route('details', $row->guid);
     // The first chip on the page is measured as "chip base"; every other chip by its kind (the prototype comparison).
@@ -27,6 +32,28 @@
 @endphp
 <tr data-release-row>
     @if($selectable ?? true)<td @if($first) data-part="release row cell" @endif><input type="checkbox" data-select value="{{ $row->guid }}" aria-label="Select {{ $row->name }}"></td>@endif
+    @if($pictures ?? true)
+        @php($picture = $row->picture)
+        <td @class(['tv-art', 'is-square' => ($picture['shape'] ?? null) === 'square', 'is-picture' => ($picture['shape'] ?? null) === 'wide'])>
+            @if($picture === null)
+            @elseif($picture['src'] === null)
+                <a class="tv-placeholder is-card" href="{{ $picture['href'] }}" tabindex="-1" aria-hidden="true">
+                    <span class="tv-placeholder-title">{{ $picture['title'] }}</span>
+                    @if($picture['label'] !== '')
+                        <span class="tv-placeholder-label">{{ $picture['label'] }}</span>
+                    @endif
+                </a>
+            @elseif($picture['opens'] !== null)
+                <a href="{{ $picture['href'] }}" tabindex="-1" aria-hidden="true" data-picture="{{ $picture['opens'] }}" title="{{ $row->pictureTitle() }}">
+                    <img src="{{ $picture['src'] }}" alt="" loading="lazy">
+                </a>
+            @else
+                <a href="{{ $picture['href'] }}" tabindex="-1" aria-hidden="true"@if($picture['title'] !== '') data-title="{{ $picture['title'] }}"@endif>
+                    <img src="{{ $picture['src'] }}" alt="" loading="lazy">
+                </a>
+            @endif
+        </td>
+    @endif
     <td class="tv-what">
         <a class="tv-release-name" href="{{ $details }}" title="{{ $row->name }}" data-part="release name">{{ $row->name }}</a>
         @if($row->hasEntityLine())
