@@ -10,8 +10,10 @@ use App\Enums\CollectionSweepOutcome;
 use App\Enums\HeaderScanDirection;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
+use App\Services\Binaries\BinaryHandler;
 use App\Services\Binaries\CollectionHandler;
 use App\Services\Binaries\HeaderStorageService;
+use App\Services\Binaries\PartHandler;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\PopulationQuery;
@@ -37,11 +39,13 @@ use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 use Tests\Support\CollectionFrontierAssertions;
+use Tests\Support\RecordsTransactionStatements;
 use Tests\TestCase;
 
 final class CbpMariaDbIngestionTest extends TestCase
 {
     use CollectionFrontierAssertions;
+    use RecordsTransactionStatements;
 
     /**
      * @var array<string, string|false>
@@ -878,6 +882,273 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame(300, (int) DB::table('binaries')->value('partsize'));
     }
 
+    public function test_a_stored_chunk_counts_its_parts_without_an_aggregate_over_parts(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+
+        $first = $this->transactionStatements(fn () => $this->assertSame([], $storage->store([
+            $this->fileHeader(2001, 'alpha', 1, 5, 100),
+            $this->fileHeader(2002, 'alpha', 2, 5, 150),
+            $this->fileHeader(2003, 'beta', 1, 3, 40),
+        ], $group)->uniqueFailedNumbers()));
+        $this->assertNoAggregateOverParts($first);
+        $this->assertSame(['alpha' => [2, 250, 0], 'beta' => [1, 40, 0]], $this->binaryCounts());
+
+        $second = $this->transactionStatements(fn () => $this->assertSame([], $storage->store([
+            $this->fileHeader(2004, 'alpha', 3, 5, 175),
+        ], $group)->uniqueFailedNumbers()));
+        $this->assertNoAggregateOverParts($second);
+        $this->assertSame(['alpha' => [3, 425, 0], 'beta' => [1, 40, 0]], $this->binaryCounts());
+        $this->assertBinaryCountsEqualStoredParts();
+    }
+
+    public function test_a_binary_is_complete_only_in_the_chunk_that_stores_its_last_part(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+
+        $storage->store([$this->fileHeader(2101, 'alpha', 1, 4, 100)], $group);
+        $this->assertSame(['alpha' => [1, 100, 0]], $this->binaryCounts());
+
+        // Two parts in one chunk leave the file exactly one part short.
+        $storage->store([$this->fileHeader(2102, 'alpha', 2, 4, 100), $this->fileHeader(2103, 'alpha', 3, 4, 100)], $group);
+        $this->assertSame(['alpha' => [3, 300, 0]], $this->binaryCounts());
+
+        $storage->store([$this->fileHeader(2104, 'alpha', 4, 4, 100)], $group);
+        $this->assertSame(['alpha' => [4, 400, 1]], $this->binaryCounts());
+    }
+
+    public function test_a_higher_total_reopens_a_complete_binary_the_chunk_stores_nothing_for(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+
+        $storage->store([$this->fileHeader(2201, 'alpha', 1, 2, 100), $this->fileHeader(2202, 'alpha', 2, 2, 100)], $group);
+        $this->assertSame(['alpha' => [2, 200, 1]], $this->binaryCounts());
+
+        // The same second part again, now announcing three parts: nothing is stored, the total rises.
+        $this->assertSame([], $storage->store([$this->fileHeader(2202, 'alpha', 2, 3, 100)], $group)->uniqueFailedNumbers());
+        $this->assertSame(3, (int) DB::table('binaries')->value('totalparts'));
+        $this->assertSame(['alpha' => [2, 200, 0]], $this->binaryCounts());
+    }
+
+    public function test_a_chunk_of_new_and_already_stored_parts_counts_only_the_new_ones(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $storage->store([
+            $this->fileHeader(2401, 'alpha', 1, 5, 100),
+            $this->fileHeader(2402, 'alpha', 2, 5, 150),
+            $this->fileHeader(2403, 'beta', 1, 3, 40),
+        ], $group);
+
+        $this->assertSame([], $storage->store([
+            $this->fileHeader(2402, 'alpha', 2, 5, 150),
+            $this->fileHeader(2404, 'alpha', 3, 5, 175),
+            $this->fileHeader(2403, 'beta', 1, 3, 40),
+            $this->fileHeader(2405, 'beta', 2, 3, 60),
+            $this->fileHeader(2406, 'gamma', 1, 2, 25),
+        ], $group)->uniqueFailedNumbers());
+
+        $this->assertSame(['alpha' => [3, 425, 0], 'beta' => [2, 100, 0], 'gamma' => [1, 25, 0]], $this->binaryCounts());
+        $this->assertBinaryCountsEqualStoredParts();
+    }
+
+    public function test_a_chunk_of_already_stored_parts_leaves_the_counts_unchanged(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $headers = [
+            $this->fileHeader(2501, 'alpha', 1, 5, 100),
+            $this->fileHeader(2502, 'alpha', 2, 5, 150),
+            $this->fileHeader(2503, 'beta', 1, 1, 40),
+        ];
+        $storage->store($headers, $group);
+        $this->assertSame(['alpha' => [2, 250, 0], 'beta' => [1, 40, 1]], $this->binaryCounts());
+
+        $statements = $this->transactionStatements(fn () => $this->assertSame([], $storage->store($headers, $group)->uniqueFailedNumbers()));
+
+        $this->assertNoAggregateOverParts($statements);
+        $this->assertSame(['alpha' => [2, 250, 0], 'beta' => [1, 40, 1]], $this->binaryCounts());
+        $this->assertSame(3, DB::table('parts')->count());
+    }
+
+    public function test_parts_stored_by_several_inserts_of_one_chunk_are_all_counted(): void
+    {
+        $storage = $this->countedStorage(new BinariesConfig(headerChunkSize: 4, sqlChunkSize: 2));
+
+        $statements = $this->transactionStatements(fn () => $this->assertSame([], $storage->store([
+            $this->fileHeader(2601, 'alpha', 1, 4, 100),
+            $this->fileHeader(2602, 'alpha', 2, 4, 150),
+            $this->fileHeader(2603, 'alpha', 3, 4, 175),
+            $this->fileHeader(2604, 'alpha', 4, 4, 60),
+        ], ['id' => 1, 'name' => 'alt.binaries.test'])->uniqueFailedNumbers()));
+
+        $this->assertCount(1, $statements);
+        $this->assertCount(2, array_filter($statements[0], static fn (array $statement): bool => str_starts_with($statement['sql'], 'INSERT IGNORE INTO parts')));
+        $this->assertSame(['alpha' => [4, 485, 1]], $this->binaryCounts());
+    }
+
+    public function test_a_rolled_back_chunk_leaves_the_counts_of_its_binaries_as_they_were(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $storage->store([
+            $this->fileHeader(2701, 'alpha', 1, 3, 100),
+            $this->fileHeader(2702, 'alpha', 2, 3, 100),
+            $this->fileHeader(2703, 'beta', 1, 1, 50),
+        ], $group);
+        $this->assertSame(['alpha' => [2, 200, 0], 'beta' => [1, 50, 1]], $this->binaryCounts());
+
+        // The chunk completes alpha and reopens beta, then fails on the collection totals.
+        $binaryUpdates = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$binaryUpdates): void {
+            $binaryUpdates += str_starts_with(ltrim($query->sql), 'UPDATE binaries') ? 1 : 0;
+        });
+        DB::connection()->beforeExecuting(static function (string $sql): void {
+            if (str_starts_with(ltrim($sql), 'UPDATE collections')) {
+                $failure = new \PDOException('Forced failure of the collection totals');
+                $failure->errorInfo = ['HY000', 1105, $failure->getMessage()];
+                throw new QueryException('mariadb', $sql, [], $failure);
+            }
+        });
+        $report = $storage->store([
+            $this->fileHeader(2704, 'alpha', 3, 3, 100),
+            $this->fileHeader(2703, 'beta', 1, 2, 50),
+        ], $group);
+
+        $this->assertSame(1, $report->rolledBackChunks);
+        $this->assertGreaterThan(0, $binaryUpdates);
+        $this->assertSame(['alpha' => [2, 200, 0], 'beta' => [1, 50, 1]], $this->binaryCounts());
+        $this->assertSame(3, DB::table('parts')->count());
+        $this->assertBinaryCountsEqualStoredParts();
+    }
+
+    public function test_a_failed_binary_count_update_rolls_the_chunk_back_before_the_collection_totals(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $storage->store([$this->fileHeader(2751, 'alpha', 1, 3, 100)], $group);
+
+        $collectionUpdates = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$collectionUpdates): void {
+            $collectionUpdates += str_starts_with(ltrim($query->sql), 'UPDATE collections') ? 1 : 0;
+        });
+        DB::connection()->beforeExecuting(static function (string $sql): void {
+            if (str_starts_with($sql, 'UPDATE binaries SET')) {
+                $failure = new \PDOException('Forced failure of the binary counts');
+                $failure->errorInfo = ['HY000', 1105, $failure->getMessage()];
+                throw new QueryException('mariadb', $sql, [], $failure);
+            }
+        });
+        $report = $storage->store([$this->fileHeader(2752, 'alpha', 2, 3, 100)], $group);
+
+        $this->assertSame(1, $report->rolledBackChunks);
+        $this->assertSame([2752], $report->uniqueFailedNumbers());
+        $this->assertSame(0, $collectionUpdates);
+        $this->assertSame(['alpha' => [1, 100, 0]], $this->binaryCounts());
+        $this->assertSame(1, DB::table('parts')->count());
+    }
+
+    public function test_the_parts_insert_reports_only_the_rows_it_stored(): void
+    {
+        $this->insertCollectionTree(1, now(), now(), 1);
+        $this->insertCollectionTree(2, now(), now(), 1);
+        $handler = new PartHandler(2);
+
+        // Binary 1 already holds part 1. The first insert offers it again with a new part 2.
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2801, 'alpha', 1, 9, 500)));
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2802, 'alpha', 2, 9, 120)));
+        // The second insert offers part 2 again, stored a moment ago, with a new part 3.
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2803, 'alpha', 2, 9, 120)));
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2804, 'alpha', 3, 9, 80)));
+        $this->assertTrue($handler->addPart(2, $this->fileHeader(2805, 'beta', 2, 9, 55)));
+        $this->assertTrue($handler->flush());
+
+        $this->assertSame([1 => ['parts' => 2, 'bytes' => 200], 2 => ['parts' => 1, 'bytes' => 55]], $handler->getStoredByBinary());
+        $this->assertSame([1, 2], $handler->getTouchedBinaryIds());
+        $this->assertSame([], $handler->getFailedNumbers());
+
+        // A part whose binary does not exist is dropped by the insert: not counted, and reported failed.
+        $handler->reset();
+        $this->assertTrue($handler->addPart(999, $this->fileHeader(2806, 'gone', 1, 9, 70)));
+        $this->assertFalse($handler->flush());
+        $this->assertSame([], $handler->getStoredByBinary());
+        $this->assertSame([2806], $handler->getFailedNumbers());
+    }
+
+    public function test_no_parts_insert_follows_a_failed_one_until_reset(): void
+    {
+        $this->insertCollectionTree(1, now(), now(), 1);
+        $failNext = true;
+        $inserts = 0;
+        DB::connection()->beforeExecuting(static function (string $sql) use (&$failNext, &$inserts): void {
+            if (! str_starts_with($sql, 'INSERT IGNORE INTO parts')) {
+                return;
+            }
+            $inserts++;
+            if ($failNext) {
+                $failNext = false;
+                $failure = new \PDOException('Deadlock found when trying to get lock; try restarting transaction');
+                $failure->errorInfo = ['40001', 1213, $failure->getMessage()];
+                throw new QueryException('mariadb', $sql, [], $failure);
+            }
+        });
+
+        $handler = new PartHandler(2);
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2901, 'alpha', 2, 9, 100)));
+        $this->assertFalse($handler->addPart(1, $this->fileHeader(2902, 'alpha', 3, 9, 100)));
+        $handler->addPart(1, $this->fileHeader(2903, 'alpha', 4, 9, 100));
+        $handler->addPart(1, $this->fileHeader(2904, 'alpha', 5, 9, 100));
+        $handler->addPart(1, $this->fileHeader(2905, 'alpha', 6, 9, 100));
+        $this->assertFalse($handler->flush());
+
+        $this->assertSame(1, $inserts);
+        $this->assertSame([2901, 2902, 2903, 2904, 2905], $handler->getFailedNumbers());
+        $this->assertSame([], $handler->getStoredByBinary());
+        $this->assertSame(1, DB::table('parts')->count());
+
+        $handler->reset();
+        $this->assertTrue($handler->addPart(1, $this->fileHeader(2903, 'alpha', 4, 9, 100)));
+        $this->assertTrue($handler->flush());
+        $this->assertSame(2, $inserts);
+        $this->assertSame([], $handler->getFailedNumbers());
+        $this->assertSame([1 => ['parts' => 1, 'bytes' => 100]], $handler->getStoredByBinary());
+        $this->assertSame(2, DB::table('parts')->count());
+    }
+
+    public function test_stored_parts_are_added_to_every_touched_binary_in_bounded_statements(): void
+    {
+        // currentparts, totalparts and partcheck before the chunk; no parts row backs them.
+        foreach ([1 => [60, 100, 0], 2 => [99, 100, 0], 3 => [2, 3, 1], 4 => [5, 10, 0]] as $id => [$current, $total, $check]) {
+            $this->insertCollectionTree($id, now(), now(), 1);
+            DB::table('binaries')->where('id', $id)->update(['currentparts' => $current, 'totalparts' => $total, 'partcheck' => $check, 'partsize' => $current * 10]);
+        }
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+
+        // Binary 3 kept its two parts while its total rose to three; binary 4 received nothing.
+        $this->assertTrue((new BinaryHandler(2))->addStoredParts(
+            [1, 3, 2, 4],
+            [1 => ['parts' => 30, 'bytes' => 3000], 2 => ['parts' => 1, 'bytes' => 75]],
+        ));
+
+        $this->assertCount(2, $statements);
+        foreach ($statements as $sql) {
+            $this->assertStringStartsWith('UPDATE binaries', $sql);
+            $this->assertDoesNotMatchRegularExpression('/\bparts\b/i', $sql);
+        }
+        $this->assertSame(
+            [1 => [90, 3600, 0], 2 => [100, 1065, 1], 3 => [2, 20, 0], 4 => [5, 50, 0]],
+            DB::table('binaries')->orderBy('id')->get()->mapWithKeys(static fn (object $binary): array => [
+                (int) $binary->id => [(int) $binary->currentparts, (int) $binary->partsize, (int) $binary->partcheck],
+            ])->all(),
+        );
+    }
+
     public function test_ingestion_stamps_are_monotone_and_repair_uses_current_head(): void
     {
         $storage = new HeaderStorageService;
@@ -1095,6 +1366,73 @@ final class CbpMariaDbIngestionTest extends TestCase
             $this->assertSame($expected, $shape());
         } finally {
             DB::statement('DROP TABLE IF EXISTS releases');
+        }
+    }
+
+    private function countedStorage(?BinariesConfig $config = null): HeaderStorageService
+    {
+        return new HeaderStorageService(new CollectionHandler(new class extends CollectionsCleaningService
+        {
+            public function collectionsCleaner(string $subject, string $groupName = ''): array
+            {
+                return ['id' => 0, 'name' => (string) strtok($subject, ' ')];
+            }
+        }), config: $config ?? new BinariesConfig);
+    }
+
+    /**
+     * One part of one file of the "Counted.Release" collection.
+     *
+     * @return array<string, mixed>
+     */
+    private function fileHeader(int $number, string $file, int $part, int $total, int $bytes): array
+    {
+        $name = "Counted.Release {$file}";
+
+        return [
+            'Number' => $number,
+            'Subject' => "{$name} ({$part}/{$total})",
+            'From' => 'poster@example.test',
+            'Date' => time(),
+            'Bytes' => $bytes,
+            'Message-ID' => "<{$number}@example.test>",
+            'Xref' => "news.example alt.binaries.test:{$number}",
+            'matches' => [0 => "{$name} ({$part}/{$total})", 1 => $name, 2 => $part, 3 => $total],
+        ];
+    }
+
+    /** @return array<string, array{0: int, 1: int, 2: int}> currentparts, partsize and partcheck by file */
+    private function binaryCounts(): array
+    {
+        $counts = [];
+        foreach (DB::table('binaries')->orderBy('id')->get() as $binary) {
+            $counts[substr((string) $binary->name, \strlen('Counted.Release '))] = [(int) $binary->currentparts, (int) $binary->partsize, (int) $binary->partcheck];
+        }
+
+        return $counts;
+    }
+
+    private function assertBinaryCountsEqualStoredParts(): void
+    {
+        $binaries = DB::table('binaries')->orderBy('id')->get();
+        $this->assertNotEmpty($binaries);
+        foreach ($binaries as $binary) {
+            $parts = DB::table('parts')->where('binaries_id', $binary->id);
+            $this->assertSame($parts->count(), (int) $binary->currentparts, "currentparts of {$binary->name}");
+            $this->assertSame((int) $parts->sum('size'), (int) $binary->partsize, "partsize of {$binary->name}");
+        }
+    }
+
+    /** @param  list<list<array{sql: string, bindings: array<int, mixed>}>>  $transactions */
+    private function assertNoAggregateOverParts(array $transactions): void
+    {
+        $statements = array_merge(...$transactions);
+        $this->assertNotNull($this->firstStatement($statements, '/^\s*INSERT IGNORE INTO parts\b/i'), 'The chunk stored parts.');
+        $this->assertNotNull($this->firstStatement($statements, '/^\s*UPDATE binaries\b/i'), 'The chunk updated its binaries.');
+        foreach ($statements as $statement) {
+            $readsParts = preg_match('/\b(?:FROM|JOIN)\s+`?parts`?\b/i', $statement['sql']) === 1;
+            $aggregates = preg_match('/\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(/i', $statement['sql']) === 1;
+            $this->assertFalse($readsParts && $aggregates, 'Aggregate over parts: '.$statement['sql']);
         }
     }
 

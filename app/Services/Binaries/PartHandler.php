@@ -24,12 +24,27 @@ final class PartHandler
     /** @var list<int|string> Part numbers that failed to insert */
     private array $failedPartNumbers = [];
 
-    /** @var array<int, true> Binary ids whose stored parts must be re-aggregated */
+    /** @var array<int, true> Binary ids the batch offered a part for, stored or not */
     private array $touchedBinaryIds = [];
+
+    /**
+     * What the batch's inserts stored, by binary id. Filled only where the insert
+     * reports its stored rows (see returnsStoredRows()).
+     *
+     * @var array<int, array{parts: int, bytes: int}>
+     */
+    private array $storedByBinary = [];
 
     private int $chunkSize;
 
     private ?\Throwable $lastException = null;
+
+    /**
+     * Set by a failed parts insert and cleared by reset(). A deadlock ends the whole
+     * transaction on the server, so a later insert of the same chunk would run outside
+     * any transaction and stay stored when the chunk is retried.
+     */
+    private bool $insertFailed = false;
 
     /** @phpstan-ignore property.onlyWritten */
     private bool $addToPartRepair;
@@ -49,7 +64,9 @@ final class PartHandler
         $this->insertedPartNumbers = [];
         $this->failedPartNumbers = [];
         $this->touchedBinaryIds = [];
+        $this->storedByBinary = [];
         $this->lastException = null;
+        $this->insertFailed = false;
     }
 
     /**
@@ -127,9 +144,10 @@ final class PartHandler
             $this->touchedBinaryIds[(int) $part['binaries_id']] = true;
         }
 
-        $insertedCount = $this->insertChunk($parts);
+        $insertedCount = $this->insertFailed ? null : $this->insertChunk($parts);
 
         if ($insertedCount === null) {
+            $this->insertFailed = true;
             foreach ($pendingParts as $part) {
                 $this->failedPartNumbers[] = $part['number'];
             }
@@ -168,6 +186,7 @@ final class PartHandler
     private function insertChunk(array $parts): ?int
     {
         $driver = DB::getDriverName();
+        $returnsStoredRows = self::returnsStoredRows();
         $totalInserted = 0;
 
         try {
@@ -188,7 +207,21 @@ final class PartHandler
                     ? 'INSERT OR IGNORE INTO parts (binaries_id, number, messageid, partnumber, size) VALUES '.implode(',', $placeholders)
                     : 'INSERT IGNORE INTO parts (binaries_id, number, messageid, partnumber, size) VALUES '.implode(',', $placeholders);
 
-                $totalInserted += (int) DB::affectingStatement($sql, $bindings);
+                if (! $returnsStoredRows) {
+                    $totalInserted += (int) DB::affectingStatement($sql, $bindings);
+
+                    continue;
+                }
+
+                // RETURNING lists only the rows this statement stored: a row ignored as a
+                // duplicate, or dropped because its binary is gone, is not in it.
+                $stored = DB::select($sql.' RETURNING binaries_id, size', $bindings, false);
+                foreach ($stored as $row) {
+                    $binaryId = (int) $row->binaries_id;
+                    $tally = $this->storedByBinary[$binaryId] ?? ['parts' => 0, 'bytes' => 0];
+                    $this->storedByBinary[$binaryId] = ['parts' => $tally['parts'] + 1, 'bytes' => $tally['bytes'] + (int) $row->size];
+                }
+                $totalInserted += \count($stored);
             }
 
             return $totalInserted;
@@ -295,6 +328,26 @@ final class PartHandler
     public function getTouchedBinaryIds(): array
     {
         return array_keys($this->touchedBinaryIds);
+    }
+
+    /**
+     * Whether the parts insert reports the rows it stored, so that the batch can be
+     * counted without reading parts back. Only MariaDB has INSERT ... RETURNING here.
+     */
+    public static function returnsStoredRows(): bool
+    {
+        return DB::getDriverName() === 'mariadb';
+    }
+
+    /**
+     * Number of parts and bytes the batch stored, by binary id, across all of its inserts.
+     * A binary the batch stored nothing for has no entry. Empty unless returnsStoredRows().
+     *
+     * @return array<int, array{parts: int, bytes: int}>
+     */
+    public function getStoredByBinary(): array
+    {
+        return $this->storedByBinary;
     }
 
     /**
