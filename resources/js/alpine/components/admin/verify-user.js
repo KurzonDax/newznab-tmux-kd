@@ -30,7 +30,5 @@ Alpine.data('verifyUser', () => ({
             event.preventDefault();
             this.show(form);
         };
-        window.hideVerifyModal = () => this.hide();
-        window.submitVerifyForm = () => this.submit();
     },
 }));

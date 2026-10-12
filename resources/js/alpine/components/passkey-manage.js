@@ -58,10 +58,6 @@ Alpine.data('passkeyManage', () => ({
             && (userAgent.includes('Windows') || platform.startsWith('Win'));
     },
 
-    async createPasskey() {
-        return this.createBrowserPasskey();
-    },
-
     async createBrowserPasskey() {
         if (this.browserPasskeyBlocked()) {
             this.error = 'Opera on Windows is routing passkey creation through Windows Security and cannot create a browser/app passkey here. Use Edge/Chrome with Windows Hello or a password-manager passkey provider, or use the USB security key button.';

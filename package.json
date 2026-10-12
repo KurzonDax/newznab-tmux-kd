@@ -13,7 +13,6 @@
         "@tailwindcss/forms": "^0.5.11",
         "@tailwindcss/vite": "^4.3.3",
         "axios": "1.19.0",
-        "lodash": "^4.18.1",
         "npm-check-updates": "^23.0.2",
         "prettier": "3.9.6",
         "prettier-plugin-blade": "3.2.2",
@@ -31,7 +30,6 @@
         "chart.js": "^4.5.1",
         "date-fns": "^4.4.0",
         "jodit": "^4.13.23",
-        "laravel-echo": "^2.4.0",
         "laravel-vite-plugin": "^3.1",
         "nested-sort": "^5.2.0",
         "vuedraggable": "^4.1.0"

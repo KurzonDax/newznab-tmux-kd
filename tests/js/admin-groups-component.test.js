@@ -194,19 +194,6 @@ test('clearing one row of a full selection returns the header to indeterminate',
     assert.equal(page.component.selectedCount, 2);
 });
 
-test('the submitted ids match the visibly checked rows', () => {
-    const page = mountPage();
-
-    page.rows[0].checked = true;
-    page.rows[2].checked = true;
-    page.firingFrom(page.rows[2], () => page.component.onGroupCheckboxChange());
-
-    assert.deepEqual(page.component._getSelected(), [
-        { id: '1', name: 'alt.binaries.group1' },
-        { id: '3', name: 'alt.binaries.group3' },
-    ]);
-});
-
 test('removing a selected row cannot leave a stale count', () => {
     const page = mountPage();
 

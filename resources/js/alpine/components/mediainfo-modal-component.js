@@ -51,8 +51,6 @@ export function mediainfoModal() {
     init() {
       this.initModal();
       const self = this;
-      window.showMediainfo = (id, name) => self.show(id, name);
-      window.closeMediainfoModal = () => self.close();
       document.addEventListener("click", (event) => {
         const badge = event.target.closest(".mediainfo-badge");
         if (badge) {

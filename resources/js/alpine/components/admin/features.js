@@ -3,11 +3,6 @@
  */
 import Alpine from '@alpinejs/csp';
 
-function escapeHtml(text) {
-    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
-}
-
 // User Edit datetime picker
 Alpine.data('adminUserEdit', () => ({
     init() {
@@ -130,196 +125,6 @@ Alpine.data('adminUserEdit', () => ({
 
 // Admin deleted users
 Alpine.data('adminDeletedUsers', () => ({
-    allChecked: false,
-
-    toggleAll() {
-        this.$el.querySelectorAll('.user-checkbox').forEach(cb => { cb.checked = this.allChecked; });
-    },
-
-    onCheckboxChange() {
-        const all = this.$el.querySelectorAll('.user-checkbox');
-        const checked = this.$el.querySelectorAll('.user-checkbox:checked');
-        this.allChecked = all.length > 0 && checked.length === all.length;
-    },
-
-    submitBulkAction(e) {
-        e.preventDefault();
-        const action = this.$el.querySelector('#bulkAction')?.value;
-        const checked = this.$el.querySelectorAll('.user-checkbox:checked');
-        const errEl = document.getElementById('validationError');
-        const errMsg = document.getElementById('validationErrorMessage');
-        if (errEl) errEl.classList.add('hidden');
-
-        if (!action) { if (errEl && errMsg) { errMsg.textContent = 'Please select an action.'; errEl.classList.remove('hidden'); } return; }
-        if (checked.length === 0) { if (errEl && errMsg) { errMsg.textContent = 'Please select at least one user.'; errEl.classList.remove('hidden'); } return; }
-
-        const text = action === 'restore' ? 'restore' : 'permanently delete';
-        const type = action === 'restore' ? 'success' : 'danger';
-        const form = this.$el.querySelector('#bulkActionForm');
-
-        showConfirm({
-            title: action === 'restore' ? 'Restore Users' : 'Delete Users',
-            message: 'Are you sure you want to ' + text + ' ' + checked.length + ' user(s)?',
-            type: type,
-            confirmText: action === 'restore' ? 'Restore' : 'Delete',
-            onConfirm: function() { if (form) form.submit(); }
-        });
-    },
-
-    restoreUser(userId, username) {
-        showConfirm({ title: 'Restore User', message: "Are you sure you want to restore user '" + username + "'?", type: 'success', confirmText: 'Restore', onConfirm: function() {
-            const form = document.getElementById('individualActionForm');
-            if (form) { form.action = window.location.origin + '/admin/deleted-users/restore/' + userId; form.submit(); }
-        }});
-    },
-
-    deleteUser(userId, username) {
-        showConfirm({ title: 'Permanently Delete User', message: "Are you sure you want to PERMANENTLY delete user '" + username + "'?", details: 'This action cannot be undone!', type: 'danger', confirmText: 'Delete Permanently', onConfirm: function() {
-            const form = document.getElementById('individualActionForm');
-            if (form) { form.action = window.location.origin + '/admin/deleted-users/permanent-delete/' + userId; form.submit(); }
-        }});
-    }
-}));
-
-// Invitations select all
-Alpine.data('adminInvitations', () => ({
-    allChecked: false,
-    toggleAll() { this.$el.querySelectorAll('.invitation-checkbox').forEach(cb => { cb.checked = this.allChecked; }); },
-    onCheckboxChange() {
-        const all = this.$el.querySelectorAll('.invitation-checkbox');
-        const checked = this.$el.querySelectorAll('.invitation-checkbox:checked');
-        this.allChecked = all.length > 0 && checked.length === all.length;
-    }
-}));
-
-// Regex form validation
-Alpine.data('adminRegexForm', () => ({
-    validate(e) {
-        const inputs = this.$el.querySelectorAll('input[name*="regex"], textarea[name*="regex"]');
-        let valid = true;
-        inputs.forEach(input => {
-            const val = input.value.trim();
-            if (val && input.hasAttribute('required')) {
-                const delims = ['/','/','#','~','%','@','!'];
-                if (delims.includes(val[0])) {
-                    let found = false;
-                    for (let i = 1; i < val.length; i++) { if (val[i] === val[0]) { found = true; break; } }
-                    if (!found) { valid = false; input.classList.add('border-red-500'); }
-                    else input.classList.remove('border-red-500');
-                }
-            }
-        });
-        if (!valid) { e.preventDefault(); showToast('Please fix regex validation errors', 'error'); }
-    }
-}));
-
-// Tmux crap types toggle
-Alpine.data('tmuxEdit', () => ({
-    customCrap: false,
-    init() {
-        const checked = document.querySelector('input[name="fix_crap_opt"]:checked');
-        if (checked) this.customCrap = checked.value === 'Custom';
-    },
-    setCrapOpt(value) { this.customCrap = value === 'Custom'; }
-}));
-
-// Image fallbacks (global)
-Alpine.data('imageFallback', () => ({
-    onError(e) {
-        const fallback = e.target.getAttribute('data-fallback-src');
-        if (fallback && e.target.src !== fallback) e.target.src = fallback;
-    }
-}));
-
-// Select redirect
-Alpine.data('selectRedirect', () => ({
-    onChange(e) {
-        const url = e.target.value;
-        if (url && url !== '#') window.location.href = url;
-    }
-}));
-
-// Confirm delete (link or form)
-Alpine.data('confirmAction', () => ({
-    confirmDelete(e, message) {
-        e.preventDefault();
-        e.stopPropagation();
-        const el = e.currentTarget;
-        const form = el.closest('form');
-        showConfirm({
-            message: message || 'Are you sure you want to delete this item?',
-            type: 'danger',
-            confirmText: 'Delete',
-            onConfirm: function() { if (form) form.submit(); else if (el.href) window.location.href = el.href; }
-        });
-    }
-}));
-
-// Download NZB toast
-Alpine.data('downloadNzb', () => ({
-    onClick() { showToast('Downloading NZB...', 'success'); }
-}));
-
-// Logout
-Alpine.data('logout', () => ({
-    submit(e) {
-        e.preventDefault();
-        const form = document.getElementById('logout-form') || document.getElementById('sidebar-logout-form');
-        if (form) form.submit();
-    }
-}));
-
-// Promotion toggle/delete
-Alpine.data('promotionAction', () => ({
-    togglePromotion(e, name, isActive, href) {
-        e.preventDefault();
-        const action = isActive ? 'deactivate' : 'activate';
-        showConfirm({
-            title: action.charAt(0).toUpperCase() + action.slice(1) + ' Promotion',
-            message: 'Are you sure you want to ' + action + ' the promotion "' + name + '"?',
-            type: isActive ? 'warning' : 'success',
-            confirmText: action.charAt(0).toUpperCase() + action.slice(1),
-            onConfirm: function() { window.location.href = href; }
-        });
-    },
-    deletePromotion(e, name) {
-        e.preventDefault();
-        const form = e.currentTarget.closest('form');
-        showConfirm({
-            title: 'Delete Promotion',
-            message: 'Are you sure you want to delete the promotion "' + name + '"?',
-            details: 'This action cannot be undone.',
-            type: 'danger',
-            confirmText: 'Delete',
-            onConfirm: function() { if (form) form.submit(); }
-        });
-    }
-}));
-
-// Binary blacklist
-Alpine.data('binaryBlacklist', () => ({
-    deleteBlacklist(e, id) {
-        e.preventDefault();
-        if (confirm('Are you sure? This will delete the blacklist from this list.')) {
-            if (typeof ajax_binaryblacklist_delete === 'function') ajax_binaryblacklist_delete(id);
-        }
-    }
-}));
-
-// Regex delete
-Alpine.data('regexDelete', () => ({
-    deleteRegex(e, id, deleteUrl) {
-        e.preventDefault();
-        if (confirm('Are you sure you want to delete this regex? This action cannot be undone.')) {
-            const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-            fetch(deleteUrl + '?id=' + id, { method: 'GET', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrf } })
-            .then(r => r.json())
-            .then(d => {
-                if (d.success) { const row = document.getElementById('row-' + id); if (row) { row.style.transition = 'opacity 0.3s'; row.style.opacity = '0'; setTimeout(() => row.remove(), 300); } showToast('Regex deleted successfully', 'success'); }
-                else showToast('Error deleting regex', 'error');
-            }).catch(() => showToast('Error deleting regex', 'error'));
-        }
-    }
 }));
 
 /**
@@ -329,19 +134,6 @@ Alpine.data('regexDelete', () => ({
 (function() {
     // --- Click delegation ---
     document.addEventListener('click', function(e) {
-        // Admin menu submenu toggle
-        var menuToggle = e.target.closest('[data-toggle-submenu]');
-        if (menuToggle) {
-            var menuId = menuToggle.getAttribute('data-toggle-submenu');
-            if (menuId) {
-                var submenu = document.getElementById(menuId);
-                var icon = document.getElementById(menuId + '-icon');
-                if (submenu) submenu.classList.toggle('hidden');
-                if (icon) icon.classList.toggle('rotate-180');
-            }
-            return;
-        }
-
         // Admin groups data-action delegation
         var actionTarget = e.target.closest('[data-action]');
         if (actionTarget) {
@@ -367,12 +159,6 @@ Alpine.data('regexDelete', () => ({
             }
             return;
         }
-
-        // Verify user modal
-        var verifyBtn = e.target.closest('[data-show-verify-modal]');
-        if (verifyBtn) { var form = verifyBtn.closest('form'); if (form && typeof showVerifyModal === 'function') showVerifyModal(e, form); return; }
-        if (e.target.closest('[data-close-verify-modal]')) { e.preventDefault(); if (typeof hideVerifyModal === 'function') hideVerifyModal(); return; }
-        if (e.target.closest('[data-submit-verify-form]')) { e.preventDefault(); if (typeof submitVerifyForm === 'function') submitVerifyForm(); return; }
 
         // Restore/delete user buttons
         var restoreBtn = e.target.closest('.restore-user-btn');
@@ -425,50 +211,6 @@ Alpine.data('regexDelete', () => ({
             return;
         }
 
-        // Content toggle/delete
-        var contentToggle = e.target.closest('.content-toggle-status');
-        if (contentToggle) {
-            e.preventDefault();
-            var id = contentToggle.getAttribute('data-content-id');
-            var csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (!id || !csrf) return;
-            contentToggle.disabled = true; contentToggle.style.opacity = '0.6';
-            fetch('/admin/content-toggle-status', {
-                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
-                body: JSON.stringify({ id: id })
-            }).then(function(r) { return r.json(); }).then(function(data) {
-                if (data.success) {
-                    var row = contentToggle.closest('tr'), sc = row.cells[5], ns = data.status;
-                    if (ns === 1) { sc.innerHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100"><i class="fa fa-check mr-1"></i>Enabled</span>'; contentToggle.className = 'content-toggle-status text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300'; contentToggle.innerHTML = '<i class="fa fa-toggle-on"></i>'; }
-                    else { sc.innerHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100"><i class="fa fa-times mr-1"></i>Disabled</span>'; contentToggle.className = 'content-toggle-status text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'; contentToggle.innerHTML = '<i class="fa fa-toggle-off"></i>'; }
-                    contentToggle.setAttribute('data-current-status', ns); contentToggle.title = ns === 1 ? 'Disable' : 'Enable';
-                    showToast(data.message, 'success');
-                } else showToast(data.message || 'Failed', 'error');
-                contentToggle.disabled = false; contentToggle.style.opacity = '1';
-            }).catch(function() { showToast('Error', 'error'); contentToggle.disabled = false; contentToggle.style.opacity = '1'; });
-            return;
-        }
-
-        var contentDelete = e.target.closest('.content-delete');
-        if (contentDelete) {
-            e.preventDefault();
-            var id = contentDelete.getAttribute('data-content-id');
-            var title = contentDelete.getAttribute('data-content-title');
-            var csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-            if (!id || !csrf) return;
-            showConfirm({ title: 'Delete Content', message: 'Are you sure you want to delete "' + title + '"?', details: 'This action cannot be undone.', type: 'danger', confirmText: 'Delete',
-                onConfirm: function() {
-                    contentDelete.disabled = true; contentDelete.style.opacity = '0.6';
-                    fetch('/admin/content-delete', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify({ id: id }) })
-                    .then(function(r) { return r.json(); }).then(function(data) {
-                        if (data.success) { var row = contentDelete.closest('tr'); if (row) { row.style.transition = 'opacity 0.3s'; row.style.opacity = '0'; setTimeout(function() { row.remove(); if (document.querySelector('tbody')?.children.length === 0) location.reload(); }, 300); } showToast(data.message, 'success'); }
-                        else { showToast(data.message || 'Failed', 'error'); contentDelete.disabled = false; contentDelete.style.opacity = '1'; }
-                    }).catch(function() { showToast('Error', 'error'); contentDelete.disabled = false; contentDelete.style.opacity = '1'; });
-                }
-            });
-            return;
-        }
-
         // Regex delete
         var regexDel = e.target.closest('[data-delete-regex]');
         if (regexDel) {
@@ -495,26 +237,6 @@ Alpine.data('regexDelete', () => ({
                 if (typeof ajax_binaryblacklist_delete === 'function') ajax_binaryblacklist_delete(id);
             }
             return;
-        }
-
-        // Season tab
-        var seasonTab = e.target.closest('.season-tab');
-        if (seasonTab) {
-            e.preventDefault();
-            var num = seasonTab.getAttribute('data-season');
-            if (num && typeof switchSeason === 'function') switchSeason(num);
-            return;
-        }
-    });
-
-    // --- Change event delegation ---
-    document.addEventListener('change', function(e) {
-        if (e.target.hasAttribute('data-redirect-on-change')) {
-            var url = e.target.value;
-            if (url && url !== '#') window.location.href = url;
-        }
-        if (e.target.classList.contains('group-checkbox')) {
-            if (typeof updateSelectionUI === 'function') updateSelectionUI();
         }
     });
 
@@ -566,13 +288,5 @@ Alpine.data('regexDelete', () => ({
             var text = action === 'restore' ? 'restore' : 'permanently delete';
             showConfirm({ title: action === 'restore' ? 'Restore Users' : 'Delete Users', message: 'Are you sure you want to ' + text + ' ' + checked.length + ' user(s)?', type: action === 'restore' ? 'success' : 'danger', confirmText: action === 'restore' ? 'Restore' : 'Delete', onConfirm: function() { bulkForm.submit(); } });
         });
-    }
-
-    // Tmux crap types toggle
-    var checkedRadio = document.querySelector('input[name="fix_crap_opt"]:checked');
-    var crapContainer = document.getElementById('crap_types_container');
-    if (crapContainer) {
-        if (checkedRadio) crapContainer.style.display = checkedRadio.value === 'Custom' ? 'block' : 'none';
-        document.querySelectorAll('input[name="fix_crap_opt"]').forEach(function(r) { r.addEventListener('change', function() { crapContainer.style.display = this.value === 'Custom' ? 'block' : 'none'; }); });
     }
 })();

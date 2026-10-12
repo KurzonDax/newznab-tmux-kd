@@ -9,30 +9,25 @@ export function modalLifecycle() {
             if (!dialog) return;
             const document = dialog.ownerDocument;
             let trigger = null;
-            let parent = null;
             const controls = () => {
-                const fullSize = dialog.querySelector('[data-full-size-layer]');
-                const scope = fullSize?.getClientRects().length ? fullSize : dialog;
-                return [...scope.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), audio[controls], video[controls], [tabindex="0"]')]
+                return [...dialog.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), audio[controls], video[controls], [tabindex="0"]')]
                     .filter(control => control.getClientRects().length);
             };
             const owner = { close, dialog, trigger: () => trigger };
             const release = () => {
                 if (activeModal !== owner) return;
-                activeModal = parent;
-                document.body.style.overflow = parent ? 'hidden' : savedOverflow;
-                parent = null;
+                activeModal = null;
+                document.body.style.overflow = savedOverflow;
                 if (trigger?.isConnected) trigger.focus();
             };
             this.$watch('open', open => {
                 if (!open) { release(); return; }
                 const previous = activeModal;
-                parent = previous?.dialog.hasAttribute?.('data-preserve-modal') ? previous : null;
-                trigger = !parent && previous?.dialog.contains(document.activeElement)
+                trigger = previous?.dialog.contains(document.activeElement)
                     ? previous.trigger() : document.activeElement;
                 if (!previous) savedOverflow = document.body.style.overflow;
                 activeModal = owner;
-                if (!parent) previous?.close();
+                previous?.close();
                 document.body.style.overflow = 'hidden';
                 this.$nextTick(() => {
                     if (activeModal === owner && this.open) controls()[0]?.focus();

@@ -151,6 +151,191 @@ final class DeadCodeCleanupTest extends TestCase
         $this->assertStringContainsString('is-cell', $script);
     }
 
+    public function test_section_b_scripts_no_page_loads_are_gone_and_the_eager_index_imports_only_what_stays(): void
+    {
+        // B1
+        foreach ([
+            'resources/js/alpine/components/tab-switcher.js', 'resources/js/alpine/components/dropdown.js',
+            'resources/js/alpine/components/auth-page.js', 'tests/js/frontend-active-states.test.js',
+        ] as $path) {
+            $this->assertFileDoesNotExist(base_path($path));
+        }
+        // a control whose script never loads is a bug for a later issue: its script is untouched
+        $password = $this->source('resources/js/alpine/components/password-toggle.js');
+        foreach (["Alpine.data('passwordToggle'", '.password-toggle-btn', 'window.togglePasswordVisibility'] as $kept) {
+            $this->assertStringContainsString($kept, $password);
+        }
+
+        $index = $this->source('resources/js/alpine/index.js');
+        preg_match_all('/^import\s+(?:[^\'"]+\s+from\s+)?[\'"]([^\'"]+)[\'"];/m', $index, $imports);
+        $this->assertSame([
+            '@alpinejs/csp',
+            './stores/theme.js', './stores/toast.js', './stores/cart.js',
+            './components/theme-toggle.js', './components/back-to-top.js', './components/public-navigation.js',
+            './components/confirm-modal.js', './components/confirm-link.js', './components/toast-notification.js',
+            './components/dismissible.js', './lazy-loader.js',
+        ], $imports[1]);
+        $this->assertSame(preg_match_all('/^import\b/m', $index), count($imports[1]));
+        $this->assertStringNotContainsString('escapeHtml', $index);
+    }
+
+    public function test_section_b_script_loader_maps_exactly_the_components_a_page_mounts(): void
+    {
+        // B2, together with sections 1 and 2
+        $expected = [
+            'accountPage', 'accountRss', 'searchFeed', 'searchFilters', 'watchlistPicker', 'watchlistPage', 'adminSubmenu', 'passwordToggle',
+            'nfoModal', 'mediainfoModal', 'contentToggle', 'blacklistSweep', 'settingsCard', 'posterIdentityBlacklist', 'posterSweepStatus',
+            'adminReleaseReports', 'adminReleaseList', 'recoveredReleases', 'showAddForm', 'copyToClipboard', 'tvReleases', 'homeShelves',
+            'checkboxMenu', 'yearMenu', 'tvShows', 'tvSearch', 'tvEpisodeList', 'tvReleaseDetails', 'movieFilm', 'movieReleaseDetails',
+            'tvFilesDialog', 'tvImageDialog', 'tvListenDialog', 'loginMode', 'passkeyLogin', 'passkeyManage', 'adminUserPasskeys',
+            'adminDashboard', 'adminGroups', 'adminUserEdit', 'adminUserList', 'adminDeletedUsers', 'richTextEditor', 'verifyUser',
+        ];
+        $this->assertCount(44, $expected);
+
+        $loader = $this->source('resources/js/alpine/lazy-loader.js');
+        $this->assertSame(1, preg_match('/const lazyComponentMap = \{\n(.*?)\n\};/s', $loader, $map));
+        preg_match_all('/^\s*\'([^\']+)\'\s*:\s*\(\)\s*=>\s*import\(/m', $map[1], $entries);
+        $keys = $entries[1];
+        $this->assertSame(substr_count($map[1], 'import('), count($keys));
+        $this->assertCount(44, $keys);
+        $this->assertSame($keys, array_values(array_unique($keys)));
+        $this->assertEqualsCanonicalizing($expected, $keys);
+
+        $views = '';
+        foreach (File::allFiles(resource_path('views')) as $file) {
+            $views .= $file->getContents()."\n";
+        }
+        foreach ($keys as $key) {
+            if ($key === 'passwordToggle') {
+                continue;
+            }
+            $this->assertMatchesRegularExpression('/x-data\s*=\s*["\']?\s*'.preg_quote($key, '/').'(?![\w])/', $views, $key.' has no x-data root');
+        }
+    }
+
+    public function test_section_b_admin_features_script_keeps_its_two_components_and_the_handlers_left_for_a_later_issue(): void
+    {
+        // B3
+        $features = $this->source('resources/js/alpine/components/admin/features.js');
+        $this->assertSame(['adminUserEdit', 'adminDeletedUsers'], $this->componentNames($features));
+        foreach ([
+            '[data-action]',
+            "case 'show-reset-modal'", "case 'hide-reset-modal'", "case 'show-purge-modal'", "case 'hide-purge-modal'",
+            "case 'show-reset-selected-modal'", "case 'hide-reset-selected-modal'", "case 'select-all-groups'", "case 'toggle-group-status'",
+            "case 'toggle-backfill'", "case 'reset-group'", "case 'delete-group'", "case 'purge-group'", "case 'reset-all'", "case 'purge-all'",
+            "case 'reset-selected'",
+            '.restore-user-btn', '.delete-user-btn', '.promotion-toggle-btn', '.promotion-delete-btn', '[data-delete-regex]',
+            '[data-delete-blacklist]', 'img[data-fallback-src], img[data-hide-on-error]', "getElementById('select_all')", '.invitation-checkbox',
+            "getElementById('selectAll')", "getElementById('bulkActionForm')",
+        ] as $kept) {
+            $this->assertStringContainsString($kept, $features);
+        }
+        $this->assertSame(15, preg_match_all('/^\s*case \'/m', $features));
+        foreach ([
+            'escapeHtml', 'data-toggle-submenu', 'verify-modal', 'data-submit-verify-form', 'content-toggle-status', 'content-delete', 'season-tab',
+            'data-redirect-on-change', 'group-checkbox', 'crap_types_container', 'fix_crap_opt', "document.addEventListener('change'",
+        ] as $gone) {
+            $this->assertStringNotContainsString($gone, $features);
+        }
+    }
+
+    public function test_section_b_globals_nothing_reads_and_the_dead_parts_of_live_scripts_are_gone(): void
+    {
+        // B4
+        $groups = $this->source('resources/js/alpine/components/admin/groups-component.js');
+        foreach ([
+            'ajax_group_status', 'ajax_backfill_status', 'ajax_group_reset', 'confirmGroupDelete', 'confirmGroupPurge', 'ajax_group_reset_all',
+            'ajax_group_purge_all', 'ajax_group_reset_selected', 'showResetAllModal', 'hideResetAllModal', 'showPurgeAllModal', 'hidePurgeAllModal',
+            'showResetSelectedModal', 'hideResetSelectedModal', 'toggleSelectAllGroups', 'updateSelectionUI',
+        ] as $global) {
+            $this->assertStringContainsString('window.'.$global.' =', $groups);
+        }
+        $this->assertSame(16, preg_match_all('/window\.\w+ =/', $groups));
+        $this->assertContainsNone(['showEditSelectedModal', 'hideEditSelectedModal', 'getSelectedGroups', '_getSelected'], $groups);
+
+        $verify = $this->source('resources/js/alpine/components/admin/verify-user.js');
+        $this->assertStringContainsString('window.showVerifyModal', $verify);
+        $this->assertContainsNone(['hideVerifyModal', 'submitVerifyForm'], $verify);
+
+        // B5
+        $profile = $this->source('resources/js/alpine/components/profile-edit.js');
+        $this->assertSame(['copyToClipboard'], $this->componentNames($profile));
+        foreach (['.copy-btn', '#copyApiToken', 'apiTokenInput', 'data-copy-target'] as $kept) {
+            $this->assertStringContainsString($kept, $profile);
+        }
+        $this->assertContainsNone(['profileEdit', 'profilePage', '2fa', 'progress-bar'], $profile);
+
+        $toggle = $this->source('resources/js/alpine/components/theme-toggle.js');
+        $this->assertSame(['themeToggle'], $this->componentNames($toggle));
+        $this->assertStringContainsString("getElementById('theme-toggle')", $toggle);
+        $this->assertContainsNone(['themeRadio', 'theme_preference', '_updatingThemeUI', 'theme-btn'], $toggle);
+        $this->assertStringNotContainsString('theme-btn', $this->source('resources/js/alpine/stores/theme.js'));
+
+        $confirm = $this->source('resources/js/alpine/components/confirm-modal.js');
+        foreach (['window.showConfirm', '[data-logout]', '[data-confirm-delete]', '[data-confirm]'] as $kept) {
+            $this->assertStringContainsString($kept, $confirm);
+        }
+        $this->assertContainsNone([
+            'closeConfirmationModal', 'confirmConfirmationModal', 'data-close-confirmation-modal', 'data-confirm-confirmation-modal',
+            'sidebar-logout-form',
+        ], $confirm);
+
+        $nfo = $this->source('resources/js/alpine/components/nfo-modal.js');
+        $this->assertStringContainsString('.nfo-badge', $nfo);
+        $this->assertContainsNone(['openNfoModal', 'closeNfoModal', 'data-open-nfo', 'data-close-nfo-modal', 'app-url'], $nfo);
+
+        // B6
+        $this->assertContainsNone(['data-preserve-modal', 'data-full-size-layer'], $this->source('resources/js/alpine/components/modal-lifecycle.js'));
+
+        foreach ([
+            'resources/js/alpine/components/mediainfo-modal-component.js' => ['showMediainfo', 'closeMediainfoModal'],
+            'resources/js/alpine/components/release-report.js' => ['toggleAll', 'allChecked'],
+            'resources/js/alpine/components/admin/release-list.js' => ['allChecked'],
+            'resources/js/alpine/components/passkey-manage.js' => ['createPasskey('],
+            'resources/js/alpine/components/passkey-login.js' => ['browserPasskeyPending'],
+            'resources/js/alpine/components/poster-identity-blacklist-component.js' => ['closeConfirmation'],
+            'resources/js/alpine/components/content-toggle.js' => ['contentDelete'],
+        ] as $path => $gone) {
+            $this->assertContainsNone($gone, $this->source($path), $path);
+        }
+    }
+
+    public function test_section_b_npm_packages_nothing_imports_have_left_the_manifest_and_the_lockfile(): void
+    {
+        // B7
+        $manifest = $this->source('package.json');
+        foreach ([$manifest, $this->source('package-lock.json')] as $file) {
+            $this->assertStringNotContainsStringIgnoringCase('lodash', $file);
+            $this->assertStringNotContainsStringIgnoringCase('laravel-echo', $file);
+        }
+        // the retained forum preset imports these three
+        foreach (['"date-fns":', '"@melloware/coloris":', '"nested-sort":'] as $kept) {
+            $this->assertStringContainsString($kept, $manifest);
+        }
+    }
+
+    /**
+     * The distinct names that follow Alpine.data(' in a script, its header comment included.
+     *
+     * @return list<string>
+     */
+    private function componentNames(string $script): array
+    {
+        preg_match_all('/Alpine\.data\(\'([^\']*)/', $script, $names);
+
+        return array_values(array_unique($names[1]));
+    }
+
+    /**
+     * @param  list<string>  $needles
+     */
+    private function assertContainsNone(array $needles, string $source, string $message = ''): void
+    {
+        foreach ($needles as $needle) {
+            $this->assertStringNotContainsString($needle, $source, trim($message.' '.$needle));
+        }
+    }
+
     private function source(string $path): string
     {
         $source = file_get_contents(base_path($path));

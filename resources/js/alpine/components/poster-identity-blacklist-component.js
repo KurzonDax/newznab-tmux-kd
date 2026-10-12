@@ -25,9 +25,5 @@ export function posterIdentityBlacklist() {
             this.open = false;
             this.deleteReleases = false;
         },
-
-        closeConfirmation() {
-            this.close();
-        },
     };
 }

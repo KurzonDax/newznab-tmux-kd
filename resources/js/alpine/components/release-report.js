@@ -15,7 +15,6 @@ Alpine.data('adminReleaseReports', () => ({
     responseActionUrl: '',
     responseContent: '',
     responseIsPublic: true,
-    allChecked: false,
     selectedCount: 0,
     rootEl: null,
 
@@ -76,7 +75,6 @@ Alpine.data('adminReleaseReports', () => ({
     setAllSelection(checked) {
         const boxes = this.reportCheckboxes();
         boxes.forEach(cb => { cb.checked = checked; });
-        this.allChecked = checked && boxes.length > 0;
         this.selectedCount = checked ? boxes.length : 0;
     },
 
@@ -88,15 +86,10 @@ Alpine.data('adminReleaseReports', () => ({
         this.setAllSelection(false);
     },
 
-    toggleAll() {
-        this.setAllSelection(this.allChecked);
-    },
-
     syncSelectionState() {
         const boxes = this.reportCheckboxes();
         const checkedCount = boxes.filter(cb => cb.checked).length;
         this.selectedCount = checkedCount;
-        this.allChecked = boxes.length > 0 && checkedCount === boxes.length;
     },
 
     onCheckboxChange() {

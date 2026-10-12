@@ -3,30 +3,6 @@
  */
 import Alpine from '@alpinejs/csp';
 
-Alpine.data('profileEdit', () => ({
-    show2faForm: false,
-
-    toggle2fa() {
-        this.show2faForm = !this.show2faForm;
-    },
-
-    cancel2fa() {
-        this.show2faForm = false;
-        const pwd = document.getElementById('disable_2fa_password');
-        if (pwd) pwd.value = '';
-    }
-}));
-
-Alpine.data('profilePage', () => ({
-    init() {
-        // Animate progress bars
-        this.$el.querySelectorAll('.progress-bar').forEach(bar => {
-            const width = bar.dataset.width;
-            if (width) setTimeout(() => { bar.style.width = width + '%'; }, 100);
-        });
-    }
-}));
-
 Alpine.data('copyToClipboard', () => ({
     copied: false,
 
@@ -67,24 +43,6 @@ Alpine.data('copyToClipboard', () => ({
  * on pages that don't use x-data yet.
  */
 (function() {
-    // 2FA form toggle
-    var toggleBtn = document.getElementById('toggle-disable-2fa-btn');
-    var cancelBtn = document.getElementById('cancel-disable-2fa-btn');
-    var formContainer = document.getElementById('disable-2fa-form-container');
-    if (toggleBtn && formContainer && !toggleBtn.closest('[x-data]')) {
-        toggleBtn.addEventListener('click', function() { formContainer.style.display = formContainer.style.display === 'none' ? 'block' : 'none'; });
-    }
-    if (cancelBtn && formContainer && !cancelBtn.closest('[x-data]')) {
-        cancelBtn.addEventListener('click', function() { formContainer.style.display = 'none'; var p = document.getElementById('disable_2fa_password'); if (p) p.value = ''; });
-    }
-
-    // Progress bar animation
-    document.querySelectorAll('.progress-bar').forEach(function(bar) {
-        if (bar.closest('[x-data]')) return;
-        var w = bar.dataset.width;
-        if (w) setTimeout(function() { bar.style.width = w + '%'; }, 100);
-    });
-
     // Copy to clipboard delegation
     function copyToClipboard(text, button) {
         if (navigator.clipboard && navigator.clipboard.writeText) {

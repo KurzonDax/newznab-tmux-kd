@@ -78,20 +78,14 @@ Alpine.data('confirmModal', () => ({
         // Global showConfirm for backward compatibility + non-Alpine callers
         const self = this;
         window.showConfirm = function(options) { return self.show(options); };
-        window.closeConfirmationModal = function() { self.cancel(); };
-        window.confirmConfirmationModal = function() { self.confirm(); };
 
         // Document-level delegation for data-confirm, data-confirm-delete, data-logout
         document.addEventListener('click', function(e) {
-            // Close/confirm buttons
-            if (e.target.closest('[data-close-confirmation-modal]')) { e.preventDefault(); self.cancel(); return; }
-            if (e.target.closest('[data-confirm-confirmation-modal]')) { e.preventDefault(); self.confirm(); return; }
-
             // Logout
             var logoutEl = e.target.closest('[data-logout]');
             if (logoutEl) {
                 e.preventDefault();
-                var form = document.getElementById('logout-form') || document.getElementById('sidebar-logout-form');
+                var form = document.getElementById('logout-form');
                 if (form) form.submit();
                 return;
             }
