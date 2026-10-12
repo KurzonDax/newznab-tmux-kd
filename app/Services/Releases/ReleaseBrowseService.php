@@ -6,7 +6,6 @@ namespace App\Services\Releases;
 
 use App\Facades\Search;
 use App\Models\Category;
-use App\Models\Release;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Support\ReleaseCompletion;

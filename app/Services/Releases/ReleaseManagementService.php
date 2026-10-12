@@ -10,7 +10,6 @@ use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryPublications;
 use App\Services\ReleaseImageService;
 use Closure;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;

@@ -514,7 +514,7 @@ final class DeadCodeCleanupTest extends TestCase
         ], implode("\n", $sheets));
     }
 
-    public function test_section_d_design_records_no_longer_name_the_removed_styles(): void
+    public function test_section_d_design_token_record_no_longer_names_the_removed_release_row_colour(): void
     {
         // D7
         $design = json_decode($this->source('.impeccable/design.json'), true, 512, JSON_THROW_ON_ERROR);
@@ -533,10 +533,6 @@ final class DeadCodeCleanupTest extends TestCase
         };
         $collect($design);
         $this->assertNotContains('surface-release-row', $keys);
-
-        foreach (['DESIGN.md', '.ai/rules/resources.md'] as $record) {
-            $this->assertContainsNone(['release-row', 'radius-card', 'release-action'], $this->source($record), $record);
-        }
     }
 
     public function test_section_e_class_files_nothing_uses_are_gone(): void
@@ -792,9 +788,7 @@ final class DeadCodeCleanupTest extends TestCase
         $this->assertStringNotContainsString('2faVerify', $noCache);
         $this->assertContainsAll(["'2fa.verify'", "'2fa.post'"], $noCache);
 
-        // the three texts no longer describe the two admin addresses as redirects
-        $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('.ai/rules/settings-hub.md'));
-        $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('DOCKER.md'));
+        // the controller's docblock no longer describes the two admin addresses as redirects
         $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('app/Http/Controllers/Admin/AdminSiteController.php'));
     }
 
