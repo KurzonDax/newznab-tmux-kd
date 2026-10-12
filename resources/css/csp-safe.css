@@ -57,12 +57,6 @@
     animation: fadeIn 0.3s ease-in-out;
 }
 
-/* Recent activity loading state */
-#recent-activity-container.loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-
 /* Last updated timestamp subtle animation */
 #activity-last-updated {
     transition: color 0.3s ease-in-out;
@@ -94,10 +88,6 @@
     transition: color 0.3s ease-in-out, transform 0.3s ease-in-out;
 }
 
-[data-metric].metric-updated {
-    animation: pulse 0.5s ease-in-out;
-}
-
 @keyframes pulse {
     0%, 100% {
         opacity: 1;
@@ -107,444 +97,13 @@
     }
 }
 
-/* Quick Links hover effects */
-.quick-link-item {
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.quick-link-item:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
 /* Profile Charts - Progress Bars */
 .progress-bar {
     transition: width 0.3s ease-in-out;
     width: 0; /* Start at 0 for animation */
 }
 
-/* Profile Charts - API Token Scrollbar */
-code.api-token {
-    overflow-x: auto;
-    word-break: break-all;
-}
-
-code.api-token::-webkit-scrollbar {
-    height: 6px;
-}
-
-code.api-token::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 3px;
-}
-
-code.api-token::-webkit-scrollbar-thumb {
-    background: rgba(0, 255, 0, 0.3);
-    border-radius: 3px;
-}
-
-code.api-token::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 255, 0, 0.5);
-}
-
 /* Profile Page Styles */
-
-/* Tab content visibility */
-.tab-content.hidden-by-default {
-    display: none;
-}
-
-/* Toast Notifications */
-#toast-container {
-    position: fixed;
-    top: 5rem;
-    right: 1rem;
-    z-index: 99999;
-    max-width: 420px;
-    pointer-events: none;
-}
-
-@media (max-width: 640px) {
-    #toast-container {
-        top: 1rem;
-        right: 0.5rem;
-        left: 0.5rem;
-        max-width: none;
-    }
-}
-
-.toast-notification {
-    display: flex;
-    align-items: center;
-    min-width: 320px;
-    padding: 1rem 1.25rem;
-    margin-bottom: 0.75rem;
-    border-radius: 0.5rem;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    animation: slideIn 0.3s ease-out;
-    transition: all 0.3s ease-in-out;
-    pointer-events: auto;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-@media (max-width: 640px) {
-    .toast-notification {
-        min-width: auto;
-    }
-}
-
-.toast-notification.removing {
-    opacity: 0;
-    transform: translateX(100%);
-}
-
-.toast-notification.success {
-    background: linear-gradient(135deg, rgb(16, 185, 129) 0%, rgb(5, 150, 105) 100%);
-    color: white;
-}
-
-.dark .toast-notification.success {
-    background: linear-gradient(135deg, rgb(5, 150, 105) 0%, rgb(4, 120, 87) 100%);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-}
-
-.toast-notification.error {
-    background: linear-gradient(135deg, rgb(239, 68, 68) 0%, rgb(220, 38, 38) 100%);
-    color: white;
-}
-
-.dark .toast-notification.error {
-    background: linear-gradient(135deg, rgb(220, 38, 38) 0%, rgb(185, 28, 28) 100%);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-}
-
-.toast-notification.info {
-    background: linear-gradient(135deg, rgb(59, 130, 246) 0%, rgb(37, 99, 235) 100%);
-    color: white;
-}
-
-.dark .toast-notification.info {
-    background: linear-gradient(135deg, rgb(29, 78, 216) 0%, rgb(30, 64, 175) 100%);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-}
-
-.toast-notification.warning {
-    background: linear-gradient(135deg, rgb(245, 158, 11) 0%, rgb(217, 119, 6) 100%);
-    color: white;
-}
-
-.dark .toast-notification.warning {
-    background: linear-gradient(135deg, rgb(217, 119, 6) 0%, rgb(180, 83, 9) 100%);
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
-}
-
-.toast-icon {
-    flex-shrink: 0;
-    margin-right: 0.75rem;
-    font-size: 1.25rem;
-}
-
-.toast-message {
-    flex: 1;
-    font-size: 0.875rem;
-    font-weight: 500;
-}
-
-.toast-close {
-    flex-shrink: 0;
-    margin-left: 0.75rem;
-    background: transparent;
-    border: none;
-    color: white;
-    font-size: 1.5rem;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.8;
-    padding: 0;
-    width: 1.5rem;
-    height: 1.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity 0.2s ease-in-out;
-}
-
-.toast-close:hover {
-    opacity: 1;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateX(100%);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-
-/* Confirmation Modal - Cart Delete Confirmation */
-.confirmation-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 99999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(4px);
-    animation: fadeIn 0.2s ease-out;
-    padding: 1rem;
-}
-
-.dark .confirmation-modal {
-    background-color: rgba(0, 0, 0, 0.85);
-}
-
-.confirmation-modal-content {
-    background-color: white;
-    border-radius: 0.75rem;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    max-width: 28rem;
-    width: 100%;
-    overflow: hidden;
-    animation: modalSlideIn 0.3s ease-out;
-}
-
-.dark .confirmation-modal-content {
-    background-color: rgb(31, 41, 55); /* gray-800 */
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-}
-
-.confirmation-modal-header {
-    display: flex;
-    align-items: center;
-    padding: 1.5rem;
-    border-bottom: 1px solid rgb(229, 231, 235); /* gray-200 */
-}
-
-.dark .confirmation-modal-header {
-    border-bottom-color: rgb(55, 65, 81); /* gray-700 */
-}
-
-.confirmation-modal-icon {
-    flex-shrink: 0;
-    width: 3rem;
-    height: 3rem;
-    border-radius: 50%;
-    background: linear-gradient(135deg, rgb(254, 226, 226) 0%, rgb(254, 202, 202) 100%); /* red-100 to red-200 */
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 1rem;
-}
-
-.dark .confirmation-modal-icon {
-    background: linear-gradient(135deg, rgb(127, 29, 29) 0%, rgb(153, 27, 27) 100%); /* red-900 to red-800 */
-}
-
-.confirmation-modal-icon i {
-    color: rgb(220, 38, 38); /* red-600 */
-    font-size: 1.5rem;
-}
-
-.dark .confirmation-modal-icon i {
-    color: rgb(248, 113, 113); /* red-400 */
-}
-
-.confirmation-modal-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: rgb(17, 24, 39); /* gray-900 */
-    margin: 0;
-}
-
-.dark .confirmation-modal-title {
-    color: rgb(243, 244, 246); /* gray-100 */
-}
-
-.confirmation-modal-body {
-    padding: 1.5rem;
-    color: rgb(55, 65, 81); /* gray-700 */
-    font-size: 0.9375rem;
-    line-height: 1.625;
-}
-
-.dark .confirmation-modal-body {
-    color: rgb(209, 213, 219); /* gray-300 */
-}
-
-.confirmation-modal-body strong {
-    color: rgb(17, 24, 39); /* gray-900 */
-    font-weight: 600;
-}
-
-.dark .confirmation-modal-body strong {
-    color: rgb(243, 244, 246); /* gray-100 */
-}
-
-.confirmation-modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1.25rem 1.5rem;
-    background-color: rgb(249, 250, 251); /* gray-50 */
-}
-
-.dark .confirmation-modal-footer {
-    background-color: rgb(17, 24, 39); /* gray-900 */
-}
-
-.confirmation-modal-footer .btn-cancel {
-    padding: 0.625rem 1.25rem;
-    background-color: white;
-    border: 1px solid rgb(209, 213, 219); /* gray-300 */
-    border-radius: 0.375rem;
-    color: rgb(55, 65, 81); /* gray-700 */
-    font-weight: 500;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
-}
-
-.dark .confirmation-modal-footer .btn-cancel {
-    background-color: rgb(55, 65, 81); /* gray-700 */
-    border-color: rgb(75, 85, 99); /* gray-600 */
-    color: rgb(229, 231, 235); /* gray-200 */
-}
-
-.confirmation-modal-footer .btn-cancel:hover {
-    background-color: rgb(249, 250, 251); /* gray-50 */
-    border-color: rgb(156, 163, 175); /* gray-400 */
-}
-
-.dark .confirmation-modal-footer .btn-cancel:hover {
-    background-color: rgb(75, 85, 99); /* gray-600 */
-    border-color: rgb(107, 114, 128); /* gray-500 */
-}
-
-.confirmation-modal-footer .btn-cancel:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
-}
-
-.dark .confirmation-modal-footer .btn-cancel:focus {
-    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.5);
-}
-
-.confirmation-modal-footer .btn-confirm {
-    padding: 0.625rem 1.25rem;
-    background: linear-gradient(135deg, rgb(220, 38, 38) 0%, rgb(185, 28, 28) 100%); /* red-600 to red-700 */
-    border: 1px solid rgb(220, 38, 38);
-    border-radius: 0.375rem;
-    color: white;
-    font-weight: 500;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
-}
-
-.dark .confirmation-modal-footer .btn-confirm {
-    background: linear-gradient(135deg, rgb(185, 28, 28) 0%, rgb(153, 27, 27) 100%); /* red-700 to red-800 */
-    border-color: rgb(185, 28, 28);
-}
-
-.confirmation-modal-footer .btn-confirm:hover {
-    background: linear-gradient(135deg, rgb(185, 28, 28) 0%, rgb(153, 27, 27) 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-.dark .confirmation-modal-footer .btn-confirm:hover {
-    background: linear-gradient(135deg, rgb(153, 27, 27) 0%, rgb(127, 29, 29) 100%);
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-}
-
-.confirmation-modal-footer .btn-confirm:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.5);
-}
-
-.dark .confirmation-modal-footer .btn-confirm:focus {
-    box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.5);
-}
-
-/* NFO Modal Styles */
-#nfoModal {
-    display: none;
-}
-
-#nfoModal.hidden {
-    display: none !important;
-}
-
-#nfoModal:not(.hidden) {
-    display: block;
-}
-
-/* Header Dropdown Menu Styles - Prevent flash on page load */
-.dropdown-menu {
-    display: none;
-}
-
-.confirmation-modal-footer .btn-confirm:active {
-    transform: translateY(0);
-}
-
-@keyframes modalSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-20px) scale(0.95);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-@keyframes fadeOut {
-    from {
-        opacity: 1;
-    }
-    to {
-        opacity: 0;
-    }
-}
-
-/* Mobile responsiveness for confirmation modal */
-@media (max-width: 640px) {
-    .confirmation-modal-content {
-        margin: 0 1rem;
-    }
-
-    .confirmation-modal-header {
-        padding: 1.25rem 1rem;
-    }
-
-    .confirmation-modal-body {
-        padding: 1.25rem 1rem;
-    }
-
-    .confirmation-modal-footer {
-        padding: 1rem;
-        flex-direction: column-reverse;
-    }
-
-    .confirmation-modal-footer .btn-cancel,
-    .confirmation-modal-footer .btn-confirm {
-        width: 100%;
-        justify-content: center;
-    }
-}
-
-/* Tmux Edit - Remove Crap Types Container Styles */
-#crap_types_container {
-    transition: opacity 0.3s ease, display 0.3s ease;
-}
 
 /* Checkbox hover effects for crap types */
 .hover\:bg-gray-100:hover {
@@ -587,73 +146,10 @@ code.api-token::-webkit-scrollbar-thumb:hover {
     font-size: 1.125rem; /* 18px */
 }
 
-/* Admin Theme Selector Styles */
-.admin-theme-selector .theme-option {
-    border-color: rgb(55, 65, 81); /* gray-700 */
-    background-color: rgba(31, 41, 55, 0.5); /* gray-800/50 */
-}
-
-.admin-theme-selector .theme-option:hover {
-    background-color: rgb(31, 41, 55); /* gray-800 */
-}
-
-.admin-theme-selector .theme-option.theme-option-active {
-    border-color: rgb(59, 130, 246); /* blue-500 */
-    background-color: rgba(30, 64, 175, 0.3); /* blue-900/30 */
-}
-
-/* Fallback for browsers that support :has() */
-.admin-theme-selector .theme-option:has(.theme-radio:checked) {
-    border-color: rgb(59, 130, 246); /* blue-500 */
-    background-color: rgba(30, 64, 175, 0.3); /* blue-900/30 */
-}
-
-/* User Area Theme Selector Styles (for consistency) */
-.theme-option {
-    border-color: rgb(209, 213, 219); /* gray-300 */
-    background-color: rgb(249, 250, 251); /* gray-50 */
-}
-
-.dark .theme-option {
-    border-color: rgb(75, 85, 99); /* gray-600 */
-    background-color: rgb(55, 65, 81); /* gray-700 */
-}
-
-.theme-option:hover {
-    background-color: rgb(243, 244, 246); /* gray-100 */
-}
-
-.dark .theme-option:hover {
-    background-color: rgb(31, 41, 55); /* gray-800 */
-}
-
-.theme-option.theme-option-active {
-    border-color: rgb(59, 130, 246); /* blue-500 */
-    background-color: rgb(239, 246, 255); /* blue-50 */
-}
-
-.dark .theme-option.theme-option-active {
-    background-color: rgba(30, 64, 175, 0.2); /* blue-900/20 */
-}
-
-/* Fallback for browsers that support :has() */
-.theme-option:has(.theme-radio:checked) {
-    border-color: rgb(59, 130, 246); /* blue-500 */
-    background-color: rgb(239, 246, 255); /* blue-50 */
-}
-
-.dark .theme-option:has(.theme-radio:checked) {
-    background-color: rgba(30, 64, 175, 0.2); /* blue-900/20 */
-}
-
 /* Group Selection Styles */
 .group-checkbox {
     cursor: pointer;
     transition: all 0.15s ease-in-out;
-}
-
-.group-row.selected {
-    background-color: rgba(59, 130, 246, 0.1); /* blue-500/10 */
 }
 
 .group-row {
@@ -668,10 +164,6 @@ code.api-token::-webkit-scrollbar-thumb:hover {
     background-color: color-mix(in srgb, var(--color-primary-800) 55%, transparent);
 }
 
-.dark .group-row.selected {
-    background-color: rgba(59, 130, 246, 0.15); /* blue-500/15 */
-}
-
 /* Indeterminate checkbox styling */
 #select-all-groups:indeterminate {
     background-color: rgb(156, 163, 175); /* gray-400 */
@@ -681,34 +173,6 @@ code.api-token::-webkit-scrollbar-thumb:hover {
 .dark #select-all-groups:indeterminate {
     background-color: rgb(107, 114, 128); /* gray-500 */
     border-color: rgb(107, 114, 128);
-}
-
-/* Reset selected modal list styling */
-#reset-selected-list {
-    max-height: 150px;
-    overflow-y: auto;
-}
-
-#reset-selected-list::-webkit-scrollbar {
-    width: 6px;
-}
-
-#reset-selected-list::-webkit-scrollbar-track {
-    background: rgb(243, 244, 246); /* gray-100 */
-    border-radius: 3px;
-}
-
-.dark #reset-selected-list::-webkit-scrollbar-track {
-    background: rgb(55, 65, 81); /* gray-700 */
-}
-
-#reset-selected-list::-webkit-scrollbar-thumb {
-    background: rgb(156, 163, 175); /* gray-400 */
-    border-radius: 3px;
-}
-
-.dark #reset-selected-list::-webkit-scrollbar-thumb {
-    background: rgb(107, 114, 128); /* gray-500 */
 }
 
 /* Sidebar - Useful Links Content Styling */
@@ -800,28 +264,6 @@ code.api-token::-webkit-scrollbar-thumb:hover {
 .useful-link-content pre code {
     background-color: transparent;
     padding: 0;
-}
-
-/* ------------------------------------------------------------------ */
-/* Detail pages: shared card and image shadows                        */
-/* ------------------------------------------------------------------ */
-
-.series-detail-page {
-    @apply shadow-md;
-}
-
-.series-detail-page .series-main-card,
-.series-detail-page .series-episodes-card {
-    @apply shadow-md;
-}
-
-.series-detail-page .series-stat-card,
-.series-detail-page .series-episode-card {
-    @apply shadow-sm hover:shadow-md transition-shadow duration-300;
-}
-
-.series-detail-page .series-detail-poster {
-    @apply rounded-xl shadow-xl transition-shadow duration-300;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1014,7 +456,7 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 /* Account and home share the public page scale. */
 .account-page, .home-dashboard { --account-muted: var(--text-muted); --account-border: var(--border-default); min-width: 0; font-size: 13px; }
 .dark .account-page, .dark .home-dashboard { --account-muted: var(--text-muted-dark); --account-border: var(--border-default-dark); }
-.account-page > .page-header, .home-dashboard > .page-header { padding: 0 0 16px; }
+.account-page > .page-header { padding: 0 0 16px; }
 .account-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; }
 .account-sections { padding: 8px; align-self: start; }
 .account-sections a { display: block; padding: 7px 10px; border-radius: 8px; font-size: 13px; color: var(--account-muted); }
@@ -1099,9 +541,6 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 @media (max-width: 700px) {
     .public-page { width: calc(100% - 24px); max-width: calc(100% - 24px); }
 }
-
-.tv-directory-pager { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; font-size: 14px; }
-.tv-directory-pager [aria-current] { font-weight: 700; text-decoration: underline; }
 
 .public-header .public-nav-item, .public-menu a, .public-menu-signout, .public-menu .public-menu-root,
 .public-header .public-search .public-search-input { font-size: 14px; }

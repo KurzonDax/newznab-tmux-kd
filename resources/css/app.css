@@ -43,12 +43,8 @@
     --surface-chrome-border: rgb(23 24 28 / 6%);
     --surface-chrome-border-dark: rgb(244 244 246 / 6%);
     /* Rows are hairline-divided, not filled. */
-    --surface-release-row: transparent;
-    --surface-release-row-dark: transparent;
     --border-default: #d3d3cb;
     --border-default-dark: #2b2f3a;
-    --border-release-row: #d3d3cb;
-    --border-release-row-dark: #2b2f3a;
 
     /* Text */
     --text-default: #17181c;
@@ -244,7 +240,6 @@
 /* Theme customization (replaces theme.extend in tailwind.config.js) */
 @theme {
     --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-    --radius-card: 0.75rem;
     /* Coral, the only accent: pinned at 500 and 700, derived in OKLCH at their hue. */
     --color-primary-50: #fef3f0;
     --color-primary-100: #fde7e2;
@@ -309,19 +304,11 @@ body {
     background-color: var(--surface-sidebar-dark);
 }
 /* Header bar and the nav inside it */
-header.surface-header,
-header.surface-header nav {
+header.surface-header {
     background-color: var(--surface-header);
 }
-.dark header.surface-header,
-.dark header.surface-header nav {
+.dark header.surface-header {
     background-color: var(--surface-header-dark);
-}
-.dropdown-menu {
-    background-color: var(--surface-dropdown);
-}
-.dark .dropdown-menu {
-    background-color: var(--surface-dropdown-dark);
 }
 footer {
     background-color: var(--surface-footer);
@@ -365,10 +352,6 @@ footer {
 .public-ui .ui-control-icon {
     width: 36px;
     padding: 0;
-}
-
-.public-ui .ui-control-icon.ui-control-sm {
-    width: 30px;
 }
 
 .public-ui select.ui-control:not([multiple]) {
@@ -436,23 +419,6 @@ footer {
 .dark .auth-card {
     background-color: var(--surface-card-dark);
     border-color: var(--border-default-dark);
-}
-.release-chip:not([data-chip-variant]) {
-    background-color: var(--surface-panel-alt);
-    color: rgb(55 65 81);
-}
-.dark .release-chip:not([data-chip-variant]) {
-    background-color: var(--surface-panel-alt-dark);
-    color: rgb(209 213 219);
-}
-.release-action {
-    @apply inline-flex items-center justify-center rounded-lg px-2 py-1 text-sm transition;
-}
-.release-action-sm {
-    @apply inline-flex items-center justify-center rounded px-3 py-1 text-xs font-medium transition;
-}
-.release-action-muted {
-    @apply bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600;
 }
 .surface-prose {
     @apply max-w-none text-gray-700 dark:text-gray-300;
@@ -546,15 +512,6 @@ main tbody tr:hover {
         padding-right: 0.5rem;
     }
 
-    /* Mobile dropdown menus should be full width */
-    .dropdown-menu {
-        left: 0;
-        right: 0;
-        width: auto;
-        margin-left: 0.5rem;
-        margin-right: 0.5rem;
-    }
-
     /* Smaller font sizes for headings on mobile */
     h1 {
         font-size: 1.5rem;
@@ -577,24 +534,6 @@ main tbody tr:hover {
         min-width: 44px;
     }
 
-    /* Mobile-optimized badges and labels */
-    .badge {
-        font-size: 0.75rem;
-        line-height: 1rem;
-        padding: 0.25rem 0.5rem;
-    }
-
-    /* Make pagination more compact */
-    .pagination {
-        font-size: 0.875rem;
-        line-height: 1.25rem;
-    }
-
-    .pagination .page-link {
-        padding: 0.25rem 0.5rem;
-        min-width: 2rem;
-    }
-
     /* Improve form labels */
     label {
         font-size: 0.875rem;
@@ -607,12 +546,6 @@ main tbody tr:hover {
         font-size: 0.875rem;
         line-height: 1.25rem;
         padding: 0.5rem 0.75rem;
-    }
-
-    /* Compact breadcrumbs */
-    .breadcrumb {
-        font-size: 0.75rem;
-        line-height: 1rem;
     }
 
 }
@@ -643,28 +576,11 @@ main tbody tr:hover {
     }
 
     /* Smaller fixed buttons */
-    #mobile-sidebar-toggle,
     #theme-toggle {
         padding: 0.5rem;
         font-size: 0.875rem;
         line-height: 1.25rem;
     }
-}
-
-/* Modal visibility helper */
-.modal-hidden {
-    display: none;
-}
-
-/* Search highlight styling */
-.search-highlight,
-mark {
-    @apply bg-yellow-200 px-0.5 rounded;
-}
-
-.dark .search-highlight,
-.dark mark {
-    @apply bg-yellow-700;
 }
 
 /* Public flash and action notifications. */
@@ -774,8 +690,6 @@ mark {
 .dark .public-modal-header { border-color: var(--border-default-dark); }
 .public-modal-icon { font-size: 13px; line-height: 20px; }
 .public-modal-title { font-size: 13px; line-height: 20px; font-weight: 600; }
-.public-modal-subtitle { font-size: 12px; line-height: 18px; color: var(--text-muted); word-break: break-all; }
-.dark .public-modal-subtitle { color: var(--text-muted-dark); }
 .public-modal-close { flex-shrink: 0; width: 30px; height: 30px; }
 .public-modal-body { min-height: 0; overflow: auto; padding: 16px; font-size: 13px; }
 .public-modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; padding: 10px 16px; border-radius: 0 0 12px 12px; }
@@ -825,7 +739,6 @@ mark {
 :root {
     --public-surface-hover: color-mix(in srgb, var(--surface-card), black 6%);
     --public-surface-hover-dark: color-mix(in srgb, var(--surface-card-dark), white 10%);
-    --public-scrim: rgb(2 6 23 / 45%);
 }
 /* Release facts, origin links and entity links share one compact scale. */
 .release-chip {
@@ -845,26 +758,9 @@ mark {
 }
 
 .release-chip i { font-size: 11px; margin: 0; }
-.release-chip-pill { height: 22px; border-radius: 9999px; }
 a.release-chip, button.release-chip { cursor: pointer; }
 a.release-chip:hover, button.release-chip:hover { filter: brightness(.95); }
 a.release-chip:focus-visible, button.release-chip:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 2px; }
-
-.release-chip[data-chip-variant="entity"] {
-    background-color: color-mix(in srgb, var(--color-primary-500) 12%, var(--surface-panel-alt));
-    border-color: color-mix(in srgb, var(--color-primary-500) 35%, var(--border-default));
-}
-.dark .release-chip[data-chip-variant="entity"] {
-    background-color: color-mix(in srgb, var(--color-primary-500) 12%, var(--surface-body-dark));
-    border-color: color-mix(in srgb, var(--color-primary-500) 35%, var(--border-default-dark));
-}
-a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
-    border-color: var(--color-primary-400);
-    color: var(--color-primary-700);
-}
-.dark a.release-chip:is([data-chip-variant="origin"], [data-chip-variant="entity"]):hover {
-    color: var(--color-primary-300);
-}
 
 /* x-chip tones of the redesigned release rows: tinted ground + coloured text, never the accent. */
 .chip-tone-media { background-color: var(--chip-media-bg); color: var(--chip-media-fg); }

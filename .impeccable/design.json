@@ -67,11 +67,6 @@
         "displayName": "Muted Text",
         "note": "Secondary copy and metadata. #5c606b / #a4a8b4; at least 4.5:1 on the page ground and on a card."
       },
-      "surface-release-row": {
-        "role": "neutral",
-        "displayName": "Release Row",
-        "note": "Transparent: rows are hairline-divided (border-release-row = border-default), not filled."
-      },
       "chips": {
         "role": "status",
         "displayName": "Chip tokens",

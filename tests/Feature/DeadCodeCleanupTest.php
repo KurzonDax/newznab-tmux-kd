@@ -464,6 +464,81 @@ final class DeadCodeCleanupTest extends TestCase
         $this->assertStringContainsString('account-view-preferences', $this->source('resources/views/invitations/index.blade.php'));
     }
 
+    public function test_section_d_stylesheets_hold_no_rule_property_or_keyframes_nothing_reaches_and_keep_the_live_neighbours(): void
+    {
+        $sheets = [];
+        foreach (['app.css', 'csp-safe.css', 'tv.css', 'media-info.css'] as $name) {
+            $css = preg_replace('~/\*.*?\*/~s', '', $this->source('resources/css/'.$name));
+            $this->assertIsString($css, $name);
+            $sheets[$name] = $css;
+        }
+
+        foreach ($sheets as $name => $css) {
+            // a class is named when "." plus the name is followed by anything but a letter, a digit, "-" or "_"
+            foreach ([
+                'admin-theme-selector', 'api-token', 'badge', 'breadcrumb', 'btn-cancel', 'btn-confirm', 'confirmation-modal',
+                'confirmation-modal-body', 'confirmation-modal-content', 'confirmation-modal-footer', 'confirmation-modal-header',
+                'confirmation-modal-icon', 'confirmation-modal-title', 'dropdown-menu', 'hidden-by-default', 'metric-updated', 'modal-hidden',
+                'page-link', 'pagination', 'public-modal-subtitle', 'quick-link-item', 'release-action', 'release-action-muted',
+                'release-action-sm', 'release-chip-pill', 'search-highlight', 'series-detail-page', 'series-detail-poster',
+                'series-episode-card', 'series-episodes-card', 'series-main-card', 'series-stat-card', 'tab-content', 'theme-option',
+                'theme-option-active', 'theme-radio', 'toast-close', 'toast-icon', 'toast-message', 'toast-notification', 'tv-directory-pager',
+            ] as $class) {
+                $this->assertDoesNotMatchRegularExpression('/\.'.preg_quote($class, '/').'[^A-Za-z0-9_-]/', $css, $name.' .'.$class);
+            }
+            // an id likewise, with "#"
+            foreach ([
+                'crap_types_container', 'mobile-sidebar-toggle', 'nfoModal', 'recent-activity-container', 'reset-selected-list', 'toast-container',
+            ] as $id) {
+                $this->assertDoesNotMatchRegularExpression('/#'.preg_quote($id, '/').'[^A-Za-z0-9_-]/', $css, $name.' #'.$id);
+            }
+            $this->assertContainsNone([
+                '.group-row.selected', '.checkbox-menu.is-fixed', '.ui-control-icon.ui-control-sm', ':not([data-chip-variant])',
+                'data-chip-variant="entity"', 'data-chip-variant="origin"', 'header.surface-header nav', '.home-dashboard > .page-header',
+                'release-action', '--surface-release-row', '--border-release-row', '--public-scrim', '--radius-card', 'fadeOut', 'slideIn',
+                'modalSlideIn',
+            ], $css, $name);
+            // no "mark" type selector: the word at the start of a selector or after a space or comma, then "," or "{"
+            $this->assertDoesNotMatchRegularExpression('/(?:^|[\s,}])mark\s*[,{]/', $css, $name.' mark');
+            // no at-rule block with nothing between its braces
+            $this->assertDoesNotMatchRegularExpression('/@[^{};]*\{\s*\}/', $css, $name.' empty at-rule block');
+        }
+
+        $this->assertContainsAll([
+            'header.surface-header {', '.dark header.surface-header {', '#theme-toggle {', '.account-page > .page-header {',
+            '.public-ui .ui-control-icon {', '.public-ui .ui-control-sm {', '.release-chip {', 'a.release-chip, button.release-chip',
+            '.public-modal-title', '.public-modal-header', '.breadcrumb-list', '.touch-target', '.alert {', '.container {',
+            '--public-surface-hover:', '.group-row {', '.group-row.group-row-updated', '[data-metric] {', '.activity-item',
+            '@keyframes fadeIn', '@keyframes pulse', '.dark .mediainfo-message', '.details-comment', '#select-all-groups:indeterminate',
+            '.pager-line.is-fixed .pager-line-page', '.checkbox-menu.is-set',
+        ], implode("\n", $sheets));
+    }
+
+    public function test_section_d_design_records_no_longer_name_the_removed_styles(): void
+    {
+        // D7
+        $design = json_decode($this->source('.impeccable/design.json'), true, 512, JSON_THROW_ON_ERROR);
+        $this->assertIsArray($design);
+        $this->assertIsArray($design['extensions']['colorMeta'] ?? null);
+        $this->assertArrayHasKey('text-muted', $design['extensions']['colorMeta']);
+        // every key of the document, at any depth
+        $keys = [];
+        $collect = function (array $node) use (&$collect, &$keys): void {
+            foreach ($node as $key => $value) {
+                $keys[] = (string) $key;
+                if (is_array($value)) {
+                    $collect($value);
+                }
+            }
+        };
+        $collect($design);
+        $this->assertNotContains('surface-release-row', $keys);
+
+        foreach (['DESIGN.md', '.ai/rules/resources.md'] as $record) {
+            $this->assertContainsNone(['release-row', 'radius-card', 'release-action'], $this->source($record), $record);
+        }
+    }
+
     public function test_section_e_class_files_nothing_uses_are_gone(): void
     {
         foreach ([
