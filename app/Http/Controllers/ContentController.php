@@ -146,16 +146,6 @@ class ContentController extends BasePageController
     }
 
     /**
-     * Get all active content ordered by type and ordinal.
-     *
-     * @return Collection<int, mixed>
-     */
-    protected function getActiveContent(): Collection
-    {
-        return Content::active()->ordered()->get();
-    }
-
-    /**
      * Get all content except the front page.
      *
      * @return Collection<int, mixed>

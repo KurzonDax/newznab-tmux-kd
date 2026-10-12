@@ -271,24 +271,4 @@ class InvitationController extends BasePageController
 
         return response()->json($stats);
     }
-
-    /**
-     * Clean up expired invitations (admin only)
-     */
-    public function cleanup(): JsonResponse
-    {
-        // Check if user is admin
-        /** @var User|null $user */
-        $user = Auth::user();
-        if (! $user?->hasRole('Admin')) {
-            abort(403, 'Unauthorized');
-        }
-
-        $cleanedCount = $this->invitationService->cleanupExpiredInvitations();
-
-        return response()->json([
-            'message' => "Cleaned up {$cleanedCount} expired invitations",
-            'count' => $cleanedCount,
-        ]);
-    }
 }

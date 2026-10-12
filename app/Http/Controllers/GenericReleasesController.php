@@ -33,7 +33,7 @@ final class GenericReleasesController extends BasePageController
         parent::__construct();
     }
 
-    /** All releases; `?group=` reads as today's group input, `?poster=` byte for byte from the raw query string (ReleaseBrowserState). */
+    /** All releases; `?group=` reads as today's group input, `?poster=` byte for byte from the raw query string. */
     public function all(Request $request): View|RedirectResponse
     {
         $poster = self::rawQuery($request, 'poster');
@@ -121,7 +121,7 @@ final class GenericReleasesController extends BasePageController
         return view($request->query('_fragment') === 'list' ? 'generic.releases.list' : 'generic.releases.index', $data);
     }
 
-    /** A query value byte for byte, before the request's trimming (ReleaseBrowserState::fromRequest()). */
+    /** A query value byte for byte, before the request's trimming. */
     private static function rawQuery(Request $request, string $key): string
     {
         parse_str((string) $request->server('QUERY_STRING', ''), $query);

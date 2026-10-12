@@ -7,9 +7,7 @@ namespace App\Support\Auth;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 
 trait ThrottlesLogins
 {
@@ -31,25 +29,6 @@ trait ThrottlesLogins
         $this->limiter()->hit(
             $this->throttleKey($request), $this->decayMinutes() * 60
         );
-    }
-
-    /**
-     * Redirect the user after determining they are locked out.
-     *
-     * @throws ValidationException
-     */
-    protected function sendLockoutResponse(Request $request): never
-    {
-        $seconds = $this->limiter()->availableIn(
-            $this->throttleKey($request)
-        );
-
-        throw ValidationException::withMessages([
-            $this->username() => [trans('auth.throttle', [
-                'seconds' => $seconds,
-                'minutes' => (int) ceil($seconds / 60),
-            ])],
-        ])->status(Response::HTTP_TOO_MANY_REQUESTS);
     }
 
     /**

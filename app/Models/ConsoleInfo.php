@@ -102,48 +102,4 @@ class ConsoleInfo extends Model
     {
         return $this->hasMany(Release::class, 'consoleinfo_id');
     }
-
-    // ========================================
-    // Query Scopes
-    // ========================================
-
-    /**
-     * Scope a query to only include consoles with covers.
-     */
-    public function scopeWithCover(mixed $query): mixed
-    {
-        return $query->where('cover', 1);
-    }
-
-    /**
-     * Scope a query to only include consoles for a specific platform.
-     */
-    public function scopeForPlatform(mixed $query, string $platform): mixed
-    {
-        return $query->where('platform', $platform);
-    }
-
-    // ========================================
-    // Static Helper Methods
-    // ========================================
-
-    /**
-     * Get console info by ID with genre.
-     */
-    public static function getWithGenre(int $id): ?self
-    {
-        return static::query()
-            ->where('consoleinfo.id', $id)
-            ->select('consoleinfo.*', 'genres.title as genres')
-            ->leftJoin('genres', 'genres.id', '=', 'consoleinfo.genres_id')
-            ->first();
-    }
-
-    /**
-     * Find by ASIN.
-     */
-    public static function findByAsin(string $asin): ?self
-    {
-        return static::where('asin', $asin)->first();
-    }
 }

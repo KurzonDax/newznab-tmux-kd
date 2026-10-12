@@ -17,10 +17,7 @@ final class ReleaseBrowserQuery
 
     public function matchingQuery(ReleaseBrowserState $state, User $user): Builder
     {
-        $query = $this->baseQuery($state, $user);
-        $this->metadata->filter($query, $state->root, $state->filters);
-
-        return $query;
+        return $this->baseQuery($state, $user);
     }
 
     private function baseQuery(ReleaseBrowserState $state, User $user): Builder
@@ -34,19 +31,11 @@ final class ReleaseBrowserQuery
         if ($state->minCompletion > 0) {
             $query->where('r.completion', '>=', $state->minCompletion);
         }
-        if ($state->categoryId !== null) {
-            $query->where('r.categories_id', $state->categoryId);
-        } elseif ($state->root->categoryId() !== null) {
+        if ($state->root->categoryId() !== null) {
             $query->whereIn('r.categories_id', DB::table('categories')->select('id')->where('root_categories_id', $state->root->categoryId()));
         }
         if ($state->group !== '') {
             $query->whereIn('r.groups_id', DB::table('usenet_groups')->select('id')->where('name', $state->group));
-        }
-        if ($state->posterIdentity !== '') {
-            $query->where('r.fromname', $state->posterIdentity);
-            if (DB::getDriverName() !== 'sqlite') {
-                $query->whereRaw('BINARY r.fromname = BINARY ?', [$state->posterIdentity]);
-            }
         }
         if ($state->watching) {
             $query->where(function (Builder $watched) use ($state, $user): void {
@@ -74,18 +63,8 @@ final class ReleaseBrowserQuery
                 }
             });
         }
-        $displayName = $this->displayName();
-        if ($state->query !== '') {
-            $pattern = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $state->query).'%';
-            $query->whereRaw($displayName." LIKE ? ESCAPE '!'", [$pattern]);
-        }
         $this->metadata->join($query, $state->root);
 
         return $query;
-    }
-
-    private function displayName(): string
-    {
-        return "COALESCE(NULLIF(TRIM(r.display_name), ''), r.searchname)";
     }
 }

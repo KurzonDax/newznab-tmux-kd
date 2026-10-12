@@ -13,11 +13,6 @@ enum ReleaseSort: string
     case Name = 'title';
     case Grabs = 'grabs';
 
-    public static function resolve(mixed $value): self
-    {
-        return is_string($value) ? (self::tryFrom($value) ?? self::AddedNewest) : self::AddedNewest;
-    }
-
     /** @return array{string, string} */
     public function order(): array
     {

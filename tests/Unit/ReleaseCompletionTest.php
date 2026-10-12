@@ -86,6 +86,24 @@ class ReleaseCompletionTest extends TestCase
         $this->assertSame(100, ReleaseCompletion::normalizeThreshold(100));
     }
 
+    public function test_the_four_accepted_thresholds_are_a_plain_list_and_the_legacy_pending_label_is_gone(): void
+    {
+        foreach ([80, 95, 100] as $accepted) {
+            $this->assertSame($accepted, ReleaseCompletion::normalizeThreshold($accepted));
+            $this->assertSame($accepted, ReleaseCompletion::normalizeThreshold((string) $accepted));
+        }
+        foreach ([0, 81, 'abc', null, '0', 1, 2, 3, 79, 96, 99, 101, -80, [], [80], true, false, ''] as $other) {
+            $this->assertSame(0, ReleaseCompletion::normalizeThreshold($other), var_export($other, true));
+        }
+        // a numeric input is read as its whole part, as before
+        $this->assertSame(80, ReleaseCompletion::normalizeThreshold('80.9'));
+        $this->assertSame(95, ReleaseCompletion::normalizeThreshold(95.5));
+        $this->assertSame(100, ReleaseCompletion::normalizeThreshold('1e2'));
+        $this->assertSame(0, ReleaseCompletion::normalizeThreshold(79.99));
+        $this->assertSame([0, 80, 95, 100], ReleaseCompletion::THRESHOLDS);
+        $this->assertFalse((new \ReflectionClass(ReleaseCompletion::class))->hasConstant('PENDING_LABEL'));
+    }
+
     /** An 80% release with an NZB. */
     private function row(array $overrides = []): object
     {

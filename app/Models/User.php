@@ -124,7 +124,6 @@ use Spatie\Permission\Traits\HasRoles;
  * @method static Builder|User active()
  * @method static Builder|User verified()
  * @method static Builder|User withRole(int|string $role)
- * @method static Builder|User expiringSoon(int $days = 7)
  * @method static Builder|User expired()
  */
 final class User extends Authenticatable implements CanResetPasswordContract, HasPasskeys, MustVerifyEmailContract
@@ -206,13 +205,10 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         ];
     }
 
-    /** @return array{view: string, size: string, per: int, thumbs: bool, sort?: string, filters?: mixed, filters_at?: int} */
+    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string, filters?: mixed, filters_at?: int} */
     public function releaseViewPreferences(string $root): array
     {
-        return array_replace(
-            ['view' => 'table', 'size' => 's', 'per' => 48, 'thumbs' => false],
-            $this->view_prefs[$root] ?? [],
-        );
+        return $this->view_prefs[$root] ?? [];
     }
 
     public function getPasskeyName(): string
@@ -363,11 +359,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         return $this->invitations();
     }
 
-    public function failedRelease(): HasMany // @phpstan-ignore missingType.generics
-    {
-        return $this->failedReleases();
-    }
-
     public function comment(): HasMany // @phpstan-ignore missingType.generics
     {
         return $this->comments();
@@ -461,18 +452,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     }
 
     /**
-     * Scope to get users with roles expiring within specified days.
-     *
-     * @param  Builder<User>  $query
-     * @return Builder<User>
-     */
-    public function scopeExpiringSoon(Builder $query, int $days = 7): Builder
-    {
-        return $query->whereNotNull('rolechangedate')
-            ->whereBetween('rolechangedate', [now(), now()->addDays($days)]);
-    }
-
-    /**
      * Scope to get users with expired roles.
      *
      * @param  Builder<User>  $query
@@ -504,16 +483,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     {
         return Attribute::make(
             get: fn (): string => trim("{$this->firstname} {$this->lastname}") ?: $this->username,
-        );
-    }
-
-    /**
-     * Get the user's timezone or default.
-     */
-    protected function effectiveTimezone(): Attribute // @phpstan-ignore missingType.generics
-    {
-        return Attribute::make(
-            get: fn (): string => $this->timezone ?? 'UTC',
         );
     }
 
@@ -578,36 +547,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     {
         return Attribute::make(
             get: fn (): ?string => $this->getCountryFromIp()['country'] ?? null,
-        );
-    }
-
-    /**
-     * Get country flag emoji from country code.
-     * Converts 2-letter country code to Unicode regional indicator symbols.
-     */
-    protected function countryFlag(): Attribute // @phpstan-ignore missingType.generics
-    {
-        return Attribute::make(
-            get: function (): ?string {
-                $countryCode = $this->getCountryFromIp()['countryCode'] ?? null;
-
-                if (empty($countryCode) || strlen($countryCode) !== 2) {
-                    return null;
-                }
-
-                // Convert country code to regional indicator symbols (flag emoji)
-                // Each letter is converted to its regional indicator equivalent
-                // A = 🇦 (U+1F1E6), B = 🇧 (U+1F1E7), etc.
-                $countryCode = strtoupper($countryCode);
-                $flag = '';
-
-                for ($i = 0; $i < 2; $i++) {
-                    $char = ord($countryCode[$i]) - ord('A') + 0x1F1E6;
-                    $flag .= mb_chr($char, 'UTF-8');
-                }
-
-                return $flag;
-            },
         );
     }
 
@@ -800,27 +739,11 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     }
 
     /**
-     * Find user by username.
-     */
-    public static function findByUsername(string $username): ?static
-    {
-        return self::whereUsername($username)->first();
-    }
-
-    /**
      * Find user by email.
      */
     public static function findByEmail(string $email): ?static
     {
-        return static::whereEmail($email)->first();
-    }
-
-    /**
-     * Find user by RSS token.
-     */
-    public static function findByRssToken(string $token): ?static
-    {
-        return static::whereApiToken($token)->first();
+        return self::whereEmail($email)->first();
     }
 
     /**
@@ -855,16 +778,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     }
 
     // ===== User Management Methods =====
-
-    /**
-     * Delete user by ID.
-     *
-     * @throws \Exception
-     */
-    public static function deleteUser(int $id): void
-    {
-        static::findOrFail($id)->delete();
-    }
 
     /**
      * Update user details.
@@ -1488,37 +1401,11 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     // ===== Password Methods =====
 
     /**
-     * Verify password and rehash if needed.
-     */
-    public static function checkPassword(string $password, string $hash, int $userId = -1): bool
-    {
-        if (! Hash::check($password, $hash)) {
-            return false;
-        }
-
-        if ($userId > 0 && Hash::needsRehash($hash)) {
-            static::find($userId)?->update(['password' => Hash::make($password)]);
-        }
-
-        return true;
-    }
-
-    /**
      * Hash a password.
      */
     public static function hashPassword(string $password): string
     {
         return Hash::make($password);
-    }
-
-    /**
-     * Generate a secure random password.
-     *
-     * @throws \Exception
-     */
-    public static function generatePassword(int $length = 15): string
-    {
-        return Str::password($length);
     }
 
     // ===== Update Methods =====
@@ -1573,19 +1460,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         static::query()
             ->whereKey($id)
             ->increment('grabs', $num, ['lastdownload' => now()]);
-    }
-
-    // ===== Validation Methods =====
-
-    /**
-     * Validate a URL format.
-     */
-    public static function isValidUrl(string $url): bool
-    {
-        return (bool) preg_match(
-            '/^(https?|ftp):\/\/([A-Z0-9][A-Z0-9_-]*(?:\.[A-Z0-9][A-Z0-9_-]*)+):?(\d+)?\/?/i',
-            $url
-        );
     }
 
     // ===== Registration Methods =====
@@ -1806,23 +1680,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         Cache::forget(static::categoryExclusionCacheKey($this->id));
     }
 
-    /**
-     * Get excluded categories for API request.
-     *
-     * @return list<int>
-     *
-     * @throws \Exception
-     */
-    public static function getCategoryExclusionForApi(Request $request): array
-    {
-        $apiToken = $request->input('api_token') ?? $request->input('apikey');
-        $user = is_string($apiToken) && $apiToken !== ''
-            ? static::findVerifiedByApiToken($apiToken)
-            : null;
-
-        return $user ? static::getCategoryExclusionById($user->id) : [];
-    }
-
     // ===== Invitation Methods =====
 
     /**
@@ -1862,13 +1719,5 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     public static function canPost(int $userId): bool
     {
         return (bool) static::where('id', $userId)->value('can_post');
-    }
-
-    /**
-     * Get the user's timezone.
-     */
-    public function getTimezone(): string
-    {
-        return $this->timezone ?? 'UTC';
     }
 }

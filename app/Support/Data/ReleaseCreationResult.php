@@ -22,9 +22,4 @@ final class ReleaseCreationResult extends Data
     {
         return $this->added + $this->dupes;
     }
-
-    public function hasAddedReleases(): bool
-    {
-        return $this->added > 0;
-    }
 }

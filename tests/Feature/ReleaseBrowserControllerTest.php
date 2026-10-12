@@ -8,7 +8,6 @@ use App\Data\GenericReleaseFilters;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
 use App\Services\NNTP\NntpProviderPool;
-use App\Services\Releases\ReleaseRowFacts;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\SearchService;
 use Illuminate\Database\Schema\Blueprint;
@@ -277,10 +276,10 @@ final class ReleaseBrowserControllerTest extends TestCase
         }
     }
 
-    public function test_search_and_sort_apply_before_pagination_and_the_old_browser_preferences_stay_accepted(): void
+    public function test_search_and_sort_apply_before_pagination_and_the_old_browser_preferences_are_ignored(): void
     {
         $user = $this->browserUser();
-        // home, search and basket still read view, per and thumbs under all; the list itself ignores them
+        // per and thumbs are no longer stored: the post is still answered and only the sort is kept
         $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'all', 'per' => 24, 'thumbs' => true, 'sort' => 'title'])->assertOk();
         for ($index = 30; $index >= 1; $index--) {
             $this->release(sprintf('Wanted %02d', $index));
@@ -295,7 +294,22 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->assertSame('Wanted 00', $rows[0]->name);
         $this->assertSame('Wanted 23', $rows[23]->name);
         $response->assertSee('Showing 1–31 of 31 releases')->assertDontSee('Outside')->assertDontSee('data-shape', false);
-        $this->assertSame(['per' => 24, 'thumbs' => true], array_intersect_key(User::query()->findOrFail($user->id)->releaseViewPreferences('all'), ['per' => 1, 'thumbs' => 1]));
+        $stored = User::query()->findOrFail($user->id)->releaseViewPreferences('all');
+        $this->assertArrayHasKey('sort', $stored);
+        $this->assertArrayNotHasKey('per', $stored);
+        $this->assertArrayNotHasKey('thumbs', $stored);
+    }
+
+    public function test_all_releases_opens_for_a_user_with_the_old_browser_controls_stored_and_leaves_them_there(): void
+    {
+        $user = $this->browserUser();
+        $old = ['view' => 'table', 'size' => 'l', 'per' => 24, 'thumbs' => true];
+        $user->view_prefs = ['all' => $old];
+        $user->save();
+        $this->release('Invented release');
+
+        $this->actingAs(User::query()->findOrFail($user->id))->get('/browse/all')->assertOk()->assertSee('Invented release');
+        $this->assertSame($old, array_intersect_key(User::query()->findOrFail($user->id)->view_prefs['all'], $old));
     }
 
     public function test_table_renders_one_escaped_row_with_the_date_and_the_two_by_two_actions(): void
@@ -604,27 +618,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $this->actingAs($this->browserUser());
         $this->get('/myshows/browse?q=Followed&watching=0')->assertRedirect('/browse/tv?q=Followed&watching=1');
         $this->get('/browse/tv?q=Followed&watching=1')->assertRedirect(route('tv.releases'));
-    }
-
-    public function test_the_table_shares_the_dto_processing_decisions(): void
-    {
-        $cases = [
-            'Found NFO' => [1, 0, null, true], 'No NFO' => [0, 0, null, true],
-            'Failed NFO' => [-9, 0, null, true], 'Skipped NFO' => [-10, 0, null, true],
-            'First retry' => [-1, 0, null, false], 'Last retry' => [-8, 0, null, false],
-            'Password unchecked' => [1, -1, null, false], 'Empty claim' => [1, 0, '', false],
-        ];
-        foreach ($cases as $name => [$nfo, $password, $claim, $done]) {
-            $this->release($name, ['categories_id' => 3030, 'isrenamed' => 1, 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim]);
-        }
-        // the list's rows are loaded through the shared row loader (ReleaseRowFacts), which carries the DTO's decisions
-        $this->actingAs($this->browserUser());
-        $ids = DB::table('releases')->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all();
-        $this->assertCount(count($cases), app(ReleaseRowFacts::class)->load($ids));
-        foreach (app(ReleaseRowFacts::class)->load($ids) as $release) {
-            $this->assertSame($cases[$release->row_data->name][3], $release->row_data->pp_done, $release->row_data->name);
-        }
-        $this->get('/browse/all')->assertOk()->assertSee('Found NFO');
     }
 
     public function test_cards_are_not_offered_for_all_other_group_or_poster_lists(): void

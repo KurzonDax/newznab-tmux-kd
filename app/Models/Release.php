@@ -19,7 +19,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Pagination\LengthAwarePaginator as PaginatorLengthAware;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -127,14 +126,6 @@ class Release extends Model
     public function download(): HasMany
     {
         return $this->hasMany(UserDownload::class, 'releases_id');
-    }
-
-    /**
-     * @return HasMany<UsersRelease, $this>
-     */
-    public function userRelease(): HasMany
-    {
-        return $this->hasMany(UsersRelease::class, 'releases_id');
     }
 
     /**
@@ -273,34 +264,6 @@ class Release extends Model
         return $this->hasOne(ReleaseAudioTag::class, 'releases_id');
     }
 
-    /** @return HasMany<ReleaseMusicIdentification, $this> */
-    public function musicIdentifications(): HasMany
-    {
-        return $this->hasMany(ReleaseMusicIdentification::class, 'releases_id');
-    }
-
-    /**
-     * Metadata for the stream-copy Clip stored as this release's video
-     * artifact; absent for legacy downscaled transcodes.
-     *
-     * @return HasOne<ReleaseVideoClip, $this>
-     */
-    public function videoClip(): HasOne
-    {
-        return $this->hasOne(ReleaseVideoClip::class, 'releases_id');
-    }
-
-    /**
-     * The Imagery disk skip recorded when the Free-disk guard suppressed this
-     * release's sample/preview imagery; absent for every other release.
-     *
-     * @return HasOne<ReleaseImageryDiskSkip, $this>
-     */
-    public function imageryDiskSkip(): HasOne
-    {
-        return $this->hasOne(ReleaseImageryDiskSkip::class, 'releases_id');
-    }
-
     /**
      * @return BelongsTo<TvEpisode, $this>
      */
@@ -411,28 +374,6 @@ class Release extends Model
     }
 
     /**
-     * Increment grabs for multiple releases by guid (single query).
-     *
-     * @param  list<string>  $guids
-     *
-     * @throws \Exception
-     */
-    public static function updateGrabsByGuids(array $guids): void
-    {
-        if ($guids === []) {
-            return;
-        }
-        $updateGrabs = ((int) Settings::settingValue('grabstatus') !== 0);
-        if ($updateGrabs) {
-            $ids = self::query()->whereIn('guid', $guids)->pluck('id');
-            self::query()->whereIn('guid', $guids)->increment('grabs');
-            foreach ($ids as $id) {
-                self::syncSearchIndexAfterCommit((int) $id);
-            }
-        }
-    }
-
-    /**
      * @return Model|null|static
      */
     public static function getCatByRelId(mixed $id)
@@ -471,72 +412,6 @@ class Release extends Model
         DB::afterCommit(function () use ($releaseId): void {
             Search::updateRelease($releaseId);
         });
-    }
-
-    public static function getTopDownloads(): mixed
-    {
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        $releases = Cache::get(md5('topDownloads'));
-        if ($releases !== null) {
-            return $releases;
-        }
-        $releases = self::query()
-            ->where('grabs', '>', 0)
-            ->select(['id', 'searchname', 'guid', 'adddate'])
-            ->selectRaw('SUM(grabs) as grabs')
-            ->groupBy('id', 'searchname', 'adddate')
-            ->havingRaw('SUM(grabs) > 0')
-            ->orderByDesc('grabs')
-            ->limit(10)
-            ->get();
-
-        Cache::put(md5('topDownloads'), $releases, $expiresAt);
-
-        return $releases;
-    }
-
-    public static function getTopComments(): mixed
-    {
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        $releases = Cache::get(md5('topComments'));
-        if ($releases !== null) {
-            return $releases;
-        }
-        $releases = self::query()
-            ->where('comments', '>', 0)
-            ->select(['id', 'guid', 'searchname'])
-            ->selectRaw('SUM(comments) AS comments')
-            ->groupBy('id', 'searchname', 'adddate')
-            ->havingRaw('SUM(comments) > 0')
-            ->orderByDesc('comments')
-            ->limit(10)
-            ->get();
-
-        Cache::put(md5('topComments'), $releases, $expiresAt);
-
-        return $releases;
-    }
-
-    /**
-     * @return Builder[]|\Illuminate\Database\Eloquent\Collection|\Illuminate\Database\Query\Builder[]|Collection|mixed
-     */
-    public static function getReleases()
-    {
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        $releases = Cache::get(md5('releases'));
-        if ($releases !== null) {
-            return $releases;
-        }
-
-        $releases = self::query()
-            ->select(['releases.*', 'g.name as group_name', 'c.title as category_name'])
-            ->leftJoin('categories as c', 'c.id', '=', 'releases.categories_id')
-            ->leftJoin('usenet_groups as g', 'g.id', '=', 'releases.groups_id')
-            ->get();
-
-        Cache::put(md5('releases'), $releases, $expiresAt);
-
-        return $releases;
     }
 
     /**

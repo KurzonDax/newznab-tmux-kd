@@ -219,7 +219,7 @@ final class GenericReleaseList
         return $query->whereBetween('releases.categories_id', [$root, $root + 999]);
     }
 
-    /** The poster identity byte for byte (`BINARY` on MariaDB, ReleaseBrowserQuery). */
+    /** The poster identity byte for byte (`BINARY` on MariaDB). */
     private function wherePoster(Builder $query, string $posterIdentity): Builder
     {
         $query->where('releases.fromname', $posterIdentity);

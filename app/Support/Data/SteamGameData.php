@@ -71,85 +71,10 @@ final class SteamGameData extends Data
     }
 
     /**
-     * Convert to array format compatible with existing GamesInfo model.
-     *
-     * @return array<string, mixed>
-     */
-    public function toGamesInfoArray(): array
-    {
-        return [
-            'title' => $this->title,
-            'asin' => (string) $this->steamId,
-            'url' => $this->storeUrl,
-            'publisher' => $this->publisher ?? 'Unknown',
-            'releasedate' => $this->releaseDate,
-            'review' => $this->description ?? 'No description available',
-            'cover' => ! empty($this->coverUrl) ? 1 : 0,
-            'backdrop' => ! empty($this->backdropUrl) ? 1 : 0,
-            'trailer' => $this->trailerUrl ?? '',
-            'classused' => 'Steam',
-            'esrb' => $this->metacriticScore !== null ? (string) $this->metacriticScore : 'Not Rated',
-            'coverurl' => $this->coverUrl,
-            'backdropurl' => $this->backdropUrl,
-            'genres' => implode(',', $this->genres),
-        ];
-    }
-
-    /**
-     * Check if this is a game (not DLC, video, etc.).
-     */
-    public function isGame(): bool
-    {
-        return in_array($this->type, ['game', 'demo'], true);
-    }
-
-    /**
      * Check if game is free.
      */
     public function isFree(): bool
     {
         return $this->price !== null && $this->price->final <= 0;
-    }
-
-    /**
-     * Get primary genre.
-     */
-    public function getPrimaryGenre(): ?string
-    {
-        return $this->genres[0] ?? null;
-    }
-
-    /**
-     * Check if game supports a platform.
-     */
-    public function supportsPlatform(string $platform): bool
-    {
-        return in_array($platform, $this->platforms, true);
-    }
-
-    /**
-     * Check if game has multiplayer.
-     */
-    public function hasMultiplayer(): bool
-    {
-        $multiplayerCategories = ['Multi-player', 'Online Multi-Player', 'Online Co-op', 'Local Multi-Player', 'Local Co-op'];
-
-        return ! empty(array_intersect($multiplayerCategories, $this->categories));
-    }
-
-    /**
-     * Check if game supports Steam Workshop.
-     */
-    public function hasSteamWorkshop(): bool
-    {
-        return in_array('Steam Workshop', $this->categories, true);
-    }
-
-    /**
-     * Get formatted genres string.
-     */
-    public function getGenresString(): string
-    {
-        return implode(', ', $this->genres);
     }
 }

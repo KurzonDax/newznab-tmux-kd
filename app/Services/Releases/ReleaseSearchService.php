@@ -2058,31 +2058,6 @@ class ReleaseSearchService
     }
 
     /**
-     * Build the lightweight paged ID query used by compatibility tests and targeted callers.
-     *
-     * @param  array{0: string, 1: string}  $orderBy
-     */
-    protected function buildSearchPageIdsSql(string $whereSql, array $orderBy, int $limit, int $offset): string
-    {
-        return sprintf(
-            'SELECT r.id FROM releases r %s ORDER BY r.%s %s LIMIT %d OFFSET %d',
-            $whereSql,
-            $orderBy[0],
-            $orderBy[1],
-            $limit,
-            $offset,
-        );
-    }
-
-    /**
-     * Get a lightweight releases count directly from the releases table for compatibility callers.
-     */
-    protected function getReleasesCountForWhere(string $whereSql): int
-    {
-        return $this->getPagerCount(sprintf('SELECT COUNT(*) as count FROM releases r %s', $whereSql));
-    }
-
-    /**
      * Get the passworded releases clause.
      */
     public function showPasswords(): string

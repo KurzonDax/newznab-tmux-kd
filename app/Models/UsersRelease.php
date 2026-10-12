@@ -57,11 +57,6 @@ class UsersRelease extends Model
         return $this->belongsTo(Release::class, 'releases_id');
     }
 
-    public static function delCartForUser(mixed $uid): void
-    {
-        self::query()->where('users_id', $uid)->delete();
-    }
-
     /**
      * @return int|Builder
      */
@@ -100,15 +95,6 @@ class UsersRelease extends Model
         );
 
         return self::query()->insertOrIgnore($rows);
-    }
-
-    public static function getCart(mixed $uid): mixed
-    {
-        return self::query()
-            ->with('release')
-            ->whereHas('release')
-            ->where(['users_id' => $uid])
-            ->get();
     }
 
     /**
@@ -154,10 +140,5 @@ class UsersRelease extends Model
             return;
         }
         self::query()->where('users_id', $uid)->whereIn('releases_id', $releaseIds)->delete();
-    }
-
-    public static function delCartForRelease(mixed $rid): void
-    {
-        self::query()->where('releases_id', $rid)->delete();
     }
 }

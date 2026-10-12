@@ -6,12 +6,10 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Services\Releases\HiddenCategoryGate;
-use App\Support\ReleaseCompletion;
 use App\Support\SiteViewSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
@@ -23,27 +21,7 @@ class BasePageController extends Controller
      */
     public Collection $settings;
 
-    public string $title = '';
-
-    public string $content = '';
-
-    public string $meta_keywords = '';
-
-    public string $meta_title = '';
-
-    public string $meta_description = '';
-
-    /**
-     * Current page the user is browsing. ie browse.
-     */
-    public string $page = '';
-
     public User $userdata;
-
-    /**
-     * User's theme.
-     */
-    protected string $theme = 'Gentele';
 
     /**
      * View data array for Blade templates
@@ -59,7 +37,7 @@ class BasePageController extends Controller
      */
     public function __construct()
     {
-        $this->middleware(['auth', 'web', '2fa'])->except('api', 'contact', 'showContactForm', 'callback', 'btcPayCallback', 'getNzb', 'terms', 'privacyPolicy', 'capabilities', 'movie', 'apiSearch', 'tv', 'details', 'failed', 'showRssDesc', 'fullFeedRss', 'categoryFeedRss', 'cartRss', 'myMoviesRss', 'myShowsRss', 'trendingMoviesRss', 'trendingShowsRss', 'release', 'reset', 'showLinkRequestForm', 'showStatusPage', 'showInvitation');
+        $this->middleware(['auth', 'web', '2fa'])->except('api', 'contact', 'showContactForm', 'btcPayCallback', 'getNzb', 'terms', 'privacyPolicy', 'capabilities', 'movie', 'apiSearch', 'tv', 'details', 'failed', 'showRssDesc', 'fullFeedRss', 'categoryFeedRss', 'cartRss', 'myMoviesRss', 'myShowsRss', 'trendingMoviesRss', 'trendingShowsRss', 'showStatusPage', 'showInvitation');
 
         $settings = app(SiteViewSettings::class);
         $this->settings = $settings->raw();
@@ -100,14 +78,6 @@ class BasePageController extends Controller
         return app(HiddenCategoryGate::class)->deniedPage($this->userdata, $categoryId);
     }
 
-    /**
-     * @return LengthAwarePaginator<int, mixed>
-     */
-    public function paginate(mixed $query, mixed $totalCount, mixed $items, mixed $page, mixed $path, mixed $reqQuery): LengthAwarePaginator
-    {
-        return new LengthAwarePaginator($query, $totalCount, $items, $page, ['path' => $path, 'query' => $reqQuery]);
-    }
-
     protected function resolvePage(Request $request, string $key = 'page'): int
     {
         $page = $request->input($key, 1);
@@ -121,47 +91,6 @@ class BasePageController extends Controller
         }
 
         return max(1, (int) $page);
-    }
-
-    /**
-     * @param  array<int, string>  $ordering
-     */
-    protected function resolveOrderBy(Request $request, array $ordering, string $key = 'ob'): string
-    {
-        $orderByInput = $request->input($key, '');
-        $orderBy = is_scalar($orderByInput) ? (string) $orderByInput : '';
-
-        return \in_array($orderBy, $ordering, true) ? $orderBy : '';
-    }
-
-    protected function paginationOffset(int $page, int $perPage): int
-    {
-        return ($page - 1) * $perPage;
-    }
-
-    /**
-     * The minimum-completion threshold the browse/search toolbar asked for.
-     *
-     * Anything outside the offered menu falls back to "All releases", so a
-     * hand-edited URL cannot invent a threshold the UI cannot show back.
-     */
-    protected function resolveMinCompletion(Request $request): int
-    {
-        return ReleaseCompletion::normalizeThreshold($request->input(ReleaseCompletion::REQUEST_KEY));
-    }
-
-    /**
-     * @param  array<int, string>  $ordering
-     * @return array<string, string>
-     */
-    protected function buildOrderByUrls(array $ordering, string $basePath, string $prefix = 'orderby'): array
-    {
-        $orderByUrls = [];
-        foreach ($ordering as $orderType) {
-            $orderByUrls[$prefix.$orderType] = url($basePath.'?ob='.$orderType);
-        }
-
-        return $orderByUrls;
     }
 
     protected function scalarInput(Request $request, string $key, string $default = ''): string
@@ -207,30 +136,6 @@ class BasePageController extends Controller
     }
 
     /**
-     * @return array<int|string, mixed>
-     */
-    protected function arrayInput(Request $request, string $key): array
-    {
-        $value = $request->input($key, []);
-
-        return \is_array($value) ? $value : [];
-    }
-
-    protected function localReturnUrl(Request $request, string $fallback, string $key = 'from'): string
-    {
-        $from = $this->scalarInput($request, $key);
-        if ($from === '') {
-            return url($fallback);
-        }
-
-        if (filter_var($from, FILTER_VALIDATE_URL) !== false) {
-            return parse_url($from, PHP_URL_HOST) === $request->getHost() ? $from : url($fallback);
-        }
-
-        return url($from);
-    }
-
-    /**
      * Check if request is POST.
      */
     public function isPostBack(Request $request): bool
@@ -239,47 +144,10 @@ class BasePageController extends Controller
     }
 
     /**
-     * Show 404 page.
-     *
-     * @param  string|null  $message
-     */
-    public function show404($message = null): View
-    {
-        if ($message !== null) {
-            return view('errors.404')->with('Message', $message);
-        }
-
-        return view('errors.404');
-    }
-
-    /**
      * Output the page using Blade views.
      */
     public function pagerender(): View
     {
         return view('layouts.main', $this->viewData);
-    }
-
-    /**
-     * Output a page using the admin template.
-     *
-     * @throws \Exception
-     */
-    public function adminrender(): View
-    {
-        return view('layouts.admin', $this->viewData);
-    }
-
-    /**
-     * @throws \Exception
-     */
-    public function adminBasePage(): View
-    {
-        $this->viewData = array_merge($this->viewData, [
-            'meta_title' => 'Admin Home',
-            'meta_description' => 'Admin home page',
-        ]);
-
-        return $this->adminrender();
     }
 }

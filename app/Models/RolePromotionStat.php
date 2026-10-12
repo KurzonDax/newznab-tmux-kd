@@ -106,48 +106,6 @@ class RolePromotionStat extends Model
     }
 
     /**
-     * Get statistics summary for a promotion
-     *
-     * @return array<string, mixed>
-     */
-    public static function getPromotionSummary(int $promotionId): array
-    {
-        $stats = static::forPromotion($promotionId)->get();
-
-        return [
-            'total_upgrades' => $stats->count(),
-            'total_days_added' => $stats->sum('days_added'),
-            'unique_users' => $stats->unique('user_id')->count(),
-            'roles_affected' => $stats->unique('role_id')->count(),
-            'latest_application' => $stats->max('applied_at'),
-            'earliest_application' => $stats->min('applied_at'),
-        ];
-    }
-
-    /**
-     * Get statistics summary for a user
-     *
-     * @return array<string, mixed>
-     */
-    public static function getUserSummary(int $userId): array
-    {
-        $stats = static::forUser($userId)->get();
-
-        return [
-            'total_promotions_received' => $stats->count(),
-            'total_days_added' => $stats->sum('days_added'),
-            'promotions' => $stats->groupBy('role_promotion_id')->map(function ($group) {
-                return [
-                    'promotion_id' => $group->first()->role_promotion_id,
-                    'promotion_name' => $group->first()->promotion->name,
-                    'times_applied' => $group->count(),
-                    'total_days' => $group->sum('days_added'),
-                ];
-            })->values()->all(),
-        ];
-    }
-
-    /**
      * Record a promotion application
      */
     public static function recordPromotion(

@@ -123,15 +123,4 @@ class UserRoleHistory extends Model
             ->orderBy('effective_date', 'desc')
             ->get();
     }
-
-    /**
-     * Get stacked role changes for a user
-     */
-    public static function getUserStackedChanges(int $userId): mixed
-    {
-        return static::where('user_id', $userId)
-            ->where('is_stacked', true)
-            ->orderBy('effective_date', 'desc')
-            ->get();
-    }
 }

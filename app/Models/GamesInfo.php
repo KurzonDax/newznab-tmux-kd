@@ -116,24 +116,4 @@ class GamesInfo extends Model
 
         return is_string($legacyPath) && file_exists($legacyPath) ? $legacyPath : null;
     }
-
-    /**
-     * Get the backdrop image path.
-     */
-    public function getBackdropPath(): ?string
-    {
-        if (! $this->backdrop) {
-            return null;
-        }
-
-        $path = config('nntmux_settings.covers_path').'/games/'.$this->id.'-backdrop.webp';
-
-        if (file_exists($path)) {
-            return $path;
-        }
-
-        $legacyPath = preg_replace('/\.webp$/', '.jpg', $path);
-
-        return is_string($legacyPath) && file_exists($legacyPath) ? $legacyPath : null;
-    }
 }

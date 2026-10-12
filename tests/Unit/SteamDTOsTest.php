@@ -45,33 +45,6 @@ class SteamDTOsTest extends TestCase
         $this->assertSame('Free', $price->formattedPrice);
     }
 
-    public function test_price_data_is_on_sale(): void
-    {
-        $onSale = new SteamPriceData('USD', 59.99, 29.99, 50);
-        $notOnSale = new SteamPriceData('USD', 59.99, 59.99, 0);
-
-        $this->assertTrue($onSale->isOnSale());
-        $this->assertFalse($notOnSale->isOnSale());
-    }
-
-    public function test_price_data_get_savings(): void
-    {
-        $price = new SteamPriceData('USD', 59.99, 29.99, 50);
-
-        $this->assertEqualsWithDelta(30.00, $price->getSavings(), 0.01);
-    }
-
-    public function test_price_data_get_display_price(): void
-    {
-        $priceWithFormat = new SteamPriceData('USD', 59.99, 29.99, 50, '$29.99');
-        $priceWithoutFormat = new SteamPriceData('USD', 59.99, 29.99, 50);
-        $freePrice = SteamPriceData::free();
-
-        $this->assertSame('$29.99', $priceWithFormat->getDisplayPrice());
-        $this->assertSame('USD 29.99', $priceWithoutFormat->getDisplayPrice());
-        $this->assertSame('Free', $freePrice->getDisplayPrice());
-    }
-
     public function test_price_data_to_array(): void
     {
         $price = new SteamPriceData('EUR', 49.99, 24.99, 50, '24,99€');
@@ -168,19 +141,6 @@ class SteamDTOsTest extends TestCase
         $this->assertCount(2, $game->dlcIds);
     }
 
-    public function test_game_data_is_game(): void
-    {
-        $game = new SteamGameData(1, 'Test', 'game');
-        $dlc = new SteamGameData(2, 'Test DLC', 'dlc');
-        $demo = new SteamGameData(3, 'Test Demo', 'demo');
-        $video = new SteamGameData(4, 'Test Video', 'video');
-
-        $this->assertTrue($game->isGame());
-        $this->assertFalse($dlc->isGame());
-        $this->assertTrue($demo->isGame());
-        $this->assertFalse($video->isGame());
-    }
-
     public function test_game_data_is_free(): void
     {
         $freeGame = new SteamGameData(1, 'Free Game', price: SteamPriceData::free());
@@ -190,84 +150,6 @@ class SteamDTOsTest extends TestCase
         $this->assertTrue($freeGame->isFree());
         $this->assertFalse($paidGame->isFree());
         $this->assertFalse($noPriceGame->isFree()); // null price = not free
-    }
-
-    public function test_game_data_get_primary_genre(): void
-    {
-        $gameWithGenres = new SteamGameData(1, 'Test', genres: ['Action', 'RPG', 'Adventure']);
-        $gameNoGenres = new SteamGameData(2, 'Test', genres: []);
-
-        $this->assertSame('Action', $gameWithGenres->getPrimaryGenre());
-        $this->assertNull($gameNoGenres->getPrimaryGenre());
-    }
-
-    public function test_game_data_supports_platform(): void
-    {
-        $game = new SteamGameData(1, 'Test', platforms: ['Windows', 'Linux']);
-
-        $this->assertTrue($game->supportsPlatform('Windows'));
-        $this->assertTrue($game->supportsPlatform('Linux'));
-        $this->assertFalse($game->supportsPlatform('Mac'));
-    }
-
-    public function test_game_data_has_multiplayer(): void
-    {
-        $multiplayerGame = new SteamGameData(1, 'Test', categories: ['Single-player', 'Online Multi-Player']);
-        $singlePlayerGame = new SteamGameData(2, 'Test', categories: ['Single-player']);
-        $coopGame = new SteamGameData(3, 'Test', categories: ['Online Co-op']);
-
-        $this->assertTrue($multiplayerGame->hasMultiplayer());
-        $this->assertFalse($singlePlayerGame->hasMultiplayer());
-        $this->assertTrue($coopGame->hasMultiplayer());
-    }
-
-    public function test_game_data_has_steam_workshop(): void
-    {
-        $withWorkshop = new SteamGameData(1, 'Test', categories: ['Steam Workshop', 'Single-player']);
-        $withoutWorkshop = new SteamGameData(2, 'Test', categories: ['Single-player']);
-
-        $this->assertTrue($withWorkshop->hasSteamWorkshop());
-        $this->assertFalse($withoutWorkshop->hasSteamWorkshop());
-    }
-
-    public function test_game_data_get_genres_string(): void
-    {
-        $game = new SteamGameData(1, 'Test', genres: ['Action', 'RPG', 'Adventure']);
-
-        $this->assertSame('Action, RPG, Adventure', $game->getGenresString());
-    }
-
-    public function test_game_data_to_games_info_array(): void
-    {
-        $game = new SteamGameData(
-            steamId: 1091500,
-            title: 'Cyberpunk 2077',
-            type: 'game',
-            description: 'An open-world RPG.',
-            coverUrl: 'https://cdn.steam.com/header.jpg',
-            backdropUrl: 'https://cdn.steam.com/bg.jpg',
-            trailerUrl: 'https://cdn.steam.com/trailer.mp4',
-            publisher: 'CD PROJEKT RED',
-            releaseDate: '2020-12-10',
-            genres: ['Action', 'RPG'],
-            metacriticScore: 86,
-            storeUrl: 'https://store.steampowered.com/app/1091500',
-        );
-
-        $array = $game->toGamesInfoArray();
-
-        $this->assertSame('Cyberpunk 2077', $array['title']);
-        $this->assertSame('1091500', $array['asin']);
-        $this->assertSame('https://store.steampowered.com/app/1091500', $array['url']);
-        $this->assertSame('CD PROJEKT RED', $array['publisher']);
-        $this->assertSame('2020-12-10', $array['releasedate']);
-        $this->assertSame('An open-world RPG.', $array['review']);
-        $this->assertSame(1, $array['cover']);
-        $this->assertSame(1, $array['backdrop']);
-        $this->assertSame('https://cdn.steam.com/trailer.mp4', $array['trailer']);
-        $this->assertSame('Steam', $array['classused']);
-        $this->assertSame('86', $array['esrb']);
-        $this->assertSame('Action,RPG', $array['genres']);
     }
 
     public function test_game_data_handles_missing_optional_fields(): void

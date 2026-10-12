@@ -6,9 +6,7 @@ namespace App\Services\Releases;
 
 use App\Data\ReleaseRowData;
 use App\Services\NfoService;
-use App\Support\ReleaseSize;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -71,7 +69,6 @@ final class ReleaseRowDataLoader
         /** @var Collection<int|string, object> $rowAttributes */
         $rowAttributes = $rows->map(static fn (object $release): object => $release instanceof Model
             ? (object) $release->getAttributes() : $release)->keyBy('id');
-        $postProcessed = $this->postProcessed($rowAttributes);
         $groupIds = $rowAttributes->pluck('groups_id')->filter()->unique();
         $groups = $groupIds->isEmpty() ? collect() : DB::table('usenet_groups')->whereIn('id', $groupIds)->pluck('name', 'id');
         $categoryIds = $rowAttributes->pluck('categories_id')->filter()->unique();
@@ -97,33 +94,19 @@ final class ReleaseRowDataLoader
             $source = $rowAttributes->get($release->id) ?? $release;
             $category = $categories->get($source->categories_id ?? 0);
             $row = new ReleaseRowData(
-                id: (int) $release->id,
                 guid: (string) ($source->guid ?? ''),
                 name: release_display_name($source),
                 category: $category === null ? (string) ($release->category_name ?? '') : implode(' > ', array_filter([$category->root_title, $category->title])),
-                size: ReleaseSize::format((float) ($source->size ?? 0)),
                 files: (int) ($source->totalpart ?? 0),
-                added: userDateDiffForHumans($source->adddate ?? null),
-                posted: userDate($source->postdate ?? null),
                 grabs: (int) ($source->grabs ?? 0),
                 comments: (int) ($source->comments ?? 0),
-                completion: (float) ($source->completion ?? 0),
                 passworded: (int) ($source->passwordstatus ?? -1) > 0,
                 imported: (int) ($source->is_imported ?? 0) === 1,
                 has_media_info: (bool) ($release->has_media_info ?? false),
                 media_info_summary: $release->media_info_summary ?? null,
                 nfo: (int) ($source->nfostatus ?? -1) === NfoService::NFO_FOUND,
-                preview: match (true) {
-                    (bool) ($release->has_audio_preview ?? false) => 'audio',
-                    (bool) ($release->has_video_preview ?? false) => 'video',
-                    (int) ($source->haspreview ?? 0) === 1 => 'image',
-                    (int) ($source->jpgstatus ?? 0) === 1 => 'sample',
-                    default => 'none',
-                },
                 group: (string) ($groups->get($source->groups_id ?? 0) ?? $release->group_name ?? ''),
                 poster: (string) ($source->fromname ?? ''),
-                renamed: (int) ($source->isrenamed ?? 0) === 1,
-                pp_done: $postProcessed->has($release->id),
                 entity: $entities[(int) $release->id] ?? null,
                 in_basket: in_array((int) $release->id, $basket, true),
                 watched: isset($entities[(int) $release->id]) && match ($entities[(int) $release->id]->root) {
@@ -160,21 +143,5 @@ final class ReleaseRowDataLoader
         return $release instanceof Model
             ? array_key_exists($column, $release->getAttributes())
             : property_exists($release, $column);
-    }
-
-    /**
-     * Filter finished releases in SQL and in the rows already loaded for display.
-     *
-     * @template T of Builder|Collection<array-key, object>
-     *
-     * @param  T  $releases
-     * @return T
-     */
-    public function postProcessed(Builder|Collection $releases, string $prefix = ''): Builder|Collection
-    {
-        return $releases->whereNull($prefix.'additional_pp_claim_token')
-            ->whereNotNull($prefix.'passwordstatus')->where($prefix.'passwordstatus', '>=', 0)
-            ->whereNotNull($prefix.'nfostatus')
-            ->whereNotBetween($prefix.'nfostatus', [NfoService::NFO_FAILED + 1, NfoService::NFO_NONFO - 1]);
     }
 }

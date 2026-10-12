@@ -8,7 +8,6 @@ use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\Release;
 use App\Models\ReleaseReport;
 use App\Services\Releases\ReleaseSearchService;
-use App\Support\ReleaseCompletion;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -249,14 +248,14 @@ final class DetailsControllerTest extends TestCase
         // the shelf page: the completion chip in the header's chip line, above the tabs
         $response = $this->actingAs($this->browserUser())->get($url)->assertOk();
         $response->assertSeeInOrder(['tv-details-chips', '80% complete', 'class="tv-details-tabs"'], false)
-            ->assertDontSee(ReleaseCompletion::PENDING_LABEL)->assertDontSee('repair-badge');
+            ->assertDontSee('Late Headers Pending')->assertDontSee('repair-badge');
         DB::table('releases')->where('id', $id)->update(['completion' => 99]);
         $this->get($url)->assertOk()->assertSeeInOrder(['tv-details-chips', '99% complete', 'class="tv-details-tabs"'], false)
-            ->assertDontSee(ReleaseCompletion::PENDING_LABEL)->assertDontSee('repair-badge');
+            ->assertDontSee('Late Headers Pending')->assertDontSee('repair-badge');
         DB::table('releases')->where('id', $id)->update(['completion' => 0]);
         $this->assertMatchesRegularExpression('/<dt[^>]*>Completion<\/dt><dd[^>]*>Not measured<\/dd>/', (string) $this->get($url)->assertOk()->getContent());
         $this->get($url)->assertOk()->assertDontSee('% complete')
-            ->assertDontSee(ReleaseCompletion::PENDING_LABEL)->assertDontSee('repair-badge');
+            ->assertDontSee('Late Headers Pending')->assertDontSee('repair-badge');
     }
 
     public function test_similar_releases_lists_the_same_root_matches_without_the_release_itself(): void

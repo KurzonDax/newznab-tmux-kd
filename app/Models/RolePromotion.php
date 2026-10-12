@@ -157,40 +157,6 @@ class RolePromotion extends Model // @phpstan-ignore missingType.iterableValue
     }
 
     /**
-     * Get summary statistics for this promotion
-     *
-     * @return array<string, mixed>
-     */
-    public function getSummaryStatistics(): array
-    {
-        return RolePromotionStat::getPromotionSummary($this->id);
-    }
-
-    /**
-     * Get the count of users who have received this promotion
-     */
-    public function getTotalUpgrades(): int
-    {
-        return $this->statistics()->count();
-    }
-
-    /**
-     * Get the count of unique users who have received this promotion
-     */
-    public function getUniqueUsersCount(): int
-    {
-        return $this->statistics()->distinct('user_id')->count('user_id');
-    }
-
-    /**
-     * Get the total days added across all applications of this promotion
-     */
-    public function getTotalDaysAdded(): int
-    {
-        return $this->statistics()->sum('days_added');
-    }
-
-    /**
      * Track a promotion application
      */
     public function trackApplication(

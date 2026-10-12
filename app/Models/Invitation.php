@@ -192,16 +192,6 @@ class Invitation extends Model // @phpstan-ignore missingType.iterableValue
     }
 
     /**
-     * Mark the invitation as expired
-     */
-    public function markAsExpired(): bool
-    {
-        $this->is_active = false;
-
-        return $this->save();
-    }
-
-    /**
      * Create a new invitation
      *
      * @param  array<string, mixed>  $metadata
@@ -243,42 +233,6 @@ class Invitation extends Model // @phpstan-ignore missingType.iterableValue
     public static function findByEmail(string $email): ?self
     {
         return self::where('email', strtolower(trim($email)))->first();
-    }
-
-    /**
-     * Get invitation by token (legacy compatibility)
-     */
-    public static function getInvite(string $token): ?self
-    {
-        return self::findValidByToken($token);
-    }
-
-    /**
-     * Delete invitation by token (legacy compatibility)
-     */
-    public static function deleteInvite(string $token): bool
-    {
-        $invitation = self::findByToken($token);
-        if ($invitation) {
-            return $invitation->delete();
-        }
-
-        return false;
-    }
-
-    /**
-     * Add invite (legacy compatibility)
-     */
-    public static function addInvite(int $userId, string $token): self
-    {
-        // For legacy compatibility, we create an invitation with a specific token
-        // In practice, this should use createInvitation method instead
-        return self::create([
-            'token' => $token,
-            'email' => '', // Legacy method doesn't specify email
-            'invited_by' => $userId,
-            'expires_at' => now()->addDays(self::DEFAULT_INVITE_EXPIRY_DAYS),
-        ]);
     }
 
     /**

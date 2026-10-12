@@ -522,7 +522,7 @@ final class HomeShelvesPageTest extends TestCase
     public function test_the_order_and_the_ticks_are_saved_through_the_preference_endpoint_and_restored(): void
     {
         $user = $this->userWith([]);
-        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24])->assertOk();
+        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'sort' => 'posted'])->assertOk();
 
         // an unticked shelf can be moved and keeps its place
         $order = ['Console', 'Following', 'TV', 'Movies', 'Audio', 'Books', 'PC', 'Adult', 'Other'];
@@ -541,7 +541,7 @@ final class HomeShelvesPageTest extends TestCase
         $this->assertSame([], $this->home($user)['ticked']);
         $this->page('/', $user)->assertSee('No shelves.');
 
-        foreach ([['shelves' => ['TV', 'Nowhere']], ['shelves' => $order, 'ticked' => ['Nowhere']], ['ticked' => ['TV']], ['shelves' => ['TV', 'TV']], ['shelves' => 'TV'], ['shelves' => []], ['view' => 'table'], ['per' => 24], ['sort' => 'newest']] as $invalid) {
+        foreach ([['shelves' => ['TV', 'Nowhere']], ['shelves' => $order, 'ticked' => ['Nowhere']], ['ticked' => ['TV']], ['shelves' => ['TV', 'TV']], ['shelves' => 'TV'], ['shelves' => []], ['sort' => 'newest']] as $invalid) {
             $this->postJson('/profile/update-view', ['root' => 'home', ...$invalid])->assertUnprocessable();
         }
         foreach ([['shelves' => ['TV']], ['ticked' => ['TV']]] as $invalid) {
@@ -549,7 +549,7 @@ final class HomeShelvesPageTest extends TestCase
         }
         $stored = User::query()->findOrFail($user->id)->view_prefs;
         $this->assertSame([], $stored['home']['ticked']);
-        $this->assertSame(24, $stored['movies']['per']);
+        $this->assertSame('posted', $stored['movies']['sort']);
         $this->assertArrayHasKey('seen_at', $stored['home']);
     }
 

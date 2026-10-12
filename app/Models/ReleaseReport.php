@@ -60,25 +60,6 @@ class ReleaseReport extends Model
     ];
 
     /**
-     * Convert a comma-separated list of reason keys to their labels.
-     */
-    public static function reasonKeysToLabels(?string $reasonKeys): string
-    {
-        if (empty($reasonKeys)) {
-            return 'Unknown';
-        }
-
-        $keys = array_map('trim', explode(',', $reasonKeys));
-        $labels = [];
-
-        foreach ($keys as $key) {
-            $labels[] = self::REASONS[$key] ?? ucfirst($key);
-        }
-
-        return implode(', ', array_unique($labels));
-    }
-
-    /**
      * Get the release that was reported.
      *
      * @return BelongsTo<Release, $this>

@@ -168,7 +168,7 @@ final class WatchlistService
         $subscriptions = $followed ? $this->subscriptions($root, $user)->whereIn($source['releaseKey'], $ids)->pluck('categories', $source['releaseKey']) : collect();
         $latest = collect();
         if ($followed && $ids !== []) {
-            $state = ReleaseBrowserState::fromRequest(new Request(['watching' => '1']), $root, $user, tableOnly: true);
+            $state = ReleaseBrowserState::fromRequest(new Request(['watching' => '1']), $root);
             $releases = app(ReleaseBrowserQuery::class)->matchingQuery($state, $user)->whereIn('r.'.$source['releaseKey'], $ids)
                 ->select(['r.guid', 'r.searchname', 'r.display_name', 'r.adddate', 'r.'.$source['releaseKey']])
                 ->selectRaw('ROW_NUMBER() OVER (PARTITION BY r.'.$source['releaseKey'].' ORDER BY r.adddate DESC, r.id DESC) AS latest_rank');

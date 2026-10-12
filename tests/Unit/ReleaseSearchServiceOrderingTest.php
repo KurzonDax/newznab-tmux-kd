@@ -165,29 +165,6 @@ class ReleaseSearchServiceOrderingTest extends TestCase
     }
 
     /**
-     * Test that the paged ID query only selects release IDs from the releases table.
-     */
-    public function test_build_search_page_ids_sql_uses_releases_only(): void
-    {
-        $reflection = new ReflectionClass(ReleaseSearchService::class);
-        $method = $reflection->getMethod('buildSearchPageIdsSql');
-
-        $sql = $method->invoke(
-            $this->service,
-            'WHERE r.passwordstatus <= 0 AND r.id IN (1,2,3)',
-            ['postdate', 'desc'],
-            50,
-            0
-        );
-
-        $this->assertSame(
-            'SELECT r.id FROM releases r WHERE r.passwordstatus <= 0 AND r.id IN (1,2,3) ORDER BY r.postdate desc LIMIT 50 OFFSET 0',
-            $sql
-        );
-        $this->assertStringNotContainsString('JOIN', $sql);
-    }
-
-    /**
      * Test that web search report badge data is aggregated on joined result rows.
      */
     public function test_build_search_base_sql_uses_page_scoped_report_join(): void
@@ -201,25 +178,5 @@ class ReleaseSearchServiceOrderingTest extends TestCase
         $this->assertStringContainsString('COUNT(DISTINCT rr.id) AS total_report_count', $sql);
         $this->assertStringContainsString('GROUP BY r.id', $sql);
         $this->assertStringNotContainsString('FROM release_reports GROUP BY releases_id', $sql);
-    }
-
-    /**
-     * Test that the lightweight count query is built directly against releases.
-     */
-    public function test_get_releases_count_for_where_builds_releases_only_count_query(): void
-    {
-        $reflection = new ReflectionClass(ReleaseSearchService::class);
-        $method = $reflection->getMethod('getReleasesCountForWhere');
-
-        $service = $this->getMockBuilder(ReleaseSearchService::class)
-            ->onlyMethods(['getPagerCount'])
-            ->getMock();
-
-        $service->expects($this->once())
-            ->method('getPagerCount')
-            ->with('SELECT COUNT(*) as count FROM releases r WHERE r.passwordstatus <= 0 AND r.id IN (1,2,3)')
-            ->willReturn(3);
-
-        $this->assertSame(3, $method->invoke($service, 'WHERE r.passwordstatus <= 0 AND r.id IN (1,2,3)'));
     }
 }

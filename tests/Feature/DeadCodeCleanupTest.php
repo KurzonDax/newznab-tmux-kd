@@ -5,13 +5,62 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Data\ReleaseBrowserState;
+use App\Enums\BrowseRoot;
+use App\Enums\CollectionFileCheckStatus;
 use App\Enums\ReleaseSort;
+use App\Enums\SignupError;
+use App\Enums\UserRole;
+use App\Http\Controllers\Admin\AdminInvitationController;
 use App\Http\Controllers\Api\RSS;
+use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BasePageController;
+use App\Http\Controllers\ContentController;
+use App\Http\Controllers\InvitationController;
+use App\Models\AnidbInfo;
+use App\Models\Category;
+use App\Models\ConsoleInfo;
+use App\Models\Content;
+use App\Models\DownloadStat;
+use App\Models\GamesInfo;
+use App\Models\Invitation;
+use App\Models\Predb;
+use App\Models\RegistrationPeriod;
+use App\Models\Release;
+use App\Models\ReleaseAudioEvidence;
+use App\Models\ReleaseAudioTag;
+use App\Models\ReleaseComment;
+use App\Models\ReleaseFile;
+use App\Models\ReleaseReport;
+use App\Models\RolePromotion;
+use App\Models\RolePromotionStat;
+use App\Models\ServiceIncident;
+use App\Models\Settings;
+use App\Models\SystemMetric;
+use App\Models\UsenetGroup;
+use App\Models\User;
+use App\Models\UserActivityStat;
+use App\Models\UserDownload;
+use App\Models\UserRequest;
+use App\Models\UserRoleHistory;
+use App\Models\UserSerie;
+use App\Models\UsersRelease;
 use App\Services\MovieService;
 use App\Services\Releases\ReleaseBrowserMetadata;
 use App\Services\Releases\ReleaseBrowserQuery;
+use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseManagementService;
+use App\Services\Releases\ReleaseRowDataLoader;
+use App\Services\Releases\ReleaseSearchService;
 use App\Services\Releases\TitleMetadataLoader;
+use App\Services\Search\Contracts\SearchServiceInterface;
+use App\Services\Search\Drivers\ElasticSearchDriver;
+use App\Services\Search\Drivers\ManticoreSearchDriver;
+use App\Support\Auth\AuthenticatesUsers;
+use App\Support\Auth\ThrottlesLogins;
+use App\Support\BookMatchScorer;
+use App\Support\Data\ReleaseCreationResult;
+use App\Support\Data\SteamGameData;
+use App\Support\Data\SteamPriceData;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -103,8 +152,6 @@ final class DeadCodeCleanupTest extends TestCase
             $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
         }
         $this->assertFalse(function_exists('imdb_trailers'));
-        // what the sort of a release list still needs
-        $this->assertSame(ReleaseSort::AddedNewest, ReleaseSort::resolve('no-such-sort'));
     }
 
     public function test_section_a_unread_private_profiles_key_is_gone_from_configuration(): void
@@ -405,6 +452,179 @@ final class DeadCodeCleanupTest extends TestCase
         $this->assertStringContainsString('account-view-preferences', $this->source('resources/views/invitations/index.blade.php'));
     }
 
+    public function test_section_e_class_files_nothing_uses_are_gone(): void
+    {
+        foreach ([
+            // E1
+            'app/Support/YearRange.php', 'tests/Unit/YearRangeTest.php',
+            // E3
+            'app/Enums/AudioPreviewEncoding.php', 'app/Support/ReleaseSize.php', 'tests/Unit/Models/ReleaseAudioTagTest.php',
+            // E5
+            'debug_scrapers.php',
+            // E6
+            'app/Enums/FileCompletionStatus.php', 'app/Enums/QueueType.php', 'app/Http/Requests/UpdateProfileRequest.php',
+            'app/Http/Requests/Auth/ShowLinkRequestFormForgotPasswordRequest.php', 'app/Support/UpdatePerformanceHelper.php',
+            'app/Services/Search/MediaSearchService.php',
+            // E7
+            'app/Models/AnidbEpisode.php', 'app/Models/Forumpost.php', 'app/Models/GdprConsent.php', 'app/Models/PredbImport.php',
+            'app/Models/ReleaseSearchData.php', 'app/Models/ReleaseUnique.php', 'app/Models/RoleExpirationEmail.php', 'app/Models/SiteStat.php',
+            'app/Models/UserMovie.php',
+            // E8
+            'tests/Unit/Models/AnidbInfoTest.php',
+        ] as $path) {
+            $this->assertFileDoesNotExist(base_path($path));
+        }
+        // E6: the binding and its alias went with the class; the search service itself is still bound
+        $this->assertFalse($this->app->bound('search.media'));
+        $this->assertTrue($this->app->bound(SearchServiceInterface::class));
+    }
+
+    public function test_section_e_release_browser_state_keeps_only_what_its_three_callers_set(): void
+    {
+        // E1
+        $names = static fn (\ReflectionMethod $method): array => array_map(static fn (\ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters());
+        $constructor = (new \ReflectionClass(ReleaseBrowserState::class))->getConstructor();
+        $this->assertNotNull($constructor);
+        $this->assertSame(['root', 'group', 'watching', 'basketOnly', 'minCompletion'], $names($constructor));
+        $this->assertSame(['request', 'root', 'basketOnly'], $names(new \ReflectionMethod(ReleaseBrowserState::class, 'fromRequest')));
+        foreach ([
+            [ReleaseBrowserMetadata::class, 'filter'], [ReleaseBrowserMetadata::class, 'fields'], [ReleaseBrowserQuery::class, 'displayName'],
+            [BrowseRoot::class, 'views'], [BrowseRoot::class, 'coverSizes'], [ReleaseSort::class, 'resolve'],
+        ] as [$class, $method]) {
+            $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
+        }
+        // the joins the Movies and TV roots still add
+        $this->assertTrue(method_exists(ReleaseBrowserMetadata::class, 'join'));
+    }
+
+    public function test_section_e_preview_row_and_report_members_nothing_reads_are_gone(): void
+    {
+        // E3
+        foreach ([
+            [ReleaseAudioTag::class, 'previewSummary'], [ReleaseAudioTag::class, 'previewEncoding'], [ReleaseRowDataLoader::class, 'postProcessed'],
+            // E4
+            [ReleaseReport::class, 'reasonKeysToLabels'], [ContentController::class, 'getActiveContent'],
+        ] as [$class, $method]) {
+            $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
+        }
+        $this->assertFalse((new \ReflectionClass(ReleaseAudioTag::class))->hasConstant('SOURCE_FORMAT_EXTENSIONS'));
+        // what stays beside them
+        $this->assertTrue(method_exists(ReleaseAudioTag::class, 'playablePreviewMimeType'));
+        $this->assertContains('completion', ReleaseRowDataLoader::REQUIRED_COLUMNS);
+        $this->assertArrayHasKey('spam', ReleaseReport::REASONS);
+    }
+
+    public function test_section_e_base_page_controller_keeps_only_what_its_subclasses_use(): void
+    {
+        // E4
+        foreach (['paginate', 'resolveOrderBy', 'paginationOffset', 'resolveMinCompletion', 'buildOrderByUrls', 'arrayInput', 'localReturnUrl', 'show404', 'adminrender', 'adminBasePage'] as $method) {
+            $this->assertFalse(method_exists(BasePageController::class, $method), $method);
+        }
+        foreach (['title', 'content', 'meta_keywords', 'meta_title', 'meta_description', 'page', 'theme'] as $property) {
+            $this->assertFalse(property_exists(BasePageController::class, $property), $property);
+        }
+        $controller = $this->source('app/Http/Controllers/BasePageController.php');
+        $this->assertSame(1, preg_match('/->except\(([^)]*)\)/', $controller, $except));
+        foreach (["'callback'", "'release'", "'reset'", "'showLinkRequestForm'"] as $name) {
+            $this->assertStringNotContainsString($name, $except[1]);
+        }
+        // the names that still have a method keep their exemption
+        $this->assertContainsAll(["'api'", "'contact'", "'showContactForm'", "'btcPayCallback'", "'getNzb'", "'terms'", "'privacyPolicy'", "'capabilities'", "'movie'", "'apiSearch'", "'tv'", "'details'", "'failed'",
+            "'showRssDesc'", "'fullFeedRss'", "'categoryFeedRss'", "'cartRss'", "'myMoviesRss'", "'myShowsRss'", "'trendingMoviesRss'", "'trendingShowsRss'", "'showStatusPage'", "'showInvitation'"], $except[1]);
+        foreach (['resolvePage', 'scalarInput', 'integerInput', 'nullableIntegerInput', 'storedAttribute', 'isPostBack', 'pagerender', 'hidesCategory', 'hiddenCategoryPage'] as $method) {
+            $this->assertTrue(method_exists(BasePageController::class, $method), $method);
+        }
+        foreach (['settings', 'userdata', 'viewData'] as $property) {
+            $this->assertTrue(property_exists(BasePageController::class, $property), $property);
+        }
+    }
+
+    public function test_section_e_helpers_and_console_output_members_nothing_calls_are_gone(): void
+    {
+        // E5
+        foreach (['getRawHtml', 'getUserBrowseOrder', 'bcdechex', 'imdb_id_needs_lookup_sql', 'imdb_id_pad', 'is_it_json', 'release_flag', 'formatBytes'] as $function) {
+            $this->assertFalse(function_exists($function), $function);
+        }
+        foreach (['tmuxOrange', 'progress', 'overWriteHeader', 'overWrite', 'appendWrite', 'percentString2', 'convertTime', 'convertTimer', 'showSleep'] as $method) {
+            $this->assertFalse(method_exists(cli(), $method), $method);
+        }
+        // what stays beside them
+        $this->assertTrue(function_exists('getUserBrowseOrdering'));
+        foreach (['overWritePrimary', 'percentString', 'primary', 'primaryOver', 'header', 'warning', 'warningOver', 'error'] as $method) {
+            $this->assertTrue(method_exists(cli(), $method), $method);
+        }
+    }
+
+    public function test_section_e_single_methods_and_constants_nothing_uses_are_gone(): void
+    {
+        // E8, as the issue lists it
+        foreach ([
+            AnidbInfo::class => ['hasExternalLinks', 'getExternalLinks', 'getAnidbUrl', 'getAnilistUrl', 'getMyAnimeListUrl', 'getMalUrl'],
+            Category::class => ['getByIds', 'getCategoryOthersGroup', 'getCategoryValue', 'getChildren', 'getEnabledParentNames', 'getIdByName', 'updateCategory'],
+            ConsoleInfo::class => ['findByAsin', 'getWithGenre', 'scopeForPlatform', 'scopeWithCover'],
+            Content::class => ['getRoleLabel', 'isHomepage'],
+            DownloadStat::class => ['getTopDownloads'],
+            GamesInfo::class => ['getBackdropPath'],
+            Invitation::class => ['addInvite', 'deleteInvite', 'getInvite', 'markAsExpired'],
+            Predb::class => ['getForRelease'],
+            RegistrationPeriod::class => ['isActiveAt'],
+            Release::class => ['getReleases', 'getTopComments', 'getTopDownloads', 'imageryDiskSkip', 'updateGrabsByGuids', 'userRelease', 'videoClip', 'musicIdentifications'],
+            ReleaseAudioEvidence::class => ['musicIdentifications'],
+            ReleaseComment::class => ['getCommentById', 'getCommentCount', 'getCommentCountForUser', 'getCommentsForUserRange'],
+            ReleaseFile::class => ['getReleaseFiles'],
+            RolePromotion::class => ['getSummaryStatistics', 'getTotalDaysAdded', 'getTotalUpgrades', 'getUniqueUsersCount'],
+            RolePromotionStat::class => ['getUserSummary', 'getPromotionSummary'],
+            ServiceIncident::class => ['isResolved'],
+            Settings::class => ['toTree'],
+            SystemMetric::class => ['scopeBetweenDates', 'scopeForPeriod'],
+            UsenetGroup::class => ['getActiveIDs', 'getGroupsCount', 'getGroupsForSelect'],
+            User::class => ['checkPassword', 'deleteUser', 'findByRssToken', 'findByUsername', 'generatePassword', 'getCategoryExclusionForApi', 'getTimezone', 'isValidUrl', 'scopeExpiringSoon', 'failedRelease', 'effectiveTimezone', 'countryFlag'],
+            UserActivityStat::class => ['getTotalApiHits', 'getTotalDownloads', 'sumLastNDays'],
+            UserDownload::class => ['delDownloadRequests', 'delDownloadRequestsForRelease', 'getHourlyDownloads'],
+            UserRequest::class => ['delApiRequests', 'getHourlyApiRequests'],
+            UserRoleHistory::class => ['getUserStackedChanges'],
+            UserSerie::class => ['addShow', 'delShow', 'delShowForSeries', 'delShowForUser', 'getShow', 'getShows', 'updateShow'],
+            UsersRelease::class => ['delCartForRelease', 'delCartForUser', 'getCart'],
+            CollectionFileCheckStatus::class => ['inProgress', 'isProcessingComplete', 'readyForRelease'],
+            SignupError::class => ['isSuccess'],
+            UserRole::class => ['hasElevatedPrivileges', 'isModerator', 'isDisabled'],
+            // getShowsCount() and the uSQL() it calls are left in place: the private getPagerCount(), which the issue does not list, has no other caller
+            ReleaseBrowseService::class => ['getBrowseRange', 'getShowsRange', 'searchByIndexWithCategories', 'getReleasesByExternalId', 'getBrowseOrdering', 'getPosterIdentityReleases'],
+            ReleaseManagementService::class => ['getEarliestUsenetPostDate', 'getForExport', 'getLatestUsenetPostDate', 'getReleasedGroupsForSelect'],
+            ReleaseSearchService::class => ['buildSearchPageIdsSql', 'getReleasesCountForWhere'],
+            ElasticSearchDriver::class => ['getClusterHealth', 'getIndexStats', 'indexSearchApi', 'indexSearchTMA'],
+            ManticoreSearchDriver::class => ['deleteReleaseByGuid'],
+            LoginController::class => ['checkPasswordBreachAndRedirect'],
+            InvitationController::class => ['cleanup'],
+            AuthenticatesUsers::class => ['showLoginForm', 'validateLogin', 'attemptLogin', 'credentials', 'sendLoginResponse', 'authenticated', 'sendFailedLoginResponse', 'username'],
+            ThrottlesLogins::class => ['sendLockoutResponse'],
+            BookMatchScorer::class => ['scoreBookInfo'],
+            ReleaseCreationResult::class => ['hasAddedReleases'],
+            SteamGameData::class => ['getGenresString', 'getPrimaryGenre', 'hasMultiplayer', 'hasSteamWorkshop', 'isGame', 'supportsPlatform', 'toGamesInfoArray'],
+            SteamPriceData::class => ['getDisplayPrice', 'getSavings', 'isOnSale'],
+        ] as $class => $methods) {
+            foreach ($methods as $method) {
+                $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
+            }
+        }
+        foreach ([
+            Settings::class => ['ERR_BADFFMPEGPATH', 'ERR_BADLAMEPATH', 'ERR_BADMEDIAINFOPATH', 'ERR_BADNZBPATH', 'ERR_BADTMPUNRARPATH', 'ERR_BADUNRARPATH', 'ERR_DEEPNOUNRAR', 'ERR_SABCOMPLETEPATH'],
+            ElasticSearchDriver::class => ['DEFAULT_TIMEOUT', 'DEFAULT_CONNECT_TIMEOUT'],
+        ] as $class => $constants) {
+            foreach ($constants as $constant) {
+                $this->assertFalse((new \ReflectionClass($class))->hasConstant($constant), $class.'::'.$constant);
+            }
+        }
+        // what the issue names as staying beside them
+        foreach ([
+            [ReleaseBrowseService::class, 'getBrowseRangeForApi'], [ReleaseBrowseService::class, 'executeBrowseQuery'],
+            [AdminInvitationController::class, 'cleanup'], [AuthenticatesUsers::class, 'guard'],
+            [LoginController::class, 'showLoginForm'], [LoginController::class, 'username'],
+        ] as [$class, $method]) {
+            $this->assertTrue(method_exists($class, $method), $class.'::'.$method);
+        }
+    }
+
     /**
      * The distinct names that follow Alpine.data(' in a script, its header comment included.
      *
@@ -424,6 +644,16 @@ final class DeadCodeCleanupTest extends TestCase
     {
         foreach ($needles as $needle) {
             $this->assertStringNotContainsString($needle, $source, trim($message.' '.$needle));
+        }
+    }
+
+    /**
+     * @param  list<string>  $needles
+     */
+    private function assertContainsAll(array $needles, string $source): void
+    {
+        foreach ($needles as $needle) {
+            $this->assertStringContainsString($needle, $source);
         }
     }
 

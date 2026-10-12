@@ -31,9 +31,4 @@ enum SignupError: int
     {
         return $this->value < 0;
     }
-
-    public function isSuccess(): bool
-    {
-        return $this === self::SUCCESS;
-    }
 }

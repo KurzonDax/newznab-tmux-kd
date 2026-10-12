@@ -52,41 +52,4 @@ enum CollectionFileCheckStatus: int
             self::ZeroPart => 'Zero-part collection',
         };
     }
-
-    /**
-     * Check if this status indicates processing is complete.
-     */
-    public function isProcessingComplete(): bool
-    {
-        return match ($this) {
-            self::Inserted, self::Delete => true,
-            default => false,
-        };
-    }
-
-    /**
-     * Get statuses that indicate a collection is ready for release creation.
-     *
-     * @return array<self>
-     */
-    public static function readyForRelease(): array
-    {
-        return [self::Sized];
-    }
-
-    /**
-     * Get statuses that indicate a collection is still being processed.
-     *
-     * @return array<self>
-     */
-    public static function inProgress(): array
-    {
-        return [
-            self::Default,
-            self::CompleteCollection,
-            self::CompleteParts,
-            self::TempComplete,
-            self::ZeroPart,
-        ];
-    }
 }

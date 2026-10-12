@@ -73,17 +73,6 @@ class RegistrationPeriod extends Model
         return $query->where('starts_at', '>', $at);
     }
 
-    public function isActiveAt(?CarbonInterface $at = null): bool
-    {
-        $at ??= now();
-
-        return $this->is_enabled
-            && $this->starts_at !== null
-            && $this->ends_at !== null
-            && $this->starts_at->lte($at)
-            && $this->ends_at->gte($at);
-    }
-
     public function hasEndedAt(?CarbonInterface $at = null): bool
     {
         $at ??= now();
