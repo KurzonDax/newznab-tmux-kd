@@ -304,7 +304,7 @@
         </form>
 
         <!-- Footer -->
-        <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900" data-ajax-url="{{ url('/admin/ajax') }}" data-csrf-token="{{ csrf_token() }}">
+        <div x-data="adminGroups" class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900" data-ajax-url="{{ url('/admin/ajax') }}" data-csrf-token="{{ csrf_token() }}">
             <div class="flex justify-between">
                 <div class="flex gap-2">
                     <x-button-link href="{{ $returnUrl }}"
@@ -314,8 +314,7 @@
                     </x-button-link>
                     <x-button type="button"
                             variant="warning"
-                            data-action="reset-group"
-                            data-group-id="{{ $group['id'] ?? '' }}"
+                            @click="handleAction('reset-group', '{{ $group['id'] ?? '' }}')"
                             icon="fas fa-refresh">
                         Reset Group
                     </x-button>

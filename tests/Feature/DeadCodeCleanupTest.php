@@ -51,6 +51,7 @@ use App\Models\UserRequest;
 use App\Models\UserRoleHistory;
 use App\Models\UserSerie;
 use App\Models\UsersRelease;
+use App\Services\AdminDashboardSnapshotService;
 use App\Services\InvitationService;
 use App\Services\MovieService;
 use App\Services\Releases\ReleaseBrowserMetadata;
@@ -221,11 +222,10 @@ final class DeadCodeCleanupTest extends TestCase
         ] as $path) {
             $this->assertFileDoesNotExist(base_path($path));
         }
-        // a control whose script never loads is a bug for a later issue: its script is untouched
+        // #1057 mounted the show-password eye as a component root and deleted the handlers no page reached
         $password = $this->source('resources/js/alpine/components/password-toggle.js');
-        foreach (["Alpine.data('passwordToggle'", '.password-toggle-btn', 'window.togglePasswordVisibility'] as $kept) {
-            $this->assertStringContainsString($kept, $password);
-        }
+        $this->assertSame(['passwordToggle'], $this->componentNames($password));
+        $this->assertContainsNone(['password-toggle-btn', 'togglePasswordVisibility', 'document.', 'window.'], $password);
 
         $index = $this->source('resources/js/alpine/index.js');
         preg_match_all('/^import\s+(?:[^\'"]+\s+from\s+)?[\'"]([^\'"]+)[\'"];/m', $index, $imports);
@@ -250,15 +250,17 @@ final class DeadCodeCleanupTest extends TestCase
             'checkboxMenu', 'yearMenu', 'tvShows', 'tvSearch', 'tvEpisodeList', 'tvReleaseDetails', 'movieFilm', 'movieReleaseDetails',
             'tvFilesDialog', 'tvImageDialog', 'tvListenDialog', 'loginMode', 'passkeyLogin', 'passkeyManage', 'adminUserPasskeys',
             'adminDashboard', 'adminGroups', 'adminUserEdit', 'adminUserList', 'adminDeletedUsers', 'richTextEditor', 'verifyUser',
+            // #1057: the regex and blacklist deletes, the admin cover placeholder and the invitations select-all
+            'adminRowDelete', 'imageFallback', 'adminInvitations',
         ];
-        $this->assertCount(44, $expected);
+        $this->assertCount(47, $expected);
 
         $loader = $this->source('resources/js/alpine/lazy-loader.js');
         $this->assertSame(1, preg_match('/const lazyComponentMap = \{\n(.*?)\n\};/s', $loader, $map));
         preg_match_all('/^\s*\'([^\']+)\'\s*:\s*\(\)\s*=>\s*import\(/m', $map[1], $entries);
         $keys = $entries[1];
         $this->assertSame(substr_count($map[1], 'import('), count($keys));
-        $this->assertCount(44, $keys);
+        $this->assertCount(47, $keys);
         $this->assertSame($keys, array_values(array_unique($keys)));
         $this->assertEqualsCanonicalizing($expected, $keys);
 
@@ -267,31 +269,23 @@ final class DeadCodeCleanupTest extends TestCase
             $views .= $file->getContents()."\n";
         }
         foreach ($keys as $key) {
-            if ($key === 'passwordToggle') {
-                continue;
-            }
             $this->assertMatchesRegularExpression('/x-data\s*=\s*["\']?\s*'.preg_quote($key, '/').'(?![\w])/', $views, $key.' has no x-data root');
         }
     }
 
-    public function test_section_b_admin_features_script_keeps_its_two_components_and_the_handlers_left_for_a_later_issue(): void
+    public function test_section_b_admin_features_script_keeps_its_two_components_and_the_deleted_users_handlers(): void
     {
         // B3
         $features = $this->source('resources/js/alpine/components/admin/features.js');
         $this->assertSame(['adminUserEdit', 'adminDeletedUsers'], $this->componentNames($features));
-        foreach ([
-            '[data-action]',
-            "case 'show-reset-modal'", "case 'hide-reset-modal'", "case 'show-purge-modal'", "case 'hide-purge-modal'",
-            "case 'show-reset-selected-modal'", "case 'hide-reset-selected-modal'", "case 'select-all-groups'", "case 'toggle-group-status'",
-            "case 'toggle-backfill'", "case 'reset-group'", "case 'delete-group'", "case 'purge-group'", "case 'reset-all'", "case 'purge-all'",
-            "case 'reset-selected'",
-            '.restore-user-btn', '.delete-user-btn', '.promotion-toggle-btn', '.promotion-delete-btn', '[data-delete-regex]',
-            '[data-delete-blacklist]', 'img[data-fallback-src], img[data-hide-on-error]', "getElementById('select_all')", '.invitation-checkbox',
-            "getElementById('selectAll')", "getElementById('bulkActionForm')",
-        ] as $kept) {
+        foreach (['.restore-user-btn', '.delete-user-btn', "getElementById('selectAll')", "getElementById('bulkActionForm')"] as $kept) {
             $this->assertStringContainsString($kept, $features);
         }
-        $this->assertSame(15, preg_match_all('/^\s*case \'/m', $features));
+        // #1057 replaced these handlers, which no page loaded, with components mounted on their pages
+        $this->assertContainsNone([
+            'data-action', "case '", 'promotion-toggle-btn', 'promotion-delete-btn', 'data-delete-', 'ajax_binaryblacklist_delete',
+            'data-fallback-src', 'data-hide-on-error', 'select_all', 'invitation-checkbox',
+        ], $features);
         foreach ([
             'escapeHtml', 'data-toggle-submenu', 'verify-modal', 'data-submit-verify-form', 'content-toggle-status', 'content-delete', 'season-tab',
             'data-redirect-on-change', 'group-checkbox', 'crap_types_container', 'fix_crap_opt', "document.addEventListener('change'",
@@ -304,14 +298,13 @@ final class DeadCodeCleanupTest extends TestCase
     {
         // B4
         $groups = $this->source('resources/js/alpine/components/admin/groups-component.js');
-        foreach ([
+        // #1057 deleted the last globals: the group pages call the component's handleAction()
+        $this->assertContainsNone([
             'ajax_group_status', 'ajax_backfill_status', 'ajax_group_reset', 'confirmGroupDelete', 'confirmGroupPurge', 'ajax_group_reset_all',
             'ajax_group_purge_all', 'ajax_group_reset_selected', 'showResetAllModal', 'hideResetAllModal', 'showPurgeAllModal', 'hidePurgeAllModal',
             'showResetSelectedModal', 'hideResetSelectedModal', 'toggleSelectAllGroups', 'updateSelectionUI',
-        ] as $global) {
-            $this->assertStringContainsString('window.'.$global.' =', $groups);
-        }
-        $this->assertSame(16, preg_match_all('/window\.\w+ =/', $groups));
+        ], $groups);
+        $this->assertSame(0, preg_match_all('/window\.\w+ =/', $groups));
         $this->assertContainsNone(['showEditSelectedModal', 'hideEditSelectedModal', 'getSelectedGroups', '_getSelected'], $groups);
 
         $verify = $this->source('resources/js/alpine/components/admin/verify-user.js');
@@ -321,9 +314,8 @@ final class DeadCodeCleanupTest extends TestCase
         // B5
         $profile = $this->source('resources/js/alpine/components/profile-edit.js');
         $this->assertSame(['copyToClipboard'], $this->componentNames($profile));
-        foreach (['.copy-btn', '#copyApiToken', 'apiTokenInput', 'data-copy-target'] as $kept) {
-            $this->assertStringContainsString($kept, $profile);
-        }
+        // #1057: the RSS help copy buttons are copyToClipboard roots
+        $this->assertContainsNone(['copy-btn', 'copyApiToken', 'apiTokenInput', 'data-copy-target', 'document.', 'window.'], $profile);
         $this->assertContainsNone(['profileEdit', 'profilePage', '2fa', 'progress-bar'], $profile);
 
         $toggle = $this->source('resources/js/alpine/components/theme-toggle.js');
@@ -671,8 +663,7 @@ final class DeadCodeCleanupTest extends TestCase
             CollectionFileCheckStatus::class => ['inProgress', 'isProcessingComplete', 'readyForRelease'],
             SignupError::class => ['isSuccess'],
             UserRole::class => ['hasElevatedPrivileges', 'isModerator', 'isDisabled'],
-            // getShowsCount() and the uSQL() it calls are left in place: the private getPagerCount(), which the issue does not list, has no other caller
-            ReleaseBrowseService::class => ['getBrowseRange', 'getShowsRange', 'searchByIndexWithCategories', 'getReleasesByExternalId', 'getBrowseOrdering', 'getPosterIdentityReleases'],
+            ReleaseBrowseService::class => ['getBrowseRange', 'getShowsRange', 'searchByIndexWithCategories', 'getReleasesByExternalId', 'getBrowseOrdering', 'getPosterIdentityReleases', 'getShowsCount', 'uSQL', 'getPagerCount'],
             ReleaseManagementService::class => ['getEarliestUsenetPostDate', 'getForExport', 'getLatestUsenetPostDate', 'getReleasedGroupsForSelect'],
             ReleaseSearchService::class => ['buildSearchPageIdsSql', 'getReleasesCountForWhere'],
             ElasticSearchDriver::class => ['getClusterHealth', 'getIndexStats', 'indexSearchApi', 'indexSearchTMA'],
@@ -790,6 +781,20 @@ final class DeadCodeCleanupTest extends TestCase
 
         // the controller's docblock no longer describes the two admin addresses as redirects
         $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('app/Http/Controllers/Admin/AdminSiteController.php'));
+    }
+
+    public function test_issue_1057_leftovers_the_dashboard_controller_services_and_the_register_invite_query_are_gone(): void
+    {
+        $parameters = (new \ReflectionMethod(AdminPageController::class, '__construct'))->getParameters();
+        $this->assertCount(1, $parameters);
+        $this->assertSame(AdminDashboardSnapshotService::class, (string) $parameters[0]->getType());
+        $own = array_filter(
+            (new \ReflectionClass(AdminPageController::class))->getProperties(),
+            static fn (\ReflectionProperty $property): bool => $property->getDeclaringClass()->getName() === AdminPageController::class,
+        );
+        $this->assertSame(['snapshot'], array_values(array_map(static fn (\ReflectionProperty $property): string => $property->getName(), $own)));
+
+        $this->assertContainsNone(['inviteCodeQuery', 'invite_code_query'], $this->source('app/Http/Controllers/Auth/RegisterController.php'));
     }
 
     public function test_section_f_configuration_keys_nothing_reads_are_unset_and_the_read_ones_stay(): void

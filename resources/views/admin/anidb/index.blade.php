@@ -108,11 +108,14 @@
                                    title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="{{ url('admin/anidb-delete/' . $anime->anidbid) }}"
-                                   class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                   title="Remove from Releases">
-                                    <i class="fas fa-unlink"></i>
-                                </a>
+                                <form method="POST" action="{{ route('admin.anidb-delete', $anime->anidbid) }}" class="inline">
+                                    @csrf
+                                    <button type="submit"
+                                            class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+                                            title="Remove from Releases">
+                                        <i class="fas fa-unlink"></i>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                     @empty

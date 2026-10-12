@@ -9,7 +9,7 @@
                 <h1 class="text-2xl font-semibold text-gray-800 dark:text-gray-100">
                     <i class="fas fa-folder-open mr-2"></i>{{ $title ?? 'Category Regex List' }}
                 </h1>
-                <x-button-link href="{{ url('/admin/category-regexes-edit') }}" icon="fas fa-plus">Add New Regex</x-button-link>
+                <x-button-link href="{{ url('/admin/category_regexes-edit') }}" icon="fas fa-plus">Add New Regex</x-button-link>
             </div>
         </div>
 
@@ -119,13 +119,11 @@
                                            title="Edit this regex">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        <button type="button"
-                                                class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                                data-delete-regex="{{ $row->id }}"
-                                                data-delete-url="{{ url('/admin/category_regexes-delete') }}"
-                                                title="Delete this regex">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
+                                        <x-admin.row-delete action="category_regex_delete"
+                                                            :row-id="$row->id"
+                                                            question="Are you sure you want to delete this regex?"
+                                                            deleted-message="Regex deleted"
+                                                            title="Delete this regex" />
                                     </div>
                                 </td>
                             </tr>
@@ -145,7 +143,7 @@
                 <i class="fas fa-exclamation-triangle text-gray-400 text-5xl mb-4"></i>
                 <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No regex patterns found</h3>
                 <p class="text-gray-500 mb-4">Try a different search term or add a new regex.</p>
-                <x-button-link href="{{ url('/admin/category-regexes-edit') }}" icon="fas fa-plus">Add New Regex</x-button-link>
+                <x-button-link href="{{ url('/admin/category_regexes-edit') }}" icon="fas fa-plus">Add New Regex</x-button-link>
             </div>
         @endif
 

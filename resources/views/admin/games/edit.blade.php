@@ -166,9 +166,10 @@
                         <label for="cover" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Cover Image
                         </label>
-                        @if(!empty($game['cover']) && $game['cover'] == 1)
+                        @php($gameCover = !empty($game['cover']) && $game['cover'] == 1 ? getImageAssetUrl('games', (string) $game['id']) : null)
+                        @if($gameCover)
                             <div class="mb-3">
-                                <img src="{{ asset('storage/covers/games/' . $game['id'] . (file_exists(storage_path('covers/games/' . $game['id'] . '.webp')) ? '.webp' : '.jpg')) }}"
+                                <img src="{{ $gameCover }}"
                                      alt="Game Cover"
                                      class="max-w-xs rounded-lg shadow-md border border-gray-300 dark:border-gray-600">
                             </div>

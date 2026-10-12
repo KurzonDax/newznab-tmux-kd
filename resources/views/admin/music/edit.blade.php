@@ -187,9 +187,10 @@
                         <label for="cover" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Cover Image
                         </label>
-                        @if(!empty($mus['cover']) && $mus['cover'] == 1)
+                        @php($musicCover = !empty($mus['cover']) && $mus['cover'] == 1 ? getImageAssetUrl('music', (string) $mus['id']) : null)
+                        @if($musicCover)
                             <div class="mb-3">
-                                <img src="{{ asset('storage/covers/music/' . $mus['id'] . (file_exists(storage_path('covers/music/' . $mus['id'] . '.webp')) ? '.webp' : '.jpg')) }}"
+                                <img src="{{ $musicCover }}"
                                      alt="Album Cover"
                                      class="max-w-xs rounded-lg shadow-md border border-gray-300 dark:border-gray-600">
                             </div>

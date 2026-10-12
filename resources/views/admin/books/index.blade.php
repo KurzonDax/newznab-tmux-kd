@@ -30,12 +30,14 @@
                     @forelse($bookList as $book)
                         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                @if($book->cover == 1)
-                                    <img src="{{ asset('storage/covers/book/' . $book->id . (file_exists(storage_path('covers/book/' . $book->id . '.webp')) ? '.webp' : '.jpg')) }}"
+                                @php($bookCover = $book->cover == 1 ? getImageAssetUrl('book', (string) $book->id) : null)
+                                @if($bookCover)
+                                    <img src="{{ $bookCover }}"
                                          alt="{{ $book->title }}"
                                          class="h-16 w-12 object-cover rounded shadow"
                                          loading="lazy"
-                                         data-fallback-src="{{ asset('images/no-cover.png') }}">
+                                         x-data="imageFallback"
+                                         data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                                 @else
                                     <div class="h-16 w-12 bg-gray-200 dark:bg-gray-700 rounded flex items-center justify-center">
                                         <i class="fas fa-book text-gray-400"></i>

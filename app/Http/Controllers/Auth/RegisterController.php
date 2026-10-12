@@ -46,8 +46,6 @@ class RegisterController extends Controller
      */
     protected string $redirectTo = '/';
 
-    private string $inviteCodeQuery = '';
-
     public function __construct(
         private readonly RegistrationStatusService $registrationStatusService
     ) {
@@ -263,7 +261,6 @@ class RegisterController extends Controller
             'error' => $error,
             'notice' => $notice,
             'email' => $emailFromInvite,
-            'invite_code_query' => $this->inviteCodeQuery,
             'invitecode' => $inviteCode,
             'registrationStatus' => $status,
         ]);
@@ -389,14 +386,9 @@ class RegisterController extends Controller
 
     private function extractInviteCode(Request $request): string
     {
-        $this->inviteCodeQuery = '';
-
         foreach (['invitecode', 'token', 'invitation'] as $parameter) {
             if ($request->filled($parameter)) {
-                $inviteCode = (string) $request->input($parameter);
-                $this->inviteCodeQuery = '&'.$parameter.'='.$inviteCode;
-
-                return $inviteCode;
+                return (string) $request->input($parameter);
             }
         }
 

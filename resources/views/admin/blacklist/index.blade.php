@@ -117,12 +117,11 @@
                                    title="Edit this blacklist">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <button type="button"
-                                        class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                        data-delete-blacklist="{{ $bin->id }}"
-                                        title="Delete this blacklist">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+                                <x-admin.row-delete action="binary_blacklist_delete"
+                                                    :row-id="$bin->id"
+                                                    question="Are you sure? This will delete the blacklist."
+                                                    deleted-message="Blacklist deleted"
+                                                    title="Delete this blacklist" />
                             </div>
                         </td>
                     </tr>

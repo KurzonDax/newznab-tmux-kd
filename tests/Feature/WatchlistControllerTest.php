@@ -15,6 +15,7 @@ use Tests\Support\AssertsFollowWording;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
+use Tests\Support\ReadsRenderedMarkup;
 use Tests\TestCase;
 
 final class WatchlistControllerTest extends TestCase
@@ -23,6 +24,7 @@ final class WatchlistControllerTest extends TestCase
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
+    use ReadsRenderedMarkup;
 
     protected function setUp(): void
     {
@@ -138,6 +140,38 @@ final class WatchlistControllerTest extends TestCase
         $this->deleteJson('/watchlist/movies/0137523')->assertOk();
         $this->getJson('/watchlist/movies/0000001')->assertOk()->assertJsonPath('selected', [2040]);
         $this->getJson('/watchlist/audio/1')->assertNotFound();
+    }
+
+    public function test_the_following_page_has_no_view_releases_from_these_button_and_keeps_everything_else(): void
+    {
+        DB::table('movieinfo')->insert(['id' => 7, 'imdbid' => '0137523', 'title' => 'Invented Followed Movie', 'year' => '2024']);
+        $this->video(['id' => 12, 'title' => 'Invented Followed Show']);
+        $user = $this->browserUser();
+        DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => '2030']);
+        DB::table('user_series')->insert(['users_id' => $user->id, 'videos_id' => 12, 'categories' => '5030']);
+
+        foreach (['movies' => ['Invented Followed Movie', '/rss/mymovies'], 'tv' => ['Invented Followed Show', '/rss/myshows']] as $tab => [$title, $feed]) {
+            $page = $this->actingAs($user)->get('/watchlist?tab='.$tab)->assertOk()
+                ->assertDontSee('View releases from these')
+                ->assertDontSee('/browse/movies?watching=1', false)->assertDontSee('/browse/tv?watching=1', false)
+                ->assertSeeInOrder(['<h1 class="page-heading', 'Following', '</h1>'], false)
+                ->assertSee($title);
+
+            $xpath = $this->xpath((string) $page->getContent());
+            // the heading's only action is the RSS button, which copies this tab's feed address
+            $actions = $xpath->query('//div[contains(@class, "page-header")]//h1/parent::div/following-sibling::div//*[self::a or self::button]');
+            $this->assertSame(1, $actions->length, $tab);
+            $this->assertSame('RSS', trim($actions->item(0)->textContent));
+            $address = $xpath->query('//input[@id="watchlist-rss-url"]')->item(0)->getAttribute('value');
+            $this->assertStringStartsWith(url($feed).'?api_token=', $address);
+            // both tabs, each with its count, and the find-a-title box
+            $tabs = [];
+            foreach ($xpath->query('//div[@class="watchlist-tabs"]/a') as $link) {
+                $tabs[] = preg_replace('/\s+/', ' ', trim($link->textContent));
+            }
+            $this->assertSame(['My Movies · 1', 'My Shows · 1'], $tabs);
+            $this->assertSame(1, $xpath->query('//div[@class="watchlist-tabs"]//input[@name="q"][@aria-label="Find a title to add"]')->length);
+        }
     }
 
     public function test_browse_tv_redirects_to_the_tv_releases_screen(): void

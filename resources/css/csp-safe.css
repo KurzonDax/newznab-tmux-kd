@@ -402,9 +402,10 @@ body.public-shell { display: flex; flex-direction: column; min-height: 100vh; mi
 .public-footer-useful-entry { padding: 8px 0; }
 
 /* Release details: the files table and the comments. */
-.details-comment { padding: 8px 0; border-top: 1px solid var(--details-border); overflow-wrap: anywhere; }
+.details-comment { padding: 8px 0; border-top: 1px solid var(--tv-line); overflow-wrap: anywhere; }
 .details-comment p { margin-top: 4px; white-space: pre-wrap; }
 .details-comment .text-muted { font-size: 11px; }
+.tv-details-comments .text-muted { color: var(--tv-dim); }
 .details-comment-form { display: flex; gap: 8px; align-items: end; margin-top: 12px; }
 
 @media (max-width: 639px) {

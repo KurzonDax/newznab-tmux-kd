@@ -5,7 +5,7 @@
         <a href="{{ route('apiv2help') }}">API v2</a>
         <a href="{{ route('rsshelp') }}">RSS feeds</a>
         <a href="{{ route('status') }}">Status</a>
-        @if($isadmin)<a href="{{ url('/admin') }}">Admin</a>@endif
+        @if($isadmin)<a href="{{ route('admin.index') }}">Admin</a>@endif
         @auth
             @php($userRole = auth()->user()->roles->first()?->name ?? 'user')
             @if($userRole !== 'Admin')

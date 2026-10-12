@@ -6,37 +6,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\BasePageController;
 use App\Services\AdminDashboardSnapshotService;
-use App\Services\RegistrationStatusService;
-use App\Services\SiteStatusService;
-use App\Services\SystemMetricsService;
-use App\Services\UserStatsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 
 class AdminPageController extends BasePageController
 {
-    protected UserStatsService $userStatsService;
-
-    protected SystemMetricsService $systemMetricsService;
-
-    protected RegistrationStatusService $registrationStatusService;
-
-    protected SiteStatusService $siteStatusService;
-
     protected AdminDashboardSnapshotService $snapshot;
 
-    public function __construct(
-        UserStatsService $userStatsService,
-        SystemMetricsService $systemMetricsService,
-        RegistrationStatusService $registrationStatusService,
-        SiteStatusService $siteStatusService,
-        AdminDashboardSnapshotService $snapshot,
-    ) {
+    public function __construct(AdminDashboardSnapshotService $snapshot)
+    {
         parent::__construct();
-        $this->userStatsService = $userStatsService;
-        $this->systemMetricsService = $systemMetricsService;
-        $this->registrationStatusService = $registrationStatusService;
-        $this->siteStatusService = $siteStatusService;
         $this->snapshot = $snapshot;
     }
 

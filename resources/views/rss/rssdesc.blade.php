@@ -22,10 +22,10 @@
                 <h4 class="text-lg font-semibold mb-3 text-gray-900 dark:text-gray-100 dark:text-white flex items-center">
                     <i class="fa fa-key mr-2 text-gray-600 dark:text-gray-400"></i>Your API Token
                 </h4>
-                <div class="flex rounded-md shadow-sm">
+                <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                     <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-500 dark:text-white" value="api_token={{ auth()->user()->api_token }}" readonly id="apiTokenInput">
-                    <button class="inline-flex items-center px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" id="copyApiToken" title="Copy to clipboard">
-                        <i class="fa fa-copy"></i>
+                    <button class="inline-flex items-center px-4 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('apiTokenInput')" title="Copy to clipboard">
+                        <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                     </button>
                 </div>
             </div>
@@ -105,10 +105,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/full-feed?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="fullFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="fullFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('fullFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                     <small class="text-gray-500 text-xs mt-2 block dark:text-gray-400">You can define limit and num parameters, which will decide how many items to show and what offset to use (default values: limit 100 and offset 0).</small>
@@ -121,10 +121,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/cart?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="cartFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="cartFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('cartFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                 </div>
@@ -136,10 +136,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/myshows?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myShowsFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myShowsFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('myShowsFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                 </div>
@@ -151,10 +151,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/mymovies?dl=1&api_token=' . (auth()->user()->api_token ?? '') . '&del=1') }}" readonly id="myMoviesFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="myMoviesFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('myMoviesFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                 </div>
@@ -177,10 +177,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-movies?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingMoviesFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingMoviesFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('trendingMoviesFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                 </div>
@@ -191,10 +191,10 @@
                         </strong>
                         <x-button-link href="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                     </div>
-                    <div class="flex rounded-md shadow-sm">
+                    <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                         <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/trending-shows?dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="trendingShowsFeedUrl">
-                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="trendingShowsFeedUrl">
-                            <i class="fa fa-copy"></i>
+                        <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('trendingShowsFeedUrl')">
+                            <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                         </button>
                     </div>
                 </div>
@@ -218,10 +218,10 @@
                                 </strong>
                                 <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                             </div>
-                            <div class="flex rounded-md shadow-sm">
+                            <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                                 <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="parentCat{{ $category['id'] }}Url">
-                                <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="parentCat{{ $category['id'] }}Url">
-                                    <i class="fa fa-copy"></i>
+                                <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('parentCat{{ $category['id'] }}Url')">
+                                    <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                                 </button>
                             </div>
                         </div>
@@ -250,10 +250,10 @@
                                     </strong>
                                     <x-button-link href="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" variant="secondary" size="sm" target="_blank" icon="fas fa-up-right-from-square">Open Feed</x-button-link>
                                 </div>
-                                <div class="flex rounded-md shadow-sm">
+                                <div class="flex rounded-md shadow-sm" x-data="copyToClipboard">
                                     <input type="text" class="flex-1 rounded-l-md border-gray-300 dark:border-gray-600 font-mono text-xs focus:border-primary-500 focus:ring-primary-500 dark:bg-(--surface-panel-alt-dark) dark:border-gray-600 dark:text-white" value="{{ url('/rss/category?id=' . $category['id'] . '&dl=1&api_token=' . (auth()->user()->api_token ?? '')) }}" readonly id="subCat{{ $category['id'] }}Url">
-                                    <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500 copy-btn" type="button" data-copy-target="subCat{{ $category['id'] }}Url">
-                                        <i class="fa fa-copy"></i>
+                                    <button class="inline-flex items-center px-3 py-2 border border-l-0 border-gray-300 dark:border-gray-600 rounded-r-md bg-(--surface-card) dark:bg-(--surface-panel-alt-dark) text-gray-700 dark:text-gray-200 hover:bg-(--public-surface-hover) dark:hover:bg-(--public-surface-hover-dark) focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 dark:border-gray-500" type="button" @click="copy('subCat{{ $category['id'] }}Url')">
+                                        <i class="fa" :class="copied ? 'fa-check' : 'fa-copy'"></i>
                                     </button>
                                 </div>
                             </div>

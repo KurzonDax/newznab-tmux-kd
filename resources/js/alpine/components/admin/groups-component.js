@@ -58,25 +58,6 @@ export function adminGroups() {
             // Selection is per page: never inherit checkboxes a browser restored
             // across a reload or a back navigation.
             this._applySelectAll(false);
-
-            // Backward compat
-            const self = this;
-            window.ajax_group_status = function(id, s) { self._toggleStatus(id, s); };
-            window.ajax_backfill_status = function(id, s) { self._toggleBackfill(id, s); };
-            window.ajax_group_reset = function(id) { self._resetGroup(id); };
-            window.confirmGroupDelete = function(id) { self._deleteGroup(id); };
-            window.confirmGroupPurge = function(id) { self._purgeGroup(id); };
-            window.ajax_group_reset_all = function() { self._resetAll(); };
-            window.ajax_group_purge_all = function() { self._purgeAll(); };
-            window.ajax_group_reset_selected = function() { self._resetSelected(); };
-            window.showResetAllModal = function() { self.resetAllOpen = true; };
-            window.hideResetAllModal = function() { self.resetAllOpen = false; };
-            window.showPurgeAllModal = function() { self.purgeAllOpen = true; };
-            window.hidePurgeAllModal = function() { self.purgeAllOpen = false; };
-            window.showResetSelectedModal = function() { self._showResetSelected(); };
-            window.hideResetSelectedModal = function() { self.resetSelectedOpen = false; };
-            window.toggleSelectAllGroups = function(cb) { self._applySelectAll(cb?.checked); };
-            window.updateSelectionUI = function() { self._syncSelection(); };
         },
 
         handleAction(action, groupId, status) {
