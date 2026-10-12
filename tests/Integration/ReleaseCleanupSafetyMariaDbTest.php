@@ -6,9 +6,11 @@ namespace Tests\Integration;
 
 use App\Facades\Search;
 use App\Models\Release;
+use App\Services\BlacklistService;
 use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
+use App\Services\PosterIdentityBlacklistService;
 use App\Services\ReleaseImageService;
 use App\Services\ReleaseRemoverService;
 use App\Services\Releases\CollectionDeletionSelection;
@@ -17,6 +19,7 @@ use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -346,6 +349,153 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
         }
     }
 
+    public function test_widening_the_blacklist_group_scope_makes_it_text_and_drops_only_its_own_index(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+
+        $this->groupScopeWidening()->up();
+
+        self::assertSame([
+            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
+            '`groupname` text DEFAULT NULL',
+            '`regex` varchar(2000) NOT NULL',
+            '`msgcol` int(10) unsigned NOT NULL DEFAULT 1',
+            '`optype` int(10) unsigned NOT NULL DEFAULT 1',
+            '`status` int(10) unsigned NOT NULL DEFAULT 1',
+            '`description` varchar(1000) DEFAULT NULL',
+            '`last_activity` date DEFAULT NULL',
+            'PRIMARY KEY (`id`)',
+            'KEY `ix_binaryblacklist_status` (`status`)',
+        ], $this->blacklistDefinition());
+    }
+
+    public function test_widening_the_blacklist_group_scope_works_where_its_index_was_never_created(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        DB::statement('ALTER TABLE `binaryblacklist` DROP INDEX `ix_binaryblacklist_groupname`');
+
+        $this->groupScopeWidening()->up();
+
+        self::assertContains('`groupname` text DEFAULT NULL', $this->blacklistDefinition());
+    }
+
+    public function test_widening_the_blacklist_group_scope_leaves_the_stored_rules_as_they_were(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $stored = $this->storeThreeBlacklistRules();
+
+        $this->groupScopeWidening()->up();
+
+        self::assertCount(3, $stored);
+        self::assertSame($stored, $this->blacklistRules());
+    }
+
+    public function test_widening_the_blacklist_group_scope_a_second_time_changes_nothing(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $stored = $this->storeThreeBlacklistRules();
+        $this->groupScopeWidening()->up();
+        $widened = $this->blacklistDefinition();
+
+        $this->groupScopeWidening()->up();
+
+        self::assertSame($widened, $this->blacklistDefinition());
+        self::assertSame($stored, $this->blacklistRules());
+    }
+
+    public function test_the_schema_dump_shows_the_blacklist_table_as_the_widening_leaves_it(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $this->groupScopeWidening()->up();
+        $dump = (string) file_get_contents(database_path('schema/mariadb-schema.sql'));
+
+        self::assertSame($this->blacklistDefinition(), $this->blacklistDefinitionLines($dump));
+        self::assertStringContainsString("'2026_10_12_130000_widen_binaryblacklist_groupname_to_text'", $dump);
+    }
+
+    public function test_a_poster_blocked_across_twelve_groups_is_stored_with_the_group_scope_that_was_previewed(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $this->groupScopeWidening()->up();
+        $poster = 'wide-poster@example.test';
+        $this->releasesInTwelveGroups($poster);
+        $this->useACipherKey();
+        $service = app(PosterIdentityBlacklistService::class);
+
+        $confirmation = $service->previewForConfirmation($poster, 'invented-admin');
+        $rule = $service->createOrEnable($poster, 'invented-admin', $confirmation['token']);
+
+        $previewed = $confirmation['preview']['groupname'];
+        self::assertGreaterThan(255, strlen($previewed));
+        self::assertSame($previewed, DB::table('binaryblacklist')->where('id', $rule->id)->value('groupname'));
+    }
+
+    public function test_a_poster_blocked_across_twelve_groups_is_blocked_in_each_of_them_and_in_no_unrelated_group(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $this->groupScopeWidening()->up();
+        $poster = 'wide-poster@example.test';
+        $groups = $this->releasesInTwelveGroups($poster);
+        DB::table('usenet_groups')->insert(['id' => 13, 'name' => 'alt.binaries.elsewhere.attic']);
+        $this->useACipherKey();
+        $service = app(PosterIdentityBlacklistService::class);
+        $service->createOrEnable($poster, 'invented-admin', $service->previewForConfirmation($poster, 'invented-admin')['token']);
+        $header = ['Subject' => 'Invented post [1/2] yEnc (1/10)', 'From' => $poster, 'Message-ID' => '<invented-1@example.test>'];
+        $blacklists = new BlacklistService;
+
+        foreach ($groups as $group) {
+            self::assertTrue($blacklists->isBlackListed($header, $group), $group);
+        }
+        self::assertFalse($blacklists->isBlackListed($header, 'alt.binaries.elsewhere.attic'));
+    }
+
+    public function test_reversing_the_group_scope_widening_restores_varchar_255_and_the_index(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $stored = $this->storeThreeBlacklistRules();
+        $migration = $this->groupScopeWidening();
+        $migration->up();
+
+        $migration->down();
+
+        self::assertSame([
+            '`id` int(10) unsigned NOT NULL AUTO_INCREMENT',
+            '`groupname` varchar(255) DEFAULT NULL',
+            '`regex` varchar(2000) NOT NULL',
+            '`msgcol` int(10) unsigned NOT NULL DEFAULT 1',
+            '`optype` int(10) unsigned NOT NULL DEFAULT 1',
+            '`status` int(10) unsigned NOT NULL DEFAULT 1',
+            '`description` varchar(1000) DEFAULT NULL',
+            '`last_activity` date DEFAULT NULL',
+            'PRIMARY KEY (`id`)',
+            'KEY `ix_binaryblacklist_status` (`status`)',
+            'KEY `ix_binaryblacklist_groupname` (`groupname`)',
+        ], $this->blacklistDefinition());
+        self::assertSame($stored, $this->blacklistRules());
+    }
+
+    public function test_reversing_the_group_scope_widening_refuses_while_a_stored_scope_is_longer_than_255_characters(): void
+    {
+        $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
+        $migration = $this->groupScopeWidening();
+        $migration->up();
+        $scope = $this->groupScopeOfLength(256);
+        DB::table('binaryblacklist')->insert(['groupname' => $scope, 'regex' => '^invented-poster$']);
+        $widened = $this->blacklistDefinition();
+        $refusal = null;
+
+        try {
+            $migration->down();
+        } catch (\RuntimeException $exception) {
+            $refusal = $exception->getMessage();
+        }
+
+        self::assertNotNull($refusal, 'A group scope of 256 characters was allowed back into VARCHAR(255).');
+        self::assertStringContainsString('longer than 255 characters', $refusal);
+        self::assertSame($widened, $this->blacklistDefinition());
+        self::assertSame($scope, DB::table('binaryblacklist')->value('groupname'));
+    }
+
     /** @return array<string, array{string}> */
     public static function fixtureSchedules(): array
     {
@@ -400,5 +550,102 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
             $xml .= '<file subject="&quot;'.$name.'&quot; yEnc"/>';
         }
         file_put_contents($nzb->getNzbPath($guid, 0, true), gzencode($xml.'</nzb>'));
+    }
+
+    /** binaryblacklist as database/schema/mariadb-schema.sql defined it before issue #1065's migration. */
+    private function rebuildBlacklistAsBeforeTheGroupScopeWidening(): void
+    {
+        Schema::drop('binaryblacklist');
+        DB::statement('CREATE TABLE `binaryblacklist` (
+            `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+            `groupname` varchar(255) DEFAULT NULL,
+            `regex` varchar(2000) NOT NULL,
+            `msgcol` int(10) unsigned NOT NULL DEFAULT 1,
+            `optype` int(10) unsigned NOT NULL DEFAULT 1,
+            `status` int(10) unsigned NOT NULL DEFAULT 1,
+            `description` varchar(1000) DEFAULT NULL,
+            `last_activity` date DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            KEY `ix_binaryblacklist_groupname` (`groupname`),
+            KEY `ix_binaryblacklist_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+    }
+
+    /**
+     * A rule for every group, a disabled whitelist rule for one group, and a scope of exactly
+     * 255 characters, the longest the column held before the widening.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function storeThreeBlacklistRules(): array
+    {
+        DB::table('binaryblacklist')->insert([
+            ['groupname' => null, 'regex' => '^invented-everywhere$', 'msgcol' => 1, 'optype' => 1, 'status' => 1, 'description' => 'Every group', 'last_activity' => null],
+            ['groupname' => 'alt\.binaries\.invented\.attic', 'regex' => '^invented-attic$', 'msgcol' => 2, 'optype' => 2, 'status' => 0, 'description' => null, 'last_activity' => '2026-10-01'],
+            ['groupname' => $this->groupScopeOfLength(255), 'regex' => '^invented-wide$', 'msgcol' => 2, 'optype' => 1, 'status' => 1, 'description' => 'Cut at 255', 'last_activity' => null],
+        ]);
+
+        return $this->blacklistRules();
+    }
+
+    /** A group scope cut off at that many characters, as the old column left one. */
+    private function groupScopeOfLength(int $characters): string
+    {
+        return str_pad('^(?:alt\.binaries\.invented\.shelf\-01', $characters, '|alt\.binaries\.invented\.shelf\-02');
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function blacklistRules(): array
+    {
+        return DB::table('binaryblacklist')->orderBy('id')->get()->map(static fn (object $rule): array => (array) $rule)->all();
+    }
+
+    /** @return list<string> The live table's column and key lines, as the schema dump writes them. */
+    private function blacklistDefinition(): array
+    {
+        $created = (array) DB::selectOne('SHOW CREATE TABLE `binaryblacklist`');
+
+        return $this->blacklistDefinitionLines((string) $created['Create Table']);
+    }
+
+    /** @return list<string> */
+    private function blacklistDefinitionLines(string $sql): array
+    {
+        self::assertSame(1, preg_match('/^CREATE TABLE `binaryblacklist` \(\n(.*?)\n\) ENGINE=/ms', $sql, $definition));
+
+        return array_map(static fn (string $line): string => rtrim(trim($line), ','), explode("\n", $definition[1]));
+    }
+
+    private function groupScopeWidening(): Migration
+    {
+        return require database_path('migrations/2026_10_12_130000_widen_binaryblacklist_groupname_to_text.php');
+    }
+
+    /** The confirmation token is encrypted, and the test environment's APP_KEY is not a usable cipher key. */
+    private function useACipherKey(): void
+    {
+        config(['app.key' => 'base64:'.base64_encode(random_bytes(32))]);
+    }
+
+    /**
+     * One release from the poster in each of twelve invented groups, whose pattern takes 425 characters.
+     *
+     * @return list<string>
+     */
+    private function releasesInTwelveGroups(string $poster): array
+    {
+        $groups = [];
+        for ($index = 1; $index <= 12; $index++) {
+            $groups[] = $group = sprintf('alt.binaries.invented.shelf-%02d', $index);
+            DB::table('usenet_groups')->insert(['id' => $index, 'name' => $group]);
+            DB::table('releases')->insert([
+                'guid' => str_pad((string) $index, 40, '0', STR_PAD_LEFT),
+                'searchname' => 'Invented wide release '.$index,
+                'fromname' => $poster,
+                'groups_id' => $index,
+            ]);
+        }
+
+        return $groups;
     }
 }

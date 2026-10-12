@@ -29,7 +29,9 @@ class StorePosterIdentityBlacklistRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'preview_token' => ['required', 'string', 'max:4096'],
+            // The token carries the group scope twice: the longest scope binaryblacklist.groupname
+            // (TEXT) can hold makes a token of about 242,000 characters (issue #1065).
+            'preview_token' => ['required', 'string', 'max:262144'],
             'delete_releases' => ['sometimes', 'boolean'],
             'regex' => ['prohibited'],
             'groupname' => ['prohibited'],

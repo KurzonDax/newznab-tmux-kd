@@ -107,7 +107,7 @@ DROP TABLE IF EXISTS `binaryblacklist`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `binaryblacklist` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `groupname` varchar(255) DEFAULT NULL,
+  `groupname` text DEFAULT NULL,
   `regex` varchar(2000) NOT NULL,
   `msgcol` int(10) unsigned NOT NULL DEFAULT 1,
   `optype` int(10) unsigned NOT NULL DEFAULT 1,
@@ -115,7 +115,6 @@ CREATE TABLE `binaryblacklist` (
   `description` varchar(1000) DEFAULT NULL,
   `last_activity` date DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `ix_binaryblacklist_groupname` (`groupname`),
   KEY `ix_binaryblacklist_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -4332,3 +4331,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (325,'2026_10_11_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (326,'2026_10_11_130000_add_imported_indexes_to_releases_table',33);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (327,'2026_10_11_140000_drop_six_settings_with_no_reader',34);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (328,'2026_10_12_120000_widen_collection_ids_to_bigint',35);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (329,'2026_10_12_130000_widen_binaryblacklist_groupname_to_text',36);
