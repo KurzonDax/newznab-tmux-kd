@@ -600,6 +600,52 @@ final class PosterIdentityControllerTest extends TestCase
         ]);
     }
 
+    /** Issue #1065: the token names every group twice, and 60 groups take it well past 4,096 characters. */
+    public function test_confirmation_for_a_poster_in_sixty_groups_saves_the_group_scope_the_dialog_showed(): void
+    {
+        $identity = 'wide-poster@example.test';
+        for ($index = 1; $index <= 60; $index++) {
+            $this->release('Wide release '.$index, $identity, '2026-08-03 12:00:00', sprintf('alt.binaries.invented.shelf-%02d', $index));
+        }
+        $admin = $this->verifiedUser('Admin');
+        $page = $this->actingAs($admin)->get(route('poster-identity', ['name' => $identity]))->assertOk();
+        $previewToken = (string) $this->htmlElement($page->getContent(), '//input[@name="preview_token"]')?->getAttribute('value');
+        $shownGroupScope = (string) $this->htmlElement($page->getContent(), '//dt[text()="Group scope"]/following-sibling::dd')?->textContent;
+        $this->assertGreaterThan(4096, strlen($previewToken));
+        $this->assertStringStartsWith('^(?:alt\.binaries\.invented\.shelf\-01|alt\.binaries\.invented\.shelf\-02|', $shownGroupScope);
+        $this->assertStringEndsWith('|alt\.binaries\.invented\.shelf\-60)$', $shownGroupScope);
+
+        $response = $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $previewToken,
+        ]);
+
+        $this->assertSame(1, DB::table('binaryblacklist')->count());
+        $rule = DB::table('binaryblacklist')->first();
+        $response
+            ->assertRedirect(route('poster-identity', ['name' => $identity]))
+            ->assertSessionHas('success', 'Rule #'.$rule->id.' added · sweep not started');
+        $this->assertSame($shownGroupScope, $rule->groupname);
+    }
+
+    /** Issue #1065: the migration that widens binaryblacklist.groupname is for MariaDB and MySQL only. */
+    public function test_widening_the_blacklist_group_scope_and_reversing_it_change_nothing_on_sqlite(): void
+    {
+        $migration = require database_path('migrations/2026_10_12_130000_widen_binaryblacklist_groupname_to_text.php');
+        DB::table('binaryblacklist')->insert(['groupname' => str_repeat('g', 300), 'regex' => '^invented-poster$']);
+        $snapshot = static fn (): array => [
+            DB::select('SELECT name, sql FROM sqlite_master ORDER BY name'),
+            DB::table('binaryblacklist')->get()->all(),
+        ];
+        $before = $snapshot();
+
+        $migration->up();
+        $this->assertEquals($before, $snapshot());
+
+        $migration->down();
+        $this->assertEquals($before, $snapshot());
+    }
+
     public function test_poster_identity_query_uses_the_composite_index(): void
     {
         $plan = DB::select(
