@@ -12,6 +12,7 @@ use App\Models\Release;
 use App\Models\RootCategory;
 use App\Models\Settings;
 use App\Models\User;
+use App\Services\BlacklistService;
 use App\Services\BlacklistSweepService;
 use App\Services\PosterIdentityBrowserContext;
 use App\Services\Releases\ReleaseRowFacts;
@@ -646,6 +647,67 @@ final class PosterIdentityControllerTest extends TestCase
         $this->assertEquals($before, $snapshot());
     }
 
+    /** Issue #1067: a rule applies in the groups its scope names, not in a group whose name occurs inside one of them. */
+    public function test_a_blacklist_rule_for_one_group_is_not_applied_in_a_group_whose_name_occurs_inside_that_groups_name(): void
+    {
+        $this->storeAGroupAndOneWhoseNameContainsIt();
+        $this->storeRule('^alt\.binaries\.test\.one$', '^invented-poster@example\.test$', BlacklistConstants::OPTYPE_BLACKLIST, BlacklistConstants::BLACKLIST_FIELD_FROM);
+        $header = $this->header('invented-poster@example.test');
+        $blacklists = new BlacklistService;
+
+        $this->assertTrue($blacklists->isBlackListed($header, 'alt.binaries.test.one'));
+        $this->assertFalse($blacklists->isBlackListed($header, 'alt.binaries.test'));
+    }
+
+    /** Issue #1067: a whitelist for the longer-named group must not turn away the shorter-named group's headers. */
+    public function test_a_whitelist_rule_for_one_group_is_not_applied_in_a_group_whose_name_occurs_inside_that_groups_name(): void
+    {
+        $this->storeAGroupAndOneWhoseNameContainsIt();
+        $this->storeRule('^alt\.binaries\.test\.one$', '^Wanted post', BlacklistConstants::OPTYPE_WHITELIST, BlacklistConstants::BLACKLIST_FIELD_SUBJECT);
+        $header = $this->header('invented-poster@example.test');
+        $blacklists = new BlacklistService;
+
+        $this->assertFalse($blacklists->isBlackListed($header, 'alt.binaries.test'));
+        $this->assertTrue($blacklists->isBlackListed($header, 'alt.binaries.test.one'));
+    }
+
+    /** Issue #1067: a scope that is a pattern over many groups still applies in every group it matches. */
+    public function test_a_blacklist_rule_whose_scope_is_a_pattern_over_many_groups_applies_in_each_group_it_matches(): void
+    {
+        $this->storeAGroupAndOneWhoseNameContainsIt();
+        $this->storeRule('^alt\.binaries\.', '^invented-poster@example\.test$', BlacklistConstants::OPTYPE_BLACKLIST, BlacklistConstants::BLACKLIST_FIELD_FROM);
+        $header = $this->header('invented-poster@example.test');
+        $blacklists = new BlacklistService;
+
+        $this->assertTrue($blacklists->isBlackListed($header, 'alt.binaries.test'));
+        $this->assertTrue($blacklists->isBlackListed($header, 'alt.binaries.test.one'));
+    }
+
+    /** Issue #1067: a rule that names only the longer-named group does not count for a poster in the shorter-named one. */
+    public function test_a_poster_is_not_shown_as_blacklisted_by_a_rule_for_a_group_whose_name_contains_the_posters_group_name(): void
+    {
+        $identity = 'invented-poster@example.test';
+        $this->storeAGroupAndOneWhoseNameContainsIt();
+        $this->release('Invented release', $identity, '2026-08-03 12:00:00', 'alt.binaries.test');
+        $this->storeRule('^alt\.binaries\.test\.one$', '^invented-poster@example\.test$', BlacklistConstants::OPTYPE_BLACKLIST, BlacklistConstants::BLACKLIST_FIELD_FROM);
+        $admin = $this->verifiedUser('Admin');
+
+        $this->actingAs($admin)->get(route('poster-identity', ['name' => $identity]))->assertOk()
+            ->assertSee('class="tv-blacklist-button" data-blacklist x-on:click="openConfirmation"', false)
+            ->assertSee('Blacklist this poster')
+            ->assertDontSee('Blacklisted (rule #')->assertDontSee('data-blacklisted', false);
+
+        $this->actingAs($admin)->post(route('admin.poster-identity.blacklist'), [
+            'name' => $identity,
+            'preview_token' => $this->blacklistPreviewToken($admin, $identity),
+        ])->assertRedirect(route('poster-identity', ['name' => $identity]));
+
+        $this->assertSame(
+            ['^alt\.binaries\.test\.one$', '^(?:alt\.binaries\.test)$'],
+            DB::table('binaryblacklist')->orderBy('id')->pluck('groupname')->all(),
+        );
+    }
+
     public function test_poster_identity_query_uses_the_composite_index(): void
     {
         $plan = DB::select(
@@ -802,6 +864,35 @@ final class PosterIdentityControllerTest extends TestCase
         $this->assertNotNull($input);
 
         return $input->getAttribute('value');
+    }
+
+    /** The shorter group name occurs inside the longer one (issue #1067). */
+    private function storeAGroupAndOneWhoseNameContainsIt(): void
+    {
+        DB::table('usenet_groups')->insert([
+            ['name' => 'alt.binaries.test'],
+            ['name' => 'alt.binaries.test.one'],
+        ]);
+    }
+
+    private function storeRule(string $groupScope, string $regex, int $opType, int $field): void
+    {
+        DB::table('binaryblacklist')->insert([
+            'groupname' => $groupScope,
+            'regex' => $regex,
+            'description' => 'Invented rule',
+            'status' => BlacklistConstants::BLACKLIST_ENABLED,
+            'optype' => $opType,
+            'msgcol' => $field,
+        ]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function header(string $poster): array
+    {
+        return ['Subject' => 'Invented post [1/2] yEnc (1/10)', 'From' => $poster, 'Message-ID' => '<invented-1@example.test>'];
     }
 
     private function htmlElement(string $html, string $query): ?DOMElement
