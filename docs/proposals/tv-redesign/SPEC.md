@@ -217,8 +217,10 @@ same component the Movies screens use.
   Ended). OR within a menu, AND between menus. Clear all and the `Starring <name>` chip follow
   the bar; Clear all keeps its place when hidden, so nothing moves. *Changed 2026-09-26 on the
   maintainer's review* (was a row of six separate dropdown pills).
-- Sort, at the right of the title row (as on the Films wall): Newest releases first (default),
-  Newest to the site first, Newest premiere first, A to Z. Remembered per user.
+- Sort, at the right of the title row (as on the Films wall): Recently added first (default;
+  each show's latest added release), Newest releases first, Newest to the site first, Newest
+  premiere first, A to Z. Remembered per user. *Changed 2026-10-12 on the maintainer's review*
+  (was four sorts with Newest releases first as the default).
 - The same "Showing 1–42 of N shows" line and pagers. 42 per page.
 - Tile: poster (a title card when there is none), bold title, `Year · Genre, Genre`,
   `Language · Rating`. No release counts, no resolution chips.

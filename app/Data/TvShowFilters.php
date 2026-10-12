@@ -18,8 +18,8 @@ final readonly class TvShowFilters
     /** The show menus' URL keys (the person is not a menu). */
     public const MENU_KEYS = ['genre', 'decade', 'language', 'network', 'rating', 'status'];
 
-    /** The four orders, default first; labels are the prototype's. */
-    public const SORTS = ['recent' => 'Newest releases first', 'newsite' => 'Newest to the site first', 'prem' => 'Newest premiere first', 'az' => 'A to Z'];
+    /** The five orders, default first. */
+    public const SORTS = ['added' => 'Recently added first', 'recent' => 'Newest releases first', 'newsite' => 'Newest to the site first', 'prem' => 'Newest premiere first', 'az' => 'A to Z'];
 
     /** US TV Parental Guidelines in menu order; any other stored value is never an option. */
     public const RATINGS = ['TV-Y', 'TV-Y7', 'TV-G', 'TV-PG', 'TV-14', 'TV-MA'];
@@ -47,7 +47,7 @@ final readonly class TvShowFilters
         public array $ratings = [],
         public array $statuses = [],
         public ?int $person = null,
-        public string $sort = 'recent',
+        public string $sort = 'added',
         public int $page = 1,
         public array $languageCodes = [],
     ) {}
@@ -80,7 +80,7 @@ final readonly class TvShowFilters
             ratings: $ticked('rating'),
             statuses: $ticked('status'),
             person: is_string($person) && ctype_digit($person) && (int) $person > 0 ? (int) $person : null,
-            sort: is_string($savedSort) && array_key_exists($savedSort, self::SORTS) ? $savedSort : 'recent',
+            sort: is_string($savedSort) && array_key_exists($savedSort, self::SORTS) ? $savedSort : 'added',
             page: is_string($page) && ctype_digit($page) ? max(1, (int) $page) : 1,
             languageCodes: $codes,
         );
