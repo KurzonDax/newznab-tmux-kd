@@ -16,6 +16,7 @@ use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class BinariesStorageInternalsTest extends TestCase
@@ -70,6 +71,46 @@ class BinariesStorageInternalsTest extends TestCase
         $this->assertTrue($handler->flush());
         $this->assertSame([], $handler->getFailedNumbers());
         $this->assertSame(1, DB::table('parts')->count());
+    }
+
+    public function test_part_handler_issues_no_insert_after_a_failed_one_until_reset(): void
+    {
+        ProductionTables::fromAuthority()->create('parts');
+        $failNext = true;
+        $inserts = 0;
+        DB::connection()->beforeExecuting(static function (string $sql) use (&$failNext, &$inserts): void {
+            if (preg_match('/^\s*insert\b.*\binto parts\b/i', $sql) !== 1) {
+                return;
+            }
+            $inserts++;
+            if ($failNext) {
+                $failNext = false;
+                $failure = new \PDOException('Deadlock found');
+                $failure->errorInfo = ['40001', 1213, 'Deadlock found'];
+                throw new QueryException('sqlite', $sql, [], $failure);
+            }
+        });
+
+        $handler = new PartHandler(2);
+        $this->assertTrue($handler->addPart(1, $this->parsedHeader(221, 1)));
+        $this->assertFalse($handler->addPart(1, $this->parsedHeader(222, 2)));
+        $this->assertSame(1, $inserts);
+
+        $handler->addPart(1, $this->parsedHeader(223, 3));
+        $handler->addPart(1, $this->parsedHeader(224, 4));
+        $handler->addPart(1, $this->parsedHeader(225, 5));
+        $this->assertFalse($handler->flush());
+        $this->assertSame(1, $inserts);
+        $this->assertSame([221, 222, 223, 224, 225], $handler->getFailedNumbers());
+        $this->assertSame([], $handler->getInsertedNumbers());
+        $this->assertSame(0, DB::table('parts')->count());
+
+        $handler->reset();
+        $this->assertTrue($handler->addPart(1, $this->parsedHeader(223, 3)));
+        $this->assertTrue($handler->flush());
+        $this->assertSame(2, $inserts);
+        $this->assertSame([], $handler->getFailedNumbers());
+        $this->assertSame([223], DB::table('parts')->pluck('number')->all());
     }
 
     public function test_binary_handler_flushes_cached_article_aggregate_updates(): void

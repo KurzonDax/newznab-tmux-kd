@@ -216,10 +216,13 @@ final class HeaderStorageService
 
             // Flush binary aggregate updates
             if (! $transaction->hasErrors()) {
-                if (! $this->binaryHandler->refreshAggregates(
-                    $this->partHandler->getTouchedBinaryIds(),
-                    $this->config->sqlChunkSize
-                )) {
+                // Where the parts insert reports the rows it stored, the chunk adds them to its
+                // binaries; elsewhere it recounts the stored parts of every binary it touched.
+                $touchedBinaryIds = $this->partHandler->getTouchedBinaryIds();
+                $binariesUpdated = PartHandler::returnsStoredRows()
+                    ? $this->binaryHandler->addStoredParts($touchedBinaryIds, $this->partHandler->getStoredByBinary(), $this->config->sqlChunkSize)
+                    : $this->binaryHandler->refreshAggregates($touchedBinaryIds, $this->config->sqlChunkSize);
+                if (! $binariesUpdated) {
                     $transaction->markError();
                 }
                 if (! $transaction->hasErrors() && ! $this->collectionHandler->refreshAggregates(

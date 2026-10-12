@@ -424,6 +424,69 @@ final class BinaryHandler
     }
 
     /**
+     * Add the parts a chunk stored to the binaries it touched, without reading parts.
+     * Each stored row is counted once, by the transaction that stored it, so an ignored
+     * duplicate never raises currentparts or partsize and a rollback takes the additions
+     * back with the parts. Every touched binary gets its partcheck set again, including
+     * one the chunk stored nothing for: the chunk may have raised its totalparts.
+     *
+     * MariaDB only. It assigns the columns of a single-table UPDATE left to right, and
+     * partcheck relies on that to read the count assigned just before it.
+     *
+     * @param  list<int>  $binaryIds  Every binary the chunk offered a part for
+     * @param  array<int, array{parts: int, bytes: int}>  $storedByBinary  What the chunk stored, by binary id
+     */
+    public function addStoredParts(array $binaryIds, array $storedByBinary, int $chunkSize = 500): bool
+    {
+        $binaryIds = array_values(array_unique(array_map('intval', $binaryIds)));
+        if ($binaryIds === []) {
+            return true;
+        }
+
+        try {
+            $chunkSize = max(1, min($chunkSize, $this->sqlChunkSize));
+            foreach (array_chunk($binaryIds, $chunkSize) as $chunk) {
+                $partCases = '';
+                $partBindings = [];
+                $byteCases = '';
+                $byteBindings = [];
+                foreach ($chunk as $binaryId) {
+                    $stored = $storedByBinary[$binaryId] ?? null;
+                    if ($stored === null) {
+                        continue;
+                    }
+                    $partCases .= ' WHEN ? THEN ?';
+                    array_push($partBindings, $binaryId, $stored['parts']);
+                    $byteCases .= ' WHEN ? THEN ?';
+                    array_push($byteBindings, $binaryId, $stored['bytes']);
+                }
+                $assignments = [];
+                if ($partCases !== '') {
+                    $assignments[] = "currentparts = currentparts + CASE id{$partCases} ELSE 0 END";
+                    $assignments[] = "partsize = partsize + CASE id{$byteCases} ELSE 0 END";
+                }
+                // Assigned last on purpose: by then currentparts already holds the new count.
+                $assignments[] = 'partcheck = CASE WHEN currentparts >= totalparts THEN 1 ELSE 0 END';
+
+                DB::update(
+                    'UPDATE binaries SET '.implode(', ', $assignments)
+                    .' WHERE id IN ('.implode(',', array_fill(0, \count($chunk), '?')).')',
+                    [...$partBindings, ...$byteBindings, ...$chunk]
+                );
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            $this->lastException = $e;
+            if (config('app.debug') === true) {
+                SqlError::logFailure('Binaries stored-part update failed', $e);
+            }
+
+            return false;
+        }
+    }
+
+    /**
      * Rebuild aggregates from stored parts for the binaries touched by a chunk.
      * This is deliberately idempotent: ignored duplicate part inserts cannot
      * inflate currentparts or partsize.
