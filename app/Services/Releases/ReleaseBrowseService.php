@@ -6,7 +6,6 @@ namespace App\Services\Releases;
 
 use App\Facades\Search;
 use App\Models\Category;
-use App\Models\Release;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Support\ReleaseCompletion;
@@ -76,27 +75,6 @@ class ReleaseBrowseService
     }
 
     /**
-     * Used for Browse results on the web frontend with optional search term filtering via search index.
-     * Selects only columns needed by the browse/search Blade views.
-     *
-     * @param  string|null  $searchTerm  Optional search term to filter by (uses search index)
-     * @param  array<int, int>  $excludedCats
-     * @return Collection|mixed
-     */
-    public function getBrowseRange(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null, int $minCompletion = 0): mixed
-    {
-        $releases = $this->executeBrowseQuery('browse', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm, $minCompletion);
-        if (is_iterable($releases)) {
-            $loaded = $this->loadReleaseRows($releases);
-            if (is_array($releases)) {
-                return $loaded;
-            }
-        }
-
-        return $releases;
-    }
-
-    /**
      * Used for API results. Selects additional columns needed by ApiTransformer
      * (movie IDs, TV episode info, external IDs).
      *
@@ -107,70 +85,6 @@ class ReleaseBrowseService
     public function getBrowseRangeForApi(mixed $page, mixed $cat, mixed $start, mixed $num, mixed $orderBy, int $maxAge = -1, array $excludedCats = [], int|string $groupName = -1, int $minSize = 0, ?string $searchTerm = null): mixed
     {
         return $this->executeBrowseQuery('api', $page, $cat, $start, $num, $orderBy, $maxAge, $excludedCats, $groupName, $minSize, $searchTerm);
-    }
-
-    /**
-     * Browse releases posted under one exact, unmodified From identity.
-     *
-     * @param  array<int, int>  $excludedCategories
-     * @return LengthAwarePaginator<int, Release>
-     */
-    public function getPosterIdentityReleases(
-        string $posterIdentity,
-        int $perPage,
-        string $orderBy = '',
-        array $excludedCategories = [],
-    ): LengthAwarePaginator {
-        $ordering = $this->getBrowseOrder($orderBy);
-        $orderColumn = 'r.'.$ordering[0]; // @phpstan-ignore offsetAccess.notFound
-        $orderDirection = $ordering[1]; // @phpstan-ignore offsetAccess.notFound
-        $categoryName = DB::getDriverName() === 'sqlite'
-            ? "cp.title || ' > ' || c.title"
-            : "CONCAT(cp.title, ' > ', c.title)";
-
-        $releases = Release::query()
-            ->from('releases as r')
-            ->select([
-                'r.id',
-                'r.searchname',
-                'r.display_name',
-                'r.completion',
-                'r.guid',
-                'r.postdate',
-                'r.categories_id',
-                'r.size',
-                'r.totalpart',
-                'r.fromname',
-                'r.grabs',
-                'r.comments',
-                'r.adddate',
-                'r.videos_id',
-                'r.haspreview',
-                'r.jpgstatus',
-                'r.nfostatus',
-                'g.name as group_name',
-                DB::raw($categoryName.' as category_name'),
-            ])
-            ->leftJoin('usenet_groups as g', 'g.id', '=', 'r.groups_id')
-            ->leftJoin('categories as c', 'c.id', '=', 'r.categories_id')
-            ->leftJoin('root_categories as cp', 'cp.id', '=', 'c.root_categories_id')
-            ->where('r.fromname', $posterIdentity)
-            ->when(
-                in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
-                static fn ($query) => $query->whereRaw('BINARY r.fromname = BINARY ?', [$posterIdentity]),
-            )
-            ->whereRaw('r.passwordstatus '.$this->showPasswords())
-            ->when(
-                $excludedCategories !== [],
-                static fn ($query) => $query->whereNotIn('r.categories_id', $excludedCategories),
-            )
-            ->orderBy($orderColumn, $orderDirection)
-            ->paginate($perPage)
-            ->withQueryString();
-
-        $this->loadReleaseRows($releases);
-
-        return $releases;
     }
 
     /**
@@ -631,74 +545,6 @@ class ReleaseBrowseService
     }
 
     /**
-     * Return ordering types usable on site.
-     *
-     * @return array<int, string>
-     */
-    public function getBrowseOrdering(): array
-    {
-        return [
-            'name_asc',
-            'name_desc',
-            'cat_asc',
-            'cat_desc',
-            'posted_asc',
-            'posted_desc',
-            'added_asc',
-            'added_desc',
-            'size_asc',
-            'size_desc',
-            'files_asc',
-            'files_desc',
-            'stats_asc',
-            'stats_desc',
-        ];
-    }
-
-    /**
-     * @param  array<int, int>  $excludedCats
-     * @return Collection|mixed
-     */
-    public function getShowsRange(mixed $userShows, mixed $offset, mixed $limit, mixed $orderBy, int $maxAge = -1, array $excludedCats = [])
-    {
-        $orderBy = $this->getBrowseOrder($orderBy);
-        $sql = sprintf(
-            "SELECT r.id, r.searchname, r.display_name, r.completion, r.guid, r.postdate, r.groups_id, r.categories_id, r.size, r.totalpart, r.fromname, r.passwordstatus, r.grabs, r.comments, r.adddate, r.videos_id, r.tv_episodes_id, r.haspreview, r.jpgstatus,  cp.title AS parent_category, c.title AS sub_category,
-					CONCAT(cp.title, '->', c.title) AS category_name
-				FROM releases r
-				LEFT JOIN categories c ON c.id = r.categories_id
-				LEFT JOIN root_categories cp ON cp.id = c.root_categories_id
-				WHERE %s %s
-				AND r.categories_id BETWEEN %d AND %d
-				AND r.passwordstatus %s
-				%s
-				GROUP BY r.id
-				ORDER BY %s %s %s",
-            $this->uSQL($userShows, 'videos_id'),
-            (! empty($excludedCats) ? ' AND r.categories_id NOT IN ('.implode(',', $excludedCats).')' : ''),
-            Category::TV_ROOT,
-            Category::TV_OTHER,
-            $this->showPasswords(),
-            ($maxAge > 0 ? sprintf(' AND r.postdate > NOW() - INTERVAL %d DAY ', $maxAge) : ''),
-            $orderBy[0], // @phpstan-ignore offsetAccess.notFound
-            $orderBy[1], // @phpstan-ignore offsetAccess.notFound
-            ($offset === false ? '' : (' LIMIT '.$limit.' OFFSET '.$offset))
-        );
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        $result = Cache::get(md5($sql));
-        if ($result !== null) {
-            $loaded = $this->loadReleaseRows($result);
-
-            return is_array($result) ? $loaded : $result;
-        }
-        $result = Release::fromQuery($sql);
-        Cache::put(md5($sql), $result, $expiresAt);
-        $this->loadReleaseRows($result);
-
-        return $result;
-    }
-
-    /**
      * @param  array<int, int>  $excludedCats
      */
     public function getShowsCount(mixed $userShows, int $maxAge = -1, array $excludedCats = []): int
@@ -761,61 +607,6 @@ class ReleaseBrowseService
     public static function cacheVersion(): int
     {
         return (int) Cache::get(self::CACHE_VERSION_KEY, 1);
-    }
-
-    /**
-     * Search releases using the search index with category filtering.
-     * This method pre-filters results via the search index before hitting the database,
-     * significantly improving performance for searches with text terms.
-     *
-     * @param  string  $searchTerm  Search term to match
-     * @param  array<string, mixed>  $categories  Category IDs to filter by (optional)
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed> Array of release IDs matching the search criteria
-     */
-    public function searchByIndexWithCategories(string $searchTerm, array $categories = [], int $limit = 1000): array
-    {
-        if (empty($searchTerm) || ! Search::isAvailable()) {
-            return [];
-        }
-
-        $searchResult = Search::searchReleasesWithFuzzy(['searchname' => $searchTerm], $limit);
-        $releaseIds = $searchResult['ids'] ?? [];
-
-        if (empty($releaseIds)) {
-            return [];
-        }
-
-        // If categories are specified, filter the results by querying the database for just the IDs
-        if (! empty($categories) && ! in_array(-1, $categories, true)) {
-            $filteredIds = Release::query()
-                ->select('id')
-                ->whereIn('id', $releaseIds)
-                ->whereIn('categories_id', $categories)
-                ->pluck('id')
-                ->toArray();
-
-            return $filteredIds;
-        }
-
-        return $releaseIds;
-    }
-
-    /**
-     * Get releases by external media ID using search index.
-     * Useful for movie/TV browse pages that need to find all releases for a specific movie/show.
-     *
-     * @param  array<string, mixed>  $externalIds  Associative array of external IDs (e.g., ['imdbid' => 123456])
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed> Array of release IDs
-     */
-    public function getReleasesByExternalId(array $externalIds, int $limit = 100): array
-    {
-        if (empty($externalIds) || ! Search::isAvailable()) {
-            return [];
-        }
-
-        return Search::searchReleasesByExternalId($externalIds, $limit);
     }
 
     /**

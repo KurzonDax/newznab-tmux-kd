@@ -13,7 +13,6 @@
         'md' => 'px-4 py-2 text-sm',
         'lg' => 'px-6 py-3 text-base',
         'icon' => 'h-9 w-9 p-0 text-sm',
-        'icon-sm' => 'h-7.5 w-7.5 p-0 text-xs',
     ];
 
     $variants = [
@@ -26,8 +25,8 @@
         'ghost' => 'border-transparent bg-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800',
     ];
 
-    $controlSize = in_array($size, ['sm', 'icon-sm'], true) ? 'ui-control-sm' : 'ui-control-md';
-    $controlIcon = in_array($size, ['icon', 'icon-sm'], true) ? ' ui-control-icon' : '';
+    $controlSize = in_array($size, ['sm'], true) ? 'ui-control-sm' : 'ui-control-md';
+    $controlIcon = in_array($size, ['icon'], true) ? ' ui-control-icon' : '';
     $base .= ' ui-control '.$controlSize.$controlIcon;
 
     $classes = $base.' '.($sizes[$size] ?? $sizes['md']).' '.($variants[$variant] ?? $variants['primary']);

@@ -175,32 +175,11 @@ class Content extends Model
     }
 
     /**
-     * Get role label.
-     */
-    public function getRoleLabel(): string
-    {
-        return match ($this->role) {
-            self::ROLE_EVERYONE => 'Everyone',
-            self::ROLE_LOGGED_IN => 'Logged in Users',
-            self::ROLE_ADMIN => 'Admins',
-            default => 'Unknown',
-        };
-    }
-
-    /**
      * Check if content is active.
      */
     public function isActive(): bool
     {
         return $this->status === self::STATUS_ENABLED;
-    }
-
-    /**
-     * Check if content is a homepage type.
-     */
-    public function isHomepage(): bool
-    {
-        return $this->contenttype === self::TYPE_INDEX;
     }
 
     /**

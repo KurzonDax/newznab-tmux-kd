@@ -89,7 +89,6 @@ class SearchController extends BasePageController
             'headerScope' => $search->headerScope(array_keys($menu)),
             'addFilters' => ['cat' => 'Sub-category', 'age' => 'Age', 'size' => 'Size range', ...($search->admitsMovies($roots) ? WebSearchState::MOVIE_FIELDS : [])],
             'subCategories' => $search->admittedSubCategories($roots),
-            'lastvisit' => $user->lastlogin,
         ]);
     }
 

@@ -178,9 +178,6 @@
         <span class="preheader">{{ $preheader }}</span>
     @endif
     <div class="email-wrapper">
-        @isset($header)
-            {{ $header }}
-        @else
             <div class="email-header">
                 <a href="{{ $brandUrl }}" class="brand">{{ $brandName }}</a>
                 @if ($logoUrl)
@@ -190,7 +187,6 @@
                     <h1>{{ $title }}</h1>
                 @endif
             </div>
-        @endisset
 
         <div class="email-body">
             <div class="email-content">
@@ -198,9 +194,6 @@
             </div>
         </div>
 
-        @isset($footer)
-            {{ $footer }}
-        @else
             <div class="email-footer">
                 <p>&copy; {{ date('Y') }} {{ $brandName }}. {{ __('All rights reserved.') }}</p>
                 <p>{{ __('This is an automated message. Please do not reply directly to this email.') }}</p>
@@ -208,7 +201,6 @@
                     <p><a href="{{ url('/contact-us') }}">{{ __('Contact us') }}</a></p>
                 @endif
             </div>
-        @endisset
     </div>
 </body>
 </html>

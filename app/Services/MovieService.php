@@ -147,41 +147,6 @@ class MovieService
     }
 
     /**
-     * Get trailer using IMDB Id.
-     *
-     * @throws \Exception
-     * @throws GuzzleException
-     */
-    public function getTrailer(int|string|null $imdbId): string|false
-    {
-        $sanitized = $this->sanitizeImdbId($imdbId);
-        if ($sanitized === null) {
-            return false;
-        }
-
-        $trailer = MovieInfo::query()->where('imdbid', $sanitized)->where('trailer', '<>', '')->first(['trailer']);
-        if ($trailer !== null) {
-            return $trailer['trailer'];
-        }
-
-        if ($this->traktcheck !== null) {
-            $data = $this->traktTv->client->getMovieSummary('tt'.$sanitized, 'full');
-            if (($data !== false) && ! empty($data['trailer'])) {
-                return $data['trailer'];
-            }
-        }
-
-        $trailer = imdb_trailers($sanitized);
-        if ($trailer) {
-            MovieInfo::query()->where('imdbid', $sanitized)->update(['trailer' => $trailer]);
-
-            return $trailer;
-        }
-
-        return false;
-    }
-
-    /**
      * Sanitize an IMDB ID to its raw numeric string, preserving leading zeros.
      * Returns null if the ID is empty or all zeros.
      */

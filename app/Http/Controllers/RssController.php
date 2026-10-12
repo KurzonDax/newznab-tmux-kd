@@ -90,17 +90,9 @@ class RssController extends BasePageController
      */
     public function showRssDesc(): mixed
     {
-        $firstShow = $this->rss->getFirstInstance('videos_id', 'releases', 'id');
-        $firstAni = $this->rss->getFirstInstance('anidbid', 'releases', 'id');
-
-        $show = ($firstShow !== null) ? $firstShow->videos_id : 1;
-        $anidb = ($firstAni !== null) ? $firstAni->anidbid : 1;
-
         $catExclusions = $this->userdata->categoryexclusions ?? [];
 
         $this->viewData = array_merge($this->viewData, [
-            'show' => $show,
-            'anidb' => $anidb,
             'categorylist' => Category::getCategories(true, $catExclusions),
             'parentcategorylist' => Category::getForMenu($catExclusions),
             'title' => 'Rss Info',

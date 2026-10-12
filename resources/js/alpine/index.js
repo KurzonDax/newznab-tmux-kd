@@ -19,20 +19,11 @@ import './stores/cart.js';
 // --- Core UI components (used on every/most pages) ---
 import './components/theme-toggle.js';
 import './components/back-to-top.js';
-import './components/dropdown.js';
 import './components/public-navigation.js';
 import './components/confirm-modal.js';
 import './components/confirm-link.js';
 import './components/toast-notification.js';
-import './components/tab-switcher.js';
-import './components/sort-dropdown.js';
 import './components/dismissible.js';
-
-// --- Shared utility (backward compat) ---
-window.escapeHtml = function(text) {
-    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-    return String(text).replace(/[&<>"']/g, m => map[m]);
-};
 
 // --- Lazy-load page-specific components, then start Alpine ---
 import { loadAndStart } from './lazy-loader.js';

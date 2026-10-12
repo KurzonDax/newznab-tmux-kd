@@ -28,7 +28,6 @@ class AdminBlacklistController extends BasePageController
      */
     public function index(): mixed
     {
-        $this->setAdminPrefs();
         $svc = new BlacklistService;
 
         $meta_title = $title = 'Binary Black/White List';
@@ -89,7 +88,6 @@ class AdminBlacklistController extends BasePageController
      */
     public function edit(Request $request)
     {
-        $this->setAdminPrefs();
         $svc = new BlacklistService;
         $error = '';
         $regex = ['id' => '', 'groupname' => '', 'regex' => '', 'description' => '', 'msgcol' => 1, 'status' => 1, 'optype' => 1];

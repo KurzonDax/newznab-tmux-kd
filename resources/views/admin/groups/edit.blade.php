@@ -13,16 +13,6 @@
             </div>
         </div>
 
-        <!-- Error Message -->
-        @if(isset($error) && $error != '')
-            <div class="mx-6 mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900 rounded-lg">
-                <div class="flex">
-                    <i class="fas fa-exclamation-circle text-red-500 dark:text-red-400 mr-3"></i>
-                    <p class="text-red-800 dark:text-red-300">{{ $error }}</p>
-                </div>
-            </div>
-        @endif
-
         <!-- Form -->
         <form action="{{ url('/admin/group-edit?action=submit') }}" method="POST" id="groupForm" class="px-6 py-6">
             @csrf

@@ -1,7 +1,6 @@
 <?php
 
 return [
-    'anidb_api_key' => env('ANIDB_APIKEY', ''),
     'fanarttv_api_key' => env('FANARTTV_APIKEY', ''),
     'fanarttv_timeout' => env('FANARTTV_TIMEOUT', 30),
     'fanarttv_retry_times' => env('FANARTTV_RETRY_TIMES', 3),

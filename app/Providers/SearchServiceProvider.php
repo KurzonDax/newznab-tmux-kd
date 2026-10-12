@@ -8,7 +8,6 @@ use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\Contracts\SearchServiceInterface;
 use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\Drivers\ManticoreSearchDriver;
-use App\Services\Search\MediaSearchService;
 use App\Services\Search\SearchService;
 use App\Services\Search\Support\ElasticsearchClientFactory;
 use Elastic\Elasticsearch\Client;
@@ -43,11 +42,6 @@ class SearchServiceProvider extends ServiceProvider
             return $app->make(SearchService::class)->driver();
         });
 
-        // Register the MediaSearchService for optimized movie/TV searches
-        $this->app->singleton(MediaSearchService::class, function (Application $app) {
-            return new MediaSearchService;
-        });
-
         // Register individual drivers as singletons for direct access
         $this->app->singleton(ManticoreSearchDriver::class, function (Application $app) {
             $config = config('search.drivers.manticore', []);
@@ -71,7 +65,6 @@ class SearchServiceProvider extends ServiceProvider
         $this->app->alias(SearchService::class, 'search');
         $this->app->alias(ManticoreSearchDriver::class, 'search.manticore');
         $this->app->alias(ElasticSearchDriver::class, 'search.elasticsearch');
-        $this->app->alias(MediaSearchService::class, 'search.media');
     }
 
     /**

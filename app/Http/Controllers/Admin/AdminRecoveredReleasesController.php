@@ -13,8 +13,6 @@ final class AdminRecoveredReleasesController extends BasePageController
 {
     public function index(AdminRecoveredReleaseListRequest $request, RecoveredReleaseList $recovery): View
     {
-        $this->setAdminPrefs();
-
         $group = $request->validated('group');
         $sort = $request->validated('sort') ?? 'added-desc';
         [$column, $direction] = match ($sort) {

@@ -50,8 +50,6 @@ use App\Http\Controllers\Admin\AdminUserRoleHistoryController;
 use App\Http\Controllers\Admin\DeletedUsersController;
 use App\Http\Controllers\Admin\GdprRequestController;
 use App\Http\Controllers\AdultReleasesController;
-use App\Http\Controllers\AjaxController;
-use App\Http\Controllers\Api\FileListApiController;
 use App\Http\Controllers\ApiHelpController;
 use App\Http\Controllers\AudioPreviewController;
 use App\Http\Controllers\AudioReleasesController;
@@ -79,14 +77,12 @@ use App\Http\Controllers\MediaInfoController;
 use App\Http\Controllers\MovieFilmController;
 use App\Http\Controllers\MovieFilmsController;
 use App\Http\Controllers\MovieReleasesController;
-use App\Http\Controllers\MyShowsController;
 use App\Http\Controllers\NfoController;
 use App\Http\Controllers\PasswordSecurityController;
 use App\Http\Controllers\PosterIdentityController;
 use App\Http\Controllers\PrivacyCenterController;
 use App\Http\Controllers\PrivacyPolicyController;
 use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\ProfileSecurityController;
 use App\Http\Controllers\ReleaseFilesController;
 use App\Http\Controllers\ReleaseReportController;
 use App\Http\Controllers\ReleaseViewPreferencesController;
@@ -149,7 +145,6 @@ Route::get('password/reset', [ForgotPasswordController::class, 'showLinkRequestF
 Route::post('password/reset', [ForgotPasswordController::class, 'showLinkRequestForm'])->middleware('throttle:6,1')->withoutMiddleware(['auth']);
 Route::get('password/reset/{token}', [ResetPasswordController::class, 'showResetForm'])->name('password.reset')->withoutMiddleware(['auth']);
 Route::post('password/update', [ResetPasswordController::class, 'reset'])->middleware('throttle:6,1')->name('password.update')->withoutMiddleware(['auth']);
-Route::get('resetpassword', [ResetPasswordController::class, 'showLegacyResetForm'])->middleware('throttle:6,1')->name('resetpassword')->withoutMiddleware(['auth']);
 Route::match(['GET', 'POST'], 'terms-and-conditions', [TermsController::class, 'terms'])->name('terms-and-conditions');
 Route::match(['GET', 'POST'], 'privacy-policy', [PrivacyPolicyController::class, 'privacyPolicy'])->name('privacy-policy');
 
@@ -163,12 +158,9 @@ Route::post('passkeys/authenticate', PasskeyLoginController::class)->middleware(
 
 Route::get('2fa/verify', [PasswordSecurityController::class, 'getVerify2fa'])->middleware('throttle:6,1')->name('2fa.verify');
 Route::post('2fa/verify', [PasswordSecurityController::class, 'verify2fa'])->middleware('throttle:6,1')->name('2fa.post');
-Route::post('2faVerify', [PasswordSecurityController::class, 'verify2fa'])->middleware('throttle:6,1')->name('2faVerify');
 
 // Search autocomplete and suggest API routes (no auth required for better UX)
-Route::get('api/search/autocomplete', [SearchSuggestController::class, 'autocomplete'])->name('api.search.autocomplete');
 Route::get('api/search/suggest', [SearchSuggestController::class, 'suggest'])->name('api.search.suggest');
-Route::get('api/search/assist', [SearchSuggestController::class, 'searchAssist'])->name('api.search.assist');
 
 Route::get('contact-us', [ContactUsController::class, 'showContactForm'])->name('contact-us');
 Route::post('contact-us', [ContactUsController::class, 'contact']);
@@ -190,8 +182,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         ->name('passkeys.store');
     Route::delete('passkeys/{passkey}', [PasskeyManagementController::class, 'destroy'])
         ->name('passkeys.destroy');
-
-    Route::match(['GET', 'POST'], 'profile', [ProfileController::class, 'show'])->name('profile');
 
     Route::prefix('browse')->group(function () {
         Route::match(['GET', 'POST'], 'group', [BrowseController::class, 'group'])->name('group');
@@ -217,7 +207,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
     Route::match(['GET', 'POST'], 'getnzb/{guid}', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb.guid');
     Route::match(['GET', 'POST'], 'getnzb', [GetNzbController::class, 'getNzb'])->withoutMiddleware(['auth', 'isVerified'])->name('getnzb');
     Route::match(['GET', 'POST'], 'rsshelp', [RssController::class, 'showRssDesc'])->name('rsshelp');
-    Route::match(['GET', 'POST'], 'profile', [ProfileController::class, 'show'])->name('profile');
     Route::match(['GET', 'POST'], 'apihelp', [ApiHelpController::class, 'index'])->name('apihelp');
     Route::match(['GET', 'POST'], 'apiv2help', [ApiHelpController::class, 'apiv2'])->name('apiv2help');
     Route::match(['GET', 'POST'], 'browsegroup', [BrowseGroupController::class, 'show'])->name('browsegroup');
@@ -233,8 +222,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('tv/shows', [TvShowsController::class, 'index'])->name('tv.shows');
         Route::get('tv/search', [TvShowsController::class, 'search'])->name('tv.search');
         Route::get('tv/show/{videosId}/{season?}', [TvShowController::class, 'show'])->whereNumber(['videosId', 'season'])->name('tv.show');
-        Route::match(['GET', 'POST'], 'myshows', [MyShowsController::class, 'show'])->name('myshows');
-        Route::match(['GET', 'POST'], 'myshows/browse', [MyShowsController::class, 'browse'])->name('myshows.browse');
         // Movies-related routes
         Route::get('movies', [MovieReleasesController::class, 'index'])->name('movies.releases');
         Route::get('movies/search', [MovieReleasesController::class, 'search'])->name('movies.search');
@@ -253,8 +240,6 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
 
     Route::match(['GET', 'POST'], 'nfo/{id?}', [NfoController::class, 'showNfo'])->name('nfo');
 
-    Route::match(['GET', 'POST'], 'profileedit', [ProfileController::class, 'edit'])->name('profileedit');
-    Route::match(['GET', 'POST'], 'profile_delete', [ProfileController::class, 'destroy'])->name('profile_delete');
     Route::post('profile/update-view', ReleaseViewPreferencesController::class)->name('profile.update-view');
     Route::post('profile/update-theme', [ProfileController::class, 'updateTheme'])->name('profile.update-theme');
     Route::get('privacy-center', [PrivacyCenterController::class, 'index'])->name('privacy-center.index');
@@ -266,21 +251,16 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
 
     // Release Report routes
     Route::post('release-report', [ReleaseReportController::class, 'store'])->name('release-report.store');
-    Route::get('release-report/reasons', [ReleaseReportController::class, 'getReasons'])->name('release-report.reasons');
-    Route::get('release-report/check', [ReleaseReportController::class, 'checkReported'])->name('release-report.check');
 
     Route::get('release/{guid}/files', ReleaseFilesController::class)->name('release.files');
-    Route::get('api/release/{guid}/filelist', [FileListApiController::class, 'getFileList'])->name('api.filelist');
     Route::get('release/{release}/mediainfo', [MediaInfoController::class, 'show'])
         ->middleware(['2fa', 'throttle:60,1'])
         ->name('release.mediainfo');
-    Route::match(['GET', 'POST'], 'ajax_profile', [AjaxController::class, 'profile'])->name('ajax_profile');
     // Profile security actions
     Route::post('profileedit/generate2faSecret', [PasswordSecurityController::class, 'generate2faSecret'])->name('profileedit.generate2faSecret');
     Route::post('profileedit/enable2fa', [PasswordSecurityController::class, 'enable2fa'])->name('profileedit.enable2fa');
     Route::post('profileedit/disable2fa', [PasswordSecurityController::class, 'disable2fa'])->name('profileedit.disable2fa');
     Route::post('profileedit/cancel2fa', [PasswordSecurityController::class, 'cancelSetup'])->name('profileedit.cancel2fa');
-    Route::post('profile-security/disable-2fa', [ProfileSecurityController::class, 'disable2fa'])->name('profile.security.disable2fa');
 });
 
 Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
@@ -289,14 +269,6 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     // Aggregated JSON payload consumed by the admin dashboard's deferred widgets
     // (User Statistics, System Resources history, Recent Activity, Site Status).
     Route::get('api/dashboard-data', [AdminPageController::class, 'getDashboardData'])->name('admin.api.dashboard-data');
-
-    // System Metrics API endpoints
-    Route::get('api/system-metrics/current', [AdminPageController::class, 'getCurrentMetrics'])->name('admin.api.metrics.current');
-    Route::get('api/system-metrics/historical', [AdminPageController::class, 'getHistoricalMetrics'])->name('admin.api.metrics.historical');
-
-    // User Activity API endpoints
-    Route::get('api/user-activity/minutes', [AdminPageController::class, 'getUserActivityMinutes'])->name('admin.api.user-activity.minutes');
-    Route::get('api/user-activity/recent', [AdminPageController::class, 'getRecentActivity'])->name('admin.api.user-activity.recent');
 
     Route::post('anidb-delete/{id}', [AdminAnidbController::class, 'destroy'])->name('admin.anidb-delete');
     Route::match(['GET', 'POST'], 'anidb-edit/{id}', [AdminAnidbController::class, 'edit'])->name('admin.anidb-edit');
@@ -338,12 +310,6 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::post('settings/{section}/{card}', [AdminSettingsController::class, 'update'])
         ->where(['section' => '[a-z0-9-]+', 'card' => '[a-z0-9-]+'])
         ->name('admin.settings.update');
-    // Retired by the settings hub. Permanent so a bookmarked form stops coming back, and
-    // pointed at the index rather than a slug so the registry keeps deciding where the hub
-    // opens. permanentRedirect() registers every verb, so a POST reaches the redirect rather
-    // than 405ing -- though a form left open long enough for its CSRF token to expire is
-    // rejected at the middleware first, as it would have been before.
-    Route::permanentRedirect('site-edit', '/admin/settings');
     Route::post('site/expire-logins', [AdminLoginSessionController::class, 'expireAll'])->name('admin.login-sessions.expire-all');
     Route::get('status/create', [AdminStatusController::class, 'create'])->name('admin.status.create');
     Route::post('status', [AdminStatusController::class, 'store'])->name('admin.status.store');
@@ -385,7 +351,6 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::get('collection_regexes-test', [AdminCollectionRegexesController::class, 'testRegex'])->name('admin.collection-regexes-test');
     Route::match(['GET', 'POST'], 'collection_regexes-edit', [AdminCollectionRegexesController::class, 'edit'])->name('admin.collection_regexes-edit');
     Route::post('ajax', [AdminAjaxController::class, 'ajaxAction'])->name('admin.ajax');
-    Route::permanentRedirect('tmux-edit', '/admin/settings');
     Route::get('backups', [AdminBackupsController::class, 'index'])->name('admin.backups.index');
     Route::post('backups', [AdminBackupsController::class, 'update'])->name('admin.backups.update');
     Route::post('backups/run/{kind}', [AdminBackupsController::class, 'run'])
@@ -459,7 +424,6 @@ Route::prefix('invitations')->name('invitations.')->group(function () {
     Route::post('/store', [InvitationController::class, 'store'])->name('store');
     Route::post('/{id}/resend', [InvitationController::class, 'resend'])->name('resend');
     Route::delete('/{id}', [InvitationController::class, 'destroy'])->name('destroy');
-    Route::get('/stats', [InvitationController::class, 'stats'])->name('stats');
 });
 
 // Public invitation view (no auth required)

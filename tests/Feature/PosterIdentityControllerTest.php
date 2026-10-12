@@ -14,7 +14,6 @@ use App\Models\Settings;
 use App\Models\User;
 use App\Services\BlacklistSweepService;
 use App\Services\PosterIdentityBrowserContext;
-use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseRowFacts;
 use App\View\Composers\GlobalDataComposer;
 use DOMDocument;
@@ -614,37 +613,6 @@ final class PosterIdentityControllerTest extends TestCase
         );
     }
 
-    public function test_poster_identity_rows_include_spectrogram_availability_without_per_release_queries(): void
-    {
-        $identity = 'audio-poster@example.test';
-        $withSpectrogram = $this->release('Audio with spectrogram', $identity, '2026-08-03 12:00:00');
-        $withoutSpectrogram = $this->release('Audio without spectrogram', $identity, '2026-08-02 12:00:00');
-        DB::table('release_audio_tags')->insert([
-            ['releases_id' => $withSpectrogram->id, 'has_spectrogram' => 1, 'genre' => null],
-            ['releases_id' => $withoutSpectrogram->id, 'has_spectrogram' => 0, 'genre' => 'Jazz'],
-        ]);
-
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-
-        $rows = app(ReleaseBrowseService::class)->getPosterIdentityReleases($identity, 20);
-        $queries = DB::getQueryLog();
-        DB::disableQueryLog();
-
-        $this->assertSame([true, false], $rows->map(
-            static fn (Release $release): bool => (bool) $release->has_spectrogram,
-        )->all());
-        $this->assertSame([false, true], $rows->map(
-            static fn (Release $release): bool => (bool) $release->has_media_info,
-        )->all());
-
-        $audioTagQueries = array_filter(
-            $queries,
-            static fn (array $query): bool => str_contains(strtolower($query['query']), 'release_audio_tags'),
-        );
-        $this->assertCount(1, $audioTagQueries);
-    }
-
     public function test_poster_page_supplies_complete_release_rows_with_processing_state(): void
     {
         $user = $this->verifiedUser();
@@ -665,11 +633,10 @@ final class PosterIdentityControllerTest extends TestCase
         $this->assertSame('alt.binaries.movies', $row->group);
         $this->assertSame('exact <poster@example.test>', $row->uploader);
         // the rows come from the shared loader, which carries the DTO's processing decisions
-        foreach ([[-1, 0, null, false], [-8, 0, null, false], [0, -1, null, false], [1, 0, 'active-claim', false], [-10, 0, null, true], [0, 0, null, true]] as [$nfo, $password, $claim, $done]) {
+        foreach ([[-1, 0, null], [-8, 0, null], [0, -1, null], [1, 0, 'active-claim'], [-10, 0, null], [0, 0, null]] as [$nfo, $password, $claim]) {
             DB::table('releases')->where('id', $release->id)->update([
                 'nfostatus' => $nfo, 'passwordstatus' => $password, 'additional_pp_claim_token' => $claim,
             ]);
-            $this->assertSame($done, app(ReleaseRowFacts::class)->load([(int) $release->id])[0]->row_data->pp_done, 'nfo '.$nfo.' password '.$password);
             $this->get(route('poster-identity', ['name' => 'exact <poster@example.test>']))->assertOk()->assertSee('Scene Name');
         }
     }

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
  * The Books, Console and PC releases lists' queries (BandReleaseList,
  * docs/proposals/books-console-pc-redesign/DATA-CONTRACT.md 4.1): the band read from the release
  * index, as the Adult list (AdultReleaseList). The name search is one more condition on that
- * index, today's name test (ReleaseBrowserQuery); while it is set the count reads the page's index
+ * index, today's name test; while it is set the count reads the page's index
  * too, since the band count index holds no name.
  *
  * @template TFilters of ShelfReleaseFilters
@@ -91,7 +91,7 @@ abstract class ShelfReleaseList extends BandReleaseList
     }
 
     /**
-     * Today's name search (ReleaseBrowserQuery): the display name, or the search name when it is
+     * Today's name search: the display name, or the search name when it is
      * empty, contains the text, with %, _ and ! literal.
      */
     protected function whereSearch(Builder $query, string $search): void

@@ -110,7 +110,7 @@ test('the Blacklist button opens the confirmation; Escape and Cancel close it, f
     assert.equal(document.body.style.overflow, 'auto');
     dialog.openConfirmation();
     dialog.deleteReleases = true;
-    dialog.closeConfirmation();
+    dialog.close();
     assert.deepEqual([dialog.open, dialog.deleteReleases], [false, false]);
     assert.equal(dialog.partWhenOpen('dialog'), null, 'a closed dialog has no measured part');
     dialog.destroy();

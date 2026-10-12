@@ -44,10 +44,6 @@ class ElasticSearchDriver implements SearchDriverInterface
 
     private const AVAILABILITY_CHECK_CACHE_TTL = 30; // seconds
 
-    private const DEFAULT_TIMEOUT = 10;
-
-    private const DEFAULT_CONNECT_TIMEOUT = 5;
-
     private const AUTOCOMPLETE_CACHE_MINUTES = 10;
 
     private const AUTOCOMPLETE_MAX_RESULTS = 10;
@@ -905,103 +901,6 @@ class ElasticSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Search releases for API requests.
-     *
-     * @param  array<string, mixed>|string  $searchName  Search name(s)
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed>|Collection<int, mixed> Array of release IDs
-     */
-    public function indexSearchApi(array|string $searchName, int $limit): array|Collection
-    {
-        if (empty($searchName) || ! $this->isElasticsearchAvailable()) {
-            return [];
-        }
-
-        $keywords = $this->sanitizeSearchTerms($searchName);
-        if (empty($keywords)) {
-            return [];
-        }
-
-        $cacheKey = $this->buildCacheKey('api_search', [$keywords, $limit]); // @phpstan-ignore argument.type
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            $search = $this->buildSearchQuery(
-                index: $this->getReleasesIndex(),
-                keywords: $keywords,
-                fields: self::RELEASE_TEXT_FIELDS, // @phpstan-ignore argument.type
-                limit: $limit
-            );
-
-            $result = $this->executeSearch($search);
-            Cache::put($cacheKey, $result, now()->addMinutes($this->config['cache_minutes'] ?? self::CACHE_TTL_MINUTES));
-
-            return $result;
-
-        } catch (ElasticsearchException $e) {
-            Log::error('ElasticSearch indexSearchApi error: '.$e->getMessage(), [
-                'keywords' => $keywords,
-                'limit' => $limit,
-            ]);
-
-            return [];
-        }
-    }
-
-    /**
-     * Search releases for TV/Movie/Audio (TMA) matching.
-     *
-     * @param  array<string, mixed>|string  $name  Name(s) to search
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed>|Collection<int, mixed> Array of release IDs
-     */
-    public function indexSearchTMA(array|string $name, int $limit): array|Collection
-    {
-        if (empty($name) || ! $this->isElasticsearchAvailable()) {
-            return [];
-        }
-
-        $keywords = $this->sanitizeSearchTerms($name);
-        if (empty($keywords)) {
-            return [];
-        }
-
-        $cacheKey = $this->buildCacheKey('tma_search', [$keywords, $limit]); // @phpstan-ignore argument.type
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            $search = $this->buildSearchQuery(
-                index: $this->getReleasesIndex(),
-                keywords: $keywords,
-                fields: self::RELEASE_TEXT_FIELDS, // @phpstan-ignore argument.type
-                limit: $limit,
-                options: [
-                    'boost' => 1.2,
-                ]
-            );
-
-            $result = $this->executeSearch($search);
-            Cache::put($cacheKey, $result, now()->addMinutes($this->config['cache_minutes'] ?? self::CACHE_TTL_MINUTES));
-
-            return $result;
-
-        } catch (ElasticsearchException $e) {
-            Log::error('ElasticSearch indexSearchTMA error: '.$e->getMessage(), [
-                'keywords' => $keywords,
-                'limit' => $limit,
-            ]);
-
-            return [];
-        }
-    }
-
-    /**
      * Search predb index.
      *
      * @param  array<string, mixed>|string  $searchTerm  Search term(s)
@@ -1629,51 +1528,6 @@ class ElasticSearchDriver implements SearchDriverInterface
 
         } catch (\Throwable $e) {
             Log::error('ElasticSearch optimizeIndex error: '.$e->getMessage());
-        }
-    }
-
-    /**
-     * Get cluster health information.
-     *
-     * @return array<string, mixed> Health information or empty array on failure
-     */
-    public function getClusterHealth(): array
-    {
-        if (! $this->isElasticsearchAvailable()) {
-            return [];
-        }
-
-        try {
-            $client = $this->getClient();
-
-            return ElasticsearchResponseHelper::asArray($client->cluster()->health());
-        } catch (\Throwable $e) {
-            Log::error('ElasticSearch getClusterHealth error: '.$e->getMessage());
-
-            return [];
-        }
-    }
-
-    /**
-     * Get index statistics.
-     *
-     * @param  string  $index  Index name
-     * @return array<string, mixed> Statistics or empty array on failure
-     */
-    public function getIndexStats(string $index): array
-    {
-        if (! $this->isElasticsearchAvailable()) {
-            return [];
-        }
-
-        try {
-            $client = $this->getClient();
-
-            return ElasticsearchResponseHelper::asArray($client->indices()->stats(['index' => $index]));
-        } catch (\Throwable $e) {
-            Log::error('ElasticSearch getIndexStats error: '.$e->getMessage(), ['index' => $index]);
-
-            return [];
         }
     }
 

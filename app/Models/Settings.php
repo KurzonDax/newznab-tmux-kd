@@ -56,22 +56,6 @@ class Settings extends Model
 
     public const REGISTER_STATUS_CLOSED = 2;
 
-    public const ERR_BADUNRARPATH = -1;
-
-    public const ERR_BADFFMPEGPATH = -2;
-
-    public const ERR_BADMEDIAINFOPATH = -3;
-
-    public const ERR_BADNZBPATH = -4;
-
-    public const ERR_DEEPNOUNRAR = -5;
-
-    public const ERR_BADTMPUNRARPATH = -6;
-
-    public const ERR_BADLAMEPATH = -11;
-
-    public const ERR_SABCOMPLETEPATH = -12;
-
     /**
      * @var string
      */
@@ -131,26 +115,6 @@ class Settings extends Model
 
         // If the attribute is not overridden the use the usual __get() magic method
         return parent::__get($key);
-    }
-
-    /**
-     * Return a simple key-value array of all settings.
-     *
-     * @return array<string, mixed>
-     *
-     * @throws \RuntimeException
-     */
-    public static function toTree(bool $excludeUnsectioned = true): array
-    {
-        $results = self::query()->pluck('value', 'name')->toArray();
-
-        if (empty($results)) {
-            throw new \RuntimeException(
-                'No results from Settings table! Check your table has been created and populated.'
-            );
-        }
-
-        return $results;
     }
 
     /** @phpstan-impure */

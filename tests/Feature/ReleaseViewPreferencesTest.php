@@ -42,40 +42,20 @@ final class ReleaseViewPreferencesTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_browser_controls_are_remembered_per_user_and_root(): void
+    public function test_a_post_carrying_the_old_browser_controls_stores_only_the_sort(): void
     {
-        $first = $this->user('first');
-        $second = $this->user('second');
-
-        $this->actingAs($first)->postJson('/profile/update-view', [
-            'root' => 'movies', 'view' => 'table', 'size' => 'l', 'per' => 24, 'thumbs' => true,
-        ])->assertOk()->assertJsonPath('preferences.per', 24)->assertJsonPath('preferences.thumbs', true);
-        $this->postJson('/profile/update-view', ['root' => 'audio', 'per' => 100])
-            ->assertOk()->assertJsonPath('preferences.per', 100);
-        $this->actingAs($second)->postJson('/profile/update-view', ['root' => 'movies', 'per' => 48])
-            ->assertOk()->assertJsonPath('preferences.per', 48);
-        $this->actingAs($first)->postJson('/profile/update-view', ['root' => 'movies', 'thumbs' => false])
-            ->assertOk()->assertJsonPath('preferences.per', 24)
-            ->assertJsonPath('preferences.size', 'l')->assertJsonPath('preferences.thumbs', false);
-    }
-
-    public function test_invalid_controls_do_not_replace_saved_preferences(): void
-    {
-        $this->actingAs($this->user('validation'))->postJson('/profile/update-view', ['root' => 'all', 'per' => 24])->assertOk();
-        foreach ([['per' => 25], ['view' => 'cards'], ['view' => 'covers'], ['size' => 'huge'], ['thumbs' => []]] as $invalid) {
-            $this->postJson('/profile/update-view', ['root' => 'all', ...$invalid])->assertUnprocessable();
-        }
-        $this->postJson('/profile/update-view', ['root' => 'xxx', 'size' => 'xl'])->assertUnprocessable();
-        $this->postJson('/profile/update-view', ['root' => ['movies'], 'per' => 100])->assertUnprocessable();
-        $this->postJson('/profile/update-view', ['root' => 'all', 'thumbs' => '0'])
-            ->assertOk()->assertJsonPath('preferences.per', 24)->assertJsonPath('preferences.thumbs', false);
+        $user = $this->user('old-controls');
+        $this->actingAs($user)->postJson('/profile/update-view', [
+            'root' => 'movies', 'sort' => 'posted', 'view' => 'cards', 'size' => 'l', 'per' => 24, 'thumbs' => 1,
+        ])->assertOk();
+        $this->assertSame(['sort' => 'posted'], $user->fresh()->view_prefs['movies']);
     }
 
     public function test_the_home_page_keeps_its_shelves_under_home_beside_the_list_roots(): void
     {
         $user = $this->user('home');
         $all = ['Following', 'TV', 'Movies', 'Audio', 'Books', 'Console', 'PC', 'Adult', 'Other'];
-        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24])->assertOk();
+        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'sort' => 'posted'])->assertOk();
 
         // an order alone: the default ticks are not stored with it
         $this->postJson('/profile/update-view', ['root' => 'home', 'shelves' => ['Other', 'Following', 'TV']])
@@ -93,27 +73,27 @@ final class ReleaseViewPreferencesTest extends TestCase
 
         // only the two lists, with distinct names from the nine, the ticks never without their rows; the list keys are refused for home and the lists for a list root
         foreach ([['ticked' => ['TV']], ['ticked' => []], ['shelves' => $all, 'ticked' => ['Nowhere']], ['shelves' => ['TV', 'TV']], ['shelves' => $all, 'ticked' => 'TV'], ['shelves' => []], ['shelves' => [['TV']]],
-            ['view' => 'table'], ['size' => 's'], ['per' => 24], ['thumbs' => true], ['sort' => 'added'], ['shows_sort' => 'title'], ['films_sort' => 'title']] as $invalid) {
+            ['sort' => 'added'], ['shows_sort' => 'title'], ['films_sort' => 'title']] as $invalid) {
             $this->postJson('/profile/update-view', ['root' => 'home', ...$invalid])->assertUnprocessable();
         }
         foreach ([['shelves' => ['TV']], ['ticked' => ['TV']]] as $invalid) {
-            $this->postJson('/profile/update-view', ['root' => 'movies', 'per' => 100, ...$invalid])->assertUnprocessable();
+            $this->postJson('/profile/update-view', ['root' => 'movies', ...$invalid])->assertUnprocessable();
         }
         $this->postJson('/profile/update-view', ['root' => 'Home', 'shelves' => $all])->assertUnprocessable();
 
         $stored = $user->fresh()->view_prefs;
         $this->assertSame(['shelves' => $all, 'ticked' => []], $stored['home']);
-        $this->assertSame(['view' => 'table', 'size' => 's', 'per' => 24, 'thumbs' => false], $stored['movies']);
+        $this->assertSame(['sort' => 'posted'], $stored['movies']);
     }
 
     public function test_preferences_require_a_verified_web_login(): void
     {
-        $this->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24])->assertUnauthorized();
+        $this->postJson('/profile/update-view', ['root' => 'movies', 'sort' => 'posted'])->assertUnauthorized();
         $user = $this->user('unverified');
         $user->email_verified_at = null;
         $user->verified = false;
         $user->save();
-        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'per' => 24])->assertForbidden();
+        $this->actingAs($user)->postJson('/profile/update-view', ['root' => 'movies', 'sort' => 'posted'])->assertForbidden();
     }
 
     private function user(string $name): User

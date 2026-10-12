@@ -1,5 +1,5 @@
 @blaze
-@props(['variant' => 'neutral', 'icon' => null, 'href' => null, 'action' => false, 'pill' => false])
+@props(['variant' => 'neutral', 'icon' => null, 'href' => null, 'action' => false])
 
 @php
     $tones = [
@@ -25,7 +25,7 @@
         'completion-mid' => 'chip-tone-completion-mid',
         'completion-low' => 'chip-tone-completion-low',
     ];
-    $chipAttributes = $attributes->merge(['data-chip-variant' => $variant])->class(['release-chip', 'release-chip-pill' => $pill, $tones[$variant] ?? $tones['neutral']]);
+    $chipAttributes = $attributes->merge(['data-chip-variant' => $variant])->class(['release-chip', $tones[$variant] ?? $tones['neutral']]);
 @endphp
 
 @if($href !== null)

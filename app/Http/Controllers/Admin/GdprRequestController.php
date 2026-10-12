@@ -42,8 +42,6 @@ class GdprRequestController extends BasePageController
 
     public function index(Request $request, GdprRetentionService $retentionService): View
     {
-        $this->setAdminPrefs();
-
         $type = $request->string('type')->trim()->value();
         $status = $request->string('status')->trim()->value();
 
@@ -72,7 +70,6 @@ class GdprRequestController extends BasePageController
             'retentionPolicy' => $retentionService->policy(),
             'title' => 'GDPR Requests',
             'meta_title' => 'GDPR Requests',
-            'meta_keywords' => 'gdpr,privacy,requests,admin',
             'meta_description' => 'Manage GDPR data subject requests',
         ]);
 
@@ -81,8 +78,6 @@ class GdprRequestController extends BasePageController
 
     public function show(GdprRequest $gdprRequest): View
     {
-        $this->setAdminPrefs();
-
         $gdprRequest->load(['auditLogs', 'processor']);
         $subject = $this->subjectFor($gdprRequest);
 
@@ -91,7 +86,6 @@ class GdprRequestController extends BasePageController
             'subject' => $subject,
             'title' => 'GDPR Request #'.$gdprRequest->id,
             'meta_title' => 'GDPR Request #'.$gdprRequest->id,
-            'meta_keywords' => 'gdpr,privacy,request,admin',
             'meta_description' => 'Review GDPR data subject request',
         ]);
 

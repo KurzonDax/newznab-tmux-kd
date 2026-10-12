@@ -124,8 +124,7 @@ class ClearanceMiddleware
         }
 
         // TV category
-        if ($this->matchesCategoryPath($path, 'TV')
-            || $this->matchesCategoryPath($path, 'myshows')) {
+        if ($this->matchesCategoryPath($path, 'TV')) {
             if (! $user->hasDirectPermission('view tv')) {
                 return $this->abortCategoryDisabled('TV');
             }
@@ -222,7 +221,6 @@ class ClearanceMiddleware
     {
         return response()->view('errors.category-disabled', [
             'category' => $category,
-            'isSubcategory' => true,
         ], 403);
     }
 }

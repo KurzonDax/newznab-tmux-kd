@@ -4,7 +4,6 @@ Alpine.data('passkeyLogin', () => ({
     supported: false,
     supportsAutofill: false,
     busy: false,
-    browserPasskeyPending: false,
     browserPasskeyStarted: false,
     error: '',
     showCreateHint: false,
@@ -86,7 +85,6 @@ Alpine.data('passkeyLogin', () => ({
         }
 
         this.browserPasskeyStarted = true;
-        this.browserPasskeyPending = true;
 
         if (!silent) {
             this.error = '';
@@ -102,7 +100,6 @@ Alpine.data('passkeyLogin', () => ({
             this.submitAuthentication(startAuthenticationResponse);
         } catch (error) {
             this.browserPasskeyStarted = false;
-            this.browserPasskeyPending = false;
 
             if (this.isCeremonyAbort(error)) {
                 return;

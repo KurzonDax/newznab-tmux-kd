@@ -80,7 +80,7 @@ class SettingsHubPagesTest extends TestCase
 
         $this->assertStringContainsString('name="strapline"', $rendered);
         $this->assertStringContainsString('name="showpasswordedrelease"', $rendered);
-        $this->assertStringContainsString('name="trailers_size_x"', $rendered);
+        $this->assertStringContainsString('name="grabstatus"', $rendered);
         $this->assertStringContainsString('name="single_active_session"', $rendered);
 
         $this->assertStringContainsString('A great usenet indexer', $rendered, 'Stored values are rendered back into the form.');
@@ -164,23 +164,42 @@ class SettingsHubPagesTest extends TestCase
     public function test_a_picker_card_saves_and_rejects_an_out_of_range_number(): void
     {
         $payload = [
-            'showpasswordedrelease' => '1',
-            'grabstatus' => '0',
-            'trailers_display' => '1',
-            'trailers_size_x' => '640',
-            'trailers_size_y' => '360',
+            'running' => '1',
+            'tmux_session' => 'nntmux',
+            'niceness' => '19',
+            'monitor_delay' => '45',
         ];
 
-        $this->saveCard('website', 'browse', $payload);
+        $this->saveCard('engine', 'session', $payload);
 
-        $this->assertSame('1', $this->storedSettingValue('showpasswordedrelease'));
-        $this->assertSame('640', $this->storedSettingValue('trailers_size_x'));
+        $this->assertSame('1', $this->storedSettingValue('running'));
+        $this->assertSame('45', $this->storedSettingValue('monitor_delay'));
 
         try {
-            $this->saveCard('website', 'browse', array_merge($payload, ['trailers_size_x' => '0']));
-            $this->fail('A trailer width of zero must be rejected.');
+            $this->saveCard('engine', 'session', array_merge($payload, ['monitor_delay' => '0']));
+            $this->fail('A stats refresh of zero must be rejected.');
         } catch (ValidationException) {
-            $this->assertSame('640', $this->storedSettingValue('trailers_size_x'), 'A rejected save leaves the stored value alone.');
+            $this->assertSame('45', $this->storedSettingValue('monitor_delay'), 'A rejected save leaves the stored value alone.');
+        }
+    }
+
+    public function test_the_browse_card_offers_no_trailer_settings_and_rejects_a_save_that_carries_one(): void
+    {
+        // issue #1056 section 6: nothing shows a trailer, so the three trailer settings are gone
+        $rendered = $this->renderSection('website');
+
+        $this->assertStringContainsString('name="grabstatus"', $rendered);
+        foreach (['trailers_display', 'trailers_size_x', 'trailers_size_y'] as $name) {
+            $this->assertStringNotContainsString($name, $rendered);
+        }
+
+        try {
+            $this->saveCard('website', 'browse', ['showpasswordedrelease' => '1', 'grabstatus' => '0', 'trailers_display' => '1']);
+            $this->fail('A key the card does not own must be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(['card' => ['Nothing was saved: Browse & display does not accept trailers_display.']], $exception->errors());
+            $this->assertSame('0', $this->storedSettingValue('showpasswordedrelease'), 'A rejected save writes nothing.');
+            $this->assertNull($this->storedSettingValue('trailers_display'));
         }
     }
 
@@ -283,9 +302,6 @@ class SettingsHubPagesTest extends TestCase
             ['name' => 'tandc', 'value' => '<p>Terms.</p>'],
             ['name' => 'showpasswordedrelease', 'value' => '0'],
             ['name' => 'grabstatus', 'value' => '1'],
-            ['name' => 'trailers_display', 'value' => '1'],
-            ['name' => 'trailers_size_x', 'value' => '480'],
-            ['name' => 'trailers_size_y', 'value' => '345'],
             ['name' => 'single_active_session', 'value' => '0'],
             ['name' => 'running', 'value' => '0'],
             ['name' => 'tmux_session', 'value' => 'nntmux'],

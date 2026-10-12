@@ -961,6 +961,13 @@ final class TvReleasesPageTest extends TestCase
         $this->page('/tv', $user)->assertForbidden();
     }
 
+    public function test_a_user_without_the_tv_permission_gets_the_category_disabled_answer(): void
+    {
+        $user = $this->browserUser();
+        $user->revokePermissionTo('view tv');
+        $this->page('/tv', $user)->assertForbidden()->assertViewIs('errors.category-disabled')->assertViewHas('category', 'TV');
+    }
+
     /** #881's rows: one release matching every remembered filter, and one missing each. */
     private function rememberedFixture(): void
     {

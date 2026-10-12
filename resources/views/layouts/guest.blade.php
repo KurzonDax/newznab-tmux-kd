@@ -16,7 +16,6 @@
 
     <!-- Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @stack('styles')
 
     <!-- Captcha Scripts -->
     @if(empty($standaloneError) && \App\Support\CaptchaHelper::isEnabled())

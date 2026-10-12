@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\Nzb\NzbService;
-use App\View\Composers\GlobalDataComposer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\View\View;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
 
@@ -70,17 +68,19 @@ class ReleaseFilesControllerTest extends TestCase
         }
     }
 
-    public function test_html_fallback_renders_escaped_files_and_working_pagination_in_shared_layout(): void
+    public function test_a_request_that_does_not_ask_for_json_gets_the_same_json_body(): void
     {
-        $this->withoutVite();
-        $this->mock(GlobalDataComposer::class)->shouldReceive('compose')->andReturnUsing(static function (View $view): void {
-            $view->with(['userTheme' => 'light', 'loggedin' => false, 'isadmin' => false, 'usefulLinks' => collect(), 'site' => []]);
-        });
-        $this->nzb('<nzb>'.str_repeat('<file subject="&lt;script&gt;"/>', 25).'</nzb>');
-        $this->get('/release/abc/files?per=24')->assertOk()->assertViewIs('details.files')
-            ->assertSee('public-shell', false)->assertSee('&lt;script&gt;', false)
-            ->assertDontSee('<script>', false)->assertSee('page=2', false)->assertSee('per=24', false);
-        $this->get('/release/abc/files?per=24&page=2')->assertOk()->assertSee('Previous')->assertDontSee('>Next<', false);
+        // issue #1056 section 8: the standalone file-list page is gone, every request gets the JSON
+        $this->nzb('<nzb>'.str_repeat('<file subject="file"><segments><segment bytes="1000">private-id</segment></segments></file>', 25).'</nzb>');
+        $asked = $this->getJson('/release/abc/files?page=2&per=24')->assertOk();
+        $plain = $this->get('/release/abc/files?page=2&per=24')->assertOk();
+
+        $plain->assertHeader('Content-Type', 'application/json')->assertExactJson([
+            'release' => ['guid' => 'abc', 'searchname' => 'Example'],
+            'files' => [['index' => 24, 'title' => 'file', 'size' => 1000]],
+            'total' => 25, 'page' => 2, 'per' => 24, 'last_page' => 2,
+        ]);
+        $this->assertSame($asked->getContent(), $plain->getContent());
     }
 
     private function nzb(string $xml): void

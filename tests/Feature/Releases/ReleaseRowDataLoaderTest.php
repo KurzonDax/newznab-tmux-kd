@@ -87,8 +87,20 @@ final class ReleaseRowDataLoaderTest extends TestCase
         self::assertSame('Display title', $rows[0]->display_name);
         self::assertSame(7, $rows[0]->total_report_count);
         self::assertSame(
-            '{"id":100,"guid":"release-100","name":"Display title","category":"","size":"500.00 MB","files":3,"added":"","posted":"","grabs":4,"comments":2,"completion":99.5,"passworded":false,"imported":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"preview":"audio","group":"","poster":"Poster","renamed":true,"pp_done":false,"entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
+            '{"guid":"release-100","name":"Display title","category":"","files":3,"grabs":4,"comments":2,"passworded":false,"imported":false,"has_media_info":true,"media_info_summary":"1080p · AVC","nfo":false,"group":"","poster":"Poster","entity":null,"in_basket":false,"watched":false,"reports":7,"public_responses":2}',
             json_encode($rows[0]->row_data, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        );
+    }
+
+    public function test_a_loaded_row_encodes_exactly_the_fields_the_lists_read(): void
+    {
+        $row = (object) $this->attributes(1);
+
+        (new ReleaseRowDataLoader)->load([$row]);
+
+        self::assertSame(
+            ['guid', 'name', 'category', 'files', 'grabs', 'comments', 'passworded', 'imported', 'has_media_info', 'media_info_summary', 'nfo', 'group', 'poster', 'entity', 'in_basket', 'watched', 'reports', 'public_responses'],
+            array_keys(json_decode(json_encode($row->row_data, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR)),
         );
     }
 
@@ -184,11 +196,11 @@ final class ReleaseRowDataLoaderTest extends TestCase
     private function expectedRowJson(int $id, string $name = 'Display title'): string
     {
         return json_encode([
-            'id' => $id, 'guid' => 'release-'.$id, 'name' => $name, 'category' => '', 'size' => '500.00 MB',
-            'files' => 3, 'added' => '', 'posted' => '', 'grabs' => 4, 'comments' => 2, 'completion' => 99.5,
+            'guid' => 'release-'.$id, 'name' => $name, 'category' => '',
+            'files' => 3, 'grabs' => 4, 'comments' => 2,
             'passworded' => false, 'imported' => false,
-            'has_media_info' => false, 'media_info_summary' => null, 'nfo' => false, 'preview' => 'none',
-            'group' => '', 'poster' => 'Poster', 'renamed' => true, 'pp_done' => false, 'entity' => null,
+            'has_media_info' => false, 'media_info_summary' => null, 'nfo' => false,
+            'group' => '', 'poster' => 'Poster', 'entity' => null,
             'in_basket' => false, 'watched' => false, 'reports' => 0, 'public_responses' => 0,
         ], JSON_THROW_ON_ERROR);
     }

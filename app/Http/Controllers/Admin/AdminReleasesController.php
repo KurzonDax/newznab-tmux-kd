@@ -31,8 +31,6 @@ class AdminReleasesController extends BasePageController
      */
     public function index(AdminReleaseListRequest $request): mixed
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Release List';
 
         $page = (int) $request->input('page', 1);
@@ -124,16 +122,11 @@ class AdminReleasesController extends BasePageController
                 break;
         }
 
-        $yesno_ids = [1, 0];
-        $yesno_names = ['Yes', 'No'];
         $catlist = Category::getForSelect(false);
 
         return view('admin.releases.edit', [
             'release' => $release,
-            'yesno_ids' => $yesno_ids,
-            'yesno_names' => $yesno_names,
             'catlist' => $catlist,
-            'title' => 'Release Edit',
             'meta_title' => 'Release Edit',
         ]);
     }

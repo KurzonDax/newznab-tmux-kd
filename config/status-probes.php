@@ -8,9 +8,6 @@ return [
         'warning_threshold_gb' => (float) env('STATUS_PROBE_DISK_WARNING_THRESHOLD_GB', 5),
         'critical_threshold_gb' => (float) env('STATUS_PROBE_DISK_CRITICAL_THRESHOLD_GB', 1),
     ],
-    'nntp' => [
-        'timeout_seconds' => (int) env('STATUS_PROBE_NNTP_TIMEOUT_SECONDS', 10),
-    ],
     'redis' => [
         'probe' => (bool) env('STATUS_PROBE_REDIS', true),
         'only_when_used' => (bool) env('STATUS_PROBE_REDIS_ONLY_WHEN_USED', true),

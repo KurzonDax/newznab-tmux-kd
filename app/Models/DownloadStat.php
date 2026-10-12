@@ -34,12 +34,4 @@ class DownloadStat extends Model
             ]);
         }
     }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public static function getTopDownloads(): array
-    {
-        return self::query()->select(['searchname', 'guid', 'adddate', 'grabs'])->get()->toArray();
-    }
 }

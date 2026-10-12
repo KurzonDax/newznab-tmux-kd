@@ -26,11 +26,9 @@ final class AdminAnidbControllerTest extends TestCase
         }
 
         $this->setGlobalViewData([
-            'serverroot' => 'http://localhost',
             'site' => ['dereferrer_link' => ''],
             'usefulLinks' => collect(),
             'isadmin' => true,
-            'ismod' => false,
             'loggedin' => false,
             'userTheme' => 'light',
         ]);

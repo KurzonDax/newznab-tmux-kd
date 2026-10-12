@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -79,39 +78,6 @@ class UserDownload extends Model
     }
 
     /**
-     * Get hourly download counts for the last 24 hours.
-     *
-     * @return array<string, mixed> Array of hourly counts indexed by hour
-     *
-     * @throws \Exception
-     */
-    public static function getHourlyDownloads(int $userID): array
-    {
-        $hourlyData = [];
-        $now = now();
-
-        // Initialize all 24 hours with 0
-        for ($i = 23; $i >= 0; $i--) {
-            $hour = $now->copy()->subHours($i);
-            $hourlyData[$hour->format('H:00')] = 0;
-        }
-
-        // Get downloads from the last 24 hours grouped by hour
-        $downloads = self::whereUsersId($userID)
-            ->where('timestamp', '>', $now->subDay())
-            ->get();
-
-        foreach ($downloads as $download) {
-            $hourKey = Carbon::parse($download->timestamp)->format('H:00');
-            if (isset($hourlyData[$hourKey])) {
-                $hourlyData[$hourKey]++;
-            }
-        }
-
-        return $hourlyData;
-    }
-
-    /**
      * @return Collection<int, self>
      */
     public static function getDownloadRequestsForUser(mixed $userID)
@@ -157,23 +123,5 @@ class UserDownload extends Model
             $releaseIds
         );
         self::query()->insert($rows);
-    }
-
-    /**
-     * @return mixed
-     *
-     * @throws \Exception
-     */
-    public static function delDownloadRequestsForRelease(int $releaseID)
-    {
-        return self::whereReleasesId($releaseID)->delete();
-    }
-
-    /**
-     * @throws \Exception
-     */
-    public static function delDownloadRequests(mixed $userID): void
-    {
-        self::whereUsersId($userID)->delete();
     }
 }

@@ -67,17 +67,6 @@ class ReleaseComment extends Model
     }
 
     /**
-     * Get a comment by id.
-     *
-     *
-     * @return Model|null|static
-     */
-    public static function getCommentById(mixed $id)
-    {
-        return self::query()->where('id', $id)->first();
-    }
-
-    /**
      * @return LengthAwarePaginator<int, self>
      */
     public static function getComments(mixed $id): LengthAwarePaginator
@@ -90,11 +79,6 @@ class ReleaseComment extends Model
             ->paginate(25, ['*'], 'comments_page')
             ->withQueryString()
             ->fragment('comments');
-    }
-
-    public static function getCommentCount(): int
-    {
-        return self::query()->count('id');
     }
 
     /**
@@ -171,26 +155,5 @@ class ReleaseComment extends Model
             ->where('isvisible', 1)
             ->count('id');
         Release::query()->whereKey($releaseId)->update(['comments' => $commentCount]);
-    }
-
-    /**
-     * Get a count of all comments for a user.
-     */
-    public static function getCommentCountForUser(mixed $uid): int
-    {
-        $res = self::query()->where(['users_id' => $uid, 'isvisible' => 1])->count('id');
-
-        return $res;
-    }
-
-    public static function getCommentsForUserRange(mixed $uid): LengthAwarePaginator // @phpstan-ignore missingType.generics
-    {
-        return self::query()
-            ->select(['release_comments.*', 'r.guid', 'r.searchname', 'u.username'])
-            ->join('releases as r', 'r.id', '=', 'release_comments.releases_id')
-            ->leftJoin('users as u', 'u.id', '=', 'release_comments.users_id')
-            ->where('users_id', $uid)
-            ->orderByDesc('created_at')
-            ->paginate(config('nntmux.items_per_page'));
     }
 }

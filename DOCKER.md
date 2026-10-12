@@ -81,8 +81,7 @@ or restart background processing:
 3. Using the deployed base URL and an authenticated administrator cookie, verify
    `curl -f "$APP_URL/login"`, `curl -f "$APP_URL/status"`, and
    `curl -f -b admin.cookies "$APP_URL/admin/settings/engine"` all return HTTP
-   200. (`/admin/tmux-edit` was retired in #443 and now answers 301, which
-   `curl -f` does not treat as a failure, so it is no longer a useful probe.)
+   200.
 4. Inspect `public/build/manifest.json` and run `curl -f "$APP_URL/<asset>"`
    for every referenced JavaScript and CSS `file`/`css` entry.
 5. Snapshot metadata and hashes beneath `storage/framework/views` and

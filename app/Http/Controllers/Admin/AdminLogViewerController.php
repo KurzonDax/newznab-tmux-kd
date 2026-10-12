@@ -15,8 +15,6 @@ class AdminLogViewerController extends BasePageController
 {
     public function index(AdminLogViewerRequest $request, LogViewerService $logViewer): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         $validated = $request->validated();
         $availableLogs = $logViewer->availableLogs();
         $selectedPath = $validated['file'] ?? null;

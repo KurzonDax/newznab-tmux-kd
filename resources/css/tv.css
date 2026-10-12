@@ -70,12 +70,6 @@
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box { border-color: var(--tv-accent); background: var(--tv-accent); color: var(--tv-accent-on); }
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-box i { visibility: visible; }
 
-/* Fixed-width menus: one width whatever is ticked, the panel opening right under the sticky top bar */
-.checkbox-menu.is-fixed .checkbox-menu-button { justify-content: space-between; gap: 6px; width: clamp(132px, calc((100vw - 540px) / 6), 176px); padding: 0 12px 0 14px; }
-.checkbox-menu.is-fixed .checkbox-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
-.checkbox-menu.is-fixed .checkbox-menu-button i { flex: none; }
-.checkbox-menu.is-fixed .checkbox-menu-panel { right: auto; left: 0; z-index: 15; max-height: min(420px, 60vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tv-line) transparent; }
-
 /* Radio items (a one-choice menu such as Completion) and the in-menu search of a long menu */
 .checkbox-menu-dot { display: grid; flex: none; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--tv-dim); border-radius: 9px; }
 .checkbox-menu-item[aria-checked="true"] .checkbox-menu-dot { border-color: var(--tv-accent); }

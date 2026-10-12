@@ -3,7 +3,6 @@
 return [
     'db_name' => env('DB_DATABASE', 'nntmux'),
     'items_per_page' => env('ITEMS_PER_PAGE', 50),
-    'items_per_cover_page' => env('ITEMS_PER_COVER_PAGE', 20),
     'max_pager_results' => env('MAX_PAGER_RESULTS', 125000),
     'echocli' => env('ECHOCLI', true),
     'rename_par2' => env('RENAME_PAR2', true),
@@ -14,7 +13,6 @@ return [
     'admin_username' => env('ADMIN_USER', 'admin'),
     'admin_password' => env('ADMIN_PASS', 'admin'),
     'admin_email' => env('ADMIN_EMAIL', 'admin@example.com'),
-    'crc_token' => env('CRC_TOKEN', null),
     'multiprocessing_max_child_time' => env('NN_MULTIPROCESSING_MAX_CHILD_TIME', 1800),
     'concurrency_timeout' => env('NN_CONCURRENCY_TIMEOUT'),
     'stream_fork_output' => env('STREAM_FORK_OUTPUT', false),
@@ -82,7 +80,6 @@ return [
     'btcpay_webhook_secret' => env('BTCPAY_SECRET'),
     'tmp_unrar_path' => env('TEMP_UNRAR_PATH', storage_path('tmp/unrar/')),
     'tmp_unzip_path' => env('TEMP_UNZIP_PATH', storage_path('tmp/unzip/')),
-    'nzb_import_folder' => env('NZB_IMPORT_FOLDER'),
     'nzb_upload_folder' => env('NZB_UPLOAD_FOLDER'),
     'redis_fast_degrade' => (bool) env('REDIS_FAST_DEGRADE', true),
     'redis_tcp_check_seconds' => (float) env('REDIS_TCP_CHECK_SECONDS', 0.2),

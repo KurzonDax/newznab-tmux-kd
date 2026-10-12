@@ -3,40 +3,6 @@
 @section('content')
 <div class="surface-panel rounded-xl shadow-sm">
     <x-breadcrumb :items="[['label' => 'Home', 'url' => url($site['home_link'] ?? '/')]]" />
-    @if($front)
-        <!-- Front Page Content -->
-        <div class="px-6 py-8">
-            @if(!empty($content) && count($content) > 0)
-                <div class="space-y-6">
-                    @foreach($content as $item)
-                        <article class="surface-panel rounded-lg shadow-sm p-6 border transition-shadow duration-200 hover:shadow-md">
-                            <div class="surface-prose">
-                                @if(filled($item->title))
-                                    <x-page-header :title="$item->title" />
-                                @endif
-
-                                @if(isset($item->body))
-                                    <div class="leading-relaxed">
-                                        {!! html_entity_decode(trim($item->body, '\'"')) !!}
-                                    </div>
-                                @endif
-
-                                @if(isset($item->metadescription))
-                                    <p class="mt-4 text-gray-600 dark:text-gray-400 italic">{{ $item->metadescription }}</p>
-                                @endif
-                            </div>
-                        </article>
-                    @endforeach
-                </div>
-            @else
-                <x-empty-state
-                    icon="fas fa-file-alt"
-                    title="No Content Available"
-                    message="There is no content to display at this time."
-                />
-            @endif
-        </div>
-    @else
         <!-- Content List Page -->
         <x-page-header title="Content" description="Browse our content pages" icon="fas fa-file-alt" />
 
@@ -71,6 +37,5 @@
                 />
             @endif
         </div>
-    @endif
 </div>
 @endsection

@@ -424,25 +424,6 @@ class Category extends Model
     }
 
     /**
-     * Returns a concatenated list of other categories.
-     */
-    public static function getCategoryOthersGroup(): string
-    {
-        return implode(
-            ',',
-            self::OTHERS_GROUP
-        );
-    }
-
-    /**
-     * @return mixed
-     */
-    public static function getCategoryValue(mixed $category)
-    {
-        return \constant('self::'.$category);
-    }
-
-    /**
      * Check if category is parent.
      */
     public static function isParent(mixed $cid): bool
@@ -469,35 +450,6 @@ class Category extends Model
     }
 
     /**
-     * Get children of a parent category.
-     *
-     *
-     * @return mixed
-     */
-    public static function getChildren(mixed $categoryId)
-    {
-        $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-        $cacheKey = md5((string) $categoryId);
-        $result = Cache::get($cacheKey);
-        if ($result !== null) {
-            return $result;
-        }
-
-        $result = RootCategory::find($categoryId)->categories;
-        Cache::put($cacheKey, $result, $expiresAt);
-
-        return $result;
-    }
-
-    /**
-     * Get names of enabled parent categories.
-     */
-    public static function getEnabledParentNames(): mixed
-    {
-        return RootCategory::query()->where('status', '=', 1)->get(['title']);
-    }
-
-    /**
      * Returns category ID's for site disabled categories.
      */
     public static function getDisabledIDs(): mixed
@@ -508,28 +460,6 @@ class Category extends Model
     }
 
     /**
-     * Get multiple categories.
-     */
-    public static function getByIds(mixed $ids): mixed
-    {
-        if (\count($ids) > 0) {
-            $expiresAt = now()->addMinutes(config('nntmux.cache_expiry_long'));
-            $idsKey = implode(',', array_map('strval', (array) $ids));
-            $result = Cache::get(md5($idsKey));
-            if ($result !== null) {
-                return $result;
-            }
-            $result = self::query()->whereIn('id', $ids)->get();
-
-            Cache::put(md5($idsKey), $result, $expiresAt);
-
-            return $result;
-        }
-
-        return false;
-    }
-
-    /**
      * Return the parent and category name from the supplied categoryID.
      */
     public static function getNameByID(mixed $categoryId): string
@@ -537,31 +467,6 @@ class Category extends Model
         $cat = self::query()->where('id', $categoryId)->first();
 
         return $cat !== null ? $cat->parent->title.' -> '.$cat->title : '';
-    }
-
-    /**
-     * @return bool|mixed
-     */
-    public static function getIdByName(mixed $title, mixed $parent)
-    {
-        $cat = self::query()->where('title', $title)->with('parent.'.$parent)->first(['id']);
-
-        return $cat !== null ? $cat->id : false;
-    }
-
-    /**
-     * Update a category.
-     */
-    public static function updateCategory(mixed $id, mixed $status, mixed $desc, mixed $minsize, mixed $maxsize): int
-    {
-        return self::query()->where('id', $id)->update(
-            [
-                'status' => $status,
-                'minsizetoformrelease' => $minsize,
-                'maxsizetoformrelease' => $maxsize,
-                'description' => $desc,
-            ]
-        );
     }
 
     /**

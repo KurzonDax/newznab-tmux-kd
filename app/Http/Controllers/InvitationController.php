@@ -8,7 +8,6 @@ use App\Models\Invitation;
 use App\Models\User;
 use App\Services\InvitationService;
 use App\Services\RegistrationStatusService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -198,8 +197,6 @@ class InvitationController extends BasePageController
 
         // Set meta information
         $this->viewData['meta_title'] = $preview ? 'Invitation to Join' : 'Invalid Invitation';
-        $this->viewData['meta_keywords'] = 'invitation,join,register,signup';
-        $this->viewData['meta_description'] = $preview ? 'You have been invited to join our community' : 'This invitation link is invalid or expired';
 
         return view('invitations.show', $this->viewData);
     }
@@ -258,39 +255,5 @@ class InvitationController extends BasePageController
             return redirect()->back()
                 ->with('error', $e->getMessage());
         }
-    }
-
-    /**
-     * Get invitation statistics (API endpoint)
-     */
-    public function stats(): JsonResponse
-    {
-        if (! $this->registrationStatusService->resolve()['is_invite_only']) {
-            return response()->json(['message' => 'Invitations are disabled'], 404);
-        }
-
-        $stats = $this->invitationService->getUserInvitationStats((int) Auth::id());
-
-        return response()->json($stats);
-    }
-
-    /**
-     * Clean up expired invitations (admin only)
-     */
-    public function cleanup(): JsonResponse
-    {
-        // Check if user is admin
-        /** @var User|null $user */
-        $user = Auth::user();
-        if (! $user?->hasRole('Admin')) {
-            abort(403, 'Unauthorized');
-        }
-
-        $cleanedCount = $this->invitationService->cleanupExpiredInvitations();
-
-        return response()->json([
-            'message' => "Cleaned up {$cleanedCount} expired invitations",
-            'count' => $cleanedCount,
-        ]);
     }
 }

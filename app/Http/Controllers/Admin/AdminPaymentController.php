@@ -28,8 +28,6 @@ class AdminPaymentController extends BasePageController
 
     public function index(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Payments';
 
         $filters = [

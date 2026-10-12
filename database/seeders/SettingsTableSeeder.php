@@ -78,10 +78,6 @@ class SettingsTableSeeder extends Seeder
                 'value' => '2',
             ],
             [
-                'name' => 'currentppticket',
-                'value' => '0',
-            ],
-            [
                 'name' => 'delaytime',
                 'value' => '2',
             ],
@@ -100,10 +96,6 @@ class SettingsTableSeeder extends Seeder
             [
                 'name' => 'grabstatus',
                 'value' => '1',
-            ],
-            [
-                'name' => 'lastpretime',
-                'value' => '0',
             ],
             [
                 'name' => 'lookupanidb',
@@ -219,10 +211,6 @@ class SettingsTableSeeder extends Seeder
             ],
             [
                 'name' => 'newgroupscanmethod',
-                'value' => '0',
-            ],
-            [
-                'name' => 'nextppticket',
                 'value' => '0',
             ],
             [
@@ -576,18 +564,6 @@ class SettingsTableSeeder extends Seeder
             [
                 'name' => 'vnstat_args',
                 'value' => '',
-            ],
-            [
-                'name' => 'trailers_display',
-                'value' => '1',
-            ],
-            [
-                'name' => 'trailers_size_x',
-                'value' => '480',
-            ],
-            [
-                'name' => 'trailers_size_y',
-                'value' => '345',
             ],
             [
                 'name' => 'exit',

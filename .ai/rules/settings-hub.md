@@ -14,7 +14,6 @@ save path. For numeric-value interpretation, see [settings values](settings-valu
 
 - Declare settings in `app/Support/Settings/Sections/` providers, not Blade files.
   `SettingsRegistry` is the whitelist; its provider list owns pages and ordering.
-  Legacy `admin/site-edit` and `admin/tmux-edit` redirect to `admin/settings`.
 - A definition owns its label/help, type, options, unit, validation, and eligible
   root IDs. Explicit rules replace type defaults; type guards still apply on top,
   so a picker cannot save an option it does not offer. Reuse existing

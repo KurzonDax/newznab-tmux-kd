@@ -4,96 +4,12 @@ declare(strict_types=1);
 
 use App\Models\Country as CountryModel;
 use App\Support\ReleaseDisplayNameFormatter;
-use GuzzleHttp\Client;
-use GuzzleHttp\Cookie\CookieJar;
-use GuzzleHttp\Cookie\SetCookie;
-use GuzzleHttp\Exception\RequestException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
-
-if (! function_exists('getRawHtml')) {
-    /**
-     * @param  array<string, mixed>|null  $postData
-     * @return array<string, mixed>|false|string
-     */
-    function getRawHtml(string $url, bool|string|null $cookie = false, ?array $postData = null): array|false|string
-    {
-        // Check if this is an adult site that needs age verification
-        $adultSites = [
-            'adultdvdempire.com',
-            'adultdvdmarketplace.com',
-            'aebn.net',
-            'hotmovies.com',
-            'popporn.com',
-        ];
-
-        $isAdultSite = false;
-        foreach ($adultSites as $site) {
-            if (stripos($url, $site) !== false) {
-                $isAdultSite = true;
-                break;
-            }
-        }
-
-        // Standard method
-        $cookieJar = new CookieJar;
-        $client = new Client(['headers' => ['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246']]);
-        if ($cookie !== false && $cookie !== null && $cookie !== '') {
-            $cookie = $cookieJar->setCookie(SetCookie::fromString((string) $cookie));
-            $client = new Client(['cookies' => $cookie, 'headers' => ['User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246']]);
-        }
-        try {
-            $response = $client->get($url)->getBody()->getContents();
-            $jsonResponse = json_decode($response, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $response = $jsonResponse;
-            }
-        } catch (RequestException $e) {
-            if (function_exists('config') && config('app.debug') === true) {
-                Log::error($e->getMessage());
-            }
-            $response = false;
-        } catch (RuntimeException $e) {
-            if (function_exists('config') && config('app.debug') === true) {
-                Log::error($e->getMessage());
-            }
-            $response = false;
-        }
-
-        return $response;
-    }
-}
-
-if (! function_exists('getUserBrowseOrder')) {
-    /**
-     * @return array{0: string, 1: string}
-     */
-    function getUserBrowseOrder(string $orderBy): array
-    {
-        $order = ($orderBy === '' ? 'username_desc' : $orderBy);
-        $orderArr = explode('_', $order);
-        $orderField = match ($orderArr[0]) {
-            'email' => 'email',
-            'host' => 'host',
-            'createdat' => 'created_at',
-            'lastlogin' => 'lastlogin',
-            'apiaccess' => 'apiaccess',
-            'apirequests' => 'apirequests',
-            'grabs' => 'grabs',
-            'roles_id' => 'users_role_id',
-            'rolechangedate' => 'rolechangedate',
-            default => 'username',
-        };
-        $orderSort = (isset($orderArr[1]) && preg_match('/^asc|desc$/i', $orderArr[1])) ? $orderArr[1] : 'desc';
-
-        return [$orderField, $orderSort];
-    }
-}
 
 if (! function_exists('getUserBrowseOrdering')) {
     /**
@@ -195,20 +111,6 @@ if (! function_exists('parse_group_file_size')) {
     }
 }
 
-if (! function_exists('bcdechex')) {
-    function bcdechex(string $dec): string
-    {
-        $hex = '';
-        do {
-            $last = bcmod($dec, '16');
-            $hex = dechex((int) $last).$hex;
-            $dec = bcdiv(bcsub($dec, $last), '16');
-        } while ($dec > 0);
-
-        return $hex;
-    }
-}
-
 if (! function_exists('runCmd')) {
     /**
      * Run CLI command.
@@ -280,38 +182,6 @@ if (! function_exists('imdb_id_needs_lookup')) {
     }
 }
 
-if (! function_exists('imdb_id_needs_lookup_sql')) {
-    /**
-     * Build a reusable SQL predicate for releases that still need IMDb lookup.
-     */
-    function imdb_id_needs_lookup_sql(string $column = 'imdbid'): string
-    {
-        $pendingValues = implode(', ', array_map(static fn (string $value): string => escapeString($value), imdb_id_pending_values()));
-
-        return sprintf('(%s IS NULL OR %s IN (%s))', $column, $column, $pendingValues);
-    }
-}
-
-if (! function_exists('imdb_id_pad')) {
-    /**
-     * @deprecated Use imdb_id_is_valid() instead. This function exists only for backward
-     *             compatibility during the transition period and will be removed.
-     */
-    function imdb_id_pad(int|string|null $id): string
-    {
-        if ($id === null || $id === '') {
-            return '00000000';
-        }
-        $s = (string) $id;
-        $s = trim($s);
-        if ($s === '' || $s === '0' || $s === '0000000' || $s === '00000000') {
-            return '00000000';
-        }
-
-        return str_pad((string) (int) $s, 8, '0', STR_PAD_LEFT);
-    }
-}
-
 if (! function_exists('escapeString')) {
 
     function escapeString(mixed $string): string
@@ -340,158 +210,6 @@ if (! function_exists('realDuration')) {
         $time = round($milliseconds / 1000);
 
         return sprintf('%02dh:%02dm:%02ds', floor($time / 3600), floor($time / 60 % 60), $time % 60);
-    }
-}
-
-if (! function_exists('is_it_json')) {
-    /**
-     * @throws JsonException
-     */
-    function is_it_json(mixed $isIt): bool
-    {
-        if (is_array($isIt)) {
-            return false;
-        }
-        json_decode($isIt, true, 512, JSON_THROW_ON_ERROR);
-
-        return json_last_error() === JSON_ERROR_NONE;
-    }
-}
-
-if (! function_exists('release_flag')) {
-    // Function inspired by c0r3@newznabforums adds country flags on the browse page.
-    /**
-     * @param  string  $text  Text to match against.
-     * @param  string  $page  Type of page. browse or search.
-     */
-    function release_flag(string $text, string $page): bool|string
-    {
-        $code = $language = '';
-
-        switch (true) {
-            case stripos($text, 'Arabic') !== false:
-                $code = 'PK';
-                $language = 'Arabic';
-                break;
-            case stripos($text, 'Cantonese') !== false:
-                $code = 'TW';
-                $language = 'Cantonese';
-                break;
-            case preg_match('/Chinese|Mandarin|\bc[hn]\b/i', $text):
-                $code = 'CN';
-                $language = 'Chinese';
-                break;
-            case preg_match('/\bCzech\b/i', $text):
-                $code = 'CZ';
-                $language = 'Czech';
-                break;
-            case stripos($text, 'Danish') !== false:
-                $code = 'DK';
-                $language = 'Danish';
-                break;
-            case stripos($text, 'Finnish') !== false:
-                $code = 'FI';
-                $language = 'Finnish';
-                break;
-            case preg_match('/Flemish|\b(Dutch|nl)\b|NlSub/i', $text):
-                $code = 'NL';
-                $language = 'Dutch';
-                break;
-            case preg_match('/French|Vostfr|Multi/i', $text):
-                $code = 'FR';
-                $language = 'French';
-                break;
-            case preg_match('/German(bed)?|\bger\b/i', $text):
-                $code = 'DE';
-                $language = 'German';
-                break;
-            case preg_match('/\bGreek\b/i', $text):
-                $code = 'GR';
-                $language = 'Greek';
-                break;
-            case preg_match('/Hebrew|Yiddish/i', $text):
-                $code = 'IL';
-                $language = 'Hebrew';
-                break;
-            case preg_match('/\bHindi\b/i', $text):
-                $code = 'IN';
-                $language = 'Hindi';
-                break;
-            case preg_match('/Hungarian|\bhun\b/i', $text):
-                $code = 'HU';
-                $language = 'Hungarian';
-                break;
-            case preg_match('/Italian|\bita\b/i', $text):
-                $code = 'IT';
-                $language = 'Italian';
-                break;
-            case preg_match('/Japanese|\bjp\b/i', $text):
-                $code = 'JP';
-                $language = 'Japanese';
-                break;
-            case preg_match('/Korean|\bkr\b/i', $text):
-                $code = 'KR';
-                $language = 'Korean';
-                break;
-            case stripos($text, 'Norwegian') !== false:
-                $code = 'NO';
-                $language = 'Norwegian';
-                break;
-            case stripos($text, 'Polish') !== false:
-                $code = 'PL';
-                $language = 'Polish';
-                break;
-            case stripos($text, 'Portuguese') !== false:
-                $code = 'PT';
-                $language = 'Portugese';
-                break;
-            case stripos($text, 'Romanian') !== false:
-                $code = 'RO';
-                $language = 'Romanian';
-                break;
-            case stripos($text, 'Spanish') !== false:
-                $code = 'ES';
-                $language = 'Spanish';
-                break;
-            case preg_match('/Swe(dish|sub)/i', $text):
-                $code = 'SE';
-                $language = 'Swedish';
-                break;
-            case preg_match('/Tagalog|Filipino/i', $text):
-                $code = 'PH';
-                $language = 'Tagalog|Filipino';
-                break;
-            case preg_match('/\bThai\b/i', $text):
-                $code = 'TH';
-                $language = 'Thai';
-                break;
-            case stripos($text, 'Turkish') !== false:
-                $code = 'TR';
-                $language = 'Turkish';
-                break;
-            case stripos($text, 'Russian') !== false:
-                $code = 'RU';
-                $language = 'Russian';
-                break;
-            case stripos($text, 'Vietnamese') !== false:
-                $code = 'VN';
-                $language = 'Vietnamese';
-                break;
-        }
-
-        if ($code !== '' && $page === 'browse') {
-            return '<img title="'.$language.'" alt="'.$language.'" src="'.asset('/assets/images/flags/'.$code.'.png').'"/>';
-        }
-
-        if ($page === 'search') {
-            if ($code === '') {
-                return false;
-            }
-
-            return $code;
-        }
-
-        return '';
     }
 }
 
@@ -585,23 +303,6 @@ if (! function_exists('sanitize')) {
         }
 
         return implode(' ', $keywords);
-    }
-}
-
-if (! function_exists('formatBytes')) {
-    /**
-     * Format bytes into human-readable file size.
-     */
-    function formatBytes(int|float|null $bytes = 0): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $bytes = max((int) ($bytes ?? 0), 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-
-        $bytes /= pow(1024, $pow);
-
-        return round($bytes, 2).' '.$units[$pow];
     }
 }
 
@@ -923,21 +624,6 @@ if (! function_exists('cp437toUTF')) {
     }
 }
 
-if (! function_exists('imdb_trailers')) {
-    /**
-     * Fetches an embeddable video to a IMDB trailer from http://www.traileraddict.com.
-     */
-    function imdb_trailers(mixed $imdbID): string
-    {
-        $xml = getRawHtml('https://api.traileraddict.com/?imdb='.$imdbID);
-        if ($xml !== false && preg_match('#(v\.traileraddict\.com/\d+)#i', $xml, $html)) {
-            return 'https://'.$html[1];
-        }
-
-        return '';
-    }
-}
-
 if (! function_exists('apiErrorDetails')) {
     /**
      * @return array{code:int,message:string,status:int,header:string}
@@ -1129,14 +815,6 @@ if (! function_exists('cli')) {
                     \Termwind\render("<div class='text-magenta font-bold'>{$str}</div>");
                 }
 
-                public function tmuxOrange(string $str, bool $newline = false): void
-                {
-                    if ($newline) {
-                        \Termwind\render('<br/>');
-                    }
-                    \Termwind\render("<div class='text-yellow font-bold'>{$str}</div>");
-                }
-
                 public function primaryOver(string $str): void
                 {
                     echo "\033[32m{$str}\033[0m";
@@ -1155,55 +833,6 @@ if (! function_exists('cli')) {
                 public function warningOver(string $str): void
                 {
                     echo "\033[31m{$str}\033[0m";
-                }
-
-                public function progress(): object
-                {
-                    return new class
-                    {
-                        private int $total = 0;
-
-                        private int $current = 0;
-
-                        private string $label = '';
-
-                        public function total(int $total): self
-                        {
-                            $this->total = $total;
-
-                            return $this;
-                        }
-
-                        public function current(int $current, ?string $label = null): void
-                        {
-                            $this->current = $current;
-                            if ($label !== null) {
-                                $this->label = $label;
-                            }
-                            $this->display();
-                        }
-
-                        public function advance(int $step = 1, ?string $label = null): void
-                        {
-                            $this->current += $step;
-                            if ($label !== null) {
-                                $this->label = $label;
-                            }
-                            $this->display();
-                        }
-
-                        private function display(): void
-                        {
-                            $percentage = $this->total > 0 ? (int) (($this->current / $this->total) * 100) : 0;
-                            $bar = str_repeat('=', (int) ($percentage / 2));
-                            $spaces = str_repeat(' ', 50 - (int) ($percentage / 2));
-                            $label = $this->label ? " {$this->label}" : '';
-                            echo "\r[{$bar}{$spaces}] {$percentage}%{$label}";
-                            if ($this->current >= $this->total) {
-                                echo "\n";
-                            }
-                        }
-                    };
                 }
 
                 /**
@@ -1227,20 +856,6 @@ if (! function_exists('cli')) {
                     return "\033[{$code}m{$string}\033[0m";
                 }
 
-                public function overWriteHeader(string $message, bool $reset = false): void
-                {
-                    if ($reset) {
-                        $this->lastMessageLength = 0;
-                    }
-
-                    echo str_repeat(\chr(8), $this->lastMessageLength);
-                    echo str_repeat(' ', $this->lastMessageLength);
-                    echo str_repeat(\chr(8), $this->lastMessageLength);
-
-                    $this->lastMessageLength = \strlen($message);
-                    $this->headerOver($message);
-                }
-
                 public function overWritePrimary(string $message, bool $reset = false): void
                 {
                     if ($reset) {
@@ -1255,76 +870,12 @@ if (! function_exists('cli')) {
                     $this->primaryOver($message);
                 }
 
-                public function overWrite(string $message, bool $reset = false): void
-                {
-                    if ($reset) {
-                        $this->lastMessageLength = 0;
-                    }
-
-                    echo str_repeat(\chr(8), $this->lastMessageLength);
-                    echo str_repeat(' ', $this->lastMessageLength);
-                    echo str_repeat(\chr(8), $this->lastMessageLength);
-
-                    $this->lastMessageLength = \strlen($message);
-                    echo $message;
-                }
-
-                public function appendWrite(string $message): void
-                {
-                    echo $message;
-                    $this->lastMessageLength += \strlen($message);
-                }
-
                 public function percentString(int $cur, int $total): string
                 {
                     $percent = 100 * $cur / $total;
                     $formatString = '% '.\strlen((string) $total).'d/%d (% 2d%%)';
 
                     return sprintf($formatString, $cur, $total, $percent);
-                }
-
-                public function percentString2(int $first, int $last, int $total): string
-                {
-                    $percent1 = 100 * ($first - 1) / $total;
-                    $percent2 = 100 * $last / $total;
-                    $formatString = '% '.\strlen((string) $total).'d-% '.\strlen((string) $total).'d/%d (% 2d%%-% 3d%%)';
-
-                    return sprintf($formatString, $first, $last, $total, $percent1, $percent2);
-                }
-
-                /**
-                 * Convert seconds to minutes or hours, appending type at the end.
-                 */
-                public function convertTime(int $seconds): string
-                {
-                    if ($seconds > 3600) {
-                        return round($seconds / 3600).' hour(s)';
-                    }
-                    if ($seconds > 60) {
-                        return round($seconds / 60).' minute(s)';
-                    }
-
-                    return $seconds.' second(s)';
-                }
-
-                /**
-                 * Convert seconds to a timer, 00h:00m:00s.
-                 */
-                public function convertTimer(int $seconds): string
-                {
-                    return ' '.sprintf('%02dh:%02dm:%02ds', floor($seconds / 3600), floor(($seconds / 60) % 60), $seconds % 60);
-                }
-
-                /**
-                 * Sleep for x seconds, printing timer on screen.
-                 */
-                public function showSleep(int $seconds): void
-                {
-                    for ($i = $seconds; $i >= 0; $i--) {
-                        $this->overWriteHeader('Sleeping for '.$i.' seconds.');
-                        sleep(1);
-                    }
-                    echo PHP_EOL;
                 }
             };
         }

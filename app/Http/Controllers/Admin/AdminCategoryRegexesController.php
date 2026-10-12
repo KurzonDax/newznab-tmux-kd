@@ -18,7 +18,6 @@ class AdminCategoryRegexesController extends BasePageController
      */
     public function index(Request $request): mixed
     {
-        $this->setAdminPrefs();
         $regexes = new RegexService('category_regexes');
 
         $meta_title = $title = 'Category Regex List';
@@ -43,7 +42,6 @@ class AdminCategoryRegexesController extends BasePageController
      */
     public function edit(Request $request)
     {
-        $this->setAdminPrefs();
         $regexes = new RegexService('category_regexes');
 
         // Set the current action.

@@ -24,8 +24,7 @@ Alpine.data('nfoModal', () => ({
         this.error = false;
         this.content = '';
 
-        const baseUrl = document.querySelector('meta[name="app-url"]')?.content || '';
-        fetch(baseUrl + '/nfo/' + guid + '?modal=1')
+        fetch('/nfo/' + guid + '?modal=1')
             .then(response => {
                 if (!response.ok) throw new Error('NFO not found');
                 return response.text();
@@ -74,10 +73,7 @@ Alpine.data('nfoModal', () => ({
 
     init() {
         this.initModal();
-        // Backward compat global functions
         const self = this;
-        window.openNfoModal = function(guid, name) { self.openNfo(guid, name); };
-        window.closeNfoModal = function() { self.close(); };
 
         this._nfoHashChanged = () => {
             const trigger = document.querySelector('#nfo.nfo-badge');
@@ -90,11 +86,8 @@ Alpine.data('nfoModal', () => ({
 
         // Document-level click delegation for NFO triggers
         document.addEventListener('click', function(e) {
-            const nfoAttr = e.target.closest('[data-open-nfo]');
-            if (nfoAttr) { e.preventDefault(); self.openNfo(nfoAttr.getAttribute('data-open-nfo'), nfoAttr.dataset.releaseDisplayName); return; }
             const nfoBadge = e.target.closest('.nfo-badge');
             if (nfoBadge) { e.preventDefault(); self.openNfo(nfoBadge.dataset.guid, nfoBadge.dataset.releaseDisplayName); return; }
-            if (e.target.closest('[data-close-nfo-modal]')) { e.preventDefault(); self.close(); }
         });
     },
 

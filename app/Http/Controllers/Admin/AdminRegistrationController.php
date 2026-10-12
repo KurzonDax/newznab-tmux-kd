@@ -31,7 +31,6 @@ class AdminRegistrationController extends BasePageController
     {
         $now = now();
 
-        $this->setAdminPrefs();
         $this->registrationStatusService->disableExpiredPeriods($now);
 
         $editingPeriod = null;

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
@@ -58,16 +57,6 @@ class UserRequest extends Model
     }
 
     /**
-     * @throws \Throwable
-     */
-    public static function delApiRequests(mixed $userID): void
-    {
-        DB::transaction(function () use ($userID) {
-            self::query()->where('users_id', $userID)->delete();
-        }, 3);
-    }
-
-    /**
      * Get the quantity of API requests in the last day for the users_id.
      * Note: Old request cleanup is no longer done inline to avoid blocking API responses.
      * Use clearApiRequests() via a scheduled command or queue job instead.
@@ -83,40 +72,6 @@ class UserRequest extends Model
             ->count('id');
 
         return $requests ?: 0;
-    }
-
-    /**
-     * Get hourly API request counts for the last 24 hours.
-     *
-     * @return array<string, mixed> Array of hourly counts indexed by hour
-     *
-     * @throws \Exception
-     */
-    public static function getHourlyApiRequests(int $userID): array
-    {
-        $hourlyData = [];
-        $now = now();
-
-        // Initialize all 24 hours with 0
-        for ($i = 23; $i >= 0; $i--) {
-            $hour = $now->copy()->subHours($i);
-            $hourlyData[$hour->format('H:00')] = 0;
-        }
-
-        // Get API requests from the last 24 hours grouped by hour
-        $requests = self::query()
-            ->where('users_id', $userID)
-            ->where('timestamp', '>', $now->subDay())
-            ->get();
-
-        foreach ($requests as $request) {
-            $hourKey = Carbon::parse($request->timestamp)->format('H:00');
-            if (isset($hourlyData[$hourKey])) {
-                $hourlyData[$hourKey]++;
-            }
-        }
-
-        return $hourlyData;
     }
 
     /**

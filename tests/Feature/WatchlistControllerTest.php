@@ -140,13 +140,10 @@ final class WatchlistControllerTest extends TestCase
         $this->getJson('/watchlist/audio/1')->assertNotFound();
     }
 
-    public function test_legacy_pages_redirect_to_tabs_or_the_title_picker(): void
+    public function test_browse_tv_redirects_to_the_tv_releases_screen(): void
     {
         $this->actingAs($this->browserUser());
         $this->get('/browse/tv')->assertRedirect(route('tv.releases'));
-        $this->get('/myshows')->assertRedirect('/watchlist?tab=tv');
-        $this->get('/myshows?action=add&id=12')->assertRedirect(route('tv.show', ['videosId' => 12]));
-        $this->get('/myshows/browse')->assertRedirect('/browse/tv?watching=1');
     }
 
     public function test_picker_enforces_root_permissions_and_title_identity(): void

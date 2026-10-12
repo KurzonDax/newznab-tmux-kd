@@ -233,25 +233,6 @@ class UsenetGroup extends Model
     }
 
     /**
-     * Returns an associative array of groups for list selection.
-     *
-     * @return array<string, mixed>
-     */
-    public static function getGroupsForSelect(): array
-    {
-        $groups = self::getActive();
-
-        $temp_array = [];
-        $temp_array[-1] = '--Please Select--';
-
-        foreach ($groups as $group) {
-            $temp_array[$group['name']] = $group['name'];
-        }
-
-        return $temp_array;
-    }
-
-    /**
      * Get all properties of a single group by its ID.
      *
      *
@@ -277,14 +258,6 @@ class UsenetGroup extends Model
             'date' => self::query()->where('backfill', '=', 1)->where('last_record', '<>', 0)->orderByDesc('first_record_postdate')->get(),
             default => [],
         };
-    }
-
-    /**
-     * Get all active group IDs.
-     */
-    public static function getActiveIDs(): mixed
-    {
-        return self::query()->where('active', '=', 1)->orderBy('name')->get(['id']);
     }
 
     /**
@@ -322,28 +295,6 @@ class UsenetGroup extends Model
         $res = self::query()->where('name', $name)->first(['id']);
 
         return $res === null ? false : $res->id;
-    }
-
-    /**
-     * Gets a count of all groups in the table limited by parameters.
-     *
-     * @param  string  $groupname  Constrain query to specific group name
-     * @param  int  $active  Constrain query to active status
-     * @return mixed
-     */
-    public static function getGroupsCount(string $groupname = '', int $active = -1)
-    {
-        $res = self::query();
-
-        if ($groupname !== '') {
-            $res->where('name', 'like', '%'.$groupname.'%');
-        }
-
-        if ($active > -1) {
-            $res->where('active', $active);
-        }
-
-        return $res === null ? 0 : $res->count('id');
     }
 
     public static function getGroupsRange(string $groupname = '', mixed $active = null): LengthAwarePaginator // @phpstan-ignore missingType.generics

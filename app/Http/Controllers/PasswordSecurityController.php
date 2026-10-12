@@ -233,7 +233,7 @@ class PasswordSecurityController extends Controller
             return $this->redirectToLoginWithError('User not found. Please login again.');
         }
 
-        return view('auth.2fa_verify', compact('user'));
+        return view('auth.2fa_verify');
     }
 
     private function redirectToLoginWithError(string $message): RedirectResponse

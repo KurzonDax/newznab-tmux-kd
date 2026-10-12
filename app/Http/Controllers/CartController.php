@@ -72,7 +72,7 @@ class CartController extends BasePageController
 
     public function download(Request $request, GetNzbController $downloads): Response
     {
-        $guids = app(ReleaseBrowserQuery::class)->matchingQuery($this->basketState($request), $this->userdata)->pluck('r.guid');
+        $guids = app(ReleaseBrowserQuery::class)->matchingQuery($this->basketState(), $this->userdata)->pluck('r.guid');
         if ($guids->isEmpty()) {
             return redirect()->route('basket')->with('info', 'Your basket is empty.');
         }
@@ -82,11 +82,9 @@ class CartController extends BasePageController
         return $downloads->getNzb($request);
     }
 
-    private function basketState(Request $request): ReleaseBrowserState
+    private function basketState(): ReleaseBrowserState
     {
-        $listing = Request::create($request->url(), 'GET', $request->only(['per', 'page']));
-
-        return ReleaseBrowserState::fromRequest($listing, BrowseRoot::All, $this->userdata, basketOnly: true, tableOnly: true);
+        return ReleaseBrowserState::fromRequest(new Request, BrowseRoot::All, basketOnly: true);
     }
 
     /**

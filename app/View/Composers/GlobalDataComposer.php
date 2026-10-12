@@ -71,7 +71,7 @@ class GlobalDataComposer
      */
     private function resolveData(): array
     {
-        $viewData = ['serverroot' => url('/')];
+        $viewData = [];
 
         // Cached useful links for sidebar
         $viewData['usefulLinks'] = $this->rememberWithCacheFallback('content_useful_links', self::CACHE_TTL, function () {
@@ -106,16 +106,12 @@ class GlobalDataComposer
                 'userdata' => $userdata,
                 'loggedin' => true,
                 'isadmin' => $userdata->hasRole('Admin'),
-                'ismod' => $userdata->hasRole('Moderator'),
-                'parentcatlist' => $parentcatlist,
                 'navigationRoots' => $this->navigationRoots($parentcatlist),
-                'header_menu_cat' => request()->input('t', ''),
                 'userTheme' => $userdata->theme_preference ?? 'light',
             ]);
         } else {
             $viewData = array_merge($viewData, [
                 'isadmin' => false,
-                'ismod' => false,
                 'loggedin' => false,
                 'userTheme' => 'light',
             ]);

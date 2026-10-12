@@ -25,16 +25,8 @@ final class ReleaseCompletion
     /** Query parameter the browse/search toolbar carries the chosen threshold in. */
     public const string REQUEST_KEY = 'minc';
 
-    /** Menu of minimum-completion thresholds offered in the browse/search toolbar. */
-    public const array THRESHOLDS = [
-        0 => 'All releases',
-        80 => 'At least 80%',
-        95 => 'At least 95%',
-        100 => '100% only',
-    ];
-
-    /** The legacy chip's words while late headers may still arrive; it shows no chip otherwise. */
-    public const string PENDING_LABEL = 'Late Headers Pending';
+    /** The four accepted minimum-completion thresholds. */
+    public const array THRESHOLDS = [0, 80, 95, 100];
 
     /** `0` means the release was never measured, so no chip is shown for it. */
     public static function isMeasured(mixed $completion): bool
@@ -86,7 +78,7 @@ final class ReleaseCompletion
     {
         $value = is_numeric($threshold) ? (int) $threshold : 0;
 
-        return \array_key_exists($value, self::THRESHOLDS) ? $value : 0;
+        return \in_array($value, self::THRESHOLDS, true) ? $value : 0;
     }
 
     /** @param array<string, mixed>|object $release */

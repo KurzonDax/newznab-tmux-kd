@@ -693,41 +693,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Delete release from Manticore RT tables by GUID.
-     *
-     * @param  array<string, mixed>  $identifiers  ['g' => Release GUID(mandatory), 'id' => ReleaseID(optional, pass false)]
-     */
-    public function deleteReleaseByGuid(array $identifiers): void
-    {
-        if (empty($identifiers['g'])) {
-            Log::warning('ManticoreSearch: Cannot delete release without GUID');
-
-            return;
-        }
-
-        try {
-            if ($identifiers['i'] === false || empty($identifiers['i'])) {
-                $release = Release::query()->where('guid', $identifiers['g'])->first(['id']);
-                $identifiers['i'] = $release?->id;
-            }
-
-            if (! empty($identifiers['i'])) {
-                $this->manticoreSearch->table($this->config['indexes']['releases'])
-                    ->deleteDocument($identifiers['i']);
-            } else {
-                Log::warning('ManticoreSearch: Could not find release ID for deletion', [
-                    'guid' => $identifiers['g'],
-                ]);
-            }
-        } catch (ResponseException $e) {
-            Log::error('ManticoreSearch deleteRelease error: '.$e->getMessage(), [
-                'guid' => $identifiers['g'],
-                'id' => $identifiers['i'] ?? null,
-            ]);
-        }
-    }
-
-    /**
      * Escapes characters that are treated as special operators by the query language parser.
      *
      * This method escapes ALL special characters, including search operators.

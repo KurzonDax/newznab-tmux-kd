@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Models\ReleaseReport;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
@@ -71,30 +70,6 @@ class ReleaseReportControllerTest extends TestCase
             'reason' => 'spam',
             'status' => 'pending',
         ]);
-    }
-
-    public function test_check_reported_accepts_a_numeric_string_release_id(): void
-    {
-        $this->mockAuthenticatedUserId();
-        $releaseId = $this->createRelease();
-
-        ReleaseReport::query()->create([
-            'releases_id' => $releaseId,
-            'users_id' => 1,
-            'reason' => 'duplicate',
-            'description' => null,
-            'status' => 'pending',
-        ]);
-
-        $response = $this->getJson(route('release-report.check', [
-            'release_id' => (string) $releaseId,
-        ]));
-
-        $response
-            ->assertOk()
-            ->assertJson([
-                'has_reported' => true,
-            ]);
     }
 
     private function mockAuthenticatedUserId(int $userId = 1): void

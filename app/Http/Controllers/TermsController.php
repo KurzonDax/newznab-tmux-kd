@@ -13,11 +13,8 @@ class TermsController extends BasePageController
      */
     public function terms(): View
     {
-        $title = 'Terms and Conditions';
         $meta_title = config('app.name').' - Terms and conditions';
-        $meta_keywords = 'terms,conditions';
-        $meta_description = 'Terms and Conditions for '.config('app.name');
 
-        return view('terms', compact('title', 'meta_title', 'meta_keywords', 'meta_description'));
+        return view('terms', compact('meta_title'));
     }
 }

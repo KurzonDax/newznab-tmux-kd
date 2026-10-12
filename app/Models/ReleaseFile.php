@@ -89,14 +89,6 @@ class ReleaseFile extends Model
         return $query->nfoFiles()->where('size', '>', 0);
     }
 
-    /**
-     * Get releasefiles row by id.
-     */
-    public static function getReleaseFiles(mixed $id): mixed
-    {
-        return self::query()->where('releases_id', $id)->orderBy('name')->get();
-    }
-
     public static function getByGuid(mixed $guid): mixed
     {
         return self::query()

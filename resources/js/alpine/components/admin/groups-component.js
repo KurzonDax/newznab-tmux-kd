@@ -75,10 +75,7 @@ export function adminGroups() {
             window.hidePurgeAllModal = function() { self.purgeAllOpen = false; };
             window.showResetSelectedModal = function() { self._showResetSelected(); };
             window.hideResetSelectedModal = function() { self.resetSelectedOpen = false; };
-            window.showEditSelectedModal = function() { self.openEditSelected(); };
-            window.hideEditSelectedModal = function() { self.closeEditSelected(); };
             window.toggleSelectAllGroups = function(cb) { self._applySelectAll(cb?.checked); };
-            window.getSelectedGroups = function() { return self._getSelected(); };
             window.updateSelectionUI = function() { self._syncSelection(); };
         },
 
@@ -209,10 +206,6 @@ export function adminGroups() {
                 obfuscatedDefaultRootCategoryId: cb.dataset.obfuscatedDefaultRootCategoryId,
                 forcedRootCategoryId: cb.dataset.forcedRootCategoryId,
             }));
-        },
-
-        _getSelected() {
-            return this._readRows().filter(row => row.checked).map(({ id, name }) => ({ id, name }));
         },
 
         _applySelectAll(checked) {

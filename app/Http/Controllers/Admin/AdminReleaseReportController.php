@@ -33,8 +33,6 @@ class AdminReleaseReportController extends BasePageController
      */
     public function index(AdminReleaseReportListRequest $request): View
     {
-        $this->setAdminPrefs();
-
         $status = $request->status();
         $reportsList = ReleaseReport::getReportsRange($status, 50);
         $statusCounts = ReleaseReport::getCountByStatus();

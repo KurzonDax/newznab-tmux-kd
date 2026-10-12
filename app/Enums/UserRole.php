@@ -25,19 +25,4 @@ enum UserRole: int
     {
         return $this === self::ADMIN;
     }
-
-    public function isModerator(): bool
-    {
-        return $this === self::MODERATOR;
-    }
-
-    public function isDisabled(): bool
-    {
-        return $this === self::DISABLED;
-    }
-
-    public function hasElevatedPrivileges(): bool
-    {
-        return in_array($this, [self::ADMIN, self::MODERATOR], true);
-    }
 }

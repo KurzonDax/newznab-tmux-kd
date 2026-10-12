@@ -1,6 +1,6 @@
-@props(['items' => [], 'current' => null, 'label' => 'View'])
+@props(['items' => [], 'current' => null])
 {{-- Two or more links shown as one switch; the current one is coral. --}}
-<div {{ $attributes->class('segmented') }} role="group" aria-label="{{ $label }}">
+<div {{ $attributes->class('segmented') }} role="group" aria-label="View">
     @foreach($items as $text => $href)
         @if($text === $current)
             <a href="{{ $href }}" aria-current="page" data-part="view switch, current">{{ $text }}</a>

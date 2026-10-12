@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services\Releases;
 
+use App\Models\Release;
 use App\Services\Releases\ReleasePreviewDataLoader;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -96,23 +97,39 @@ class ReleasePreviewDataLoaderTest extends TestCase
         $this->assertCount(1, $audioTagQueries);
         $this->assertTrue($playable->has_audio_preview);
         $this->assertSame('audio/mpeg', $playable->audio_preview_mime);
-        $this->assertSame('30s · MP3 · stream copy', $playable->audio_preview_meta);
         $this->assertSame('Opening Track', $playable->audio_preview_title);
         $this->assertSame('Example Artist', $playable->audio_preview_artist);
-        $this->assertTrue($playable->has_spectrogram);
 
         $this->assertFalse($spectrogramOnly->has_audio_preview);
         $this->assertNull($spectrogramOnly->audio_preview_mime);
-        $this->assertNull($spectrogramOnly->audio_preview_meta);
-        $this->assertTrue($spectrogramOnly->has_spectrogram);
 
         $this->assertFalse($withoutTags->has_audio_preview);
         $this->assertNull($withoutTags->audio_preview_mime);
-        $this->assertNull($withoutTags->audio_preview_meta);
-        $this->assertFalse($withoutTags->has_spectrogram);
 
         $this->assertFalse($playable->has_video_preview);
         $this->assertNull($playable->video_preview_mime);
+    }
+
+    public function test_a_loaded_row_carries_no_preview_summary_and_no_spectrogram_flag(): void
+    {
+        DB::table('release_audio_tags')->insert([
+            'releases_id' => 10, 'audio_format' => 'MPEG Audio', 'track_name' => 'Opening Track', 'has_preview' => 1,
+            'preview_extension' => 'mp3', 'preview_mime' => 'audio/mpeg', 'preview_seconds' => 30, 'has_spectrogram' => 1,
+        ]);
+        $row = (object) ['id' => 10];
+        $model = (new Release)->setRawAttributes(['id' => 10]);
+
+        (new ReleasePreviewDataLoader)->load([$row]);
+        (new ReleasePreviewDataLoader)->load([$model]);
+
+        $kept = ['has_media_info', 'has_audio_preview', 'audio_preview_mime', 'audio_preview_title', 'audio_preview_artist', 'has_video_preview', 'video_preview_mime'];
+        $this->assertSame(['id', ...$kept], array_keys(get_object_vars($row)));
+        $this->assertSame(['id', ...$kept], array_keys($model->getAttributes()));
+        $this->assertTrue($row->has_audio_preview);
+        foreach (['audio_preview_meta', 'has_spectrogram'] as $attribute) {
+            $this->assertFalse(property_exists($row, $attribute), $attribute);
+            $this->assertArrayNotHasKey($attribute, $model->getAttributes());
+        }
     }
 
     public function test_it_reports_clips_and_legacy_transcodes_as_the_one_video_artifact(): void

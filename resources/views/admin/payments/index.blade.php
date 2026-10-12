@@ -1,7 +1,5 @@
 @extends('layouts.admin')
 
-@section('title', $title ?? 'Payments')
-
 @section('content')
 <div class="space-y-6">
     <x-admin.card>

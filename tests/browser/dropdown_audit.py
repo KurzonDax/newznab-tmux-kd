@@ -51,18 +51,6 @@ with sync_playwright() as pw:
                         page.locator('#feed-type').select_option('category')
                         expect(page.locator('#feed-category')).to_be_visible()
                         measure('RSS category',width,scheme,dark)
-                    if page.locator('.search-filter-menu').count():
-                        page.locator('.search-filter-menu').evaluate('(e)=>e.open=true')
-                        for kind in ['cat','minc']:
-                            page.locator('#search-filter-kind').select_option(kind)
-                            expect(page.locator('#search-filter-completion' if kind=='minc' else '#search-filter-category')).to_be_visible()
-                            measure('search filter '+kind,width,scheme,dark)
-                        page.locator('.search-filter-menu').evaluate('(e)=>e.open=false')
-                    if page.locator('[data-row-action="report"]').count():
-                        page.locator('[data-row-action="report"]').first.click()
-                        expect(page.locator('#shared-report-reason')).to_be_visible()
-                        measure('report dialog',width,scheme,dark)
-                        page.keyboard.press('Escape')
         args.report.write_text(json.dumps(records,indent=2))
         print('Dropdown audit passed:',current['uri'],flush=True)
     context.close()

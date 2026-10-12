@@ -1,5 +1,5 @@
 {{-- The TV screens' dialogs (docs/proposals/tv-redesign/SPEC.md 3.5): media info, NFO, file list, the preview / sample image and Listen. --}}
-<div x-data="mediainfoModal" data-media-info-block>
+<div x-data="mediainfoModal">
     <x-tv-dialog name="mediainfo">
         <x-slot:title>Media info</x-slot:title>
         <x-slot:subtitle><span x-text="releaseName"></span></x-slot:subtitle>

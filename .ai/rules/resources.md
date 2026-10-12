@@ -42,9 +42,9 @@ frontend checks; a separate successful build does not populate its reuse record.
 - Reuse `x-button` / `x-button-link`, the input/select/textarea/label components,
   and existing panel/navigation/display primitives. Their definitions own props
   and sizes. Escape Alpine bindings on Blade component tags (`::disabled`).
-  The forum uses its own `x-forum::button` family. Compact release-row actions can
-  use `release-action*`; dropdown togglers, close buttons, conditional chips,
-  pagination, and attached input addons can keep their bespoke markup.
+  The forum uses its own `x-forum::button` family. Dropdown togglers, close
+  buttons, conditional chips, pagination, and attached input addons can keep
+  their bespoke markup.
 - Font Awesome is the icon system; avoid introducing another icon library.
 - Use utilities or classes in `csp-safe.css` instead of inline view styles.
   Dynamic progress widths use `progress-bar` and `data-width`, initialized by

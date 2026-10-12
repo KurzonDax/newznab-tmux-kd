@@ -4,7 +4,6 @@
 import Alpine from '@alpinejs/csp';
 
 Alpine.data('adminReleaseList', () => ({
-    allChecked: false,
     selectedCount: 0,
     rootEl: null,
 
@@ -28,7 +27,6 @@ Alpine.data('adminReleaseList', () => ({
         boxes.forEach(cb => {
             cb.checked = checked;
         });
-        this.allChecked = checked && boxes.length > 0;
         this.selectedCount = checked ? boxes.length : 0;
     },
 
@@ -44,7 +42,6 @@ Alpine.data('adminReleaseList', () => ({
         const boxes = this.releaseCheckboxes();
         const checkedCount = boxes.filter(cb => cb.checked).length;
         this.selectedCount = checkedCount;
-        this.allChecked = boxes.length > 0 && checkedCount === boxes.length;
     },
 
     onCheckboxChange() {

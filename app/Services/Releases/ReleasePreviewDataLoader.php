@@ -50,8 +50,6 @@ final class ReleasePreviewDataLoader
                 'has_preview',
                 'preview_extension',
                 'preview_mime',
-                'preview_seconds',
-                'has_spectrogram',
             ])
             ->keyBy('releases_id');
 
@@ -94,10 +92,8 @@ final class ReleasePreviewDataLoader
                     $audioTags->musicbrainz_track_id,
                     $audioTags->audio_format,
                 ])->contains(static fn (mixed $value): bool => $value !== null && $value !== ''),
-                'has_spectrogram' => $audioTags?->has_spectrogram === true,
                 'has_audio_preview' => $audioPreviewMime !== null,
                 'audio_preview_mime' => $audioPreviewMime,
-                'audio_preview_meta' => $audioPreviewMime !== null ? $audioTags->previewSummary() : null,
                 'audio_preview_title' => $audioTags->track_name ?? $audioTags?->album,
                 'audio_preview_artist' => $audioTags->performer ?? $audioTags?->album_performer,
                 'has_video_preview' => $videoPreviewMime !== null,

@@ -20,7 +20,6 @@ class AdminReleaseNamingRegexesController extends BasePageController
      */
     public function index(Request $request): mixed
     {
-        $this->setAdminPrefs();
         $regexes = new RegexService('release_naming_regexes');
 
         $meta_title = $title = 'Release Naming Regex List';
@@ -45,7 +44,6 @@ class AdminReleaseNamingRegexesController extends BasePageController
      */
     public function edit(Request $request)
     {
-        $this->setAdminPrefs();
         $regexes = new RegexService('release_naming_regexes');
 
         // Set the current action.
@@ -117,7 +115,6 @@ class AdminReleaseNamingRegexesController extends BasePageController
      */
     public function testRegex(AdminRegexTestRequest $request): mixed
     {
-        $this->setAdminPrefs();
         $meta_title = $title = 'Release Naming Regex Test';
 
         $group = (string) $request->input('group', '');

@@ -51,9 +51,9 @@ final class ElasticSearchQueryTest extends TestCase
 
         $this->assertIsString($driverSource);
         $this->assertGreaterThanOrEqual(
-            3,
+            1,
             substr_count($driverSource, 'fields: self::RELEASE_TEXT_FIELDS'),
-            'Expected indexSearch/indexSearchApi/indexSearchTMA to use RELEASE_TEXT_FIELDS.'
+            'Expected indexSearch to use RELEASE_TEXT_FIELDS.'
         );
     }
 

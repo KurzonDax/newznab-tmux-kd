@@ -16,8 +16,6 @@ class AdminCommentsController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Comments List';
 
         $commentsList = ReleaseComment::getCommentsRange();

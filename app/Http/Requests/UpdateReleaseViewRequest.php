@@ -17,7 +17,7 @@ use Illuminate\Validation\Rule;
 final class UpdateReleaseViewRequest extends FormRequest
 {
     /** The list roots' keys, refused for the home page. */
-    private const array LIST_KEYS = ['view', 'size', 'per', 'thumbs', 'sort', 'shows_sort', 'films_sort'];
+    private const array LIST_KEYS = ['sort', 'shows_sort', 'films_sort'];
 
     /** The home page's root (docs/proposals/home-redesign/DATA-NOTES.md 4): no BrowseRoot case, it is not a list. */
     public function isHome(): bool
@@ -49,10 +49,6 @@ final class UpdateReleaseViewRequest extends FormRequest
             'root' => ['required', Rule::enum(BrowseRoot::class)],
             'shelves' => ['prohibited'],
             'ticked' => ['prohibited'],
-            'view' => ['sometimes', 'string', Rule::in($root?->views() ?? ['table'])],
-            'size' => ['sometimes', 'string', Rule::in($root?->coverSizes() ?? ['s'])],
-            'per' => ['sometimes', 'integer', 'in:24,48,100'],
-            'thumbs' => ['sometimes', 'boolean'],
             'sort' => ['sometimes', 'string', Rule::in(match (true) {
                 in_array($root, [BrowseRoot::All, BrowseRoot::Other], true) => array_keys(GenericReleaseFilters::SORTS),
                 in_array($root, [BrowseRoot::Tv, BrowseRoot::Movies, BrowseRoot::Adult, BrowseRoot::Books, BrowseRoot::Games, BrowseRoot::Console, BrowseRoot::Audio], true) => array_keys(ReleaseListFilters::SORTS),
@@ -76,17 +72,9 @@ final class UpdateReleaseViewRequest extends FormRequest
         ];
     }
 
-    /** @return array{view?: string, size?: string, per?: int, thumbs?: bool, sort?: string, shows_sort?: string, films_sort?: string} */
+    /** @return array{sort?: string, shows_sort?: string, films_sort?: string} */
     public function preferences(): array
     {
-        $preferences = $this->safe()->except(['root', 'shelves', 'ticked']);
-        if ($this->has('per')) {
-            $preferences['per'] = $this->integer('per');
-        }
-        if ($this->has('thumbs')) {
-            $preferences['thumbs'] = $this->boolean('thumbs');
-        }
-
-        return $preferences;
+        return $this->safe()->except(['root', 'shelves', 'ticked']);
     }
 }

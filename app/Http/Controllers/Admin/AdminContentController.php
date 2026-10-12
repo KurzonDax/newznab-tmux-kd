@@ -24,8 +24,6 @@ class AdminContentController extends BasePageController
      */
     public function index(): mixed
     {
-        $this->setAdminPrefs();
-
         $contentList = Content::query()->ordered()->get();
         $contentGroups = $contentList
             ->groupBy('contenttype')
@@ -59,7 +57,6 @@ class AdminContentController extends BasePageController
      */
     public function create(AdminContentRequest $request)
     {
-        $this->setAdminPrefs();
         $meta_title = 'Content Add';
 
         // Set the current action.
@@ -126,8 +123,6 @@ class AdminContentController extends BasePageController
         $this->viewData = array_merge($this->viewData, [
             'status_ids' => [Content::STATUS_ENABLED, Content::STATUS_DISABLED],
             'status_names' => ['Enabled', 'Disabled'],
-            'yesno_ids' => [1, 0],
-            'yesno_names' => ['Yes', 'No'],
             'contenttypelist' => $contenttypelist,
             'content' => $content,
             'rolelist' => $rolelist,

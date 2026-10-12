@@ -35,8 +35,6 @@ class AdminConsoleController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Console List';
 
         $consoleList = getRange('consoleinfo');
@@ -49,7 +47,6 @@ class AdminConsoleController extends BasePageController
      */
     public function edit(Request $request): View|RedirectResponse
     {
-        $this->setAdminPrefs();
         $gen = new GenreService;
         $meta_title = $title = 'Console Edit';
 

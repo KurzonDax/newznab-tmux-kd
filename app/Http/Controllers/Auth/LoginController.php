@@ -229,14 +229,6 @@ class LoginController extends Controller
         return redirect()->to('login')->with('success', 'You have been logged out successfully');
     }
 
-    /**
-     * Check if the password has been compromised in a data breach and add a warning if so.
-     */
-    protected function checkPasswordBreachAndRedirect(string $password, RedirectResponse $redirect): RedirectResponse
-    {
-        return $this->appendPasswordBreachWarning($redirect, $this->isPasswordBreached($password));
-    }
-
     protected function isPasswordBreached(string $password): bool
     {
         try {

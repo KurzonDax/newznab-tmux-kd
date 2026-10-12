@@ -69,7 +69,7 @@ final class WebReleaseSearch
         $per = ReleaseListFilters::PER_PAGE;
         $threshold = $search->threshold();
         $base = array_filter(['minc' => $threshold === null ? null : (string) $threshold, 'group' => $search->parameters['group'] ?? null], is_string(...));
-        $query = $this->browser->matchingQuery(ReleaseBrowserState::fromRequest(new Request($base), BrowseRoot::All, $user, tableOnly: true), $user);
+        $query = $this->browser->matchingQuery(ReleaseBrowserState::fromRequest(new Request($base), BrowseRoot::All), $user);
         if ($search->importedOnly()) {
             $query->where('r.is_imported', 1);
         }

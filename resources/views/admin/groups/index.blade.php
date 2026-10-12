@@ -29,12 +29,6 @@
             </div>
         </div>
 
-        @if(isset($msg) && $msg != '')
-            <div class="mx-6 mt-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-lg" id="message">
-                <p class="text-green-800 dark:text-green-300">{{ $msg }}</p>
-            </div>
-        @endif
-
         @php
             $searchTerm = $groupname ?? '';
             $hasRows = $grouplist->count() > 0;

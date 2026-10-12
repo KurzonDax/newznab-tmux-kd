@@ -231,14 +231,6 @@ class Predb extends Model
     }
 
     /**
-     * Get all PRE's for a release.
-     */
-    public static function getForRelease(mixed $preID): mixed
-    {
-        return self::query()->where('id', $preID)->get();
-    }
-
-    /**
      * Return a single PRE for a release.
      *
      *

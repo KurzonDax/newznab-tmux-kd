@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * The Adult releases screen's queries (BandReleaseList, docs/proposals/adult-redesign/DATA-CONTRACT.md
  * 4.1 and 4.2): band 6000 read from the release index, with no title filters. The name search is
- * one more condition on that index, today's name test (ReleaseBrowserQuery); while it is set the
+ * one more condition on that index, today's name test; while it is set the
  * count reads the page's index too, since the band count index holds no name.
  *
  * @extends BandReleaseList<AdultReleaseFilters>
@@ -75,7 +75,7 @@ final class AdultReleaseList extends BandReleaseList
         }
         $this->whereRelease($query->where('releases.category_band', $this->band()), $filters, $exclusions);
         if ($filters->search !== '') {
-            // Today's name search (ReleaseBrowserQuery): the display name, or the search name when it is empty, with %, _ and ! literal.
+            // Today's name search: the display name, or the search name when it is empty, with %, _ and ! literal.
             $query->whereRaw("COALESCE(NULLIF(TRIM(releases.display_name), ''), releases.searchname) LIKE ? ESCAPE '!'",
                 ['%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $filters->search).'%']);
         }

@@ -27,12 +27,8 @@ colors:
   surface-chrome-dark: "#0f1014"
   surface-hover: "#d3d3cb"
   surface-hover-dark: "#2b2f3a"
-  surface-release-row: "transparent"
-  surface-release-row-dark: "transparent"
   border-default: "#d3d3cb"
   border-default-dark: "#2b2f3a"
-  border-release-row: "#d3d3cb"
-  border-release-row-dark: "#2b2f3a"
   text-default: "#17181c"
   text-default-dark: "#f4f4f6"
   text-muted: "#5c606b"
@@ -181,7 +177,6 @@ Every token has a light value and a `-dark` twin.
 - **Hairline** (`--border-default`, `#d3d3cb` / `#2b2f3a`): the border that defines every surface edge.
 - **Text** (`--text-default`, `#17181c` / `#f4f4f6`): body text; the `body` element takes it.
 - **Muted Text** (`--text-muted`, `#5c606b` / `#a4a8b4`): secondary copy, metadata, timestamps. At least 4.5:1 on the page ground and on a card, in both themes.
-- **Release Row** (`--surface-release-row`, transparent, with `--border-release-row` = Hairline): rows are hairline-divided, not filled.
 
 ### Chips
 
@@ -245,10 +240,9 @@ New components reach for a border first. Add shadow only when the element genuin
 
 Rectangles with consistently softened corners. Nothing is circular except avatars and badges; nothing is sharp.
 
-- **`0.25rem`** (`rounded`): the compact `.release-action-sm` listing button.
-- **`0.5rem`** (`rounded-lg`): buttons, `.release-action`, most interactive controls.
+- **`0.5rem`** (`rounded-lg`): buttons, most interactive controls.
 - **`8px`** (`.ui-control`): the shared public control radius — deliberately near `rounded-lg`, expressed in px because the control scale is expressed in px.
-- **`0.75rem`** (`--radius-card`, `rounded-xl`): cards and panels.
+- **`0.75rem`** (`rounded-xl`): cards and panels.
 - **`9999px`** (`rounded-full`): badges and pill chips only.
 
 Borders are always 1px. There is no heavier border weight in the vocabulary.
@@ -257,7 +251,7 @@ Borders are always 1px. There is no heavier border weight in the vocabulary.
 
 ### Buttons (`x-button`, `x-button-link`)
 
-Seven variants — `primary`, `secondary`, `muted`, `success`, `danger`, `warning`, `ghost` — across five sizes — `sm`, `md`, `lg`, `icon`, `icon-sm`. Every button is bordered, including filled ones, so the shape holds on any surface. `primary` is the accent pair.
+Seven variants — `primary`, `secondary`, `muted`, `success`, `danger`, `warning`, `ghost` — across four sizes — `sm`, `md`, `lg`, `icon`. Every button is bordered, including filled ones, so the shape holds on any surface. `primary` is the accent pair.
 
 Focus is uniform and non-negotiable: `focus:ring-2 focus:ring-primary-500 focus:ring-offset-2`, with `dark:focus:ring-offset-gray-900`. Disabled is `cursor-not-allowed` plus `opacity-60`.
 
@@ -285,7 +279,7 @@ The domain vocabulary these express — Completion chip, Preview chip, Discard v
 
 ### Surfaces
 
-`.card`, `.surface-panel`, `.surface-panel-alt`, `.auth-card` and `.release-action*` are the semantic classes. Prefer them over assembling an equivalent from utilities — they already carry their dark-mode pair.
+`.card`, `.surface-panel`, `.surface-panel-alt` and `.auth-card` are the semantic classes. Prefer them over assembling an equivalent from utilities — they already carry their dark-mode pair.
 
 `.card` owns surface, border, radius, shadow and its colour transition — **not padding**. Interior spacing is the caller's, and there is no single convention across the app to inherit.
 

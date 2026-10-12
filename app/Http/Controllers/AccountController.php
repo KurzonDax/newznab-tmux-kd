@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Enums\BrowseRoot;
 use App\Models\RootCategory;
 use App\Models\User;
 use App\Models\UserDownload;
@@ -43,7 +42,6 @@ final class AccountController extends BasePageController
                 ? Google2FA::getQRCodeInline(config('app.name'), $user->email, $user->passwordSecurity->google2fa_secret) : '';
         }
         if ($section === 'appearance' || $section === 'api') {
-            $data['roots'] = BrowseRoot::cases();
             $data['categoriesWithSubs'] = RootCategory::with(['categories' => fn ($query) => $query->where('status', 1)->orderBy('title')])->where('status', 1)->orderBy('title')->get();
             $data['userExcludedCategories'] = $user->excludedCategories()->pluck('categories_id')->all();
         }

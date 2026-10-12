@@ -187,6 +187,38 @@ final class DeadSettingsCleanupTest extends TestCase
         }
     }
 
+    public function test_the_second_cleanup_deletes_exactly_its_six_rows_and_is_safe_to_run_twice(): void
+    {
+        // issue #1056 section 6 with Section F: three trailer rows and three pre ticket rows
+        $six = ['trailers_display', 'trailers_size_x', 'trailers_size_y', 'currentppticket', 'lastpretime', 'nextppticket'];
+        DB::table('settings')->insert(array_map(
+            static fn (string $name): array => ['name' => $name, 'value' => '1'],
+            [...$six, 'grabstatus'],
+        ));
+
+        /** @var Migration $migration */
+        $migration = require database_path('migrations/2026_10_11_140000_drop_six_settings_with_no_reader.php');
+        $migration->up();
+
+        $this->assertSame(['grabstatus'], DB::table('settings')->pluck('name')->all());
+        $this->assertSame('1', DB::table('settings')->where('name', 'grabstatus')->value('value'));
+
+        $migration->up();
+        $this->assertSame(['grabstatus'], DB::table('settings')->pluck('name')->all(), 'A rerun must change nothing.');
+
+        $migration->down();
+        $this->assertSame(['grabstatus'], DB::table('settings')->pluck('name')->all(), 'Rolling back restores nothing.');
+    }
+
+    public function test_the_seeder_names_none_of_the_six_rows_the_second_cleanup_deletes(): void
+    {
+        $seeder = (string) file_get_contents(database_path('seeders/SettingsTableSeeder.php'));
+
+        foreach (['trailers_display', 'trailers_size_x', 'trailers_size_y', 'currentppticket', 'lastpretime', 'nextppticket'] as $name) {
+            $this->assertStringNotContainsString($name, $seeder);
+        }
+    }
+
     private function migration(): Migration
     {
         return require database_path('migrations/2026_09_05_120000_drop_settings_with_no_reader.php');

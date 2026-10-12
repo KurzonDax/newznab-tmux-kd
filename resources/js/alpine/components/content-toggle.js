@@ -1,6 +1,5 @@
 /**
  * Alpine.data('contentToggle') - Admin content enable/disable toggle
- * Alpine.data('contentDelete') - Admin content delete with confirmation
  */
 import Alpine from '@alpinejs/csp';
 

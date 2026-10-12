@@ -1,10 +1,10 @@
-@props(['decades', 'selected' => [], 'from' => null, 'to' => null, 'first' => \App\Data\MovieFilmFilters::FIRST_YEAR, 'last' => \App\Data\MovieFilmFilters::lastYear()])
+@props(['decades', 'selected' => [], 'from' => null, 'to' => null])
 {{--
     The film bar's Year cell (Movies SPEC 5.2), a cell of x-filter-bar like x-checkbox-menu with
     `cell`: "Any year", the decades as tick boxes in three columns, then the Range (From, To,
     Apply). One decade reads "1990s", several "2 chosen" (the title names them); a range reads
     "1980–1989", or "2024" for From alone. yearMenu (year-menu-component.js) refuses a range
-    outside $first–$last or with the later year first, the message replacing the "Range" heading.
+    outside \App\Data\MovieFilmFilters::FIRST_YEAR–\App\Data\MovieFilmFilters::lastYear() or with the later year first, the message replacing the "Range" heading.
     $decades: value => label, newest first; $selected: the ticked decades; $from / $to: the range.
 --}}
 @php
@@ -20,7 +20,7 @@
     $set = $range !== '' || $on !== [];
     $mark = '<span class="checkbox-menu-box"><i class="fas fa-check" aria-hidden="true"></i></span>';
 @endphp
-<div {{ $attributes->class(['checkbox-menu', 'is-cell', 'year-menu', 'is-set' => $set]) }} x-data="yearMenu" data-name="year" data-label="Year" data-summary="count" data-first="{{ $first }}" data-last="{{ $last }}"
+<div {{ $attributes->class(['checkbox-menu', 'is-cell', 'year-menu', 'is-set' => $set]) }} x-data="yearMenu" data-name="year" data-label="Year" data-summary="count" data-first="{{ \App\Data\MovieFilmFilters::FIRST_YEAR }}" data-last="{{ \App\Data\MovieFilmFilters::lastYear() }}"
      x-on:keydown.escape.window="closeAndFocus" x-on:focusout="focusLeft" x-on:click.outside="close">
     <button type="button" class="checkbox-menu-button" x-ref="button" x-on:click="toggle" aria-haspopup="dialog" x-bind:aria-expanded="open"
             title="{{ $set ? 'Year: '.($range !== '' ? $range : implode(', ', $on)) : '' }}"><span class="checkbox-menu-label"><span class="checkbox-menu-name">Year</span><span class="checkbox-menu-sep">: </span><span @class(['checkbox-menu-value', 'is-any' => ! $set]) x-ref="value">{{ $reads }}</span></span><i class="fas fa-chevron-down" aria-hidden="true"></i></button>

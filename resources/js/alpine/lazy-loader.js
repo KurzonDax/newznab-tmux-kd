@@ -28,17 +28,13 @@ const lazyComponentMap = {
     'searchFilters': () => import('./components/search-filters.js'),
     'watchlistPicker': () => import('./components/watchlist.js'),
     'watchlistPage': () => import('./components/watchlist.js'),
-    'trailerModal': () => import('./components/trailer-modal.js'),
     // --- Components only needed on specific pages ---
     'adminSubmenu':    () => import('./components/admin-submenu.js'),
     'passwordToggle':  () => import('./components/password-toggle.js'),
 
     // --- Modal components (only on release pages) ---
     'nfoModal':        () => import('./components/nfo-modal.js'),
-    'filelistModal':   () => import('./components/filelist-modal.js'),
-    'previewModal':    () => import('./components/preview-modal.js'),
     'mediainfoModal':  () => import('./components/mediainfo-modal.js'),
-    'imageModal':      () => import('./components/image-modal.js'),
 
     // --- Page-specific components ---
     'contentToggle':   () => import('./components/content-toggle.js'),
@@ -46,8 +42,6 @@ const lazyComponentMap = {
     'settingsCard':    () => import('./components/admin/settings-card.js'),
     'posterIdentityBlacklist': () => import('./components/poster-identity-blacklist.js'),
     'posterSweepStatus': () => import('./components/poster-sweep-status.js'),
-    'contentDelete':   () => import('./components/content-toggle.js'),  // same file
-    'releaseReport':   () => import('./components/release-report.js'),
     'adminReleaseReports': () => import('./components/release-report.js'),  // same file
     'adminReleaseList': () => import('./components/admin/release-list.js'),
     'recoveredReleases': () => import('./components/admin/recovered-releases.js'),
@@ -66,7 +60,6 @@ const lazyComponentMap = {
     'tvFilesDialog':   () => import('./components/tv-dialogs.js'),
     'tvImageDialog':   () => import('./components/tv-dialogs.js'),  // same file
     'tvListenDialog':  () => import('./components/tv-dialogs.js'),  // same file
-    'authPage':        () => import('./components/auth-page.js'),
     'loginMode':       () => import('./components/login-mode.js'),
     'passkeyLogin':    () => import('./components/passkey-login.js'),
     'passkeyManage':   () => import('./components/passkey-manage.js'),
@@ -75,15 +68,11 @@ const lazyComponentMap = {
     // --- Admin components (includes Chart.js — heavy) ---
     'adminDashboard':  () => import('./components/admin/dashboard.js'),
     'adminGroups':     () => import('./components/admin/groups.js'),
-    'adminFeatures':   () => import('./components/admin/features.js'),
     'adminUserEdit':   () => import('./components/admin/features.js'),  // same file
     'adminUserList':   () => import('./components/admin/user-list.js'),
     'adminDeletedUsers': () => import('./components/admin/features.js'), // same file
-    'adminInvitations': () => import('./components/admin/features.js'), // same file
-    'adminRegexForm':  () => import('./components/admin/features.js'),  // same file
     'richTextEditor':  () => import('./components/admin/rich-text-editor.js'),
     'verifyUser':      () => import('./components/admin/verify-user.js'),
-    'tmuxEdit':        () => import('./components/admin/features.js'),  // same file
 };
 
 /**

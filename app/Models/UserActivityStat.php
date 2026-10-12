@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Services\UserStatsService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -111,40 +110,6 @@ class UserActivityStat extends Model
         }
 
         return $result;
-    }
-
-    /**
-     * Get total downloads across the last N days inclusive of today.
-     *
-     * Sums closed hours from `user_activity_stats_hourly`. The current
-     * in-progress hour is not included here — callers needing live totals use
-     * {@see UserStatsService::getSummaryStats()} which layers
-     * the live tables on top.
-     */
-    public static function getTotalDownloads(int $days = 7): int
-    {
-        return self::sumLastNDays($days, 'downloads_count');
-    }
-
-    /**
-     * Get total API hits across the last N days inclusive of today.
-     *
-     * @see self::getTotalDownloads() for source-layering notes.
-     */
-    public static function getTotalApiHits(int $days = 7): int
-    {
-        return self::sumLastNDays($days, 'api_hits_count');
-    }
-
-    private static function sumLastNDays(int $days, string $column): int
-    {
-        $weekStart = Carbon::now()->subDays($days - 1)->startOfDay();
-        $currentHour = Carbon::now()->startOfHour();
-
-        return (int) DB::table('user_activity_stats_hourly')
-            ->where('stat_hour', '>=', $weekStart->format('Y-m-d H:00:00'))
-            ->where('stat_hour', '<', $currentHour->format('Y-m-d H:00:00'))
-            ->sum($column);
     }
 
     /**

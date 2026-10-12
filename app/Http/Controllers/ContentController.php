@@ -40,7 +40,6 @@ class ContentController extends BasePageController
          *
          * Admins and mods should be the only ones to see admin content.
          */
-        $isAdmin = \in_array($role, [UserRole::ADMIN->value, UserRole::MODERATOR->value], true);
 
         $contentId = $this->integerInput($request, 'id');
         $contentPage = $this->scalarInput($request, 'page');
@@ -76,8 +75,6 @@ class ContentController extends BasePageController
 
         $this->viewData = array_merge($this->viewData, [
             'content' => $content,
-            'admin' => $isAdmin,
-            'front' => $isFront,
             'meta_title' => $meta_title,
             'meta_keywords' => $meta_keywords,
             'meta_description' => $meta_description,
@@ -146,16 +143,6 @@ class ContentController extends BasePageController
         }
 
         return Content::ROLE_LOGGED_IN;
-    }
-
-    /**
-     * Get all active content ordered by type and ordinal.
-     *
-     * @return Collection<int, mixed>
-     */
-    protected function getActiveContent(): Collection
-    {
-        return Content::active()->ordered()->get();
     }
 
     /**

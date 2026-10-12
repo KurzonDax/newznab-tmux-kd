@@ -4330,3 +4330,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (323,'2026_10_08_16
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (324,'2026_10_09_120000_add_incomplete_release_grace_hours_setting',31);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (325,'2026_10_11_120000_add_is_imported_to_releases_table',32);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (326,'2026_10_11_130000_add_imported_indexes_to_releases_table',33);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (327,'2026_10_11_140000_drop_six_settings_with_no_reader',34);

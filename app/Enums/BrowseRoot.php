@@ -116,20 +116,4 @@ enum BrowseRoot: string
             self::Other => 'fas fa-box',
         };
     }
-
-    /** @return list<string> */
-    public function views(): array
-    {
-        return match ($this) {
-            self::All, self::Other => ['table'],
-            self::Games => ['table', 'covers'],
-            default => ['table', 'cards', 'covers'],
-        };
-    }
-
-    /** @return list<string> */
-    public function coverSizes(): array
-    {
-        return $this === self::Adult ? ['s', 'l'] : ['s', 'l', 'xl'];
-    }
 }

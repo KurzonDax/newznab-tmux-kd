@@ -16,30 +16,6 @@ class ReleaseBrowseServiceTest extends TestCase
     }
 
     /**
-     * Test that getBrowseOrdering returns all expected ordering options.
-     */
-    public function test_get_browse_ordering_returns_all_options(): void
-    {
-        $ordering = $this->service->getBrowseOrdering();
-
-        $this->assertIsArray($ordering);
-        $this->assertContains('name_asc', $ordering);
-        $this->assertContains('name_desc', $ordering);
-        $this->assertContains('cat_asc', $ordering);
-        $this->assertContains('cat_desc', $ordering);
-        $this->assertContains('posted_asc', $ordering);
-        $this->assertContains('posted_desc', $ordering);
-        $this->assertContains('added_asc', $ordering);
-        $this->assertContains('added_desc', $ordering);
-        $this->assertContains('size_asc', $ordering);
-        $this->assertContains('size_desc', $ordering);
-        $this->assertContains('files_asc', $ordering);
-        $this->assertContains('files_desc', $ordering);
-        $this->assertContains('stats_asc', $ordering);
-        $this->assertContains('stats_desc', $ordering);
-    }
-
-    /**
      * Test that getBrowseOrder correctly maps 'added' to 'adddate' column.
      */
     public function test_get_browse_order_maps_added_to_adddate(): void

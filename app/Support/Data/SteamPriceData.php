@@ -49,30 +49,8 @@ final class SteamPriceData extends Data
         );
     }
 
-    public function isOnSale(): bool
-    {
-        return $this->discountPercent > 0;
-    }
-
     public function isFree(): bool
     {
         return $this->final <= 0;
-    }
-
-    public function getSavings(): float
-    {
-        return max(0, $this->initial - $this->final);
-    }
-
-    public function getDisplayPrice(): string
-    {
-        if ($this->formattedPrice !== null) {
-            return $this->formattedPrice;
-        }
-        if ($this->isFree()) {
-            return 'Free';
-        }
-
-        return sprintf('%s %.2f', $this->currency, $this->final);
     }
 }
