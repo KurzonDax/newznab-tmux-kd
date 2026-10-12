@@ -4,7 +4,6 @@
     <x-breadcrumb :items="[['label' => 'Following']]" />
     <x-page-header title="Following">
         <x-slot:actions>
-            <x-button-link :href="route('browse', ['parentCategory' => $root->value, 'watching' => 1])" variant="secondary" size="sm" icon="fas fa-list">View releases from these</x-button-link>
             <div x-data="copyToClipboard">
                 <input id="watchlist-rss-url" type="text" readonly tabindex="-1" aria-label="Following RSS URL" class="sr-only" value="{{ url('/rss/'.($root === \App\Enums\BrowseRoot::Movies ? 'mymovies' : 'myshows')).'?'.http_build_query(['api_token' => $userdata->api_token]) }}">
                 <x-button variant="secondary" size="sm" icon="fas fa-rss" @click="copy('watchlist-rss-url')" aria-label="Copy RSS feed URL">RSS</x-button>

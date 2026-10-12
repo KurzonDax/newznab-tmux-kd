@@ -128,38 +128,11 @@ Alpine.data('adminDeletedUsers', () => ({
 }));
 
 /**
- * Document-level delegation for admin and global UI handlers.
- * Replaces event-bridge.js; keeps delegation for elements that may not have x-data.
+ * Document-level handlers of the deleted-users page (the `adminDeletedUsers` root).
  */
 (function() {
     // --- Click delegation ---
     document.addEventListener('click', function(e) {
-        // Admin groups data-action delegation
-        var actionTarget = e.target.closest('[data-action]');
-        if (actionTarget) {
-            var action = actionTarget.dataset.action;
-            var groupId = actionTarget.dataset.groupId;
-            var status = actionTarget.dataset.status;
-            switch (action) {
-                case 'show-reset-modal': if (typeof showResetAllModal === 'function') showResetAllModal(); break;
-                case 'hide-reset-modal': if (typeof hideResetAllModal === 'function') hideResetAllModal(); break;
-                case 'show-purge-modal': if (typeof showPurgeAllModal === 'function') showPurgeAllModal(); break;
-                case 'hide-purge-modal': if (typeof hidePurgeAllModal === 'function') hidePurgeAllModal(); break;
-                case 'show-reset-selected-modal': if (typeof showResetSelectedModal === 'function') showResetSelectedModal(); break;
-                case 'hide-reset-selected-modal': if (typeof hideResetSelectedModal === 'function') hideResetSelectedModal(); break;
-                case 'select-all-groups': if (typeof toggleSelectAllGroups === 'function') toggleSelectAllGroups(actionTarget); break;
-                case 'toggle-group-status': if (typeof ajax_group_status === 'function') ajax_group_status(groupId, status); break;
-                case 'toggle-backfill': if (typeof ajax_backfill_status === 'function') ajax_backfill_status(groupId, status); break;
-                case 'reset-group': if (typeof ajax_group_reset === 'function') ajax_group_reset(groupId); break;
-                case 'delete-group': if (typeof confirmGroupDelete === 'function') confirmGroupDelete(groupId); break;
-                case 'purge-group': if (typeof confirmGroupPurge === 'function') confirmGroupPurge(groupId); break;
-                case 'reset-all': if (typeof ajax_group_reset_all === 'function') ajax_group_reset_all(); break;
-                case 'purge-all': if (typeof ajax_group_purge_all === 'function') ajax_group_purge_all(); break;
-                case 'reset-selected': if (typeof ajax_group_reset_selected === 'function') ajax_group_reset_selected(); break;
-            }
-            return;
-        }
-
         // Restore/delete user buttons
         var restoreBtn = e.target.closest('.restore-user-btn');
         if (restoreBtn) {
@@ -184,84 +157,9 @@ Alpine.data('adminDeletedUsers', () => ({
             }});
             return;
         }
-
-        // Promotion toggle/delete
-        var promoToggle = e.target.closest('.promotion-toggle-btn');
-        if (promoToggle) {
-            e.preventDefault();
-            var name = promoToggle.getAttribute('data-promotion-name');
-            var active = promoToggle.getAttribute('data-promotion-active') === '1';
-            var action = active ? 'deactivate' : 'activate';
-            showConfirm({
-                title: action.charAt(0).toUpperCase() + action.slice(1) + ' Promotion',
-                message: 'Are you sure you want to ' + action + ' the promotion "' + name + '"?',
-                type: active ? 'warning' : 'success',
-                confirmText: action.charAt(0).toUpperCase() + action.slice(1),
-                onConfirm: function() { window.location.href = promoToggle.href; }
-            });
-            return;
-        }
-
-        var promoDelete = e.target.closest('.promotion-delete-btn');
-        if (promoDelete) {
-            e.preventDefault();
-            var name = promoDelete.getAttribute('data-promotion-name');
-            var form = promoDelete.closest('form');
-            showConfirm({ title: 'Delete Promotion', message: 'Are you sure you want to delete the promotion "' + name + '"?', details: 'This action cannot be undone.', type: 'danger', confirmText: 'Delete', onConfirm: function() { if (form) form.submit(); } });
-            return;
-        }
-
-        // Regex delete
-        var regexDel = e.target.closest('[data-delete-regex]');
-        if (regexDel) {
-            e.preventDefault();
-            var id = regexDel.getAttribute('data-delete-regex');
-            var url = regexDel.getAttribute('data-delete-url');
-            if (confirm('Are you sure you want to delete this regex?')) {
-                var csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-                fetch(url + '?id=' + id, { method: 'GET', headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrf } })
-                .then(function(r) { return r.json(); }).then(function(d) {
-                    if (d.success) { var row = document.getElementById('row-' + id); if (row) { row.style.transition = 'opacity 0.3s'; row.style.opacity = '0'; setTimeout(function() { row.remove(); }, 300); } showToast('Regex deleted', 'success'); }
-                    else showToast('Error', 'error');
-                }).catch(function() { showToast('Error', 'error'); });
-            }
-            return;
-        }
-
-        // Binary blacklist delete
-        var blDel = e.target.closest('[data-delete-blacklist]');
-        if (blDel) {
-            e.preventDefault();
-            var id = blDel.getAttribute('data-delete-blacklist');
-            if (confirm('Are you sure? This will delete the blacklist.')) {
-                if (typeof ajax_binaryblacklist_delete === 'function') ajax_binaryblacklist_delete(id);
-            }
-            return;
-        }
-    });
-
-    // --- Image fallbacks ---
-    document.querySelectorAll('img[data-fallback-src], img[data-hide-on-error]').forEach(function(img) {
-        img.addEventListener('error', function() {
-            var fb = this.getAttribute('data-fallback-src');
-            if (fb && this.src !== fb) { this.src = fb; return; }
-            if (this.hasAttribute('data-hide-on-error')) this.style.display = 'none';
-        });
     });
 
     // --- Admin select-alls and bulk forms ---
-    // Invitations select-all
-    var selectAllInv = document.getElementById('select_all');
-    if (selectAllInv) {
-        var invBoxes = document.querySelectorAll('.invitation-checkbox');
-        selectAllInv.addEventListener('change', function() { invBoxes.forEach(function(cb) { cb.checked = selectAllInv.checked; }); });
-        invBoxes.forEach(function(cb) { cb.addEventListener('change', function() {
-            var all = Array.from(invBoxes).every(function(c) { return c.checked; });
-            var some = Array.from(invBoxes).some(function(c) { return c.checked; });
-            selectAllInv.checked = all; selectAllInv.indeterminate = some && !all;
-        }); });
-    }
-
     // Deleted users select-all
     var selectAllUsers = document.getElementById('selectAll');
     if (selectAllUsers) {

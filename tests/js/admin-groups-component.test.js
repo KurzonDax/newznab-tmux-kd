@@ -462,3 +462,43 @@ test('recovery selection starts with no change and sends only the selected profi
     page.component.validateEditSelected();
     assert.equal(page.component.canSaveEditSelected(), false);
 });
+
+test('reset group asks first and, once confirmed, posts the reset for that group', async () => {
+    const page = mountPage(1);
+    const asked = [], requests = [], toasts = [];
+    globalThis.showConfirm = options => { asked.push(options); };
+    globalThis.showToast = (...args) => { toasts.push(args); };
+    globalThis.fetch = async (url, options) => {
+        requests.push({ url, method: options.method, body: new URLSearchParams(options.body) });
+
+        return { json: async () => ({ success: true, message: 'Group 5 has been reset.' }) };
+    };
+
+    try {
+        page.component.handleAction('reset-group', '5');
+
+        assert.equal(asked.length, 1);
+        assert.equal(asked[0].title, 'Reset Group');
+        assert.equal(requests.length, 0, 'nothing is sent before the confirmation');
+
+        asked[0].onConfirm();
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.equal(requests.length, 1);
+        assert.equal(requests[0].url, '/admin/ajax');
+        assert.equal(requests[0].method, 'POST');
+        assert.equal(requests[0].body.get('action'), 'reset_group');
+        assert.equal(requests[0].body.get('group_id'), '5');
+        assert.deepEqual(toasts, [['Group 5 has been reset.', 'success']]);
+    } finally {
+        delete globalThis.showConfirm;
+        delete globalThis.showToast;
+        delete globalThis.fetch;
+    }
+});
+
+test('init assigns nothing on window', () => {
+    mountPage(2);
+
+    assert.deepEqual(Object.keys(globalThis.window), []);
+});

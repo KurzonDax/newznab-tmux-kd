@@ -112,11 +112,13 @@
                                 Current Cover
                             </label>
                             <div class="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
-                                @if(isset($book['cover']) && $book['cover'] == 1)
-                                    <img src="{{ asset('storage/covers/book/' . $book['id'] . (file_exists(storage_path('covers/book/' . $book['id'] . '.webp')) ? '.webp' : '.jpg')) }}"
+                                @php($bookCover = isset($book['cover']) && $book['cover'] == 1 ? getImageAssetUrl('book', (string) $book['id']) : null)
+                                @if($bookCover)
+                                    <img src="{{ $bookCover }}"
                                          alt="{{ $book['title'] }}"
                                          class="max-w-full h-auto mx-auto rounded shadow-lg img-max-h-400"
-                                         data-fallback-src="{{ asset('images/no-cover.png') }}">
+                                         x-data="imageFallback"
+                                         data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                                 @else
                                     <div class="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-gray-500">
                                         <i class="fas fa-book text-6xl mb-3"></i>

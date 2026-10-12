@@ -143,7 +143,8 @@
                                     <img src="{{ $show['image'] }}"
                                          alt="{{ $show['title'] }}"
                                          class="max-w-full h-auto mx-auto rounded shadow-lg max-h-[400px]"
-                                         data-fallback-src="{{ asset('images/no-cover.png') }}">
+                                         x-data="imageFallback"
+                                         data-fallback-src="{{ asset('assets/images/no-cover.png') }}">
                                 @else
                                     <div class="flex flex-col items-center justify-center py-12 text-gray-400 dark:text-gray-500">
                                         <i class="fas fa-tv text-6xl mb-3"></i>

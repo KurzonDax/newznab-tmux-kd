@@ -50,15 +50,20 @@
                                    title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="{{ url('admin/role-delete?id=' . $role->id) }}"
-                                   class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                   title="Delete"
-                                   x-data="confirmLink"
-                                   data-url="{{ url('admin/role-delete?id=' . $role->id) }}"
-                                   data-message="Are you sure you want to delete role '{{ $role->name }}'?"
-                                   @click.prevent="navigate()">
-                                    <i class="fas fa-trash"></i>
-                                </a>
+                                <form method="POST" action="{{ route('admin.role-delete') }}" class="inline"
+                                      x-data="confirmForm"
+                                      data-message="Are you sure you want to delete role '{{ $role->name }}'?"
+                                      data-type="danger"
+                                      data-confirm-text="Delete"
+                                      @submit.prevent="submit()">
+                                    @csrf
+                                    <input type="hidden" name="id" value="{{ $role->id }}">
+                                    <button type="submit"
+                                            class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+                                            title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                             </div>
                         </td>
                     </tr>

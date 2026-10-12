@@ -95,11 +95,15 @@
                                             <i class="fas fa-chart-line"></i>
                                         </a>
                                         <a href="{{ route('admin.promotions.toggle', $promotion->id) }}"
-                                           class="promotion-toggle-btn {{ $promotion->is_active ? 'text-orange-600 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-300' : 'text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300' }}"
+                                           class="{{ $promotion->is_active ? 'text-orange-600 dark:text-orange-400 hover:text-orange-900 dark:hover:text-orange-300' : 'text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300' }}"
                                            title="{{ $promotion->is_active ? 'Deactivate' : 'Activate' }}"
-                                           data-promotion-id="{{ $promotion->id }}"
-                                           data-promotion-name="{{ $promotion->name }}"
-                                           data-promotion-active="{{ $promotion->is_active ? '1' : '0' }}">
+                                           x-data="confirmLink"
+                                           data-url="{{ route('admin.promotions.toggle', $promotion->id) }}"
+                                           data-title="{{ $promotion->is_active ? 'Deactivate' : 'Activate' }} Promotion"
+                                           data-message="Are you sure you want to {{ $promotion->is_active ? 'deactivate' : 'activate' }} the promotion &quot;{{ $promotion->name }}&quot;?"
+                                           data-type="{{ $promotion->is_active ? 'warning' : 'success' }}"
+                                           data-confirm-text="{{ $promotion->is_active ? 'Deactivate' : 'Activate' }}"
+                                           @click.prevent="navigate()">
                                             <i class="fas fa-{{ $promotion->is_active ? 'pause' : 'play' }}"></i>
                                         </a>
                                         <a href="{{ route('admin.promotions.edit', $promotion->id) }}"
@@ -107,14 +111,18 @@
                                            title="Edit">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                        <form action="{{ route('admin.promotions.destroy', $promotion->id) }}" method="POST" class="inline promotion-delete-form">
+                                        <form action="{{ route('admin.promotions.destroy', $promotion->id) }}" method="POST" class="inline"
+                                              x-data="confirmForm"
+                                              data-title="Delete Promotion"
+                                              data-message="Are you sure you want to delete the promotion &quot;{{ $promotion->name }}&quot;? This action cannot be undone."
+                                              data-type="danger"
+                                              data-confirm-text="Delete"
+                                              @submit.prevent="submit()">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="button"
-                                                    class="promotion-delete-btn text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                                    title="Delete"
-                                                    data-promotion-id="{{ $promotion->id }}"
-                                                    data-promotion-name="{{ $promotion->name }}">
+                                            <button type="submit"
+                                                    class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
+                                                    title="Delete">
                                                 <i class="fas fa-trash"></i>
                                             </button>
                                         </form>

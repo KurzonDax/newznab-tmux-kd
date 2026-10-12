@@ -100,111 +100,112 @@
         </div>
 
         <!-- Invitations Table -->
-        <div class="overflow-x-auto">
+        {{-- The bulk form holds no table: a form cannot contain the per-row forms, so its controls name it with form="bulkForm". --}}
+        <div class="overflow-x-auto" x-data="adminInvitations">
             <form method="POST" action="{{ url('admin/invitations/bulk') }}" id="bulkForm">
                 @csrf
-                <x-admin.data-table>
-                    <x-slot:head>
-                        <x-admin.th>
-                            <input type="checkbox" id="select_all" class="rounded">
-                        </x-admin.th>
-                        <x-admin.th>Email</x-admin.th>
-                        <x-admin.th>Invited By</x-admin.th>
-                        <x-admin.th>Status</x-admin.th>
-                        <x-admin.th>Created</x-admin.th>
-                        <x-admin.th>Expires</x-admin.th>
-                        <x-admin.th>Actions</x-admin.th>
-                    </x-slot:head>
+            </form>
+            <x-admin.data-table>
+                <x-slot:head>
+                    <x-admin.th>
+                        <input type="checkbox" id="select_all" class="rounded" @change="toggleAll">
+                    </x-admin.th>
+                    <x-admin.th>Email</x-admin.th>
+                    <x-admin.th>Invited By</x-admin.th>
+                    <x-admin.th>Status</x-admin.th>
+                    <x-admin.th>Created</x-admin.th>
+                    <x-admin.th>Expires</x-admin.th>
+                    <x-admin.th>Actions</x-admin.th>
+                </x-slot:head>
 
-                        @forelse($invitations as $invitation)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                <td class="px-6 py-4 whitespace-nowrap text-center">
-                                    <input type="checkbox" name="invitation_ids[]" value="{{ $invitation->id }}" class="rounded invitation-checkbox">
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
-                                    {{ $invitation->email }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
-                                    {{ optional($invitation->invitedBy)->username ?? '—' }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    @if($invitation->used_at)
-                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                            <i class="fas fa-check-circle mr-1"></i>Used
-                                        </span>
-                                    @elseif(!$invitation->is_active)
-                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-                                            <i class="fas fa-ban mr-1"></i>Cancelled
-                                        </span>
-                                    @elseif($invitation->expires_at && $invitation->expires_at->isPast())
-                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                            <i class="fas fa-clock mr-1"></i>Expired
-                                        </span>
-                                    @else
-                                        <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-                                            <i class="fas fa-hourglass-half mr-1"></i>Pending
-                                        </span>
-                                    @endif
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                    {{ formatDateTime($invitation->created_at) }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                    {{ $invitation->expires_at ? formatDateTime($invitation->expires_at) : 'Never' }}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                                    <a href="{{ url('admin/invitations/' . $invitation->id) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300">
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    @if(!$invitation->used_at)
-                                        <form method="POST" action="{{ url('admin/invitations/' . $invitation->id . '/resend') }}" class="inline">
-                                            @csrf
-                                            <button type="submit" class="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300" title="Resend">
-                                                <i class="fas fa-paper-plane"></i>
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="{{ url('admin/invitations/' . $invitation->id . '/cancel') }}" class="inline"
-                                              x-data="confirmForm"
-                                              data-message="Are you sure you want to cancel this invitation?"
-                                              data-title="Cancel Invitation"
-                                              data-type="danger"
-                                              data-confirm-text="Cancel Invitation"
-                                              @submit.prevent="submit()">
-                                            @csrf
-                                            <button type="submit" class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300" title="Cancel">
-                                                <i class="fas fa-ban"></i>
-                                            </button>
-                                        </form>
-                                    @endif
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="7" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                                    No invitations found.
-                                </td>
-                            </tr>
-                        @endforelse
-                </x-admin.data-table>
+                    @forelse($invitations as $invitation)
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="px-6 py-4 whitespace-nowrap text-center">
+                                <input type="checkbox" name="invitation_ids[]" value="{{ $invitation->id }}" class="rounded invitation-checkbox" form="bulkForm" @change="syncHead">
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
+                                {{ $invitation->email }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-200">
+                                {{ optional($invitation->invitedBy)->username ?? '—' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                @if($invitation->used_at)
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                        <i class="fas fa-check-circle mr-1"></i>Used
+                                    </span>
+                                @elseif(!$invitation->is_active)
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                        <i class="fas fa-ban mr-1"></i>Cancelled
+                                    </span>
+                                @elseif($invitation->expires_at && $invitation->expires_at->isPast())
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                                        <i class="fas fa-clock mr-1"></i>Expired
+                                    </span>
+                                @else
+                                    <span class="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
+                                        <i class="fas fa-hourglass-half mr-1"></i>Pending
+                                    </span>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                {{ formatDateTime($invitation->created_at) }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                {{ $invitation->expires_at ? formatDateTime($invitation->expires_at) : 'Never' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                <a href="{{ url('admin/invitations/' . $invitation->id) }}" class="text-primary-600 dark:text-primary-400 hover:text-primary-900 dark:hover:text-primary-300">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                @if(!$invitation->used_at)
+                                    <form method="POST" action="{{ url('admin/invitations/' . $invitation->id . '/resend') }}" class="inline">
+                                        @csrf
+                                        <button type="submit" class="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300" title="Resend">
+                                            <i class="fas fa-paper-plane"></i>
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url('admin/invitations/' . $invitation->id . '/cancel') }}" class="inline"
+                                          x-data="confirmForm"
+                                          data-message="Are you sure you want to cancel this invitation?"
+                                          data-title="Cancel Invitation"
+                                          data-type="danger"
+                                          data-confirm-text="Cancel Invitation"
+                                          @submit.prevent="submit()">
+                                        @csrf
+                                        <button type="submit" class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300" title="Cancel">
+                                            <i class="fas fa-ban"></i>
+                                        </button>
+                                    </form>
+                                @endif
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="7" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                No invitations found.
+                            </td>
+                        </tr>
+                    @endforelse
+            </x-admin.data-table>
 
-                <!-- Bulk Actions -->
-                <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                            <select name="bulk_action" id="bulk_action" class="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md">
-                                <option value="">Bulk Actions</option>
-                                <option value="resend">Resend Selected</option>
-                                <option value="cancel">Cancel Selected</option>
-                                <option value="delete">Delete Selected</option>
-                            </select>
-                            <x-button type="submit" variant="secondary" data-confirm="Are you sure you want to perform this bulk action?">Apply</x-button>
-                        </div>
-                        <div>
-                            {{ $invitations->links() }}
-                        </div>
+            <!-- Bulk Actions -->
+            <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <select name="bulk_action" id="bulk_action" form="bulkForm" class="px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-md">
+                            <option value="">Bulk Actions</option>
+                            <option value="resend">Resend Selected</option>
+                            <option value="cancel">Cancel Selected</option>
+                            <option value="delete">Delete Selected</option>
+                        </select>
+                        <x-button type="submit" variant="secondary" form="bulkForm" data-confirm="Are you sure you want to perform this bulk action?">Apply</x-button>
+                    </div>
+                    <div>
+                        {{ $invitations->links() }}
                     </div>
                 </div>
-            </form>
+            </div>
         </div>
     </x-admin.card>
 

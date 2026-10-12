@@ -77,12 +77,15 @@
                         <div class="text-xs">{{ $comment->created_at ? $comment->created_at->format('H:i:s') : '' }}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <a href="{{ url('admin/comment-delete?id=' . $comment->id) }}"
-                           class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition"
-                           title="Delete"
-                           data-confirm-delete>
-                            <i class="fas fa-trash"></i>
-                        </a>
+                        <form method="POST" action="{{ route('admin.comments-delete', $comment->id) }}" class="inline">
+                            @csrf
+                            <button type="submit"
+                                    class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 transition"
+                                    title="Delete"
+                                    data-confirm-delete>
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
             @empty

@@ -71,6 +71,9 @@
                 <form method="POST" action="{{ route('register.post') }}" class="space-y-5">
                     @csrf
                     <input type="hidden" name="action" value="submit">
+                    @if(!empty($invitecode))
+                        <input type="hidden" name="invitecode" value="{{ $invitecode }}">
+                    @endif
 
                     <!-- Username Field -->
                     <div>
@@ -124,19 +127,20 @@
                         <x-label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Password
                         </x-label>
-                        <div class="relative">
+                        <div class="relative" x-data="passwordToggle">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
                             <x-input
                                 id="password"
                                 type="password"
+                                x-ref="field"
                                 name="password"
                                 required
                                 class="block w-full auth-field-leading auth-field-trailing py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition @error('password') border-red-500 @enderror"
                                 placeholder="Create a strong password" />
-                            <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-field-id="password">
-                                <i class="fas fa-eye" id="password-eye"></i>
+                            <button type="button" class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="toggle">
+                                <i class="fas" :class="iconClass()"></i>
                             </button>
                         </div>
                         @error('password')
@@ -158,19 +162,20 @@
                         <x-label for="password_confirmation" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Confirm Password
                         </x-label>
-                        <div class="relative">
+                        <div class="relative" x-data="passwordToggle">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
                             </div>
                             <x-input
                                 id="password_confirmation"
                                 type="password"
+                                x-ref="field"
                                 name="password_confirmation"
                                 required
                                 class="block w-full auth-field-leading auth-field-trailing py-3 border border-gray-300 dark:border-gray-600 dark:bg-(--surface-card-dark) dark:text-white dark:placeholder-gray-400 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition"
                                 placeholder="Confirm your password" />
-                            <button type="button" class="password-toggle-btn absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" data-field-id="password_confirmation">
-                                <i class="fas fa-eye" id="password_confirmation-eye"></i>
+                            <button type="button" class="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" @click="toggle">
+                                <i class="fas" :class="iconClass()"></i>
                             </button>
                         </div>
                     </div>

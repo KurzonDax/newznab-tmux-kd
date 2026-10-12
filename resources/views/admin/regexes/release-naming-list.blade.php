@@ -117,13 +117,11 @@
                                            title="Edit this regex">
                                             <i class="fas fa-edit"></i>
                                         </a>
-                                                <button type="button"
-                                                        class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                                                        data-delete-regex="{{ $row->id }}"
-                                                        data-delete-url="{{ url('/admin/release_naming_regexes-delete') }}"
-                                                        title="Delete this regex">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
+                                        <x-admin.row-delete action="release_naming_regex_delete"
+                                                            :row-id="$row->id"
+                                                            question="Are you sure you want to delete this regex?"
+                                                            deleted-message="Regex deleted"
+                                                            title="Delete this regex" />
                                     </div>
                                 </td>
                             </tr>
