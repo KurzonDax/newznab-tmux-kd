@@ -17,6 +17,7 @@ use Tests\TestCase;
 /**
  * Issue #1057: admin cover images are served by the covers route from the file that exists,
  * and an image that cannot be loaded gives way to the "no cover" picture.
+ * Issue #1060: the show edit page takes its cover from the file too, whatever `tv_info.image` holds.
  */
 final class AdminCoverImagesTest extends TestCase
 {
@@ -101,19 +102,30 @@ final class AdminCoverImagesTest extends TestCase
         }
     }
 
-    public function test_the_show_edit_cover_falls_back_to_the_placeholder(): void
+    public function test_the_show_edit_page_shows_the_cover_file_that_exists_with_the_placeholder_as_its_fallback(): void
     {
-        ProductionTables::fromAuthority()->create('videos');
-        ProductionTables::fromAuthority()->create('tv_info');
-        DB::table('videos')->insert(['id' => 41, 'type' => 0, 'title' => 'Invented Show', 'started' => '2020-01-01 00:00:00', 'countries_id' => 'US']);
-        DB::table('tv_info')->insert(['videos_id' => 41, 'summary' => 'Invented summary', 'publisher' => 'Invented Network', 'image' => 1]);
+        foreach ($this->showsWithTheImageFlagSetAndClear() as $id => $title) {
+            $this->coverFile('tvshows', $id.'.jpg');
 
-        $page = $this->page(route('admin.show-edit', ['id' => 41]));
+            $page = $this->page(route('admin.show-edit', ['id' => $id]));
 
-        $images = $this->openingTags($page, 'img', 'x-data="imageFallback"');
-        $this->assertCount(1, $images);
-        $this->assertSame('Invented Show', $this->attribute($images[0], 'alt'));
-        $this->assertSame(asset('assets/images/no-cover.png'), $this->attribute($images[0], 'data-fallback-src'));
+            $this->assertCoverWithFallback($page, url('/covers/tvshows/'.$id.'.jpg'));
+            $images = $this->openingTags($page, 'img', 'x-data="imageFallback"');
+            $this->assertCount(1, $images, $title);
+            $this->assertSame($title, $this->attribute($images[0], 'alt'));
+            $this->assertStringNotContainsString('No cover image available', $page, $title);
+        }
+    }
+
+    public function test_a_show_without_a_cover_file_shows_the_no_cover_block_whatever_its_image_flag_holds(): void
+    {
+        foreach ($this->showsWithTheImageFlagSetAndClear() as $id => $title) {
+            $page = $this->page(route('admin.show-edit', ['id' => $id]));
+
+            $this->assertSame([], $this->openingTags($page, 'img', 'x-data="imageFallback"'), $title);
+            $this->assertSame([], $this->openingTags($page, 'img', 'alt="'.$title.'"'), $title);
+            $this->assertStringContainsString('No cover image available', $page, $title);
+        }
     }
 
     public function test_the_placeholder_is_a_published_file_and_no_view_builds_an_address_under_storage_covers(): void
@@ -151,6 +163,26 @@ final class AdminCoverImagesTest extends TestCase
             'title' => $title, 'author' => 'Invented Author', 'asin' => 'invented-'.md5($title), 'genre' => 'Fiction', 'cover' => $cover,
             'created_at' => now(), 'updated_at' => now(),
         ]);
+    }
+
+    /**
+     * Two shows, one with `tv_info.image` set and one with it clear.
+     *
+     * @return array<int, string> Show titles keyed by show id.
+     */
+    private function showsWithTheImageFlagSetAndClear(): array
+    {
+        ProductionTables::fromAuthority()->create('videos');
+        ProductionTables::fromAuthority()->create('tv_info');
+
+        $titles = [];
+        foreach ([41 => 1, 42 => 0] as $id => $image) {
+            $titles[$id] = 'Invented Show With Image Flag '.$image;
+            DB::table('videos')->insert(['id' => $id, 'type' => 0, 'title' => $titles[$id], 'started' => '2020-01-01 00:00:00', 'countries_id' => 'US']);
+            DB::table('tv_info')->insert(['videos_id' => $id, 'summary' => 'Invented summary', 'publisher' => 'Invented Network', 'image' => $image]);
+        }
+
+        return $titles;
     }
 
     private function coverFile(string $type, string $filename): void
