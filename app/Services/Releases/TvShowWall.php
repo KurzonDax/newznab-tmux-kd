@@ -15,9 +15,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * The TV shows wall's queries (docs/proposals/tv-redesign/DATA-CONTRACT.md section 4). A show
  * is listed when it has at least one TV release the user may see (today's browse visibility:
- * the password setting and the user's excluded categories). "Newest releases first" and
- * "Newest to the site first" take their key from the index-only group-by on
- * ix_releases_videos_posted / _added, which ignores visibility: a show's position can come
+ * the password setting and the user's excluded categories). "Recently added first", "Newest
+ * releases first" and "Newest to the site first" take their key from the index-only group-by
+ * on ix_releases_videos_posted / _added, which ignores visibility: a show's position can come
  * from a release the user cannot see (accepted 2026-09-25). Nothing per show is stored.
  */
 final class TvShowWall
@@ -119,6 +119,8 @@ final class TvShowWall
         }
         $query = $this->shows($filters, $exclusions)->select('v.id');
         match ($filters->sort) {
+            'added' => $query->joinSub($this->releaseDates('MAX(adddate)', 'ix_releases_videos_added'), 'g', 'g.videos_id', '=', 'v.id')
+                ->orderByDesc('g.sort_key')->orderByDesc('v.id'),
             'recent' => $query->joinSub($this->releaseDates('MAX(postdate)', 'ix_releases_videos_posted'), 'g', 'g.videos_id', '=', 'v.id')
                 ->orderByDesc('g.sort_key')->orderByDesc('v.id'),
             'newsite' => $query->joinSub($this->releaseDates('MIN(adddate)', 'ix_releases_videos_added'), 'g', 'g.videos_id', '=', 'v.id')

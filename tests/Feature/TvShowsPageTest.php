@@ -79,7 +79,7 @@ final class TvShowsPageTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_the_wall_lists_shows_with_a_release_newest_release_first_42_per_page(): void
+    public function test_the_wall_lists_shows_with_a_release_recently_added_first_42_per_page(): void
     {
         foreach (range(1, 45) as $id) {
             $this->show($id, sprintf('Show %02d', $id));
@@ -293,7 +293,7 @@ final class TvShowsPageTest extends TestCase
         $this->assertStringContainsString('data-show="1"', $fragment);
     }
 
-    public function test_the_four_sorts_order_the_wall_and_the_chosen_one_is_remembered(): void
+    public function test_the_five_sorts_order_the_wall_and_the_chosen_one_is_remembered(): void
     {
         $this->show(1, 'Bravo', details: ['premiered' => '2010-01-01']);
         $this->show(2, 'Alpha', started: '2020-01-01 00:00:00');
@@ -302,19 +302,19 @@ final class TvShowsPageTest extends TestCase
         $this->tv(1, '2026-09-24 00:00:00', '2026-09-24 00:00:00');
         $this->tv(2, '2026-09-22 00:00:00', '2026-09-10 00:00:00');
         $this->tv(3, '2026-09-10 00:00:00', '2026-09-05 00:00:00');
+        $this->tv(3, '2026-09-08 00:00:00', '2026-09-25 00:00:00');
         $user = $this->browserUser();
 
-        $this->assertSame([1, 2, 3], $this->tileIds($this->page('/tv/shows', $user)->assertSee('<option value="recent" selected', false)
-            ->assertSeeInOrder(['Newest releases first', 'Newest to the site first', 'Newest premiere first', 'A to Z'])));
-        foreach (['newsite' => [2, 3, 1], 'prem' => [2, 3, 1], 'az' => [2, 1, 3], 'recent' => [1, 2, 3]] as $sort => $order) {
+        $this->assertSame([3, 1, 2], $this->tileIds($this->page('/tv/shows', $user)->assertSee('<option value="added" selected', false)
+            ->assertSeeInOrder(['Recently added first', 'Newest releases first', 'Newest to the site first', 'Newest premiere first', 'A to Z'])));
+        foreach (['newsite' => [2, 3, 1], 'prem' => [2, 3, 1], 'az' => [2, 1, 3], 'added' => [3, 1, 2], 'recent' => [1, 2, 3]] as $sort => $order) {
             $this->postJson('/profile/update-view', ['root' => 'tv', 'shows_sort' => $sort])->assertOk();
-            $response = $this->page('/tv/shows', User::query()->findOrFail($user->id))->assertSee('<option value="'.$sort.'" selected', false);
-            $this->assertSame($order, $this->tileIds($response), $sort);
+            $reloaded = User::query()->findOrFail($user->id);
+            $this->assertSame($sort, $reloaded->releaseViewPreferences('tv')['shows_sort']);
+            $this->assertSame($order, $this->tileIds($this->page('/tv/shows', $reloaded)->assertSee('<option value="'.$sort.'" selected', false)), $sort);
         }
-        $preferences = User::query()->findOrFail($user->id)->releaseViewPreferences('tv');
-        $this->assertSame('recent', $preferences['shows_sort']);
         $this->postJson('/profile/update-view', ['root' => 'tv', 'shows_sort' => 'grabs'])->assertUnprocessable();
-        $this->postJson('/profile/update-view', ['root' => 'movies', 'shows_sort' => 'az'])->assertUnprocessable();
+        $this->postJson('/profile/update-view', ['root' => 'movies', 'shows_sort' => 'added'])->assertUnprocessable();
     }
 
     public function test_an_empty_result_keeps_the_line_and_a_single_page_greys_both_arrows(): void
