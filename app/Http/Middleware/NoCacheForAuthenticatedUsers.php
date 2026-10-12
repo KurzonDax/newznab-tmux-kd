@@ -48,8 +48,7 @@ class NoCacheForAuthenticatedUsers
             'forgottenpassword',
             'password.request',
             '2fa.verify',
-            '2fa.post',
-            '2faVerify'
+            '2fa.post'
         );
     }
 

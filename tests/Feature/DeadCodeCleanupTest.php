@@ -10,12 +10,19 @@ use App\Enums\CollectionFileCheckStatus;
 use App\Enums\ReleaseSort;
 use App\Enums\SignupError;
 use App\Enums\UserRole;
+use App\Http\Controllers\Admin\AdminCommentsController;
 use App\Http\Controllers\Admin\AdminInvitationController;
+use App\Http\Controllers\Admin\AdminPageController;
 use App\Http\Controllers\Api\RSS;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\BasePageController;
 use App\Http\Controllers\ContentController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\PasswordSecurityController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReleaseReportController;
+use App\Http\Controllers\SearchSuggestController;
 use App\Models\AnidbInfo;
 use App\Models\Category;
 use App\Models\ConsoleInfo;
@@ -44,6 +51,7 @@ use App\Models\UserRequest;
 use App\Models\UserRoleHistory;
 use App\Models\UserSerie;
 use App\Models\UsersRelease;
+use App\Services\InvitationService;
 use App\Services\MovieService;
 use App\Services\Releases\ReleaseBrowserMetadata;
 use App\Services\Releases\ReleaseBrowserQuery;
@@ -61,8 +69,12 @@ use App\Support\BookMatchScorer;
 use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\SteamGameData;
 use App\Support\Data\SteamPriceData;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Route;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Tests\TestCase;
 
 /**
@@ -622,6 +634,127 @@ final class DeadCodeCleanupTest extends TestCase
             [LoginController::class, 'showLoginForm'], [LoginController::class, 'username'],
         ] as [$class, $method]) {
             $this->assertTrue(method_exists($class, $method), $class.'::'.$method);
+        }
+    }
+
+    public function test_section_f_routes_nothing_generates_are_gone_and_their_neighbours_stay(): void
+    {
+        // F1 and F2: the router has no route for the method and address (the request answers 404 or 405)
+        foreach ([
+            ['GET', '/myshows'], ['GET', '/myshows/browse'], ['GET', '/profile'], ['POST', '/profile'], ['GET', '/profileedit'], ['GET', '/profile_delete'],
+            ['GET', '/resetpassword'], ['GET', '/admin/site-edit'], ['POST', '/admin/site-edit'], ['GET', '/admin/tmux-edit'], ['POST', '/admin/tmux-edit'],
+            ['POST', '/2faVerify'], ['POST', '/profile-security/disable-2fa'], ['GET', '/ajax_profile'], ['GET', '/release-report/reasons'],
+            ['GET', '/release-report/check'], ['GET', '/api/search/autocomplete'], ['GET', '/api/search/assist'], ['GET', '/api/release/abc/filelist'],
+            ['GET', '/invitations/stats'], ['GET', '/admin/api/system-metrics/current'], ['GET', '/admin/api/system-metrics/historical'],
+            ['GET', '/admin/api/user-activity/minutes'], ['GET', '/admin/api/user-activity/recent'],
+        ] as [$method, $address]) {
+            try {
+                $route = Route::getRoutes()->match(Request::create($address, $method));
+            } catch (NotFoundHttpException|MethodNotAllowedHttpException) {
+                continue;
+            }
+            // an address under /api/ falls to the external API's own catch-all, which answers 404
+            $this->assertTrue($route->isFallback, $method.' '.$address.' still reaches the route '.$route->uri());
+            $this->json($method, $address)->assertNotFound();
+        }
+        foreach ([
+            'myshows', 'myshows.browse', 'profile', 'profileedit', 'profile_delete', 'resetpassword', '2faVerify', 'profile.security.disable2fa', 'ajax_profile',
+            'release-report.reasons', 'release-report.check', 'api.search.autocomplete', 'api.search.assist', 'api.filelist', 'invitations.stats',
+            'admin.api.metrics.current', 'admin.api.metrics.historical', 'admin.api.user-activity.minutes', 'admin.api.user-activity.recent',
+        ] as $name) {
+            $this->assertFalse(Route::has($name), $name);
+        }
+        // the kept neighbours
+        foreach ([
+            'account', 'watchlist', 'tv.releases', 'browse', 'forgottenpassword', 'password.request', 'password.reset', 'password.update', '2fa.verify', '2fa.post',
+            'profileedit.generate2faSecret', 'profileedit.enable2fa', 'profileedit.disable2fa', 'profileedit.cancel2fa', 'profile.update-view', 'profile.update-theme',
+            'release-report.store', 'api.search.suggest', 'release.files', 'invitations.index', 'invitations.destroy', 'admin.api.dashboard-data',
+            'admin.settings.index', 'admin.comments-list', 'admin.comments-delete', 'content', 'btcpay',
+        ] as $name) {
+            $this->assertTrue(Route::has($name), $name);
+        }
+    }
+
+    public function test_section_f_controllers_methods_and_configuration_files_nothing_reaches_are_gone(): void
+    {
+        // F1, F2 and F5
+        foreach ([
+            'app/Http/Controllers/MyShowsController.php', 'app/Http/Controllers/ProfileSecurityController.php', 'app/Http/Controllers/AjaxController.php',
+            'app/Http/Controllers/Api/FileListApiController.php',
+            'config/settings.php', 'config/manticoresearch.php', 'config/elasticsearch.php', 'config/lodash.php', 'config/top.php', 'config/timezone.php',
+            'config/user-verification.php',
+        ] as $path) {
+            $this->assertFileDoesNotExist(base_path($path));
+        }
+        $this->assertFileExists(config_path('search.php'));
+        $this->assertFileExists(config_path('captcha.php'));
+
+        foreach ([
+            [ProfileController::class, 'show'], [ProfileController::class, 'edit'], [ProfileController::class, 'destroy'],
+            [ResetPasswordController::class, 'showLegacyResetForm'], [User::class, 'findByResetGuid'], [User::class, 'sendInvite'],
+            [ReleaseReportController::class, 'getReasons'], [ReleaseReportController::class, 'checkReported'],
+            [SearchSuggestController::class, 'autocomplete'], [SearchSuggestController::class, 'searchAssist'], [InvitationController::class, 'stats'],
+            [AdminPageController::class, 'getCurrentMetrics'], [AdminPageController::class, 'getHistoricalMetrics'],
+            [AdminPageController::class, 'getUserActivityMinutes'], [AdminPageController::class, 'getRecentActivity'],
+        ] as [$class, $method]) {
+            $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
+        }
+        // what the issue names as staying beside them
+        foreach ([
+            [ProfileController::class, 'updateTheme'], [User::class, 'updatePassResetGuid'], [PasswordSecurityController::class, 'verify2fa'],
+            [PasswordSecurityController::class, 'disable2fa'], [Invitation::class, 'createInvitation'], [InvitationService::class, 'sendInvitationEmail'],
+            [ReleaseReportController::class, 'store'], [ReleaseReport::class, 'hasUserReported'], [SearchSuggestController::class, 'suggest'],
+            [SearchServiceInterface::class, 'autocomplete'], [AdminPageController::class, 'getDashboardData'], [AdminCommentsController::class, 'destroy'],
+        ] as [$class, $method]) {
+            $this->assertTrue(method_exists($class, $method), $class.'::'.$method);
+        }
+
+        // the TV test of the clearance middleware keeps its TV operand alone
+        $clearance = $this->source('app/Http/Middleware/ClearanceMiddleware.php');
+        $this->assertStringNotContainsString('myshows', $clearance);
+        $this->assertStringContainsString('if ($this->matchesCategoryPath($path, \'TV\')) {', $clearance);
+        $noCache = $this->source('app/Http/Middleware/NoCacheForAuthenticatedUsers.php');
+        $this->assertStringNotContainsString('2faVerify', $noCache);
+        $this->assertContainsAll(["'2fa.verify'", "'2fa.post'"], $noCache);
+
+        // the three texts no longer describe the two admin addresses as redirects
+        $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('.ai/rules/settings-hub.md'));
+        $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('DOCKER.md'));
+        $this->assertContainsNone(['site-edit', 'tmux-edit'], $this->source('app/Http/Controllers/Admin/AdminSiteController.php'));
+    }
+
+    public function test_section_f_configuration_keys_nothing_reads_are_unset_and_the_read_ones_stay(): void
+    {
+        // F4 and F5
+        foreach ([
+            'nntmux.items_per_cover_page', 'nntmux.crc_token', 'nntmux.nzb_import_folder', 'nntmux_settings.delete_passworded_releases',
+            'nntmux_settings.delete_possible_passworded_releases', 'nntmux_settings.extract_using_rarinfo', 'nntmux_settings.ffprobe_path',
+            'nntmux_settings.lame_path', 'nntmux_api.anidb_api_key', 'irc_settings.username', 'status-probes.nntp',
+            'settings', 'manticoresearch', 'elasticsearch', 'lodash', 'top', 'timezone', 'user-verification',
+        ] as $key) {
+            $this->assertNull(config($key), $key);
+        }
+        foreach (['irc_settings.scrape_irc_username', 'status-probes.disk', 'search.drivers.manticore'] as $key) {
+            $this->assertNotNull(config($key), $key);
+        }
+    }
+
+    public function test_section_f_environment_examples_hold_none_of_the_sixteen_unread_keys(): void
+    {
+        // F6
+        foreach (['.env.example', '.env.dist'] as $file) {
+            $environment = $this->source($file);
+            foreach ([
+                'ITEMS_PER_COVER_PAGE', 'DELETE_PASSWORDED_RELEASES', 'DELETE_POSSIBLE_PASSWORDED_RELEASES', 'EXTRACT_USING_RARINFO', 'LAME_PATH', 'ANIDB_APIKEY',
+                'DB_ROOTPASSWORD', 'ELASTICSEARCH_LOGGING', 'MIX_PUSHER_APP_KEY', 'MIX_PUSHER_APP_CLUSTER', 'TMDB_CACHE', 'TMDB_LOG',
+                'PASSWORD_HASH', 'MANTICORESEARCH_AUTOCOMPLETE_FUZZINESS', 'MANTICORESEARCH_AUTOCOMPLETE_CACHE', 'ELASTICSEARCH_AUTOCOMPLETE_CACHE',
+            ] as $key) {
+                $this->assertDoesNotMatchRegularExpression('/\b'.$key.'\b/', $environment, $file.' '.$key);
+            }
+            // keys something still reads
+            foreach (['NOCAPTCHA_ENABLED', 'FLARE_KEY', 'PUSHER_APP_KEY', 'PUSHER_APP_CLUSTER'] as $key) {
+                $this->assertMatchesRegularExpression('/^'.$key.'=/m', $environment, $file.' '.$key);
+            }
         }
     }
 

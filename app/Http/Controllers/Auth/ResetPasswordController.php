@@ -33,31 +33,6 @@ class ResetPasswordController extends Controller
         $this->middleware('guest');
     }
 
-    public function showLegacyResetForm(Request $request): mixed
-    {
-        if ($request->missing('guid')) {
-            return redirect()->route('password.request')->with('error', 'No reset code provided.');
-        }
-
-        $user = User::findByResetGuid((string) $request->input('guid'));
-        if ($user === null) {
-            return redirect()->route('password.request')->with('error', 'Bad reset code provided.');
-        }
-
-        // Check if user is soft deleted
-        if ($user->trashed()) {
-            return redirect()->route('password.request')->with('error', 'This account has been deactivated.');
-        }
-
-        $token = Password::broker()->createToken($user);
-        User::updatePassResetGuid($user->id, null);
-
-        return redirect()->route('password.reset', [
-            'token' => $token,
-            'email' => $user->email,
-        ]);
-    }
-
     public function reset(Request $request): mixed
     {
         $request->validate([

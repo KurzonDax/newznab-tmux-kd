@@ -68,7 +68,7 @@ final class AccountControllerTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_sections_render_shared_controls_and_legacy_pages_redirect_to_the_account(): void
+    public function test_sections_render_shared_controls(): void
     {
         $user = $this->browserUser();
         $this->actingAs($user);
@@ -78,10 +78,6 @@ final class AccountControllerTest extends TestCase
             $response->assertSee('account-section-'.$section, false);
         }
         $this->get('/account?section=appearance')->assertOk()->assertSee('name="viewpc" value="1" checked>PC</label>', false)->assertDontSee('PC / Games');
-        $this->get('/profile?id=999')->assertRedirect('/account');
-        $this->get('/profileedit')->assertRedirect('/account');
-        $this->get('/profileedit?action=newapikey')->assertRedirect('/account?section=api');
-        $this->assertSame($user->api_token, $user->fresh()->api_token);
         $this->get('/account?section[]=security')->assertOk()->assertSee('account-section-profile');
     }
 
@@ -163,15 +159,15 @@ final class AccountControllerTest extends TestCase
         $this->assertTrue($user->fresh()->hasDirectPermission('view movies'));
     }
 
-    public function test_legacy_disable_revokes_recovery_codes_before_reenabling(): void
+    public function test_disable_revokes_recovery_codes_before_reenabling(): void
     {
         $user = $this->browserUser();
         PasswordSecurity::query()->create(['user_id' => $user->id, 'google2fa_enable' => true, 'google2fa_secret' => 'JBSWY3DPEHPK3PXP']);
         $recovery = app(TwoFactorRecoveryCodes::class);
         $codes = $recovery->generate($user);
-        $this->actingAs($user)->post('/profile-security/disable-2fa', ['current_password' => 'password'])->assertRedirect('/account?section=security');
-        $this->assertNull($user->passwordSecurity->fresh()->recovery_codes);
-        $user->passwordSecurity->fresh()->update(['google2fa_enable' => true]);
+        $this->actingAs($user)->post(route('profileedit.disable2fa'), ['current-password' => 'password'])->assertRedirect('/account?section=security');
+        $this->assertFalse(PasswordSecurity::query()->where('user_id', $user->id)->exists());
+        PasswordSecurity::query()->create(['user_id' => $user->id, 'google2fa_enable' => true, 'google2fa_secret' => 'JBSWY3DPEHPK3PXP']);
         $this->assertFalse($recovery->consume($user, $codes[0]));
     }
 

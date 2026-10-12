@@ -145,7 +145,7 @@ class NzbAndRssAccessTest extends TestCase
         $user = User::query()->findOrFail($userId);
 
         $this->actingAs($user)
-            ->get('/profile')
+            ->get('/account')
             ->assertRedirect(route('verification.notice'));
     }
 

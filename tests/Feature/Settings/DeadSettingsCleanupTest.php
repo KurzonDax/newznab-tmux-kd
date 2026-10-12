@@ -210,6 +210,15 @@ final class DeadSettingsCleanupTest extends TestCase
         $this->assertSame(['grabstatus'], DB::table('settings')->pluck('name')->all(), 'Rolling back restores nothing.');
     }
 
+    public function test_the_seeder_names_none_of_the_six_rows_the_second_cleanup_deletes(): void
+    {
+        $seeder = (string) file_get_contents(database_path('seeders/SettingsTableSeeder.php'));
+
+        foreach (['trailers_display', 'trailers_size_x', 'trailers_size_y', 'currentppticket', 'lastpretime', 'nextppticket'] as $name) {
+            $this->assertStringNotContainsString($name, $seeder);
+        }
+    }
+
     private function migration(): Migration
     {
         return require database_path('migrations/2026_09_05_120000_drop_settings_with_no_reader.php');

@@ -6,28 +6,11 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\UpdateThemeRequest;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 
 class ProfileController extends BasePageController
 {
-    public function show(Request $request): RedirectResponse
-    {
-        return redirect()->route('account');
-    }
-
-    public function edit(Request $request): RedirectResponse
-    {
-        return redirect()->route('account', $request->input('action') === 'newapikey' ? ['section' => 'api'] : []);
-    }
-
-    public function destroy(Request $request): RedirectResponse
-    {
-        return redirect()->route('account', ['section' => 'privacy']);
-    }
-
     public function updateTheme(UpdateThemeRequest $request): JsonResponse
     {
         $user = Auth::user();

@@ -171,10 +171,8 @@ final class HiddenCategoryReleaseAccessTest extends TestCase
         $this->hide($mode);
         $this->assertBare($this->getJson('/release/'.md5(self::HIDDEN).'/files'));
         $this->assertBare($this->get('/release/'.md5(self::HIDDEN).'/files'));
-        $this->assertBare($this->getJson('/api/release/'.md5(self::HIDDEN).'/filelist'));
 
         $this->getJson('/release/'.md5(self::VISIBLE).'/files')->assertOk()->assertJsonPath('release.searchname', self::VISIBLE);
-        $this->getJson('/api/release/'.md5(self::VISIBLE).'/filelist')->assertOk()->assertJsonPath('release.searchname', self::VISIBLE);
     }
 
     #[DataProvider('hidingModesOnly')]

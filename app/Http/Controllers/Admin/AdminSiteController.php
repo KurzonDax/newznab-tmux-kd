@@ -14,7 +14,7 @@ use App\Models\SignupStat;
  * What is left of the old site admin once the settings hub took the form.
  *
  * `edit()` and its fifteen blade sections were retired in favour of
- * {@see AdminSettingsController}; `admin/site-edit` now redirects there. The stats page has
+ * {@see AdminSettingsController}. The stats page has
  * nothing to do with settings and stays.
  */
 class AdminSiteController extends BasePageController

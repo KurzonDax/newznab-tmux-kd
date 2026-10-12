@@ -11,7 +11,6 @@ use App\Jobs\SendAccountExpiredEmail;
 use App\Jobs\SendAccountWillExpireEmail;
 use App\Notifications\VerifyEmailBranded;
 use App\Rules\ValidEmailDomain;
-use App\Services\InvitationService;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
 use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
@@ -26,7 +25,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Http\Request;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
@@ -762,19 +760,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
     public static function findVerifiedByApiToken(string $token): ?static
     {
         return static::verifiedApiTokenQuery($token)->first();
-    }
-
-    /**
-     * Find user by password reset GUID.
-     */
-    public static function findByResetGuid(string $guid): ?static
-    {
-        if (static::whereApiToken($guid)->exists()) {
-            return null;
-        }
-
-        return static::whereResetguid($guid)
-            ->first();
     }
 
     // ===== User Management Methods =====
@@ -1678,25 +1663,6 @@ final class User extends Authenticatable implements CanResetPasswordContract, Ha
         }
 
         Cache::forget(static::categoryExclusionCacheKey($this->id));
-    }
-
-    // ===== Invitation Methods =====
-
-    /**
-     * Send an invitation email.
-     *
-     * @throws \Exception
-     */
-    public static function sendInvite(string $serverUrl, int $uid, string $emailTo): string
-    {
-        $user = static::findOrFail($uid);
-
-        $invitation = Invitation::createInvitation($emailTo, $user->id);
-        $url = "{$serverUrl}/register?token={$invitation->token}";
-
-        app(InvitationService::class)->sendInvitationEmail($invitation);
-
-        return $url;
     }
 
     // ===== Cleanup Methods =====

@@ -613,10 +613,9 @@ final class ReleaseBrowserControllerTest extends TestCase
         yield 'movies' => ['movies', 2030, 'user_movies', 'imdbid'];
     }
 
-    public function test_my_shows_browse_now_leads_to_the_tv_releases_screen(): void
+    public function test_browse_tv_with_a_query_redirects_to_the_tv_releases_screen(): void
     {
         $this->actingAs($this->browserUser());
-        $this->get('/myshows/browse?q=Followed&watching=0')->assertRedirect('/browse/tv?q=Followed&watching=1');
         $this->get('/browse/tv?q=Followed&watching=1')->assertRedirect(route('tv.releases'));
     }
 

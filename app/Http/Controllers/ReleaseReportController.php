@@ -68,35 +68,6 @@ class ReleaseReportController extends BasePageController
     }
 
     /**
-     * Get report reasons for the form.
-     */
-    public function getReasons(): JsonResponse
-    {
-        return response()->json([
-            'reasons' => ReleaseReport::REASONS,
-        ]);
-    }
-
-    /**
-     * Check if user has already reported a release.
-     */
-    public function checkReported(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'release_id' => 'required|integer',
-        ]);
-
-        $releaseId = (int) $validated['release_id'];
-        $userId = $this->authenticatedUserId();
-
-        $hasReported = ReleaseReport::hasUserReported($releaseId, $userId);
-
-        return response()->json([
-            'has_reported' => $hasReported,
-        ]);
-    }
-
-    /**
      * Normalize the authenticated user identifier to an integer.
      */
     private function authenticatedUserId(): int

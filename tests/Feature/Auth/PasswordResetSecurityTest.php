@@ -76,49 +76,6 @@ class PasswordResetSecurityTest extends TestCase
         });
     }
 
-    public function test_legacy_guid_redirects_to_secure_reset_form_and_invalidates_guid(): void
-    {
-        $user = $this->createUser('legacy@example.test', ['resetguid' => 'legacy-guid']);
-
-        $response = $this->get(route('resetpassword', ['guid' => 'legacy-guid']));
-
-        $response->assertStatus(302);
-        $location = (string) $response->headers->get('Location');
-
-        $this->assertStringContainsString('/password/reset/', $location);
-        $this->assertStringContainsString('email=legacy%40example.test', $location);
-        $this->assertDatabaseHas('password_reset_tokens', [
-            'email' => $user->email,
-        ]);
-        $this->assertNull($user->fresh()->resetguid);
-
-        $this->get(route('resetpassword', ['guid' => 'legacy-guid']))
-            ->assertRedirect(route('password.request'))
-            ->assertSessionHas('error', 'Bad reset code provided.');
-    }
-
-    public function test_legacy_reset_rejects_api_token_alias_as_reset_guid(): void
-    {
-        $apiToken = 'api-token-is-not-a-reset-code';
-        $user = $this->createUser('api-token-reset@example.test');
-        $user->forceFill([
-            'api_token' => $apiToken,
-            'resetguid' => $apiToken,
-        ])->saveQuietly();
-
-        $response = $this->get(route('resetpassword', ['guid' => $apiToken]));
-
-        $response
-            ->assertRedirect(route('password.request'))
-            ->assertSessionHas('error', 'Bad reset code provided.');
-
-        $this->assertDatabaseMissing('password_reset_tokens', [
-            'email' => $user->email,
-        ]);
-        $this->assertSame($apiToken, $user->fresh()->api_token);
-        $this->assertSame($apiToken, $user->fresh()->resetguid);
-    }
-
     public function test_token_password_reset_updates_password_clears_guid_and_fires_event(): void
     {
         Event::fake([PasswordReset::class]);

@@ -8,7 +8,6 @@ use App\Models\Invitation;
 use App\Models\User;
 use App\Services\InvitationService;
 use App\Services\RegistrationStatusService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -256,19 +255,5 @@ class InvitationController extends BasePageController
             return redirect()->back()
                 ->with('error', $e->getMessage());
         }
-    }
-
-    /**
-     * Get invitation statistics (API endpoint)
-     */
-    public function stats(): JsonResponse
-    {
-        if (! $this->registrationStatusService->resolve()['is_invite_only']) {
-            return response()->json(['message' => 'Invitations are disabled'], 404);
-        }
-
-        $stats = $this->invitationService->getUserInvitationStats((int) Auth::id());
-
-        return response()->json($stats);
     }
 }
