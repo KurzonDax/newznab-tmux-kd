@@ -126,7 +126,7 @@ class BlacklistService
 
         $joinOperator = $groupRegex ? 'REGEXP' : '=';
         $activeSql = $activeOnly ? 'AND bb.status = 1' : '';
-        $groupSql = $groupName ? ('AND g.name REGEXP '.escapeString($groupName)) : '';
+        $groupSql = $groupName ? ('AND g.name = '.escapeString($groupName)) : '';
 
         $sql = "
                 SELECT
