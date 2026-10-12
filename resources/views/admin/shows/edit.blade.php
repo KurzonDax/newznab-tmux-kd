@@ -139,8 +139,9 @@
                                 Cover Image
                             </label>
                             <div class="border border-gray-300 dark:border-gray-600 rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
-                                @if(!empty($show['image']))
-                                    <img src="{{ $show['image'] }}"
+                                @php($showCover = getImageAssetUrl('tvshows', (string) $show['id']))
+                                @if($showCover)
+                                    <img src="{{ $showCover }}"
                                          alt="{{ $show['title'] }}"
                                          class="max-w-full h-auto mx-auto rounded shadow-lg max-h-[400px]"
                                          x-data="imageFallback"
