@@ -169,7 +169,7 @@ final class OptimizeCbpStorage extends Command
         }
         DB::statement(
             'CREATE TABLE IF NOT EXISTS collection_groups (
-                collections_id INT UNSIGNED NOT NULL,
+                collections_id BIGINT UNSIGNED NOT NULL,
                 group_name VARCHAR(255) NOT NULL,
                 PRIMARY KEY (collections_id, group_name)
              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci'

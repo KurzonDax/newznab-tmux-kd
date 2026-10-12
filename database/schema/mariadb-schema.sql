@@ -87,7 +87,7 @@ CREATE TABLE `binaries` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `binaryhash` binary(16) NOT NULL,
   `name` varchar(1000) NOT NULL DEFAULT '',
-  `collections_id` int(10) unsigned NOT NULL DEFAULT 0,
+  `collections_id` bigint(20) unsigned NOT NULL DEFAULT 0,
   `filenumber` int(10) unsigned NOT NULL DEFAULT 0,
   `totalparts` int(10) unsigned NOT NULL DEFAULT 0,
   `currentparts` int(10) unsigned NOT NULL DEFAULT 0,
@@ -195,7 +195,7 @@ DROP TABLE IF EXISTS `collection_groups`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `collection_groups` (
-  `collections_id` int(10) unsigned NOT NULL,
+  `collections_id` bigint(20) unsigned NOT NULL,
   `group_name` varchar(255) NOT NULL,
   PRIMARY KEY (`collections_id`,`group_name`),
   CONSTRAINT `fk_collection_groups_collection` FOREIGN KEY (`collections_id`) REFERENCES `collections` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -235,7 +235,7 @@ DROP TABLE IF EXISTS `collections`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `collections` (
-  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `subject` varchar(255) NOT NULL DEFAULT '',
   `fromname` varchar(255) NOT NULL DEFAULT '',
   `date` datetime DEFAULT NULL,
@@ -1655,7 +1655,7 @@ CREATE TABLE `obfuscation_recovery_publications` (
   `set_id` char(32) NOT NULL,
   `plan_digest` char(64) NOT NULL,
   `collection_projection` binary(20) NOT NULL,
-  `collections_id` int(10) unsigned DEFAULT NULL,
+  `collections_id` bigint(20) unsigned DEFAULT NULL,
   `releases_id` int(10) unsigned DEFAULT NULL,
   `guid` varchar(40) DEFAULT NULL,
   `profile` varchar(40) NOT NULL,
@@ -4331,3 +4331,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (324,'2026_10_09_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (325,'2026_10_11_120000_add_is_imported_to_releases_table',32);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (326,'2026_10_11_130000_add_imported_indexes_to_releases_table',33);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (327,'2026_10_11_140000_drop_six_settings_with_no_reader',34);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (328,'2026_10_12_120000_widen_collection_ids_to_bigint',35);
