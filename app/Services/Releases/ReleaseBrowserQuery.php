@@ -6,7 +6,6 @@ namespace App\Services\Releases;
 
 use App\Data\ReleaseBrowserState;
 use App\Enums\BrowseRoot;
-use App\Enums\ReleaseSort;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -15,12 +14,6 @@ use Illuminate\Support\Facades\Schema;
 final class ReleaseBrowserQuery
 {
     public function __construct(private readonly ReleaseBrowseService $releases, private readonly ReleaseBrowserMetadata $metadata) {}
-
-    /** @return array<string, string> */
-    public function sortOptions(ReleaseBrowserState $state): array
-    {
-        return ReleaseSort::options();
-    }
 
     public function matchingQuery(ReleaseBrowserState $state, User $user): Builder
     {

@@ -18,16 +18,6 @@ enum ReleaseSort: string
         return is_string($value) ? (self::tryFrom($value) ?? self::AddedNewest) : self::AddedNewest;
     }
 
-    /** @return array<string, string> */
-    public static function options(): array
-    {
-        return [
-            'posted' => 'Posted · Newest', 'posted_oldest' => 'Posted · Oldest',
-            'newest' => 'Added · Newest', 'oldest' => 'Added · Oldest',
-            'title' => 'Name · A–Z', 'grabs' => 'Grabs · Most',
-        ];
-    }
-
     /** @return array{string, string} */
     public function order(): array
     {

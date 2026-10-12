@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Releases;
 
 use App\Enums\BrowseRoot;
-use App\Enums\ReleaseSort;
 use App\Support\YearRange;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -64,11 +63,5 @@ final class ReleaseBrowserMetadata
                 $query->whereRaw($column.' = ?', [$filters[$key]]);
             }
         }
-    }
-
-    /** @return array<string, string> */
-    public function sorts(BrowseRoot $root): array
-    {
-        return ReleaseSort::options();
     }
 }

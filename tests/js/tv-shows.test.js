@@ -212,19 +212,6 @@ test('results render as a Shows group then a People group, and nothing found say
     assert.equal(results.children[0].textContent, 'Nothing called “zzzz” here.');
 });
 
-test('a fixed-width menu near the right edge shifts left to stay 16px inside the window', () => {
-    globalThis.document = { documentElement: { clientWidth: 1600 } };
-    for (const [fixed, right, expected] of [[true, 1700, '-116px'], [true, 1500, ''], [false, 1700, '']]) {
-        const panel = { style: { left: 'stale' }, getBoundingClientRect: () => ({ right }) };
-        const component = checkboxMenu();
-        component.$el = { dataset: {}, classList: { contains: name => name === 'is-fixed' && fixed } };
-        component.$refs = { panel };
-        component.init();
-        component.place();
-        assert.equal(panel.style.left, fixed ? expected : 'stale');
-    }
-});
-
 test('the menu of a bar cell near the right edge shifts left to stay 16px inside the window', () => {
     globalThis.document = { documentElement: { clientWidth: 1366 } };
     const panel = { style: { left: '' }, getBoundingClientRect: () => ({ right: 1400 }) };

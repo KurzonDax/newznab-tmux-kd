@@ -206,7 +206,6 @@ final class DetailsControllerTest extends TestCase
     public function test_a_release_outside_the_eight_roots_gets_the_generic_release_page_with_its_category_title_alone(): void
     {
         $this->unrootedCategory();
-        DB::table('settings')->updateOrInsert(['name' => 'trailers_display'], ['value' => '1']);
         DB::table('movieinfo')->insert(['imdbid' => '0111161', 'title' => 'Trailer Movie', 'trailer' => 'https://youtu.be/Way9Dexny3w']);
         DB::table('predb')->insert(['id' => 5, 'title' => 'Original.Scene.Release']);
         $id = $this->detailRelease('Unrooted.Release', ['imdbid' => '0111161', 'predb_id' => 5, 'categories_id' => self::UNROOTED]);

@@ -32,34 +32,6 @@ final readonly class ReleaseBrowserState
         public bool $tableOnly = false,
     ) {}
 
-    /** @return list<string> */
-    public function availableViews(): array
-    {
-        return $this->tableOnly ? ['table'] : $this->root->views();
-    }
-
-    public function hasFilters(): bool
-    {
-        return $this->query !== '' || $this->group !== '' || $this->posterIdentity !== '' || $this->filters !== [] || $this->watching || $this->minCompletion > 0;
-    }
-
-    /** @return array<string, mixed> */
-    public function queryParameters(Request $request): array
-    {
-        $parameters = $request->query();
-        if ($this->posterIdentity !== '') {
-            $key = $request->routeIs('poster-identity') && ! $request->has('poster') ? 'name' : 'poster';
-            $parameters[$key] = $this->posterIdentity;
-        }
-
-        return $parameters;
-    }
-
-    public function pageUrl(Request $request, int $page): string
-    {
-        return $request->url().'?'.http_build_query([...$this->queryParameters($request), 'page' => $page], '', '&', PHP_QUERY_RFC3986);
-    }
-
     public static function fromRequest(Request $request, BrowseRoot $root, User $user, ?int $categoryId = null, bool $basketOnly = false, bool $tableOnly = false): self
     {
         $saved = $user->releaseViewPreferences($root->value);

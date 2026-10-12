@@ -923,21 +923,6 @@ if (! function_exists('cp437toUTF')) {
     }
 }
 
-if (! function_exists('imdb_trailers')) {
-    /**
-     * Fetches an embeddable video to a IMDB trailer from http://www.traileraddict.com.
-     */
-    function imdb_trailers(mixed $imdbID): string
-    {
-        $xml = getRawHtml('https://api.traileraddict.com/?imdb='.$imdbID);
-        if ($xml !== false && preg_match('#(v\.traileraddict\.com/\d+)#i', $xml, $html)) {
-            return 'https://'.$html[1];
-        }
-
-        return '';
-    }
-}
-
 if (! function_exists('apiErrorDetails')) {
     /**
      * @return array{code:int,message:string,status:int,header:string}

@@ -28,17 +28,13 @@ const lazyComponentMap = {
     'searchFilters': () => import('./components/search-filters.js'),
     'watchlistPicker': () => import('./components/watchlist.js'),
     'watchlistPage': () => import('./components/watchlist.js'),
-    'trailerModal': () => import('./components/trailer-modal.js'),
     // --- Components only needed on specific pages ---
     'adminSubmenu':    () => import('./components/admin-submenu.js'),
     'passwordToggle':  () => import('./components/password-toggle.js'),
 
     // --- Modal components (only on release pages) ---
     'nfoModal':        () => import('./components/nfo-modal.js'),
-    'filelistModal':   () => import('./components/filelist-modal.js'),
-    'previewModal':    () => import('./components/preview-modal.js'),
     'mediainfoModal':  () => import('./components/mediainfo-modal.js'),
-    'imageModal':      () => import('./components/image-modal.js'),
 
     // --- Page-specific components ---
     'contentToggle':   () => import('./components/content-toggle.js'),
@@ -47,7 +43,6 @@ const lazyComponentMap = {
     'posterIdentityBlacklist': () => import('./components/poster-identity-blacklist.js'),
     'posterSweepStatus': () => import('./components/poster-sweep-status.js'),
     'contentDelete':   () => import('./components/content-toggle.js'),  // same file
-    'releaseReport':   () => import('./components/release-report.js'),
     'adminReleaseReports': () => import('./components/release-report.js'),  // same file
     'adminReleaseList': () => import('./components/admin/release-list.js'),
     'recoveredReleases': () => import('./components/admin/recovered-releases.js'),

@@ -8,7 +8,6 @@ use App\Models\Release;
 use App\Services\Nzb\NzbFileSummaryReader;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\HiddenCategoryGate;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -17,7 +16,7 @@ use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 final class ReleaseFilesController extends Controller
 {
-    public function __invoke(Request $request, string $guid, NzbService $nzb, NzbFileSummaryReader $reader, HiddenCategoryGate $hiddenCategories): JsonResponse|View
+    public function __invoke(Request $request, string $guid, NzbService $nzb, NzbFileSummaryReader $reader, HiddenCategoryGate $hiddenCategories): JsonResponse
     {
         $validator = Validator::make($request->query(), [
             'page' => ['sometimes', 'integer', 'min:1', 'max:'.intdiv(PHP_INT_MAX, 100)],
@@ -38,6 +37,6 @@ final class ReleaseFilesController extends Controller
             abort(422, 'The NZB file is invalid or incomplete.');
         }
 
-        return $request->wantsJson() ? response()->json($data) : view('details.files', $data);
+        return response()->json($data);
     }
 }

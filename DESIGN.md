@@ -257,7 +257,7 @@ Borders are always 1px. There is no heavier border weight in the vocabulary.
 
 ### Buttons (`x-button`, `x-button-link`)
 
-Seven variants — `primary`, `secondary`, `muted`, `success`, `danger`, `warning`, `ghost` — across five sizes — `sm`, `md`, `lg`, `icon`, `icon-sm`. Every button is bordered, including filled ones, so the shape holds on any surface. `primary` is the accent pair.
+Seven variants — `primary`, `secondary`, `muted`, `success`, `danger`, `warning`, `ghost` — across four sizes — `sm`, `md`, `lg`, `icon`. Every button is bordered, including filled ones, so the shape holds on any surface. `primary` is the accent pair.
 
 Focus is uniform and non-negotiable: `focus:ring-2 focus:ring-primary-500 focus:ring-offset-2`, with `dark:focus:ring-offset-gray-900`. Disabled is `cursor-not-allowed` plus `opacity-60`.
 

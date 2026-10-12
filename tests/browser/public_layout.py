@@ -55,18 +55,6 @@ with sync_playwright() as pw:
                         const main=document.querySelector('main.public-page');
                         const footer=document.querySelector('.public-footer');
                         const errors=[];
-                        document.querySelectorAll('.release-cover-tile').forEach(card=>{
-                            const b=box(card);
-                            card.querySelectorAll('*').forEach(child=>{
-                                if(!visible(child))return;
-                                const c=box(child);
-                                if(c.left<b.left-1||c.right>b.right+1)errors.push('card overflow: '+child.className);
-                            });
-                        });
-                        document.querySelectorAll('[data-release-facts-row]').forEach(facts=>{
-                            const name=facts.parentElement.querySelector('[data-release-title]');
-                            if(name && visible(name) && box(facts).top < box(name).bottom-1)errors.push('facts share title line');
-                        });
                         const controls=[...document.querySelectorAll('select')].filter(visible).map(e=>({label:e.ariaLabel||e.id||e.name,container:e.parentElement.className,rule:getComputedStyle(e).width,...box(e),containerWidth:box(e.parentElement).width,font:getComputedStyle(e).fontSize}));
                         controls.forEach(c=>{if(c.width>c.containerWidth+1)errors.push('select exceeds container: '+c.label)});
                         return {main:main?box(main):null,footer:footer?box(footer):null,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight,controls,errors,fontLoaded:document.fonts.check('14px Manrope')};

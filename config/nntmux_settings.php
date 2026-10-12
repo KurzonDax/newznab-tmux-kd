@@ -15,7 +15,6 @@ return [
     'mp4_tail_fetch' => env('ADDITIONAL_MP4_TAIL_FETCH', true),
     'mp4_tail_max_segments' => env('ADDITIONAL_MP4_TAIL_MAX_SEGMENTS', 60),
     'path_to_nzbs' => env('PATH_TO_NZBS', storage_path('nzb')),
-    'private_profiles' => env('PRIVATE_PROFILES', true),
     'store_user_ip' => env('STORE_USER_IP', false),
     'ffmpeg_path' => env('FFMPEG_PATH', '/usr/bin/ffmpeg'),
     'ffprobe_path' => env('FFPROBE_PATH', '/usr/bin/ffprobe'),

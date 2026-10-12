@@ -400,24 +400,6 @@ class MovieServiceTest extends ImdbScraperTestCase
     }
 
     #[Test]
-    public function it_returns_existing_trailer_for_imdb_ids_with_meaningful_leading_zeroes(): void
-    {
-        Cache::flush();
-
-        $service = new MovieService;
-        $service->echooutput = false;
-
-        $service->update([
-            'imdbid' => '0137523',
-            'title' => 'Example Movie',
-            'year' => '2024',
-            'trailer' => 'https://example.test/embed/trailer',
-        ]);
-
-        $this->assertSame('https://example.test/embed/trailer', $service->getTrailer('0137523'));
-    }
-
-    #[Test]
     public function it_distinguishes_pending_movie_lookup_sentinels_from_failed_empty_values(): void
     {
         $this->assertTrue(imdb_id_needs_lookup(null));

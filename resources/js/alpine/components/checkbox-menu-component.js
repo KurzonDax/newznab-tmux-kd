@@ -37,11 +37,11 @@ export function checkboxMenu() {
             if (!open) this.forgetSearch();
         },
 
-        /** A left-anchored (fixed-width or bar cell) menu shifts left rather than run past the window. */
+        /** A left-anchored (bar cell) menu shifts left rather than run past the window. */
         place() {
             const panel = this.$refs.panel;
             const classes = this.menuRoot.classList;
-            if (!panel || !(classes.contains('is-fixed') || classes.contains('is-cell'))) return;
+            if (!panel || !classes.contains('is-cell')) return;
             panel.style.left = '';
             const over = panel.getBoundingClientRect().right - (document.documentElement.clientWidth - 16);
             if (over > 0) panel.style.left = -over + 'px';

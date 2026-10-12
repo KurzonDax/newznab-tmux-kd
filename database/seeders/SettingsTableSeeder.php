@@ -578,18 +578,6 @@ class SettingsTableSeeder extends Seeder
                 'value' => '',
             ],
             [
-                'name' => 'trailers_display',
-                'value' => '1',
-            ],
-            [
-                'name' => 'trailers_size_x',
-                'value' => '480',
-            ],
-            [
-                'name' => 'trailers_size_y',
-                'value' => '345',
-            ],
-            [
                 'name' => 'exit',
                 'value' => '0',
             ],
