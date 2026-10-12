@@ -32,6 +32,7 @@ use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Database\Events\TransactionCommitting;
 use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
 use Tests\Support\CollectionFrontierAssertions;
+use Tests\Support\ProductionTables;
 use Tests\Support\RecordsTransactionStatements;
 use Tests\TestCase;
 
@@ -46,6 +48,23 @@ final class CbpMariaDbIngestionTest extends TestCase
 {
     use CollectionFrontierAssertions;
     use RecordsTransactionStatements;
+
+    /** The two keys that cascade a collection's deletion, and the key on parts this change leaves alone. */
+    private const COLLECTION_FOREIGN_KEYS = [
+        'FK_Collections' => 'binaries.collections_id -> collections.id, update CASCADE, delete CASCADE',
+        'FK_binaries' => 'parts.binaries_id -> binaries.id, update CASCADE, delete CASCADE',
+        'fk_collection_groups_collection' => 'collection_groups.collections_id -> collections.id, update CASCADE, delete CASCADE',
+    ];
+
+    /** Uniqueness and columns of every index that includes collections_id. */
+    private const COLLECTION_ID_INDEXES = [
+        'binaries.ix_binaries_collection' => [false, ['collections_id']],
+        'binaries.ix_binaries_collection_filenumber' => [false, ['collections_id', 'filenumber']],
+        'binaries.ix_binaries_collection_hash' => [false, ['collections_id', 'binaryhash']],
+        'binaries.ux_binaries_collection_hash' => [true, ['collections_id', 'binaryhash']],
+        'collection_groups.PRIMARY' => [true, ['collections_id', 'group_name']],
+        'obfuscation_recovery_publications.obfuscation_recovery_publications_collections_id_unique' => [true, ['collections_id']],
+    ];
 
     /**
      * @var array<string, string|false>
@@ -99,7 +118,7 @@ final class CbpMariaDbIngestionTest extends TestCase
         (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
         DB::statement('CREATE TABLE collection_regexes (id INT PRIMARY KEY, group_regex VARCHAR(255), regex VARCHAR(255), status TINYINT DEFAULT 1, ordinal INT DEFAULT 0) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collections (
-            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             subject VARCHAR(255) NOT NULL, fromname VARCHAR(255) NOT NULL, date DATETIME NULL,
             xref VARCHAR(2000) NOT NULL DEFAULT \'\', groups_id INT UNSIGNED NOT NULL,
             totalfiles INT UNSIGNED NOT NULL DEFAULT 0, declaredfiles INT UNSIGNED NOT NULL DEFAULT 0,
@@ -112,13 +131,13 @@ final class CbpMariaDbIngestionTest extends TestCase
             KEY ix_collections_group_filecheck_seen_id (groups_id, filecheck, last_seen_at, id), KEY groups_id (groups_id)
         ) ENGINE=InnoDB');
         DB::statement('CREATE TABLE collection_groups (
-            collections_id INT UNSIGNED NOT NULL, group_name VARCHAR(255) NOT NULL,
+            collections_id BIGINT UNSIGNED NOT NULL, group_name VARCHAR(255) NOT NULL,
             PRIMARY KEY (collections_id, group_name),
             CONSTRAINT fk_test_collection_groups FOREIGN KEY (collections_id) REFERENCES collections(id) ON DELETE CASCADE
         ) ENGINE=InnoDB');
         DB::statement('CREATE TABLE binaries (
             id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, binaryhash BINARY(16) NOT NULL,
-            name VARCHAR(1000) NOT NULL, collections_id INT UNSIGNED NOT NULL,
+            name VARCHAR(1000) NOT NULL, collections_id BIGINT UNSIGNED NOT NULL,
             filenumber INT UNSIGNED NOT NULL DEFAULT 0, totalparts INT UNSIGNED NOT NULL DEFAULT 0,
             currentparts INT UNSIGNED NOT NULL DEFAULT 0, partcheck TINYINT NOT NULL DEFAULT 0,
             partsize BIGINT UNSIGNED NOT NULL DEFAULT 0,
@@ -1369,6 +1388,303 @@ final class CbpMariaDbIngestionTest extends TestCase
         }
     }
 
+    public function test_widening_collection_ids_keeps_the_columns_keys_indexes_and_rows(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $this->assertSame($this->expectedCollectionIdColumns('int(10) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame(self::COLLECTION_ID_INDEXES, $this->collectionIdIndexes());
+            $collection = $this->storeCollection('kept', 4000000000);
+            $binary = $this->storeBinary($collection);
+            $this->storeGroupRow($collection);
+            $this->storePart($binary);
+            $this->storePublication($collection);
+
+            $migration->up();
+
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame(self::COLLECTION_ID_INDEXES, $this->collectionIdIndexes());
+            $this->assertSame([4000000000], $this->storedIds('collections', 'id'));
+            $this->assertSame([$binary => 4000000000], DB::table('binaries')->pluck('collections_id', 'id')->all());
+            $this->assertSame([4000000000], $this->storedIds('collection_groups', 'collections_id'));
+            $this->assertSame([4000000000], $this->storedIds('obfuscation_recovery_publications', 'collections_id'));
+            $this->assertSame(1, DB::table('parts')->where('binaries_id', $binary)->count());
+        });
+    }
+
+    public function test_collections_get_ids_above_the_32_bit_ceiling_once_widened(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            DB::statement('ALTER TABLE collections AUTO_INCREMENT = 4294967295');
+            $this->assertSame(4294967295, $this->collectionCounter());
+            $this->assertSame(4294967295, $this->storeCollection('last 32-bit id'));
+            $this->assertSame(167, $this->refusal(fn () => $this->storeCollection('out of ids')), 'A 32-bit id column has no id left to hand out.');
+
+            $migration->up();
+
+            $collection = $this->storeCollection('first 64-bit id');
+            $this->assertSame(4294967296, $collection);
+            $binary = $this->storeBinary($collection);
+            $this->storeGroupRow($collection);
+            $this->storePart($binary);
+            $this->assertSame([4294967296], $this->storedIds('binaries', 'collections_id'));
+            $this->assertSame([4294967296], $this->storedIds('collection_groups', 'collections_id'));
+
+            DB::table('collections')->where('id', $collection)->delete();
+
+            $this->assertSame([4294967295], $this->storedIds('collections', 'id'));
+            $this->assertSame(0, DB::table('binaries')->count());
+            $this->assertSame(0, DB::table('collection_groups')->count());
+            $this->assertSame(0, DB::table('parts')->count());
+        });
+    }
+
+    public function test_rows_for_a_collection_that_does_not_exist_are_refused_once_widened(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $migration->up();
+
+            $this->assertSame(1452, $this->refusal(fn () => $this->storeBinary(999)));
+            $this->assertSame(1452, $this->refusal(fn () => $this->storeGroupRow(999)));
+            $this->assertSame(0, DB::table('binaries')->count());
+            $this->assertSame(0, DB::table('collection_groups')->count());
+        });
+    }
+
+    public function test_widening_collection_ids_a_second_time_alters_nothing(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $alters = $this->recordAlters();
+            $migration->up();
+            $this->assertCount(6, $alters, 'Two children, the parent, the publications and the two keys.');
+
+            $migration->up();
+
+            $this->assertCount(6, $alters);
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+        });
+    }
+
+    public function test_a_widening_interrupted_after_both_children_completes_when_run_again(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $collection = $this->storeCollection('kept');
+            $binary = $this->storeBinary($collection);
+            $this->storeGroupRow($collection);
+            DB::statement('ALTER TABLE binaries DROP FOREIGN KEY FK_Collections, MODIFY collections_id BIGINT UNSIGNED NOT NULL DEFAULT 0');
+            DB::statement('ALTER TABLE collection_groups DROP FOREIGN KEY fk_collection_groups_collection, MODIFY collections_id BIGINT UNSIGNED NOT NULL');
+            $alters = $this->recordAlters();
+
+            $migration->up();
+
+            $this->assertCount(4, $alters, 'The parent, the publications and the two keys.');
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame(self::COLLECTION_ID_INDEXES, $this->collectionIdIndexes());
+            $this->assertSame([$binary => $collection], DB::table('binaries')->pluck('collections_id', 'id')->all());
+            $this->assertSame([$collection], $this->storedIds('collection_groups', 'collections_id'));
+        });
+    }
+
+    public function test_a_widening_that_lacks_only_one_key_adds_it_in_one_alter(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $migration->up();
+            DB::statement('ALTER TABLE collection_groups DROP FOREIGN KEY fk_collection_groups_collection');
+            $alters = $this->recordAlters();
+
+            $migration->up();
+
+            $this->assertCount(1, $alters);
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+        });
+    }
+
+    public function test_a_32_bit_child_whose_key_is_already_gone_is_still_widened(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            DB::statement('ALTER TABLE binaries DROP FOREIGN KEY FK_Collections');
+            DB::statement('ALTER TABLE collection_groups DROP FOREIGN KEY fk_collection_groups_collection');
+
+            $migration->up();
+
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+        });
+    }
+
+    public function test_a_key_that_cannot_be_added_back_is_named_and_the_columns_stay_widened(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            DB::statement('ALTER TABLE binaries DROP FOREIGN KEY FK_Collections');
+            $orphan = $this->storeBinary(999);
+
+            $failure = $this->failureOf($migration->up(...));
+
+            $this->assertInstanceOf(\RuntimeException::class, $failure);
+            $this->assertStringStartsWith('Foreign key FK_Collections could not be added to binaries.collections_id.', $failure->getMessage());
+            $this->assertStringContainsString('already BIGINT UNSIGNED', $failure->getMessage());
+            $this->assertInstanceOf(QueryException::class, $failure->getPrevious());
+            $this->assertSame(1452, $failure->getPrevious()->errorInfo[1] ?? null);
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertArrayNotHasKey('FK_Collections', $this->collectionForeignKeys());
+            $this->assertSame([$orphan => 999], DB::table('binaries')->pluck('collections_id', 'id')->all());
+
+            DB::table('binaries')->where('id', $orphan)->delete();
+            $migration->up();
+
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+        });
+    }
+
+    public function test_the_keys_are_added_back_with_foreign_key_checks_on_whatever_the_session_has(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            DB::statement('ALTER TABLE binaries DROP FOREIGN KEY FK_Collections');
+            $this->storeBinary(999);
+            DB::statement('SET FOREIGN_KEY_CHECKS=0');
+            try {
+                $failure = $this->failureOf($migration->up(...));
+                $checks = (int) DB::selectOne('SELECT @@SESSION.foreign_key_checks AS checks')->checks;
+            } finally {
+                DB::statement('SET FOREIGN_KEY_CHECKS=1');
+            }
+
+            $this->assertInstanceOf(\RuntimeException::class, $failure);
+            $this->assertStringStartsWith('Foreign key FK_Collections could not be added', $failure->getMessage());
+            $this->assertArrayNotHasKey('FK_Collections', $this->collectionForeignKeys());
+            $this->assertSame(0, $checks, 'The session gets its own setting back.');
+        });
+    }
+
+    public function test_narrowing_collection_ids_restores_the_32_bit_columns_and_both_keys(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $migration->up();
+            $collection = $this->storeCollection('kept', 4000000000);
+            $binary = $this->storeBinary($collection);
+            $this->storeGroupRow($collection);
+            $this->storePublication($collection);
+            $alters = $this->recordAlters();
+
+            $migration->down();
+
+            $this->assertCount(6, $alters);
+            $this->assertSame($this->expectedCollectionIdColumns('int(10) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame(self::COLLECTION_ID_INDEXES, $this->collectionIdIndexes());
+            $this->assertSame([4000000000], $this->storedIds('collections', 'id'));
+            $this->assertSame([$binary => 4000000000], DB::table('binaries')->pluck('collections_id', 'id')->all());
+            $this->assertSame([4000000000], $this->storedIds('collection_groups', 'collections_id'));
+            $this->assertSame([4000000000], $this->storedIds('obfuscation_recovery_publications', 'collections_id'));
+
+            $migration->down();
+
+            $this->assertCount(6, $alters, 'Narrowing a second time alters nothing.');
+        });
+    }
+
+    public function test_narrowing_is_refused_while_a_stored_collection_id_is_above_32_bits(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $migration->up();
+            $alters = $this->recordAlters();
+            $assertRefused = function (string $column) use ($migration, $alters): void {
+                $issued = \count($alters);
+                $failure = $this->failureOf($migration->down(...));
+                $this->assertInstanceOf(\RuntimeException::class, $failure);
+                $this->assertStringStartsWith("{$column} holds a value above 4294967295", $failure->getMessage());
+                $this->assertCount($issued, $alters, 'Nothing is altered.');
+                $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            };
+
+            // obfuscation_recovery_publications has no foreign key, so it can hold the id alone.
+            $this->storePublication(4294967296);
+            $assertRefused('obfuscation_recovery_publications.collections_id');
+            DB::table('obfuscation_recovery_publications')->delete();
+
+            $collection = $this->storeCollection('64-bit id', 4294967296);
+            $assertRefused('collections.id');
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            DB::table('collections')->where('id', $collection)->delete();
+
+            // A child can hold the id alone only while its key is missing.
+            DB::statement('ALTER TABLE binaries DROP FOREIGN KEY FK_Collections');
+            $binary = $this->storeBinary(4294967296);
+            $assertRefused('binaries.collections_id');
+            DB::table('binaries')->where('id', $binary)->delete();
+
+            DB::statement('ALTER TABLE collection_groups DROP FOREIGN KEY fk_collection_groups_collection');
+            $this->storeGroupRow(4294967296);
+            $assertRefused('collection_groups.collections_id');
+        });
+    }
+
+    public function test_narrowing_is_refused_while_the_collection_counter_is_above_32_bits(): void
+    {
+        $this->withThe32BitCollectionIdTables(function (Migration $migration): void {
+            $migration->up();
+            $this->storeCollection('fits', 5);
+            DB::statement('ALTER TABLE collections AUTO_INCREMENT = 4294967297');
+            $this->assertSame(4294967297, $this->collectionCounter());
+            $alters = $this->recordAlters();
+
+            $failure = $this->failureOf($migration->down(...));
+
+            $this->assertInstanceOf(\RuntimeException::class, $failure);
+            $this->assertStringContainsString('AUTO_INCREMENT', $failure->getMessage());
+            $this->assertCount(0, $alters);
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame([5], $this->storedIds('collections', 'id'));
+        });
+    }
+
+    public function test_the_schema_dump_holds_the_widened_columns_and_leaves_the_migration_nothing_to_alter(): void
+    {
+        $this->withTheDumpedCollectionIdTables(function (Migration $migration): void {
+            $alters = $this->recordAlters();
+
+            $migration->up();
+
+            $this->assertCount(0, $alters);
+            $this->assertSame($this->expectedCollectionIdColumns('bigint(20) unsigned'), $this->collectionIdColumns());
+            $this->assertSame(self::COLLECTION_FOREIGN_KEYS, $this->collectionForeignKeys());
+            $this->assertSame(self::COLLECTION_ID_INDEXES, $this->collectionIdIndexes());
+        });
+    }
+
+    public function test_widening_and_narrowing_collection_ids_change_nothing_on_sqlite(): void
+    {
+        $tables = ['collections' => ['id', 'collectionhash'], 'binaries' => ['id', 'binaryhash', 'collections_id'], 'collection_groups' => null, 'obfuscation_recovery_publications' => ['id', 'collections_id']];
+        foreach ($tables as $table => $columns) {
+            ProductionTables::fromAuthority()->create($table, $columns, 'testing');
+        }
+        $definitions = static fn (): array => DB::connection('testing')->table('sqlite_master')->orderBy('name')->pluck('sql', 'name')->all();
+        $before = $definitions();
+        $this->assertSame(['binaries', 'collection_groups', 'collections', 'obfuscation_recovery_publications'], array_keys(array_intersect_key($before, $tables)));
+        $migration = require database_path('migrations/2026_10_12_120000_widen_collection_ids_to_bigint.php');
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+
+        $default = DB::getDefaultConnection();
+        DB::setDefaultConnection('testing');
+        try {
+            $migration->up();
+            $migration->down();
+        } finally {
+            DB::setDefaultConnection($default);
+        }
+
+        $this->assertSame([], $statements, 'On sqlite neither direction issues a statement.');
+        $this->assertSame($before, $definitions());
+    }
+
     private function countedStorage(?BinariesConfig $config = null): HeaderStorageService
     {
         return new HeaderStorageService(new CollectionHandler(new class extends CollectionsCleaningService
@@ -1434,6 +1750,207 @@ final class CbpMariaDbIngestionTest extends TestCase
             $aggregates = preg_match('/\b(?:COUNT|SUM|MIN|MAX|AVG)\s*\(/i', $statement['sql']) === 1;
             $this->assertFalse($readsParts && $aggregates, 'Aggregate over parts: '.$statement['sql']);
         }
+    }
+
+    /**
+     * Runs the test on collections, binaries, collection_groups, parts and
+     * obfuscation_recovery_publications as the schema dump defined them while collection ids
+     * were 32-bit, in place of the cut-down tables setUp() built.
+     *
+     * @param  callable(Migration): void  $test
+     */
+    private function withThe32BitCollectionIdTables(callable $test): void
+    {
+        $this->withTheDumpedCollectionIdTables($test, static function (string $definition, string $column): string {
+            $narrowed = (string) preg_replace("/^(\s*`{$column}`) bigint\(20\) unsigned/m", '$1 int(10) unsigned', $definition);
+            self::assertStringContainsString("`{$column}` int(10) unsigned", $narrowed);
+
+            return $narrowed;
+        });
+    }
+
+    /**
+     * @param  callable(Migration): void  $test
+     * @param  (callable(string, string): string)|null  $redefine  Rewrites a table's definition, given the column that holds the collection id.
+     */
+    private function withTheDumpedCollectionIdTables(callable $test, ?callable $redefine = null): void
+    {
+        $dump = (string) file_get_contents(database_path('schema/mariadb-schema.sql'));
+        $this->dropCollectionIdTables();
+        try {
+            foreach (['collections' => 'id', 'binaries' => 'collections_id', 'collection_groups' => 'collections_id', 'parts' => null, 'obfuscation_recovery_publications' => 'collections_id'] as $table => $column) {
+                $this->assertSame(1, preg_match("/CREATE TABLE `{$table}` \(.*?\) ENGINE=[^;]*/s", $dump, $create));
+                DB::statement($column === null || $redefine === null ? $create[0] : $redefine($create[0], $column));
+            }
+            $test(require database_path('migrations/2026_10_12_120000_widen_collection_ids_to_bigint.php'));
+        } finally {
+            // tearDown() drops the other four.
+            DB::statement('DROP TABLE IF EXISTS obfuscation_recovery_publications');
+        }
+    }
+
+    private function dropCollectionIdTables(): void
+    {
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+        foreach (['parts', 'binaries', 'collection_groups', 'obfuscation_recovery_publications', 'collections'] as $table) {
+            DB::statement("DROP TABLE IF EXISTS {$table}");
+        }
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string|null, 3: string}> */
+    private function expectedCollectionIdColumns(string $type): array
+    {
+        return [
+            'binaries.collections_id' => [$type, 'NO', '0', ''],
+            'collection_groups.collections_id' => [$type, 'NO', null, ''],
+            'collections.id' => [$type, 'NO', null, 'auto_increment'],
+            'obfuscation_recovery_publications.collections_id' => [$type, 'YES', 'NULL', ''],
+        ];
+    }
+
+    /** @return array<string, array{0: string, 1: string, 2: string|null, 3: string}> type, nullability, default and extra of the four columns that hold a collection id */
+    private function collectionIdColumns(): array
+    {
+        $columns = [];
+        foreach (DB::select(
+            "SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS preset, EXTRA AS extra
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND ((TABLE_NAME = 'collections' AND COLUMN_NAME = 'id')
+                OR (TABLE_NAME IN ('binaries', 'collection_groups', 'obfuscation_recovery_publications') AND COLUMN_NAME = 'collections_id'))"
+        ) as $column) {
+            $columns["{$column->table_name}.{$column->column_name}"] = [$column->type, $column->nullable, $column->preset, $column->extra];
+        }
+        ksort($columns);
+
+        return $columns;
+    }
+
+    /** @return array<string, string> */
+    private function collectionForeignKeys(): array
+    {
+        $keys = [];
+        foreach (DB::select(
+            "SELECT r.CONSTRAINT_NAME AS name, k.TABLE_NAME AS child, k.COLUMN_NAME AS child_column, k.REFERENCED_TABLE_NAME AS parent,
+                    k.REFERENCED_COLUMN_NAME AS parent_column, r.UPDATE_RULE AS on_update, r.DELETE_RULE AS on_delete
+             FROM information_schema.REFERENTIAL_CONSTRAINTS r
+             JOIN information_schema.KEY_COLUMN_USAGE k
+               ON k.CONSTRAINT_SCHEMA = r.CONSTRAINT_SCHEMA AND k.CONSTRAINT_NAME = r.CONSTRAINT_NAME AND k.TABLE_NAME = r.TABLE_NAME
+             WHERE r.CONSTRAINT_SCHEMA = DATABASE()
+               AND r.TABLE_NAME IN ('binaries', 'collection_groups', 'parts', 'obfuscation_recovery_publications')"
+        ) as $key) {
+            $keys[$key->name] = "{$key->child}.{$key->child_column} -> {$key->parent}.{$key->parent_column}, update {$key->on_update}, delete {$key->on_delete}";
+        }
+        ksort($keys);
+
+        return $keys;
+    }
+
+    /** @return array<string, array{0: bool, 1: list<string>}> */
+    private function collectionIdIndexes(): array
+    {
+        $indexes = [];
+        foreach (['binaries', 'collection_groups', 'obfuscation_recovery_publications'] as $table) {
+            $unique = $columns = [];
+            foreach (DB::select("SHOW INDEX FROM {$table}") as $row) {
+                $unique[$row->Key_name] = (int) $row->Non_unique === 0;
+                $columns[$row->Key_name][(int) $row->Seq_in_index] = $row->Column_name;
+            }
+            foreach ($columns as $name => $indexed) {
+                ksort($indexed);
+                if (\in_array('collections_id', $indexed, true)) {
+                    $indexes["{$table}.{$name}"] = [$unique[$name], array_values($indexed)];
+                }
+            }
+        }
+        ksort($indexes);
+
+        return $indexes;
+    }
+
+    /** @return \ArrayObject<int, string> every ALTER TABLE issued from now on */
+    private function recordAlters(): \ArrayObject
+    {
+        $alters = new \ArrayObject;
+        DB::listen(static function (QueryExecuted $query) use ($alters): void {
+            if (preg_match('/^\s*ALTER\s+TABLE\b/i', $query->sql) === 1) {
+                $alters->append($query->sql);
+            }
+        });
+
+        return $alters;
+    }
+
+    /** The id the next stored collection is given. */
+    private function collectionCounter(): int
+    {
+        return (int) DB::selectOne("SELECT AUTO_INCREMENT AS counter FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'collections'")->counter;
+    }
+
+    /** The MariaDB error number the statement was refused with, or null when it was accepted. */
+    private function refusal(callable $statement): ?int
+    {
+        $failure = $this->failureOf($statement);
+        if ($failure === null) {
+            return null;
+        }
+        $this->assertInstanceOf(QueryException::class, $failure);
+
+        return (int) ($failure->errorInfo[1] ?? 0);
+    }
+
+    private function failureOf(callable $action): ?\Throwable
+    {
+        try {
+            $action();
+        } catch (\Throwable $failure) {
+            return $failure;
+        }
+
+        return null;
+    }
+
+    /** @return list<int> */
+    private function storedIds(string $table, string $column): array
+    {
+        return DB::table($table)->orderBy($column)->pluck($column)->map(static fn (mixed $id): int => (int) $id)->all();
+    }
+
+    /** Stores a collection, under the given id or the next one the table hands out, and returns its id. */
+    private function storeCollection(string $label, ?int $id = null): int
+    {
+        $hash = sha1("collection {$label}", true);
+        DB::table('collections')->insert(['collectionhash' => $hash] + ($id === null ? [] : ['id' => $id]));
+
+        return (int) DB::table('collections')->where('collectionhash', $hash)->value('id');
+    }
+
+    private function storeBinary(int $collectionId): int
+    {
+        return (int) DB::table('binaries')->insertGetId(['binaryhash' => md5("binary of {$collectionId}", true), 'collections_id' => $collectionId]);
+    }
+
+    private function storeGroupRow(int $collectionId): void
+    {
+        DB::table('collection_groups')->insert(['collections_id' => $collectionId, 'group_name' => 'alt.binaries.test']);
+    }
+
+    private function storePart(int $binaryId): void
+    {
+        DB::table('parts')->insert(['binaries_id' => $binaryId, 'messageid' => "part-of-{$binaryId}@example.test", 'number' => 1, 'partnumber' => 1, 'size' => 1]);
+    }
+
+    private function storePublication(int $collectionId): void
+    {
+        $digest = hash('sha256', "publication of {$collectionId}");
+        DB::table('obfuscation_recovery_publications')->insert([
+            'identity' => $digest, 'index_identity' => $digest, 'index_message_id' => "index-{$collectionId}@example.test",
+            'set_id' => md5("set of {$collectionId}"), 'plan_digest' => $digest, 'collection_projection' => sha1("projection of {$collectionId}", true),
+            'collections_id' => $collectionId, 'profile' => 'fixture', 'group_name' => 'alt.binaries.test', 'source_epoch' => 'fixture',
+            'ordering_mode' => 'fixture', 'inventory_scope' => 'fixture', 'protected_files' => 1, 'planned_files' => 1, 'planned_parts' => 1,
+            'sealed_plan' => '{}', 'manifest_digest' => $digest,
+        ]);
     }
 
     /** @return array<string, mixed> */
