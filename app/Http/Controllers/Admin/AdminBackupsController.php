@@ -22,7 +22,6 @@ class AdminBackupsController extends BasePageController
         BackupLocationValidator $locationValidator,
         BackupScheduleService $schedule,
     ): View {
-        $this->setAdminPrefs();
         $settings = Settings::query()->pluck('value', 'name');
         $sets = [];
         $locationError = null;
@@ -38,7 +37,6 @@ class AdminBackupsController extends BasePageController
         $enabled = filter_var($settings->get('backup_enabled'), FILTER_VALIDATE_BOOL);
         $driver = (string) config('database.connections.'.config('database.default').'.driver');
         $this->viewData = array_merge($this->viewData, [
-            'title' => 'Database Backups',
             'meta_title' => 'Database Backups',
             'site' => $settings,
             'sets' => $sets,

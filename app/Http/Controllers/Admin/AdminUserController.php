@@ -31,8 +31,6 @@ class AdminUserController extends BasePageController
      */
     public function index(AdminUserListRequest $request): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'User List';
 
         $roles = Role::query()->orderBy('name')->pluck('name', 'id')->toArray();
@@ -78,8 +76,6 @@ class AdminUserController extends BasePageController
      */
     public function edit(Request $request)
     {
-        $this->setAdminPrefs();
-
         $user = [
             'id' => '',
             'username' => '',
@@ -286,8 +282,6 @@ class AdminUserController extends BasePageController
         }
 
         $this->viewData = array_merge($this->viewData, [
-            'yesno_ids' => [1, 0],
-            'yesno_names' => ['Yes', 'No'],
             'role_ids' => array_keys($roles),
             'role_names' => $roles,
             'user' => $user,

@@ -30,8 +30,6 @@ class AdminStatusController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $services = $this->siteStatusService->getAllServicesForAdmin();
         $incidents = ServiceIncident::query()
             ->with(['services', 'creator'])
@@ -54,8 +52,6 @@ class AdminStatusController extends BasePageController
      */
     public function create(): View
     {
-        $this->setAdminPrefs();
-
         $services = $this->siteStatusService->getAllServicesForAdmin();
 
         $this->viewData = array_merge($this->viewData, [
@@ -88,8 +84,6 @@ class AdminStatusController extends BasePageController
      */
     public function edit(ServiceIncident $incident): View
     {
-        $this->setAdminPrefs();
-
         $services = $this->siteStatusService->getAllServicesForAdmin();
 
         $this->viewData = array_merge($this->viewData, [

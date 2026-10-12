@@ -20,8 +20,6 @@ class AdminShowsController extends BasePageController
      */
     public function index(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'TV Shows List';
 
         $showname = $this->scalarInput($request, 'showname');
@@ -35,8 +33,6 @@ class AdminShowsController extends BasePageController
      */
     public function edit(Request $request): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         $action = $request->input('action', 'view');
 
         if ($action === 'submit') {
@@ -71,8 +67,6 @@ class AdminShowsController extends BasePageController
      */
     public function create(Request $request, TvShowAdder $adder): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Add TV Show';
         $sources = TvShowAdder::SUPPORTED_SOURCES;
 
@@ -115,8 +109,6 @@ class AdminShowsController extends BasePageController
      */
     public function lookup(Request $request, TvShowAdder $adder): JsonResponse
     {
-        $this->setAdminPrefs();
-
         $data = $request->validate([
             'source' => 'required|string|in:'.implode(',', TvShowAdder::SUPPORTED_SOURCES),
             'external_id' => 'required|string|max:32',
@@ -159,8 +151,6 @@ class AdminShowsController extends BasePageController
      */
     public function destroy(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $id = $request->route('id');
         $success = false;
         $videoid = null;

@@ -959,6 +959,14 @@ final class SearchControllerTest extends TestCase
         $this->assertMatchesRegularExpression('/<td class="tv-art">\s*<\/td>/', $this->releaseRowNamed($html, 'Pictured nothing'));
     }
 
+    /** Issue #1056 Section C6: the results page is not handed the viewer's last visit, which nothing on it reads. */
+    public function test_a_search_is_not_handed_the_viewers_last_visit(): void
+    {
+        $this->release('Dune visited');
+        $this->actingAs($this->browserUser())->get('/search?q=Dune')->assertOk()->assertSee('Dune visited')
+            ->assertViewMissing('lastvisit')->assertViewHas('subCategories');
+    }
+
     /** @return list<int> the listed releases' ids, in the page's order */
     private function listedIds(string $html): array
     {

@@ -19,8 +19,6 @@ class ApiHelpController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $this->viewData['title'] = 'Api Help';
         $this->viewData['meta_title'] = 'Api Help Topics';
         $this->viewData['meta_keywords'] = 'view,nzb,api,details,help,json,rss,atom';
@@ -35,8 +33,6 @@ class ApiHelpController extends BasePageController
      */
     public function apiv2(): View
     {
-        $this->setAdminPrefs();
-
         $this->viewData['title'] = 'Api V2 Help';
         $this->viewData['meta_title'] = 'Api V2 Help Topics';
         $this->viewData['meta_keywords'] = 'view,nzb,api,details,help,json,rss,atom';

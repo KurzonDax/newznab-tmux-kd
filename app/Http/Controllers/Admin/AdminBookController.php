@@ -20,8 +20,6 @@ class AdminBookController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Book List';
 
         $bookList = BookInfo::query()->orderByDesc('created_at')->paginate(config('nntmux.items_per_page'));
@@ -34,7 +32,6 @@ class AdminBookController extends BasePageController
      */
     public function edit(Request $request): View|RedirectResponse
     {
-        $this->setAdminPrefs();
         $bookService = new BookService;
 
         $meta_title = $title = 'Book Edit';

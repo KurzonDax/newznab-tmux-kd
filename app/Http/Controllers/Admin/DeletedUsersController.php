@@ -22,8 +22,6 @@ class DeletedUsersController extends BasePageController
      */
     public function index(Request $request): mixed
     {
-        $this->setAdminPrefs();
-
         // Filters
         $username = $this->scalarInput($request, 'username');
         $email = $this->scalarInput($request, 'email');
@@ -112,7 +110,6 @@ class DeletedUsersController extends BasePageController
             'deleted_to' => $deletedTo,
             'queryString' => $queryString,
             'meta_title' => 'Deleted Users',
-            'meta_keywords' => 'view,deleted,users,softdeleted',
             'meta_description' => 'View and restore soft-deleted user accounts',
             'title' => 'Deleted Users',
         ]);

@@ -20,12 +20,7 @@ class AdminDataComposer
         $isNntmuxUser = $user instanceof User;
 
         $view->with([
-            'serverroot' => url('/'),
             'site' => app(SiteViewSettings::class)->converted(),
-            'userdata' => $user,
-            'loggedin' => $user !== null,
-            'isadmin' => $isNntmuxUser && $user->hasRole('Admin'),
-            'ismod' => $isNntmuxUser && $user->hasRole('Moderator'),
             'userTheme' => $isNntmuxUser ? ($user->theme_preference ?? 'light') : 'light',
         ]);
     }

@@ -1,7 +1,5 @@
 @extends('layouts.admin')
 
-@section('title', 'Edit Release')
-
 @section('content')
 <div class="space-y-6">
     <div class="mb-6">

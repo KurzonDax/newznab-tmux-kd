@@ -21,8 +21,6 @@
 
     <!-- Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @stack('meta')
-    @stack('styles')
 </head>
 <body class="app-shell font-sans antialiased text-gray-900 dark:text-gray-100">
     <div class="h-screen flex">
@@ -79,7 +77,6 @@
 
             <!-- Page Content - Scrollable Area -->
             <main class="flex-1 overflow-y-auto p-6 rounded-xl shadow-inner ring-1 ring-black/10 dark:ring-white/5" data-scroll-container>
-                @unless(trim($__env->yieldContent('suppress_layout_flash')))
                     @if(session('success'))
                         <div class="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 dark:border-green-600 text-green-800 dark:text-green-200 rounded">
                             <i class="fas fa-check-circle mr-2"></i>{{ session('success') }}
@@ -97,7 +94,6 @@
                             <i class="fas fa-exclamation-triangle mr-2"></i>{{ session('warning') }}
                         </div>
                     @endif
-                @endunless
 
                 @yield('content')
             </main>
@@ -122,8 +118,6 @@
 
     <!-- Toast Notifications (Alpine.js CSP Safe) -->
     @include('admin.toast-notifications')
-
-    @stack('scripts')
 
     <!-- Flash Messages Data (read by Alpine toast store on init) -->
     <div id="flash-messages-data"

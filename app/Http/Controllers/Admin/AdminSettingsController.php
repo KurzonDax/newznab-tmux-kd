@@ -56,12 +56,9 @@ class AdminSettingsController extends BasePageController
             throw new NotFoundHttpException('Unknown settings section ['.$section.'].');
         }
 
-        $this->setAdminPrefs();
-
         $query = trim((string) $request->query('q', ''));
 
         $this->viewData = array_merge($this->viewData, [
-            'title' => $current->title,
             'meta_title' => $current->title.' Settings',
             'section' => $current,
             'sections' => $this->registry->sections(),

@@ -222,7 +222,6 @@ class ClearanceMiddleware
     {
         return response()->view('errors.category-disabled', [
             'category' => $category,
-            'isSubcategory' => true,
         ], 403);
     }
 }

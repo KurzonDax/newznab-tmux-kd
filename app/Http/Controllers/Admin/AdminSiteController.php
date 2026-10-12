@@ -36,8 +36,6 @@ class AdminSiteController extends BasePageController
             'recent' => $recent,
             'usersbymonth' => $usersByMonth,
             'usersbyrole' => $usersByRole,
-            'totusers' => 0,
-            'totrusers' => 0,
             'title' => $title,
             'meta_title' => $meta_title,
         ]);

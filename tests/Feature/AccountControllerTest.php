@@ -237,4 +237,27 @@ final class AccountControllerTest extends TestCase
             $this->assertStringStartsWith('<!DOCTYPE html>', ltrim($response->getContent()));
         }
     }
+
+    /** Issue #1056 Section C5: each API help page names the category class itself. */
+    public function test_api_help_pages_show_a_search_of_the_games_and_movies_root_categories(): void
+    {
+        $this->actingAs($this->browserUser());
+        foreach (['/apihelp', '/apiv2help'] as $url) {
+            $this->get($url)->assertOk()->assertSee('cat=1000,2000', false);
+        }
+    }
+
+    /** Issue #1056 Section C8: the Appearance tab is the Theme buttons and the Categories card. */
+    public function test_the_appearance_tab_has_no_default_view_per_root_block(): void
+    {
+        $response = $this->actingAs($this->browserUser())->get('/account?section=appearance')->assertOk()
+            ->assertDontSee('Default view per root')->assertDontSee('Remembered from what you last used in Browse.')
+            ->assertDontSee('account-view-preferences')
+            ->assertSee('<legend>Theme</legend>', false)->assertSee('name="viewpc"', false)->assertSee('Save categories')
+            ->assertViewMissing('roots')->assertViewHas('categoriesWithSubs')->assertViewHas('userExcludedCategories');
+        foreach (['light' => 'Light', 'dark' => 'Dark', 'system' => 'System'] as $value => $label) {
+            $response->assertSee('<button type="button" data-theme="'.$value.'" @click="setTheme" x-bind:aria-pressed="$store.theme.current === \''.$value.'\'">'.$label.'</button>', false);
+        }
+        $this->get('/account?section=api')->assertOk()->assertViewMissing('roots')->assertViewHas('categoriesWithSubs');
+    }
 }

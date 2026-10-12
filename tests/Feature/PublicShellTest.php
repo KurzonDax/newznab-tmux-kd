@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\BrowseRoot;
 use App\Http\Middleware\TrustedDevice2FAMiddleware;
 use App\Models\User;
+use App\View\Composers\GlobalDataComposer;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
@@ -158,6 +161,29 @@ final class PublicShellTest extends TestCase
             $xpath = $this->document($response->getContent());
             $this->assertSame($role === 'Admin' ? 1 : 0, $xpath->query('//*[@id="user-menu"]//a[@href="'.route('admin.index').'"]')->length, $role);
         }
+    }
+
+    /** Issue #1056 Section C5: the composer hands the public layouts only what they read. */
+    public function test_the_public_composer_hands_a_signed_in_viewer_the_header_roots_and_no_unread_key(): void
+    {
+        $this->actingAs($this->shellUser(['movies', 'tv']));
+        $view = view('layouts.guest');
+        app(GlobalDataComposer::class)->compose($view);
+        $data = $view->getData();
+        foreach (['serverroot', 'ismod', 'parentcatlist', 'header_menu_cat'] as $key) {
+            $this->assertArrayNotHasKey($key, $data);
+        }
+        foreach (['navigationRoots', 'usefulLinks', 'userdata', 'loggedin', 'isadmin', 'userTheme', 'site'] as $key) {
+            $this->assertArrayHasKey($key, $data);
+        }
+        $this->assertSame([BrowseRoot::Movies, BrowseRoot::Tv], array_column($data['navigationRoots'], 'root'));
+
+        // a guest's data loses the same keys
+        Auth::logout();
+        $this->resetGlobalComposerState();
+        $view = view('layouts.guest');
+        app(GlobalDataComposer::class)->compose($view);
+        $this->assertEqualsCanonicalizing(['usefulLinks', 'isadmin', 'loggedin', 'userTheme', 'site'], array_keys($view->getData()));
     }
 
     /** @param list<string> $roots */

@@ -49,7 +49,6 @@ class ContactUsController extends BasePageController
     public function showContactForm(string $msg = '')
     {
         return view('contact.index', [
-            'title' => 'Contact '.config('app.name'),
             'meta_title' => 'Contact '.config('app.name'),
             'meta_keywords' => 'contact us,contact,get in touch,email',
             'meta_description' => 'Contact us at '.config('app.name').' and submit your feedback',

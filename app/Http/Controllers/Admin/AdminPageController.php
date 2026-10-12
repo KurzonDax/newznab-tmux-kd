@@ -45,8 +45,6 @@ class AdminPageController extends BasePageController
      */
     public function index(): mixed
     {
-        $this->setAdminPrefs();
-
         $payload = $this->snapshot->get();
 
         return view('admin.dashboard', array_merge($this->viewData, [

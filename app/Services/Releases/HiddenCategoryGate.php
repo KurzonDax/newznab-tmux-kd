@@ -80,7 +80,6 @@ final class HiddenCategoryGate
     {
         return response()->view('errors.category-disabled', [
             'category' => $this->hiddenName($user, $categoryId),
-            'isSubcategory' => ! in_array(BrowseRoot::fromCategoryId($categoryId)->categoryId(), $user->hiddenRootCategoryIds(), true),
         ], 403);
     }
 

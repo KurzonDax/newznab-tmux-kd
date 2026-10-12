@@ -18,7 +18,6 @@ class AdminCategoryController extends BasePageController
      */
     public function index(): mixed
     {
-        $this->setAdminPrefs();
         $meta_title = $title = 'Category List';
 
         $categorylist = Category::getFlat();
@@ -39,8 +38,6 @@ class AdminCategoryController extends BasePageController
      */
     public function create(Request $request)
     {
-        $this->setAdminPrefs();
-
         // set the current action
         $action = $request->input('action') ?? 'view';
 
@@ -95,8 +92,6 @@ class AdminCategoryController extends BasePageController
      */
     public function edit(Request $request)
     {
-        $this->setAdminPrefs();
-
         // set the current action
         $action = $request->input('action') ?? 'view';
 
@@ -147,8 +142,6 @@ class AdminCategoryController extends BasePageController
      */
     public function destroy(Request $request)
     {
-        $this->setAdminPrefs();
-
         $id = $request->input('id');
 
         if (! $id) {

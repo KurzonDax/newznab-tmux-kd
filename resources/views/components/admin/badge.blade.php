@@ -1,6 +1,5 @@
 @props([
     'tone' => 'gray',
-    'icon' => null,
 ])
 
 @php
@@ -16,8 +15,5 @@
 @endphp
 
 <span {{ $attributes->merge(['class' => 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold '.$classes]) }}>
-    @if($icon)
-        <i class="{{ $icon }}" aria-hidden="true"></i>
-    @endif
     {{ $slot }}
 </span>

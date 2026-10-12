@@ -18,8 +18,6 @@ class AdminRoleController extends BasePageController
      */
     public function index(): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'User Role List';
 
         // get the user roles
@@ -39,8 +37,6 @@ class AdminRoleController extends BasePageController
      */
     public function create(Request $request): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         switch ($request->input('action') ?? 'view') {
             case 'submit':
                 $meta_title = $title = 'Add User Role';
@@ -59,16 +55,12 @@ class AdminRoleController extends BasePageController
             case 'view':
             default:
                 $meta_title = $title = 'Add User Role';
-                $role = [];
                 break;
         }
 
         $this->viewData = array_merge($this->viewData, [
-            'yesno_ids' => [1, 0],
-            'yesno_names' => ['Yes', 'No'],
             'title' => $title,
             'meta_title' => $meta_title,
-            'role' => $role,
         ]);
 
         return view('admin.roles.add', $this->viewData);
@@ -79,8 +71,6 @@ class AdminRoleController extends BasePageController
      */
     public function edit(Request $request): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'User Roles';
         $role = null;
 

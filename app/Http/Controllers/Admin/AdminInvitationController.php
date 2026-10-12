@@ -28,8 +28,6 @@ class AdminInvitationController extends BasePageController
      */
     public function index(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'Invitation Management';
 
         // Get filter parameters
@@ -222,8 +220,6 @@ class AdminInvitationController extends BasePageController
      */
     public function show(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $id = $request->route('id');
         $invitation = Invitation::with(['invitedBy', 'usedBy'])->findOrFail($id);
 

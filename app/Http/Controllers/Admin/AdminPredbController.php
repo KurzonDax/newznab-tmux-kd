@@ -16,8 +16,6 @@ class AdminPredbController extends BasePageController
      */
     public function index(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $lastSearch = $this->scalarInput($request, 'presearch');
 
         if ($lastSearch) {
@@ -28,7 +26,6 @@ class AdminPredbController extends BasePageController
 
         $title = 'Browse PreDb';
         $meta_title = 'View PreDb info';
-        $meta_keywords = 'view,predb,info,description,details';
         $meta_description = 'View PreDb info';
 
         return view('admin.predb.index', compact(
@@ -36,7 +33,6 @@ class AdminPredbController extends BasePageController
             'lastSearch',
             'title',
             'meta_title',
-            'meta_keywords',
             'meta_description'
         ));
     }

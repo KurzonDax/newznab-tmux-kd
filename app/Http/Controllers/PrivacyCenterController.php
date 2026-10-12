@@ -30,7 +30,6 @@ class PrivacyCenterController extends BasePageController
             ->paginate(10)->withQueryString();
 
         $this->viewData = array_merge($this->viewData, [
-            'user' => $user,
             'gdprRequests' => $requests,
             'retentionPolicy' => $retentionService->policy(),
             'meta_title' => 'Privacy Center',

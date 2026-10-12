@@ -396,21 +396,4 @@ class RSS extends ApiController
 
         return md5($cacheVersion.$sql);
     }
-
-    /**
-     * Get the first instance of a column from a table where the column is greater than 0, ordered by a specified column.
-     *
-     * @param  string  $column  The column to select and check
-     * @param  string  $table  The table to query
-     * @param  string  $order  The column to order by
-     * @return object|null The first instance found or null if none found
-     */
-    public function getFirstInstance(string $column, string $table, string $order)
-    {
-        return DB::table($table)
-            ->select([$column])
-            ->where($column, '>', 0)
-            ->orderBy($order)
-            ->first();
-    }
 }

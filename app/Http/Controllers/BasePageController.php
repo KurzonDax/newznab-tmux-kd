@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\Category;
 use App\Models\User;
 use App\Services\Releases\HiddenCategoryGate;
 use App\Support\ReleaseCompletion;
@@ -65,7 +64,6 @@ class BasePageController extends Controller
         $settings = app(SiteViewSettings::class);
         $this->settings = $settings->raw();
         $this->viewData = [
-            'serverroot' => url('/'),
             'site' => $settings->converted(),
         ];
 
@@ -255,14 +253,6 @@ class BasePageController extends Controller
     }
 
     /**
-     *  Set admin preferences.
-     */
-    public function setAdminPrefs(): void
-    {
-        $this->viewData['catClass'] = Category::class;
-    }
-
-    /**
      * Output the page using Blade views.
      */
     public function pagerender(): View
@@ -285,7 +275,6 @@ class BasePageController extends Controller
      */
     public function adminBasePage(): View
     {
-        $this->setAdminPrefs();
         $this->viewData = array_merge($this->viewData, [
             'meta_title' => 'Admin Home',
             'meta_description' => 'Admin home page',

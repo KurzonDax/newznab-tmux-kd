@@ -263,6 +263,21 @@ final class HiddenCategoryReleaseAccessTest extends TestCase
         $this->assertDenied($this->get('/browse/music/MP3'), 'Audio - MP3');
     }
 
+    /** Issue #1056 Section C6: the denied page is handed the category name it prints and nothing else. */
+    public function test_the_category_disabled_page_is_handed_its_category_name_alone(): void
+    {
+        DB::table('user_excluded_categories')->insert([
+            ['users_id' => $this->viewer()->id, 'categories_id' => self::SD],
+            ['users_id' => $this->viewer()->id, 'categories_id' => self::MP3],
+        ]);
+        $this->actingAs($this->viewer());
+        // a release in a hidden sub-category, then a hidden sub-category's own list
+        $this->get('/nfo/'.md5(self::HIDDEN))->assertForbidden()->assertViewIs('errors.category-disabled')
+            ->assertViewHas('category', 'Movies - SD')->assertViewMissing('isSubcategory');
+        $this->get('/browse/audio/MP3')->assertForbidden()->assertViewIs('errors.category-disabled')
+            ->assertViewHas('category', 'Audio - MP3')->assertViewMissing('isSubcategory');
+    }
+
     private function viewer(): User
     {
         return $this->viewer ??= $this->browserUser();

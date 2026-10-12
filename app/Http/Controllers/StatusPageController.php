@@ -32,7 +32,6 @@ class StatusPageController extends BasePageController
         $this->viewData = array_merge($this->viewData, [
             'meta_title' => 'Service status',
             'meta_description' => 'Current status of site services, incidents, and uptime.',
-            'title' => 'Service status',
             'services' => $services,
             'overallStatus' => $overall,
             'activeIncidents' => $activeIncidents,

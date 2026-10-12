@@ -17,8 +17,6 @@ class AdminUserRoleHistoryController extends BasePageController
      */
     public function index(Request $request): mixed
     {
-        $this->setAdminPrefs();
-
         $meta_title = $title = 'User Role History';
 
         // Get all roles for filter
@@ -91,8 +89,6 @@ class AdminUserRoleHistoryController extends BasePageController
      */
     public function show(Request $request, int $userId): mixed
     {
-        $this->setAdminPrefs();
-
         $user = User::findOrFail($userId);
         $meta_title = $title = 'Role History for '.$user->username;
 

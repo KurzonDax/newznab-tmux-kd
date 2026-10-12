@@ -6,11 +6,6 @@
                 <button type="button" data-theme="{{ $value }}" @click="setTheme" x-bind:aria-pressed="$store.theme.current === '{{ $value }}'">{{ $label }}</button>
             @endforeach
         </div></fieldset>
-        <div><h3>Default view per root</h3><p class="account-muted">Remembered from what you last used in Browse.</p><dl class="account-view-preferences">
-            @foreach($roots as $root)
-                <div><dt>{{ $root->label() }}</dt><dd>{{ ucfirst($user->releaseViewPreferences($root->value)['view']) }}</dd></div>
-            @endforeach
-        </dl></div>
     </div>
 </section>
 <section class="card account-card">

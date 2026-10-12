@@ -18,8 +18,6 @@ class AdminAnidbController extends BasePageController
      */
     public function index(Request $request): View
     {
-        $this->setAdminPrefs();
-
         $anidbService = new AnidbService;
         $title = $meta_title = 'AniDB List';
 
@@ -34,8 +32,6 @@ class AdminAnidbController extends BasePageController
      */
     public function edit(Request $request, int $id): View|RedirectResponse
     {
-        $this->setAdminPrefs();
-
         $anidbService = new AnidbService;
 
         // Set the current action.
@@ -93,8 +89,6 @@ class AdminAnidbController extends BasePageController
      */
     public function destroy(Request $request, int $id): View
     {
-        $this->setAdminPrefs();
-
         $success = false;
         $anidbid = $id;
 

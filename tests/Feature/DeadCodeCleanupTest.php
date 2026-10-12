@@ -6,6 +6,8 @@ namespace Tests\Feature;
 
 use App\Data\ReleaseBrowserState;
 use App\Enums\ReleaseSort;
+use App\Http\Controllers\Api\RSS;
+use App\Http\Controllers\BasePageController;
 use App\Services\MovieService;
 use App\Services\Releases\ReleaseBrowserMetadata;
 use App\Services\Releases\ReleaseBrowserQuery;
@@ -312,6 +314,95 @@ final class DeadCodeCleanupTest extends TestCase
         foreach (['"date-fns":', '"@melloware/coloris":', '"nested-sort":'] as $kept) {
             $this->assertStringContainsString($kept, $manifest);
         }
+    }
+
+    public function test_section_c_view_files_and_layout_classes_nothing_renders_are_gone(): void
+    {
+        // C1
+        foreach ([
+            'resources/views/auth/passwords/confirm.blade.php',
+            'resources/views/components/admin/stat-card.blade.php', 'resources/views/components/application-logo.blade.php',
+            'resources/views/components/button-secondary.blade.php',
+            'resources/views/partials/back-to-top-forum.blade.php', 'resources/views/partials/foreign-language-links.blade.php',
+            'resources/views/partials/theme-switcher.blade.php',
+            'app/View/Components/AppLayout.php', 'app/View/Components/GuestLayout.php',
+            // C2
+            'resources/views/vendor/pagination/bootstrap-4.blade.php', 'resources/views/vendor/pagination/bootstrap-5.blade.php',
+            'resources/views/vendor/pagination/default.blade.php', 'resources/views/vendor/pagination/semantic-ui.blade.php',
+            'resources/views/vendor/pagination/simple-bootstrap-4.blade.php', 'resources/views/vendor/pagination/simple-bootstrap-5.blade.php',
+            'resources/views/vendor/pagination/simple-default.blade.php', 'resources/views/vendor/pagination/simple-tailwind.blade.php',
+        ] as $path) {
+            $this->assertFileDoesNotExist(base_path($path));
+        }
+        $this->assertSame(
+            ['tailwind.blade.php'],
+            array_map(static fn (\SplFileInfo $file): string => $file->getFilename(), File::allFiles(resource_path('views/vendor/pagination'))),
+        );
+        // what stays beside them: the guest layout is reached by @extends, the forum has its own button
+        $this->assertFileExists(base_path('resources/views/layouts/guest.blade.php'));
+        $this->assertFileExists(base_path('resources/forum/blade-tailwind/views/components/button-secondary.blade.php'));
+
+        $provider = $this->source('app/Providers/AppServiceProvider.php');
+        $this->assertStringNotContainsString('layouts.app', $provider);
+        $this->assertStringContainsString("'layouts.main',\n            'layouts.guest',\n            'search.*',\n        ], GlobalDataComposer::class);", $provider);
+        $this->assertStringNotContainsString('AppLayout', $this->source('phpstan-baseline.neon'));
+    }
+
+    public function test_section_c_components_hold_none_of_the_props_slots_and_branches_no_caller_reaches(): void
+    {
+        // C3
+        foreach ([
+            'modal' => ['backdrop', '$subtitle', '$overlay'],
+            'watch-button' => ['$kind', '$size', '$wording', 'release-action-muted'],
+            'chip' => ['pill'],
+            'checkbox-menu' => ['$summary', '$fixed', 'is-fixed'],
+            'admin/card' => ['@props'],
+            'admin/data-table' => ['dense', 'striped'],
+            'admin/pagination' => ['position'],
+            'admin/badge' => ['$icon'],
+            'badge' => ['$size'],
+            'select' => ['controlSize'],
+            'segmented' => ['$label'],
+            'mail/button' => ['$align'],
+            'year-menu' => ['$first', '$last'],
+            'mail/layout' => ['$header', '$footer'],
+        ] as $component => $gone) {
+            $this->assertContainsNone($gone, $this->source('resources/views/components/'.$component.'.blade.php'), $component);
+        }
+        // the input keeps the size one caller passes
+        $this->assertStringContainsString('controlSize', $this->source('resources/views/components/input.blade.php'));
+    }
+
+    public function test_section_c_views_hold_no_block_a_request_cannot_reach_and_the_layouts_keep_only_their_live_stacks(): void
+    {
+        // C4
+        $views = '';
+        foreach (File::allFiles(resource_path('views')) as $file) {
+            $views .= $file->getContents()."\n";
+        }
+        $this->assertContainsNone(["@section('title'", 'suppress_layout_flash', 'isset($error)', 'isset($msg)', '@if($front)'], $views);
+
+        $this->assertStringNotContainsString('@stack(', $this->source('resources/views/layouts/admin.blade.php'));
+        $guest = $this->source('resources/views/layouts/guest.blade.php');
+        $this->assertSame(1, substr_count($guest, '@stack('));
+        $this->assertStringContainsString("@stack('scripts')", $guest);
+        // the main layout keeps its four
+        preg_match_all('/@stack\(\'(\w+)\'\)/', $this->source('resources/views/layouts/main.blade.php'), $stacks);
+        $this->assertSame(['meta', 'styles', 'modals', 'scripts'], $stacks[1]);
+    }
+
+    public function test_section_c_admin_preferences_and_the_rss_help_lookup_are_gone(): void
+    {
+        // C5
+        $this->assertFalse(method_exists(BasePageController::class, 'setAdminPrefs'));
+        foreach (File::allFiles(app_path()) as $file) {
+            $this->assertStringNotContainsString('setAdminPrefs', $file->getContents(), $file->getRelativePathname());
+        }
+        // C6
+        $this->assertFalse(method_exists(RSS::class, 'getFirstInstance'));
+        // C8: the invitations page still uses the class
+        $this->assertStringContainsString('.account-view-preferences', $this->source('resources/css/csp-safe.css'));
+        $this->assertStringContainsString('account-view-preferences', $this->source('resources/views/invitations/index.blade.php'));
     }
 
     /**

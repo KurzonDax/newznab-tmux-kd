@@ -219,6 +219,6 @@ class AdminMovieController extends BasePageController
             }
         }
 
-        return view('admin.movies.edit', compact('title', 'mov'))->with('movie', $mov);
+        return view('admin.movies.edit', compact('title'))->with('movie', $mov);
     }
 }

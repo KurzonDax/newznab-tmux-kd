@@ -198,8 +198,6 @@ class InvitationController extends BasePageController
 
         // Set meta information
         $this->viewData['meta_title'] = $preview ? 'Invitation to Join' : 'Invalid Invitation';
-        $this->viewData['meta_keywords'] = 'invitation,join,register,signup';
-        $this->viewData['meta_description'] = $preview ? 'You have been invited to join our community' : 'This invitation link is invalid or expired';
 
         return view('invitations.show', $this->viewData);
     }
