@@ -53,6 +53,13 @@ class ReleaseContext
     /** Adult magazine brands that are also ordinary words elsewhere in AMBIGUOUS_ADULT_TERMS. */
     private const string ADULT_MAGAZINE_BRANDS = 'Playboy|Penthouse|Hustler|Score';
 
+    /**
+     * The release name as it stood before the obfuscated-subject extractor
+     * cleaned it, so a leading bracketed group tag is still in place. It is
+     * the same as {@see self::$releaseName} when no separate name was given.
+     */
+    public readonly string $preExtractionName;
+
     public function __construct(
         public readonly string $releaseName,
         public readonly int|string $groupId,
@@ -63,7 +70,10 @@ class ReleaseContext
         public readonly bool $routeObfuscatedNames = false,
         public readonly ?int $obfuscatedDefaultRootCategoryId = null,
         public readonly ?int $forcedRootCategoryId = null,
-    ) {}
+        ?string $preExtractionName = null,
+    ) {
+        $this->preExtractionName = $preExtractionName ?? $releaseName;
+    }
 
     /**
      * Get the release name in lowercase for case-insensitive matching.
@@ -79,6 +89,16 @@ class ReleaseContext
     public function matchesPattern(string $pattern): bool
     {
         return (bool) preg_match($pattern, $this->releaseName);
+    }
+
+    /**
+     * Check if a pattern matches the release name either as cleaned or as it
+     * stood before the obfuscated-subject extractor ran.
+     */
+    public function matchesPatternInEitherName(string $pattern): bool
+    {
+        return preg_match($pattern, $this->preExtractionName) === 1
+            || preg_match($pattern, $this->releaseName) === 1;
     }
 
     /**
