@@ -59,7 +59,7 @@ class MusicCategorizer extends AbstractCategorizer
             return $result;
         }
 
-        if ($result = $this->checkMP3($name, $context->categorizeForeign)) {
+        if ($result = $this->checkMP3($name, $context->categorizeForeign, $context->preExtractionName)) {
             return $result;
         }
 
@@ -186,7 +186,7 @@ class MusicCategorizer extends AbstractCategorizer
         return null;
     }
 
-    protected function checkMP3(string $name, bool $categorizeForeign): ?CategorizationResult
+    protected function checkMP3(string $name, bool $categorizeForeign, string $preExtractionName): ?CategorizationResult
     {
         // MP3 indicators
         if (! $this->hasStrongVideoMarkers($name) && preg_match('/(?<![a-zA-Z0-9])(?:MP3|320kbps|256kbps|192kbps|128kbps|CBR|VBR)(?![a-zA-Z0-9])|\b(?:MP3)\b|[\._-](?:MP3)[\._-]|\.mp3$/i', $name)) {
@@ -202,8 +202,13 @@ class MusicCategorizer extends AbstractCategorizer
             }
         }
 
-        // MP3 scene patterns
-        if (preg_match('/^[a-zA-Z0-9]{1,12}[._-](19|20)\d\d[._-][a-zA-Z0-9]{1,12}$|[a-z0-9]{1,12}\-(19|20)\d\d\-[a-z0-9]{1,12}/i', $name)) {
+        // MP3 scene patterns. The first shape is read from the cleaned name.
+        // The second is a year and group inside a longer scene name: a whole
+        // name with no whitespace and no domain-style suffix. Cleaning turns
+        // the dots and underscores of a scene name into spaces, so this shape
+        // is read from the name as it stood before cleaning.
+        if (preg_match('/^[a-zA-Z0-9]{1,12}[._-](19|20)\d\d[._-][a-zA-Z0-9]{1,12}$/i', $name) ||
+            preg_match('/^(?!\S*\.[a-z]{2,}$)\S*[a-z0-9]\-(19|20)\d\d\-[a-z0-9]\S*$/i', $preExtractionName)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.75, 'mp3_scene_foreign');
             }
