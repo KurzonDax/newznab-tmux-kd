@@ -710,6 +710,18 @@ class SettingsTableSeeder extends Seeder
                 'value' => '0',
             ],
             [
+                'name' => 'decision_model_mode',
+                'value' => 'off',
+            ],
+            [
+                'name' => 'decision_model_apply_threshold',
+                'value' => '0.80',
+            ],
+            [
+                'name' => 'decision_model_arbitrate_below',
+                'value' => '0.70',
+            ],
+            [
                 'name' => 'amazonsleep',
                 'value' => '1000',
             ],

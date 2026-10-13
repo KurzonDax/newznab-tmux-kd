@@ -31,6 +31,7 @@ class SettingsRegistry
         Sections\PostProcessingSection::class,
         Sections\MetadataLookupsSection::class,
         Sections\NamingHygieneSection::class,
+        Sections\DecisionModelSection::class,
     ];
 
     /** @var array<string, SettingSection>|null */

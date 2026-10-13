@@ -1,0 +1,217 @@
+{
+  "version": "v2 2026-10-12: leaf priority order, no webdl leaf, dated adult scenes = x264, HDR+HEVC = uhd, spaced film names",
+  "root": {
+    "instructions": "Which kind of content is this Usenet release? Judge from the release name first; the newsgroup and poster are weaker hints.",
+    "criteria": {
+      "tv": "Episodic television: a series episode or season pack. Signs: S01E02, 1x05, 'Episode 8', 'Season 3', a daily-show date like 2026.08.14, HDTV/PDTV, sports events (NFL, UFC, F1, Olympics), documentary series, anime episodes from fansub groups in brackets like [SubsPlease] or [Moozzi2] followed by an episode number. Not for a film with a single year and no episode marker, and not for music concerts.",
+      "movies": "A feature film: a title followed by a release year, written with dots or with spaces (Inception.2010.1080p.BluRay.x264-SPARKS, 'The Imposter 2012 Bluray-1080p', 'Gangster (2006)'), usually with quality or source tokens such as 1080p, 2160p, BluRay, WEB-DL, DVDRip, x264, x265, CAM, telesync, or a language like German, FRENCH, Hindi, Telugu. Also DVD and Blu-ray disc images of films. Not for anything with a season or episode marker, not for adult studio scenes, not for concerts.",
+      "audio": "Music or spoken audio: albums, singles, discographies, FLAC, MP3, 320kbps, vinyl or CD rips, soundtracks, DJ mixes, music videos and concert films, audiobooks (Unabridged, Narrated, Audible, Read By), podcasts. Not for films, TV series or ebooks.",
+      "xxx": "Adult pornographic content: an adult studio or site name (Brazzers, Vixen, Tushy, Blacked, OnlyFans, NaughtyAmerica, Kink, Playboy, ALSScan), a performer name followed by a scene title ('Esmi Lee - Coworker In Chastity'), fetish or femdom scene titles, the token XXX, a site-dated scene like Site.26.08.14.Performer.Name, VR adult, erotic image sets or adult magazines. Not for a mainstream film title with a year, and not for a series whose title merely contains a sexual word.",
+      "games": "A console video game: PlayStation (PS2, PS3, PS4, PS5, PSP, PS Vita, CUSA or PPSA ids), Xbox (XBOX360, Xbox One, Series X), Nintendo (Wii, WiiU, 3DS, NDS, Switch, NSP, XCI), or retro ROM sets with region tags (USA, EUR, JPN, NTSC, PAL). Not for PC games.",
+      "pc": "Computer software or a PC game: Windows, macOS or Linux applications with version numbers and tokens like x64, Multilingual, Portable, Keygen, Cracked, Patch, Setup, MSIX; operating system or software ISO images; iOS and Android apps (IPA, APK); PC games with tokens like CODEX, RUNE, GOG, Steam. Not for console games.",
+      "books": "Written material: ebooks (EPUB, MOBI, AZW3, PDF with a book title or author), magazines (a magazine title with an issue number, month and year), comics and manga (CBR, CBZ, publisher names), technical books (O'Reilly, Packt, Apress, Manning). Not for audiobooks, video courses or software manuals bundled with software.",
+      "other": "Nothing above fits: a random or encoded string, a hash, a filename with no title, a video training course, advertising or a website name, a data dump, or a name that gives no clue what the content is."
+    }
+  },
+  "readable": {
+    "type": "noul",
+    "instructions": "Is the release name a human-readable title that says what the content is, rather than a random string, hash, encoded text, or bare file name?"
+  },
+  "adult": {
+    "type": "noul",
+    "instructions": "Does the release name describe adult pornographic content?"
+  },
+  "sub": {
+    "tv": {
+      "instructions": "Which TV subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: anime, sport, documentary, foreign, uhd, x265, hd, sd, other. A WEB-DL or WEBRip episode is hd when it is 720p or 1080p and uhd when it is 2160p; there is no separate web level.",
+      "criteria": {
+        "anime": "Japanese animation: fansub group in brackets, episode number without a season, Japanese title words, anime hash tag like [A1B2C3D4]",
+        "sport": "A sports event or sports programme: league or event names (NFL, NBA, UFC, F1, WWE, Olympics), teams, round or match",
+        "documentary": "A documentary or docu-series: 'Documentary', 'Docu', factual nature, science or history programmes",
+        "foreign": "A series in a language other than English, or marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Staffel, subbed or dubbed",
+        "uhd": "4K episode or season: 2160p, UHD, 4K; also HDR or Dolby Vision together with HEVC, H.265 or x265 at any resolution",
+        "x265": "HEVC or x265 encode from an x265 group such as MeGusta, PSA, rmteam, ONLY, HETeam, TrollHD",
+        "hd": "High definition episode or season: 720p, 1080p, 1080i, BluRay, WEB-DL or WEBRip at 720p or 1080p",
+        "sd": "Standard definition episode or season: 480p, 576p, XviD, DVDRip, HDTV with no resolution, PDTV, TVRip",
+        "other": "Television but none of the above can be told from the name"
+      }
+    },
+    "movies": {
+      "instructions": "Which Movies subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: foreign, x265, uhd, 3d, bluray, dvd, hd, sd, other. A WEB-DL or WEBRip film is hd when it is 720p or 1080p and uhd when it is 2160p; there is no separate web level.",
+      "criteria": {
+        "foreign": "A film in a language other than English, or marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Castellano, Multisub, dubbed",
+        "x265": "HEVC or x265 encode from an x265 group such as Tigole, SESKAPiLE, IAMABLE, DEFLATE, THREESOME",
+        "uhd": "4K film: 2160p, UHD, 4K; also HDR or Dolby Vision together with HEVC, H.265 or x265 at any resolution",
+        "3d": "A 3D film: 3D, SBS, H-SBS, MVC",
+        "bluray": "A Blu-ray disc, remux, or a name that writes the source as 'Bluray-1080p' or 'Bluray-720p' with a hyphen: BD25, BD50, Blu-ray untouched, COMPLETE BLURAY, REMUX, 'Title 2012 Bluray-1080p'",
+        "dvd": "A full DVD disc: DVD5, DVD9, DVDR, R5, PAL or NTSC disc",
+        "hd": "High definition film encode: 720p, 1080p, x264, AVC, BDRip, BRRip, '1080p.BluRay.x264', WEB-DL or WEBRip at 720p or 1080p",
+        "sd": "Standard definition film: XviD, DivX, DVDRip, DVDScr, CAM, TS, HDTS, VHSRip, 480p",
+        "other": "A film but none of the above can be told from the name"
+      }
+    },
+    "audio": {
+      "instructions": "Which Audio subcategory fits this release?",
+      "criteria": {
+        "audiobook": "An audiobook: Audiobook, Unabridged, Abridged, Narrated, Read By, Audible, M4B, Tantor, Blackstone",
+        "podcast": "A podcast episode or series: Podcast, NPR, BBC Sounds, Wondery, Gimlet",
+        "video": "A music video, concert film, live show, tour or festival recording with video tokens such as 1080p, BluRay, x264, MKV, MP4",
+        "lossless": "Lossless audio: FLAC, APE, WAV, ALAC, DSD, 24bit, 96kHz, Hi-Res, Vinyl rip, SACD",
+        "mp3": "Lossy audio: MP3, 320kbps, 256kbps, 192kbps, VBR, V0, AAC, iTunes rip, WEB",
+        "foreign": "Music in or from a non-English market when the name says so: German, French, Italian, Spanish, Dutch, Russian, Japanese, Korean",
+        "other": "Audio but none of the above can be told from the name: a bare artist and album, compilation, soundtrack, DJ mix with no format token"
+      }
+    },
+    "xxx": {
+      "instructions": "Which Adult subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: vr, uhd, imageset, pack, dvd, wmv, xvid, clipshd, clipssd, x264, sd, other. A site-dated scene name such as Tushy.25.03.02.Performer.Name or Vixen.25.05.16.Name.part1 is a standard HD scene release and belongs to x264 even without a resolution token.",
+      "criteria": {
+        "vr": "Virtual reality adult video: VR, VR180, VR360, Oculus, Quest, GearVR, a VR site name like VRBangers, SexBabesVR, WankzVR",
+        "uhd": "4K adult video: 2160p, UHD, 4K",
+        "x264": "Standard adult scene release: a studio or site name with a date and performer (Tushy.25.03.02.Stella.Barey, Brazzers.23.11.15.Name.XXX), or 1080p, 720p, x264, H264, MP4, WEB-DL",
+        "clipshd": "Short HD clip from a site or OnlyFans, usually a dated scene name with 1080p or 720p and MP4",
+        "clipssd": "Short SD clip: 480p, 540p, WMV or MP4 with low resolution",
+        "xvid": "XviD or DivX encoded adult video",
+        "wmv": "WMV encoded adult video",
+        "dvd": "A full adult DVD disc: DVDR, DVD5, DVD9, NTSC, PAL",
+        "sd": "Standard definition adult video with no other format clue: DVDRip, 480p, 576p",
+        "pack": "A pack or collection of many adult scenes or a site rip: Pack, SiteRip, Collection, Megapack",
+        "imageset": "Erotic photo set or adult magazine: Imageset, Photoset, pictures, JPG, Playboy or Penthouse magazine issue",
+        "other": "Adult content where the name has no studio-date shape and no format token at all, such as a bare performer name with a scene title"
+      }
+    },
+    "games": {
+      "instructions": "Which console platform is this game for?",
+      "criteria": {
+        "ps4": "PlayStation 4: PS4, CUSA ids, PS4-DUPLEX",
+        "ps3": "PlayStation 3: PS3",
+        "psvita": "PlayStation Vita: PS Vita, PSV",
+        "psp": "PlayStation Portable: PSP",
+        "xboxone": "Xbox One or Series X|S: XBOXONE, XB1, XBONE, XSX, XSS",
+        "xbox360": "Xbox 360: XBOX360, X360",
+        "xbox": "Original Xbox: XBOX with no 360 or One",
+        "wiiu": "Nintendo Wii U",
+        "wii": "Nintendo Wii: Wii, WiiWare",
+        "3ds": "Nintendo 3DS",
+        "nds": "Nintendo DS: NDS",
+        "other": "Another console: PS5, Switch, PS1, PS2, SNES, NES, SEGA, Game Boy, Dreamcast, N64, Atari, or a console that cannot be told"
+      }
+    },
+    "pc": {
+      "instructions": "Which PC subcategory fits this release?",
+      "criteria": {
+        "phone_ios": "iOS or iPhone app: iOS, iPhone, iPad, IPA",
+        "phone_android": "Android app: Android, APK",
+        "phone_other": "An app for another phone platform",
+        "mac": "macOS software: Mac, macOS, OSX, DMG",
+        "games": "A PC game: scene game groups (CODEX, RUNE, PLAZA, TENOKE, GOG, FLT, SKIDROW), Steam, Repack, DLC for Windows",
+        "iso": "A software or operating-system disc image or installer image: ISO, IMG, bootable, Ubuntu, Windows install media, training course images",
+        "0day": "Windows or Linux application: a product name with a version number and tokens like x64, x86, Multilingual, Portable, Keygen, Cracked, Patch, Setup, Regged, MSIX",
+        "other": "PC software but none of the above can be told from the name"
+      }
+    },
+    "books": {
+      "instructions": "Which Books subcategory fits this release?",
+      "criteria": {
+        "magazines": "A magazine issue: a magazine title with an issue or volume number, a month and year, or a season and year (Wired October 2026, Issue 42, Vol 7)",
+        "comics": "Comics or manga: CBR, CBZ, Marvel, DC, Image, Dark Horse, Vertigo, manga volume numbers",
+        "technical": "A technical or programming book from a technical publisher: O'Reilly, Packt, Apress, Manning, No Starch, Wiley, Pearson, Addison-Wesley",
+        "foreign": "A book in a language other than English, or marked German, French, Dutch, Spanish, Italian",
+        "ebook": "An ebook or novel: EPUB, MOBI, AZW3, PDF, Kindle, 'Author - Title', retail ebook",
+        "unknown": "Written material but none of the above can be told from the name"
+      }
+    }
+  },
+  "category_ids": {
+    "tv": {
+      "anime": 5070,
+      "sport": 5060,
+      "documentary": 5080,
+      "foreign": 5020,
+      "uhd": 5045,
+      "x265": 5090,
+      "hd": 5040,
+      "sd": 5030,
+      "other": 5999
+    },
+    "movies": {
+      "foreign": 2010,
+      "x265": 2090,
+      "uhd": 2045,
+      "3d": 2050,
+      "bluray": 2060,
+      "dvd": 2070,
+      "hd": 2040,
+      "sd": 2030,
+      "other": 2999
+    },
+    "audio": {
+      "audiobook": 3030,
+      "podcast": 3050,
+      "video": 3020,
+      "lossless": 3040,
+      "mp3": 3010,
+      "foreign": 3060,
+      "other": 3999
+    },
+    "xxx": {
+      "vr": 6046,
+      "uhd": 6045,
+      "x264": 6040,
+      "clipshd": 6041,
+      "clipssd": 6042,
+      "xvid": 6030,
+      "wmv": 6020,
+      "dvd": 6010,
+      "sd": 6080,
+      "pack": 6050,
+      "imageset": 6060,
+      "other": 6999
+    },
+    "games": {
+      "ps4": 1180,
+      "ps3": 1080,
+      "psvita": 1120,
+      "psp": 1020,
+      "xboxone": 1140,
+      "xbox360": 1050,
+      "xbox": 1040,
+      "wiiu": 1130,
+      "wii": 1030,
+      "3ds": 1110,
+      "nds": 1010,
+      "other": 1999
+    },
+    "pc": {
+      "phone_ios": 4060,
+      "phone_android": 4070,
+      "phone_other": 4040,
+      "mac": 4030,
+      "games": 4050,
+      "iso": 4020,
+      "0day": 4010,
+      "other": 4999
+    },
+    "books": {
+      "magazines": 7010,
+      "comics": 7030,
+      "technical": 7040,
+      "foreign": 7060,
+      "ebook": 7020,
+      "unknown": 7999
+    },
+    "other": {
+      "misc": 10,
+      "hashed": 20
+    }
+  },
+  "root_of_id": {
+    "0": "other",
+    "1": "games",
+    "2": "movies",
+    "3": "audio",
+    "4": "pc",
+    "5": "tv",
+    "6": "xxx",
+    "7": "books"
+  }
+}

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Services\Categorization\Arbitration\CategoryArbiter;
+use App\Services\Categorization\Arbitration\CategoryArbitrationUseCase;
 use App\Services\Categorization\CategorizationPipeline;
 use Illuminate\Support\ServiceProvider;
 
@@ -21,6 +23,11 @@ class CategorizationServiceProvider extends ServiceProvider
 
         // Alias for easier access
         $this->app->alias(CategorizationPipeline::class, 'categorization');
+
+        // Shared per process: the arbiter keeps the settings it read for a minute,
+        // and the use case keeps the criteria file it parsed.
+        $this->app->singleton(CategoryArbiter::class);
+        $this->app->singleton(CategoryArbitrationUseCase::class);
     }
 
     /**
