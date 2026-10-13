@@ -76,6 +76,56 @@ final class CategorizeAnimePipelineTest extends TestCase
         );
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function multiEpisodeBluRayRemuxes(): array
+    {
+        return [
+            '1080p remux of two episodes' => [
+                'The.West.Wing.S04E01-E02.1080p.BluRay.Remux.DTS-HD.MA.2.0.H.264-BTN',
+            ],
+            '1080i remux of two episodes' => [
+                'Extraordinary.You.S01E27-E28.BluRay.REMUX.1080i.AVC.Flac.2.0.MMR',
+            ],
+        ];
+    }
+
+    #[DataProvider('multiEpisodeBluRayRemuxes')]
+    public function test_multi_episode_bluray_remux_with_a_season_is_tv_hd_not_anime(string $name): void
+    {
+        $this->assertSame(Category::TV_HD, $this->categoryFor($name));
+    }
+
+    public function test_year_numbered_bluray_short_is_tv_hd_not_anime(): void
+    {
+        $this->assertSame(
+            Category::TV_HD,
+            $this->categoryFor('Tom.and.Jerry.1949.E45.Jerrys.Diary.1080p.BluRay.REMUX.AVC.FLAC.1.0-SIUUU'),
+        );
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function episodeOnlyBluRayNamesWithoutSeason(): array
+    {
+        return [
+            'no season and no year' => [
+                'Hoshi.Tabibito.E07.1080p.BluRay.x264-KUMO',
+            ],
+            'a year that is not right before the episode' => [
+                'Hoshi.Tabibito.E07.2019.1080p.BluRay.x264-KUMO',
+            ],
+        ];
+    }
+
+    #[DataProvider('episodeOnlyBluRayNamesWithoutSeason')]
+    public function test_episode_only_bluray_name_without_a_season_is_still_tv_anime(string $name): void
+    {
+        $this->assertSame(Category::TV_ANIME, $this->categoryFor($name));
+    }
+
     public function test_artist_title_video_without_a_bracket_tag_stays_music_video(): void
     {
         $this->assertSame(Category::MUSIC_VIDEO, $this->categoryFor('Some Artist - Some Title 1080p'));

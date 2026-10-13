@@ -186,10 +186,13 @@ class TvCategorizer extends AbstractCategorizer
              (preg_match('/[._ ]E\d{1,4}[._ ]/i', $name) && ! preg_match('/[._ ]S\d{1,4}[._ ]?E\d/i', $name)))) {
             return $this->matched(Category::TV_ANIME, 0.9, 'anime_japanese_title');
         }
-        // Episode pattern with known anime indicators
+        // Episode pattern with known anime indicators. A season-episode token
+        // (S04E01-E02) or a year right before the episode token
+        // (Title.1949.E45, a numbered short) is not anime evidence.
         if (preg_match('/[._ -]E\d{1,4}[._ -]/i', $name) &&
             preg_match('/\b(BluRay|BD|BDRip)\b/i', $name) &&
-            ! preg_match('/\bS\d{1,4}\b/i', $name)) {
+            ! $context->hasSeasonEpisodeToken() &&
+            ! preg_match('/(?:^|[._ -])(?:19|20)\d{2}[._ -]E\d{1,4}[._ -]/i', $name)) {
             // Episode-only pattern with BluRay but no season - likely anime
             return $this->matched(Category::TV_ANIME, 0.8, 'anime_episode_bluray');
         }
