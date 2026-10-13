@@ -40,8 +40,8 @@ final class ManticoreInsertRetryTest extends TestCase
 
     private function makeResponseException(string $message = 'err'): ResponseException
     {
-        $request = $this->createMock(Request::class);
-        $response = $this->createMock(Response::class);
+        $request = $this->createStub(Request::class);
+        $response = $this->createStub(Response::class);
         $response->method('getError')->willReturn($message);
 
         return new ResponseException($request, $response);

@@ -57,6 +57,6 @@ class SiteStatusServiceHttpHealthCheckTest extends TestCase
 
     private function statusService(): SiteStatusService
     {
-        return new SiteStatusService($this->createMock(ServiceProbeRegistry::class));
+        return new SiteStatusService($this->createStub(ServiceProbeRegistry::class));
     }
 }
