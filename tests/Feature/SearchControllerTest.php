@@ -172,6 +172,7 @@ final class SearchControllerTest extends TestCase
 
     public function test_add_filter_form_replaces_a_field_and_preserves_the_other_constraints(): void
     {
+        $this->travelTo(now()->setDate(2026, 9, 14)->startOfDay());
         DB::table('movieinfo')->insert(['imdbid' => '1234567', 'title' => 'Dune', 'actors' => 'Chalamet', 'director' => 'Villeneuve']);
         $wanted = $this->release('Unfinished movie', ['imdbid' => '1234567']);
         $response = $this->actingAs($this->browserUser())->get('/search?'.http_build_query([
