@@ -25,7 +25,7 @@ class PredbFulltextNameFixingTest extends TestCase
             ->andReturn([42]);
 
         $database = $this->createMock(Connection::class);
-        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('getSchemaBuilder')->willReturn($this->createStub(Builder::class));
         $database->expects($this->once())
             ->method('select')
             ->willReturn([
@@ -94,7 +94,7 @@ class PredbFulltextNameFixingTest extends TestCase
         Search::shouldReceive('isAvailable')->once()->andReturnFalse();
         Search::shouldReceive('searchReleases')->never();
         $database = $this->createMock(Connection::class);
-        $database->method('getSchemaBuilder')->willReturn($this->createMock(Builder::class));
+        $database->method('getSchemaBuilder')->willReturn($this->createStub(Builder::class));
         $database->expects($this->never())->method('select');
         $service = new NameFixingService(
             updateService: $this->createStub(ReleaseUpdateService::class),

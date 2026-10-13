@@ -268,7 +268,7 @@ final class WebSearchDriverPaginationTest extends TestCase
         $this->replaceStatic($class, 'availabilityCacheTime', time());
         $hit = ['_id' => '501', '_source' => ['id' => 501, 'imdbid' => '0123456']];
         if ($name === 'manticore') {
-            $client = $this->createMock(ManticoreClient::class);
+            $client = $this->createStub(ManticoreClient::class);
             $client->method('search')->willReturnCallback(function (array $parameters) use ($hit, $total): ManticoreResponse {
                 $this->requests[] = $parameters['body'];
 
