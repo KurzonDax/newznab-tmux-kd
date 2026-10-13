@@ -423,6 +423,40 @@ CREATE TABLE `database_backups` (
   KEY `database_backups_set_id_index` (`set_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `decision_model_criteria`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `decision_model_criteria` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `use_case` varchar(64) NOT NULL,
+  `version` varchar(255) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `ux_decision_model_criteria` (`use_case`,`version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `decision_model_decisions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `decision_model_decisions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `decision_model_criteria_id` bigint(20) unsigned NOT NULL,
+  `subject_type` varchar(32) NOT NULL,
+  `subject_id` bigint(20) unsigned DEFAULT NULL,
+  `mode` varchar(16) NOT NULL,
+  `state` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`state`)),
+  `answers` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`answers`)),
+  `pipeline_answer` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`pipeline_answer`)),
+  `interpretation` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`interpretation`)),
+  `applied` tinyint(1) NOT NULL DEFAULT 0,
+  `failure_reason` varchar(64) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `ix_dmd_subject` (`subject_type`,`subject_id`),
+  KEY `ix_dmd_criteria_created` (`decision_model_criteria_id`,`created_at`),
+  CONSTRAINT `FK_dmd_criteria` FOREIGN KEY (`decision_model_criteria_id`) REFERENCES `decision_model_criteria` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `dnzb_failures`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4332,3 +4366,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (326,'2026_10_11_13
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (327,'2026_10_11_140000_drop_six_settings_with_no_reader',34);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (328,'2026_10_12_120000_widen_collection_ids_to_bigint',35);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (329,'2026_10_12_130000_widen_binaryblacklist_groupname_to_text',36);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (330,'2026_10_13_120000_create_decision_model_log_tables',37);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (331,'2026_10_13_120100_add_decision_model_settings',37);

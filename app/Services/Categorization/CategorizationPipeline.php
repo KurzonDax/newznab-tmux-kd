@@ -7,6 +7,7 @@ namespace App\Services\Categorization;
 use App\Models\Category;
 use App\Models\Settings;
 use App\Models\UsenetGroup;
+use App\Services\Categorization\Arbitration\CategoryArbiter;
 use App\Services\Categorization\Categorizers\TvCategorizer;
 use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
 use App\Services\Categorization\Pipes\CategorizationPassable;
@@ -16,6 +17,7 @@ use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Pipeline\Pipeline;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Pipeline-based categorization service using Laravel Pipeline.
@@ -41,6 +43,9 @@ class CategorizationPipeline
     protected NzbSplitUnwrapper $nzbSplitUnwrapper;
 
     protected ObfuscatedSubjectExtractor $obfuscatedSubjectExtractor;
+
+    /** The container's shared arbiter, resolved on the first release categorized. */
+    private ?CategoryArbiter $arbiter = null;
 
     /**
      * @param  iterable<AbstractCategorizationPipe>  $pipes
@@ -80,6 +85,7 @@ class CategorizationPipeline
      * @param  string|null  $poster  The poster name
      * @param  bool  $debug  Whether to include debug information
      * @param  list<int>  $associatedGroupIds  Every normalized group associated with the release
+     * @param  int|null  $releaseId  The stored release being categorized, when the caller named one
      * @return array<string, mixed> The categorization result
      */
     public function categorize(
@@ -88,6 +94,7 @@ class CategorizationPipeline
         ?string $poster = '',
         bool $debug = false,
         array $associatedGroupIds = [],
+        ?int $releaseId = null,
     ): array {
         $releaseName = $this->nzbSplitUnwrapper->unwrap($releaseName) ?? $releaseName;
         $preExtractionName = $releaseName;
@@ -136,6 +143,7 @@ class CategorizationPipeline
 
         $this->applyTvTokenOverMovies($result);
         $this->applyForcedRootCategory($result);
+        $this->arbitrate($result, $releaseId);
 
         $this->logCategorization($result);
 
@@ -290,6 +298,24 @@ class CategorizationPipeline
                     'matched_by' => $organic->matchedBy,
                 ],
             ];
+        }
+    }
+
+    /**
+     * Let the decision model arbitrate a result the pipes were unsure of.
+     *
+     * Runs after the forced root is applied, so the arbiter sees the final
+     * pipeline result and a forced root it must not leave. The arbiter decides
+     * for itself whether to ask at all and reports its own failures; whatever
+     * still goes wrong here, the pipes' result stands.
+     */
+    private function arbitrate(CategorizationPassable $result, ?int $releaseId): void
+    {
+        try {
+            $this->arbiter ??= app(CategoryArbiter::class);
+            $this->arbiter->arbitrate($result, $releaseId);
+        } catch (Throwable) {
+            // Categorization never fails because of the model.
         }
     }
 

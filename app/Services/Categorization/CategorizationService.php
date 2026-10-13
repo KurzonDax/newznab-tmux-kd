@@ -54,7 +54,7 @@ class CategorizationService
             ]));
         }
 
-        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds);
+        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds, $releaseId);
     }
 
     /**
