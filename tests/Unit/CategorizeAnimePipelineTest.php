@@ -97,6 +97,14 @@ final class CategorizeAnimePipelineTest extends TestCase
         $this->assertSame(Category::TV_HD, $this->categoryFor($name));
     }
 
+    public function test_bluray_episode_with_a_season_token_apart_from_the_episode_is_tv_hd_not_anime(): void
+    {
+        $this->assertSame(
+            Category::TV_HD,
+            $this->categoryFor('Harbour.Lights.S01.Part.2.E05.1080p.BluRay.x264-KUMO'),
+        );
+    }
+
     public function test_year_numbered_bluray_short_is_tv_hd_not_anime(): void
     {
         $this->assertSame(
