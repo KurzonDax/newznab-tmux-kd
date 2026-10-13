@@ -90,6 +90,7 @@ class CategorizationPipeline
         array $associatedGroupIds = [],
     ): array {
         $releaseName = $this->nzbSplitUnwrapper->unwrap($releaseName) ?? $releaseName;
+        $preExtractionName = $releaseName;
         $releaseName = $this->obfuscatedSubjectExtractor->extract($releaseName) ?? $releaseName;
 
         $groups = UsenetGroup::query()
@@ -122,6 +123,7 @@ class CategorizationPipeline
             forcedRootCategoryId: $forcedRootCategoryId === null
                 ? null
                 : (int) $forcedRootCategoryId,
+            preExtractionName: $preExtractionName,
         );
 
         $passable = new CategorizationPassable($context, $debug);

@@ -23,6 +23,9 @@ class TvCategorizer extends AbstractCategorizer
      */
     private const string ANIME_GROUPS_REGEX = '/(?:^|[.\-_ \[])(URANiME|ANiHLS|HaiKU|ANiURL|SkyAnime|Erai-raws|LostYears|Vodes|SubsPlease|Judas|Ember|EMBER|YuiSubs|ASW|Tsundere-Raws|Anime-Raws|Kekkan|SSA|MoyaiSubs|QCE|Nyanpasu|UCCUSS|NS|DKB|MTBB|NanDesuKa|smol|Cleo|ToshY|Kawaiika-Raws|Beatrice-Raws|Reaktor|FLE|Commie|HorribleSubs|Doki|FFF|UTW|Coalgirls|CoalGuys|Mezashite|Vivid|Kaylith|Underwater|gg|Chihiro|Hatsuyuki|Mazui|WhyNot|Migoto|Doutei|GJM|Asenshi|Inka-Subs|Akatsuki)(?:[.\-_ \]]|$)/i';
 
+    /** Fansub release shape: [GroupName] Title - 01 [ABCD1234]. */
+    private const string ANIME_HASH_REGEX = '/^\[.+\].*\d{2,3}.*\[[a-fA-F0-9]{8}\]/i';
+
     protected int $priority = 20;
 
     public function getName(): string
@@ -42,7 +45,7 @@ class TvCategorizer extends AbstractCategorizer
         // High-signal anime checks first. These can match release names that
         // don't follow standard TV S01E01 naming conventions (e.g. anime
         // fansub releases like "[Group] Show - 08 [1080p]").
-        if ($result = $this->checkAnimeStrongSignals($name, $context)) {
+        if ($result = $this->checkAnimeStrongSignals($context)) {
             return $result;
         }
 
@@ -125,7 +128,7 @@ class TvCategorizer extends AbstractCategorizer
             return true;
         }
         // Known anime release groups (should be treated as TV)
-        if (preg_match(self::ANIME_GROUPS_REGEX, $name)) {
+        if ($this->hasAnimeGroupTag($context)) {
             return true;
         }
 
@@ -137,7 +140,7 @@ class TvCategorizer extends AbstractCategorizer
      * groups, and anime hash patterns. These can match even when the release
      * name doesn't look like a typical TV release.
      */
-    protected function checkAnimeStrongSignals(string $name, ReleaseContext $context): ?CategorizationResult
+    protected function checkAnimeStrongSignals(ReleaseContext $context): ?CategorizationResult
     {
         // Anime Tosho poster (very strong signal)
         if ($context->poster !== '' && preg_match('/animetosho\.org/i', $context->poster)) {
@@ -148,11 +151,11 @@ class TvCategorizer extends AbstractCategorizer
             return $this->matched(Category::TV_ANIME, 0.9, 'anime_group_name');
         }
         // Known anime fansub/release group tag
-        if (preg_match(self::ANIME_GROUPS_REGEX, $name)) {
+        if ($this->hasAnimeGroupTag($context)) {
             return $this->matched(Category::TV_ANIME, 0.92, 'anime_group');
         }
         // Anime hash pattern: [GroupName] Title - 01 [ABCD1234]
-        if (preg_match('/^\[.+\].*\d{2,3}.*\[[a-fA-F0-9]{8}\]/i', $name)) {
+        if ($this->hasAnimeHashPattern($context)) {
             return $this->matched(Category::TV_ANIME, 0.9, 'anime_hash');
         }
 
@@ -169,11 +172,11 @@ class TvCategorizer extends AbstractCategorizer
             return $this->matched(Category::TV_ANIME, 0.95, 'anime_pattern');
         }
         // Known anime release groups - matches with brackets, dots, dashes, underscores, spaces, or at the start
-        if (preg_match(self::ANIME_GROUPS_REGEX, $name)) {
+        if ($this->hasAnimeGroupTag($context)) {
             return $this->matched(Category::TV_ANIME, 0.95, 'anime_group');
         }
         // Anime hash pattern: [GroupName] Title - 01 [ABCD1234]
-        if (preg_match('/^\[.+\].*\d{2,3}.*\[[a-fA-F0-9]{8}\]/i', $name)) {
+        if ($this->hasAnimeHashPattern($context)) {
             return $this->matched(Category::TV_ANIME, 0.9, 'anime_hash');
         }
         // Japanese title pattern with "no" particle (e.g., Shuumatsu.no.Valkyrie, Shingeki.no.Kyojin)
@@ -198,6 +201,27 @@ class TvCategorizer extends AbstractCategorizer
         }
 
         return null;
+    }
+
+    /**
+     * Whether a known anime fansub/release group tag is in the release name.
+     *
+     * The pipeline's obfuscated-subject extractor strips a leading bracketed
+     * tag, which is exactly where fansub groups put their name, so the name
+     * from before that extraction is checked as well as the cleaned one.
+     */
+    private function hasAnimeGroupTag(ReleaseContext $context): bool
+    {
+        return $context->matchesPatternInEitherName(self::ANIME_GROUPS_REGEX);
+    }
+
+    /**
+     * Whether the release name has the fansub shape "[Group] Title - 01 [ABCD1234]",
+     * which starts with the same leading tag the extractor strips.
+     */
+    private function hasAnimeHashPattern(ReleaseContext $context): bool
+    {
+        return $context->matchesPatternInEitherName(self::ANIME_HASH_REGEX);
     }
 
     protected function checkSport(string $name): ?CategorizationResult
