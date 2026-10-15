@@ -69,10 +69,12 @@ final class CategoryArbiterGateTest extends TestCase
 
     public function test_an_unmatched_release_with_a_readable_name_is_asked_about(): void
     {
-        $this->arbitrate($this->passable());
+        $passable = $this->passable();
+
+        $this->arbitrate($passable);
 
         Http::assertSentCount(1);
-        $this->assertSame(1, DecisionModelDecision::query()->count());
+        $this->assertSame(DecisionModelDecision::query()->sole()->id, $passable->decisionId);
     }
 
     /**
@@ -292,6 +294,7 @@ final class CategoryArbiterGateTest extends TestCase
             $passable->bestResult->categoryId,
             'A decision that could not be logged is not applied.',
         );
+        $this->assertNull($passable->decisionId);
     }
 
     private function arbitrate(CategorizationPassable $passable): void
@@ -324,6 +327,16 @@ final class CategoryArbiterGateTest extends TestCase
         if ($value !== null) {
             DB::table('settings')->insert(['name' => $name, 'value' => $value]);
         }
+    }
+
+    public function test_a_release_not_asked_about_carries_no_decision(): void
+    {
+        $passable = $this->passable(result: new CategorizationResult(Category::MOVIE_OTHER, 0.70, 'invented_rule'));
+
+        $this->arbitrate($passable);
+
+        $this->assertNull($passable->decisionId);
+        $this->assertArrayNotHasKey('decision_id', $passable->toArray());
     }
 
     private function assertNothingAsked(): void

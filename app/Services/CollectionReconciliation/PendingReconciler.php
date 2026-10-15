@@ -266,14 +266,17 @@ final class PendingReconciler
 
                 return 'formation_floor';
             }
-            $category = $decision->independentVideos() ? Category::OTHER_MISC
-                : (new CategorizationService)->determineCategory((int) $source->groups_id, $decision->label, $source->fromname)['categories_id'];
+            $categorize = $decision->independentVideos() ? null : new CategorizationService;
+            $categorization = $categorize?->determineCategory((int) $source->groups_id, $decision->label, $source->fromname)
+                ?? ['categories_id' => Category::OTHER_MISC];
+            $category = $categorization['categories_id'];
             $releaseId = (int) Release::insertRelease(['name' => $decision->label, ...Release::searchNameValues($decision->label),
                 'totalpart' => count($decision->accepted), 'declaredfiles' => $decision->declaredTotal,
                 'groups_id' => $source->groups_id, 'guid' => (string) Str::uuid(), 'postdate' => $source->date,
                 'fromname' => $source->fromname, 'size' => $size, 'categories_id' => $category,
                 'isrenamed' => 0, 'is_trusted_name' => false, 'predb_id' => 0, 'nzbstatus' => 0,
                 'completion' => $decision->completion()]);
+            $categorize?->attachDecisionToRelease($categorization, $releaseId);
             $postingId = DB::table('reconciled_postings')->insertGetId(['release_id' => $releaseId,
                 'digest' => PendingInventory::digest($decision->accepted), 'state' => 'created',
                 'budget_id' => app(CollectionAdmission::class)->decisionId((int) array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->sourceId, array_values(array_filter($decision->accepted, static fn (PostingFile $file): bool => $file->isBasePar2()))[0]->firstArticle()),

@@ -44,6 +44,7 @@ final class CategoryArbiter
     /** A part counter such as `[04/85]` and everything after it. */
     private const string PART_COUNTER = '/\s*(?:-\s*)?\[\d+\/\d+\].*$/u';
 
+    /** A trailing archive or container extension, such as `.part03` or `.rar`. */
     private const string ARCHIVE_EXTENSION = '/\.(?:part\d+|vol\d+\+\d+|par2|rar|r\d{2}|7z|\d{3}|zip|bin|mkv|mp4|avi|nzb|iso)$/iu';
 
     /** Two or more letters each followed by a dot, as in `F.B.I.`. */
@@ -169,7 +170,7 @@ final class CategoryArbiter
         ];
 
         // Logged before the result changes, so no applied decision goes unrecorded.
-        $this->log->record($run, self::SUBJECT_TYPE, $releaseId, $pipelineAnswer, $settings->mode, $accepted !== null);
+        $passable->decisionId = (int) $this->log->record($run, self::SUBJECT_TYPE, $releaseId, $pipelineAnswer, $settings->mode, $accepted !== null)->id;
 
         if ($settings->mode !== DecisionMode::Apply) {
             return;

@@ -754,6 +754,7 @@ class NzbImportService
         }
 
         $categoryId = $nzbDetails['nzbCategoryId'];
+        $determinedCategory = [];
         if (! \is_int($categoryId)) {
             $determinedCategory = $this->category->determineCategory($nzbDetails['groups_id'], $cleanName, $escapedFromName);
             $categoryId = (int) $determinedCategory['categories_id'];
@@ -837,6 +838,7 @@ class NzbImportService
         }
 
         $this->relId = $relID;
+        $this->category->attachDecisionToRelease($determinedCategory, $relID);
 
         return NzbImportStatus::Inserted;
     }

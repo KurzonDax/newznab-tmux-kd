@@ -6,6 +6,7 @@ namespace App\Services\Categorization;
 
 use App\Models\Category;
 use App\Services\Categorization\Pipes\AbstractCategorizationPipe;
+use App\Services\DecisionModel\DecisionLog;
 use Blacklight\Categorize;
 use Illuminate\Support\Facades\DB;
 
@@ -55,6 +56,23 @@ class CategorizationService
         }
 
         return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds, $releaseId);
+    }
+
+    /**
+     * Link the decision-model row behind a categorization made before its
+     * release existed to the release stored from it. Nothing happens when
+     * the model was not asked. The link is made after the caller's
+     * transaction commits and never fails the caller.
+     *
+     * @param  array<string, mixed>  $categorization  A result of {@see self::determineCategory()}.
+     */
+    public function attachDecisionToRelease(array $categorization, int $releaseId): void
+    {
+        $decisionId = $categorization['decision_id'] ?? null;
+
+        if (\is_int($decisionId)) {
+            app(DecisionLog::class)->attachSubjectAfterCommit($decisionId, $releaseId);
+        }
     }
 
     /**

@@ -6,9 +6,11 @@ namespace Tests\Unit;
 
 use App\Enums\BlacklistConstants;
 use App\Enums\NzbImportStatus;
+use App\Facades\Search;
 use App\Models\Category;
 use App\Services\BlacklistService;
 use App\Services\Nzb\NzbImportService;
+use App\Services\Nzb\NzbService;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Support\Data\DuplicateAbsorbResult;
 use App\Support\ReleaseNameNormalizer;
@@ -18,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ArbitratesCategoriesInShadow;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\NeverBlacklistedService;
 use Tests\Support\PhantomTrailingSets;
@@ -26,7 +29,10 @@ use Tests\TestCase;
 
 final class NzbImportServiceTest extends TestCase
 {
+    use ArbitratesCategoriesInShadow;
     use IsolatedSqliteDatabase;
+
+    private const string ARBITRATED_NAME = 'An Invented Evening With Nobody In Particular';
 
     /**
      * @return array<string, string>
@@ -522,6 +528,49 @@ final class NzbImportServiceTest extends TestCase
         $this->assertSame(0, DB::table('kept_releases')->count());
     }
 
+    public function test_a_decision_made_while_importing_is_linked_to_the_imported_release(): void
+    {
+        $this->createArbitratedImportTables();
+        $this->arbitrateCategoriesInShadow();
+
+        $this->duplicateImporter()->beginImport(
+            [$this->makeImportableNzbFile(self::ARBITRATED_NAME.' yEnc (1/1)')],
+            resultCallback: $this->collectResults($results),
+            releaseName: self::ARBITRATED_NAME,
+        );
+
+        $this->assertSame(NzbImportStatus::Inserted, $results[0]['status']);
+        $this->assertSame(
+            (int) DB::table('releases')->sole()->id,
+            (int) DB::table('decision_model_decisions')->sole()->subject_id,
+        );
+        $this->assertSame($results[0]['release_id'], (int) DB::table('decision_model_decisions')->value('subject_id'));
+        $this->assertSame([], $this->decisionLinkFailures);
+    }
+
+    public function test_a_decision_that_cannot_be_linked_leaves_the_import_inserted_with_its_nzb(): void
+    {
+        $this->createArbitratedImportTables();
+        $this->arbitrateCategoriesInShadow();
+        $this->failDecisionLinking();
+
+        $this->duplicateImporter()->beginImport(
+            [$this->makeImportableNzbFile(self::ARBITRATED_NAME.' yEnc (1/1)')],
+            resultCallback: $this->collectResults($results),
+            releaseName: self::ARBITRATED_NAME,
+        );
+
+        $release = DB::table('releases')->sole();
+        $this->assertSame(
+            [NzbImportStatus::Inserted, (int) $release->id, $release->guid, null],
+            [$results[0]['status'], $results[0]['release_id'], $results[0]['release_guid'], $results[0]['error']],
+        );
+        $this->assertFileExists(app(NzbService::class)->getNzbPath($release->guid));
+        $decision = DB::table('decision_model_decisions')->sole();
+        $this->assertNull($decision->subject_id);
+        $this->assertSame([(int) $decision->id], array_column($this->decisionLinkFailures, 'decision_id'));
+    }
+
     /**
      * @param  list<array<string, mixed>>|null  $results
      * @return \Closure(array<string, mixed>): void
@@ -650,6 +699,21 @@ final class NzbImportServiceTest extends TestCase
             'declaredfiles' => 1,
             'nzbstatus' => 1,
         ]);
+    }
+
+    /**
+     * The tables a real import and its categorization write to and read.
+     */
+    private function createArbitratedImportTables(): void
+    {
+        config(['nntmux_settings.path_to_nzbs' => $this->makeTempDirectory('arbitrated-import-nzb').'/']);
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        ProductionTables::fromAuthority()->create('releases');
+        ProductionTables::fromAuthority()->create('predb', ['id', 'title', 'filename']);
+        ProductionTables::fromAuthority()->create('usenet_groups', [
+            'id', 'name', 'route_obfuscated_names', 'obfuscated_default_root_categories_id', 'forced_root_categories_id',
+        ]);
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.test']);
     }
 
     private function createKeptReleaseTables(bool $withReleases = true): void
