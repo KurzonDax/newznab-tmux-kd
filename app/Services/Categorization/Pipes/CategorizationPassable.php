@@ -36,6 +36,12 @@ class CategorizationPassable
      */
     public array $miscAnalysis = [];
 
+    /**
+     * The decision-model log row written for this release, so a caller that
+     * stores the release afterwards can link the row to it.
+     */
+    public ?int $decisionId = null;
+
     public function __construct(ReleaseContext $context, bool $debug = false)
     {
         $this->context = $context;
@@ -95,6 +101,10 @@ class CategorizationPassable
     public function toArray(): array
     {
         $returnValue = ['categories_id' => $this->bestResult->categoryId];
+
+        if ($this->decisionId !== null) {
+            $returnValue['decision_id'] = $this->decisionId;
+        }
 
         if ($this->debug) {
             $returnValue['debug'] = [

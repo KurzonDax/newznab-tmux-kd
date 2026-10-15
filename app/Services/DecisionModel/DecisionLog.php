@@ -6,6 +6,9 @@ namespace App\Services\DecisionModel;
 
 use App\Models\DecisionModelCriteria;
 use App\Models\DecisionModelDecision;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Writes one row per decision, whatever the use case.
@@ -38,6 +41,54 @@ final class DecisionLog
             'applied' => $applied,
             'failure_reason' => $run->failureReason,
         ]);
+    }
+
+    /**
+     * Link a decision made before its subject was stored to the subject's id.
+     * A row already linked keeps its subject; a row that is gone is left alone.
+     */
+    public function attachSubject(int $decisionId, int $subjectId): void
+    {
+        DecisionModelDecision::query()
+            ->whereKey($decisionId)
+            ->whereNull('subject_id')
+            ->update(['subject_id' => $subjectId]);
+    }
+
+    /**
+     * Attach once the caller's transaction commits, or at once outside one.
+     * A rolled-back transaction discards the attachment with its own work.
+     *
+     * The link is telemetry: a failure leaves the decision unlinked, is
+     * reported, and never reaches the caller, whose work is already done.
+     */
+    public function attachSubjectAfterCommit(int $decisionId, int $subjectId): void
+    {
+        try {
+            DB::afterCommit(function () use ($decisionId, $subjectId): void {
+                try {
+                    $this->attachSubject($decisionId, $subjectId);
+                } catch (Throwable $e) {
+                    $this->reportAttachFailure($decisionId, $subjectId, $e);
+                }
+            });
+        } catch (Throwable $e) {
+            $this->reportAttachFailure($decisionId, $subjectId, $e);
+        }
+    }
+
+    private function reportAttachFailure(int $decisionId, int $subjectId, Throwable $e): void
+    {
+        try {
+            Log::warning('decision_model.attach_subject_failed', [
+                'decision_id' => $decisionId,
+                'subject_id' => $subjectId,
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+            ]);
+        } catch (Throwable) {
+            // The report is as optional as the link it describes.
+        }
     }
 
     /**

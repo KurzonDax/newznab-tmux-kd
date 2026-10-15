@@ -8,6 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Facades\Search;
 use App\Listeners\RecategorizeReleaseAfterNameFix;
 use App\Models\Category;
+use App\Models\DecisionModelDecision;
 use App\Models\Predb;
 use App\Models\Release;
 use App\Models\UsenetGroup;
@@ -36,6 +37,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ArbitratesCategoriesInShadow;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ObfuscationRecovery\SyntheticPosting;
 use Tests\Support\ProductionTables;
@@ -45,6 +47,7 @@ use ZipArchive;
 
 class ReleaseNameFixedRecategorizationTest extends TestCase
 {
+    use ArbitratesCategoriesInShadow;
     use CreatesProcessingConfiguration;
     use IsolatedSqliteDatabase;
 
@@ -1305,6 +1308,50 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame([(int) $release->id], $synchronized);
     }
 
+    public function test_a_name_fix_recategorizes_the_release_once(): void
+    {
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $release = Release::factory()->create([
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'guid' => str_repeat('o', 40),
+            'leftguid' => 'o',
+        ]);
+        $categorization = Mockery::mock(CategorizationService::class);
+        $categorization->shouldReceive('determineCategory')->once()->andReturn(['categories_id' => Category::MOVIE_OTHER]);
+        $this->app->instance(CategorizationService::class, $categorization);
+
+        event(new ReleaseNameFixed((int) $release->id, 'old-name', 'new-name', Category::OTHER_HASHED, 1));
+
+        $this->assertSame(Category::MOVIE_OTHER, (int) $release->fresh()->categories_id);
+    }
+
+    public function test_a_shown_rename_asks_the_decision_model_once_and_links_the_decision(): void
+    {
+        $release = $this->releaseForArbitratedRename();
+
+        $shown = $this->renameForArbitration($release, write: true);
+
+        $decision = DecisionModelDecision::query()->sole();
+        $this->assertSame((int) $release->id, $decision->subject_id);
+        $this->assertSame('An.Invented.Evening.With.Nobody.In.Particular', $decision->state['release_name'] ?? null);
+        $this->assertSame('An.Invented.Evening.With.Nobody.In.Particular', $release->fresh()->searchname);
+        $this->assertSame(Category::OTHER_MISC, (int) $release->fresh()->categories_id);
+        $this->assertSame([['categories_id' => Category::OTHER_MISC]], $shown, 'The display shows the category the rename stored.');
+    }
+
+    public function test_a_rename_that_is_only_shown_asks_once_and_leaves_the_release_alone(): void
+    {
+        $release = $this->releaseForArbitratedRename();
+
+        $shown = $this->renameForArbitration($release, write: false);
+
+        $decision = DecisionModelDecision::query()->sole();
+        $this->assertSame((int) $release->id, $decision->subject_id);
+        $this->assertSame([['categories_id' => Category::OTHER_MISC, 'decision_id' => $decision->id]], $shown);
+        $this->assertSame('d41d8cd98f00b204e9800998ecf8427e', $release->fresh()->searchname);
+    }
+
     public function test_name_fix_listener_honors_an_explicit_category_override(): void
     {
         Search::shouldReceive('updateRelease')->once();
@@ -1603,6 +1650,57 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $this->assertSame('Recovered.Movie.2014.720p.WEB-DL-GROUP', $untrusted->fresh()->searchname);
         $this->assertSame(0, (int) $untrusted->fresh()->is_trusted_name);
         $this->assertSame([(int) $downgraded->id, (int) $untrusted->id], $synchronized);
+    }
+
+    private function releaseForArbitratedRename(): Release
+    {
+        config(['nntmux.echocli' => true]);
+        $this->arbitrateCategoriesInShadow();
+        Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
+        $group = UsenetGroup::query()->create(['name' => 'alt.binaries.invented', 'active' => 1, 'backfill' => 0]);
+
+        return Release::factory()->create([
+            'name' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'searchname' => 'd41d8cd98f00b204e9800998ecf8427e',
+            'fromname' => 'poster@example.com',
+            'groups_id' => $group->id,
+            'categories_id' => Category::OTHER_HASHED,
+            'iscategorized' => 1,
+            'isrenamed' => 0,
+            'guid' => str_repeat('d', 40),
+            'leftguid' => 'd',
+        ]);
+    }
+
+    /**
+     * Rename through the name fixer with the CLI display on.
+     *
+     * @return list<array<string, mixed>> The category each display was given.
+     */
+    private function renameForArbitration(Release $release, bool $write): array
+    {
+        $service = new class extends ReleaseUpdateService
+        {
+            /** @var list<array<string, mixed>> */
+            public array $shown = [];
+
+            public function echoReleaseInfo(object $release, string $newName, array $determinedCategory, string $type, string $method): void
+            {
+                $this->shown[] = $determinedCategory;
+            }
+        };
+
+        $service->updateRelease(
+            $release->fresh(),
+            'An.Invented.Evening.With.Nobody.In.Particular',
+            'nfoCheck: Title Match',
+            $write,
+            'NFO, ',
+            true,
+            true,
+        );
+
+        return $service->shown;
     }
 
     private function createSchema(): void

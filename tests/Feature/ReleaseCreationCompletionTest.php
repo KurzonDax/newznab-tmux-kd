@@ -16,7 +16,9 @@ use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ArbitratesCategoriesInShadow;
 use Tests\TestCase;
+use Throwable;
 
 /**
  * `completion` is measured from the collections/binaries/parts rows at creation time, while
@@ -24,6 +26,8 @@ use Tests\TestCase;
  */
 class ReleaseCreationCompletionTest extends TestCase
 {
+    use ArbitratesCategoriesInShadow;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -322,6 +326,93 @@ class ReleaseCreationCompletionTest extends TestCase
         $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
 
         $this->assertSame([0], DB::table('releases')->pluck('is_imported')->map(intval(...))->all());
+    }
+
+    #[Test]
+    public function a_decision_made_while_creating_a_release_is_linked_to_that_release(): void
+    {
+        $this->arbitrateCategoriesInShadow();
+        $this->insertCollection(100, 'hash-arbitrated', 'An.Invented.Evening.With.Nobody.In.Particular');
+        $this->insertBinary(100, 1000, 'An.Invented.Evening.With.Nobody.In.Particular.mkv', declaredParts: 10, presentParts: 10);
+
+        $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
+
+        $this->assertSame(
+            (int) DB::table('releases')->value('id'),
+            (int) DB::table('decision_model_decisions')->sole()->subject_id,
+        );
+        $this->assertSame([], $this->decisionLinkFailures);
+    }
+
+    #[Test]
+    public function a_decision_that_cannot_be_linked_leaves_the_created_release_in_place(): void
+    {
+        $this->arbitrateCategoriesInShadow();
+        $this->failDecisionLinking();
+        $this->insertCollection(100, 'hash-unlinked', 'An.Invented.Evening.With.Nobody.In.Particular');
+        $this->insertBinary(100, 1000, 'An.Invented.Evening.With.Nobody.In.Particular.mkv', declaredParts: 10, presentParts: 10);
+
+        $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
+
+        $releaseId = (int) DB::table('releases')->sole()->id;
+        $collection = DB::table('collections')->find(100);
+        $this->assertSame(
+            [CollectionFileCheckStatus::Inserted->value, $releaseId],
+            [(int) $collection->filecheck, (int) $collection->releases_id],
+        );
+        $this->assertTrue(DB::table('release_regexes')->where('releases_id', $releaseId)->exists());
+        $decision = DB::table('decision_model_decisions')->sole();
+        $this->assertNull($decision->subject_id);
+        $this->assertSame(
+            [['decision_id' => (int) $decision->id, 'subject_id' => $releaseId]],
+            array_map(static fn (array $context): array => array_intersect_key($context, array_flip(['decision_id', 'subject_id'])), $this->decisionLinkFailures),
+        );
+    }
+
+    #[Test]
+    public function a_rolled_back_creation_links_nothing_and_the_next_attempt_links_its_own_release(): void
+    {
+        $this->arbitrateCategoriesInShadow();
+        $this->insertCollection(100, 'hash-retried', 'An.Invented.Evening.With.Nobody.In.Particular');
+        $this->insertBinary(100, 1000, 'An.Invented.Evening.With.Nobody.In.Particular.mkv', declaredParts: 10, presentParts: 10);
+        DB::statement("CREATE TRIGGER fail_collection_insert BEFORE UPDATE OF filecheck ON collections
+            BEGIN SELECT RAISE(ABORT, 'invented creation failure'); END");
+
+        try {
+            $this->service()->createReleases(null, 10, false);
+            $this->fail('The creation was expected to roll back.');
+        } catch (Throwable $e) {
+            $this->assertStringContainsString('invented creation failure', $e->getMessage());
+        }
+
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame(0, DB::table('decision_model_decisions')->count());
+        $this->assertSame(0, $this->decisionLinkUpdates);
+
+        DB::statement('DROP TRIGGER fail_collection_insert');
+        $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
+
+        $this->assertSame(
+            (int) DB::table('releases')->sole()->id,
+            (int) DB::table('decision_model_decisions')->sole()->subject_id,
+        );
+        $this->assertSame(1, $this->decisionLinkUpdates);
+    }
+
+    #[Test]
+    public function a_collection_hash_conflict_links_its_decision_to_no_release(): void
+    {
+        $this->arbitrateCategoriesInShadow();
+        DB::table('releases')->insert(['id' => 7, 'name' => 'Existing.Release', 'searchname' => 'Existing.Release',
+            'guid' => 'existing-guid', 'size' => 5, 'groups_id' => 1, 'collectionhash' => 'hash-conflict']);
+        $this->insertCollection(100, 'hash-conflict', 'An.Invented.Evening.With.Nobody.In.Particular');
+        $this->insertBinary(100, 1000, 'An.Invented.Evening.With.Nobody.In.Particular.mkv', declaredParts: 10, presentParts: 10);
+
+        $this->service()->createReleases(null, 10, false);
+
+        $this->assertSame([7], DB::table('releases')->pluck('id')->map(intval(...))->all());
+        $this->assertNull(DB::table('decision_model_decisions')->sole()->subject_id);
+        $this->assertSame(0, $this->decisionLinkUpdates);
     }
 
     private function service(): ReleaseCreationService

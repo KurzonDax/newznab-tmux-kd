@@ -69,10 +69,12 @@ final class CategoryArbiterGateTest extends TestCase
 
     public function test_an_unmatched_release_with_a_readable_name_is_asked_about(): void
     {
-        $this->arbitrate($this->passable());
+        $passable = $this->passable();
+
+        $this->arbitrate($passable);
 
         Http::assertSentCount(1);
-        $this->assertSame(1, DecisionModelDecision::query()->count());
+        $this->assertSame(DecisionModelDecision::query()->sole()->id, $passable->decisionId);
     }
 
     /**
@@ -174,6 +176,18 @@ final class CategoryArbiterGateTest extends TestCase
             'no words' => ['2019 1080 720 5 1'],
             'a hash' => ['d41d8cd98f00b204e9800998ecf8427e'],
             'empty' => [''],
+            'a mixed-case token' => ['Bo26e1C91HqsUb'],
+            'a mixed-case token with digits' => ['uXD9VXJqiW'],
+            'a mixed-case letter token' => ['obHpUgXltY'],
+            'a capitalised mixed-case letter token' => ['AkowycYukofqIC'],
+            'a lowercase-led mixed-case letter token' => ['nPCrdfUKEO'],
+            'digits and letters run together' => ['0374455s02mux'],
+            'a rar part with a part counter' => ['25FYEKgpdJyLVBrQ.part03.rar - [04/85]'],
+            'a par2 volume with a part counter' => ['05zeyO5xPBQelrze.vol722+7.par2 - [187/187]'],
+            'a short stem with a part' => ['htvTvz2.part01'],
+            'a numbered bin' => ['1575353.bin'],
+            'a short stem with a container' => ['asf5.mkv'],
+            'a generated word and a timestamp' => ['Qurqqqaiuy-5375556830-202610142308'],
         ];
     }
 
@@ -181,6 +195,74 @@ final class CategoryArbiterGateTest extends TestCase
     public function test_a_release_whose_cleaned_name_is_not_readable_is_not_asked_about(string $name): void
     {
         $this->arbitrate($this->passable(name: $name));
+
+        $this->assertNothingAsked();
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function namesThatLookLikeTitles(): array
+    {
+        return [
+            'words' => ['Beatport Top 100 Hype 2026 August'],
+            'a year and a tag' => ['The Music Man (1962) NLsub'],
+            'a foreign title' => ['Discofox Sommer Party Hits 2026'],
+            'a subject with a part counter after the title' => ['Plex - Optimized for streaming [720p/MP4/AAC Stereo] R.I.P - Intelligence (2014) Season 1 [1/183] - "R.I.P - Intelligence (2014).part001.rar"'],
+            'a short subject with a part counter' => ['Kuncen (2025) [03/21] - "Kuncen (2025).part01.rar"'],
+            'accented words' => ['Živá oběť'],
+            'an accented word' => ['Bez provázků'],
+            'a dotted acronym' => ['F.B.I. (2025)'],
+            'an acronym leading into a word' => ['CCleaner 6'],
+            'an uppercase piece' => ['T2Educacao.CFP.2026-CL'],
+            'a lowercase piece' => ['vedett-goldencompass1080p'],
+            'one capitalised word' => ['Theseus'],
+            'camel case' => ['BloodRayne (2005)'],
+        ];
+    }
+
+    /**
+     * The cleaned name stays readable so only the title check, which reads
+     * the name as posted, is under test.
+     */
+    #[DataProvider('namesThatLookLikeTitles')]
+    public function test_a_release_whose_name_as_posted_looks_like_a_title_is_asked_about(string $name): void
+    {
+        $this->arbitrate($this->passable(preExtractionName: $name));
+
+        Http::assertSentCount(1);
+        $this->assertSame(1, DecisionModelDecision::query()->count());
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function obfuscatedNamesAsPostedAndCleaned(): array
+    {
+        return [
+            'a short stem with a container' => ['Asf5 Mkv', 'asf5.mkv'],
+            'a rar part with a part counter' => ['25FYEKgpdJyLVBrQ part03 rar - [04/85]', '25FYEKgpdJyLVBrQ.part03.rar - [04/85]'],
+        ];
+    }
+
+    #[DataProvider('obfuscatedNamesAsPostedAndCleaned')]
+    public function test_the_title_check_reads_the_name_as_posted_not_the_cleaned_name(string $cleaned, string $posted): void
+    {
+        $this->arbitrate($this->passable(name: $cleaned, preExtractionName: $posted));
+
+        $this->assertNothingAsked();
+    }
+
+    public function test_without_a_separate_name_as_posted_the_title_check_reads_the_cleaned_name(): void
+    {
+        $this->arbitrate($this->passable(name: 'Bo26e1C91HqsUb'));
+
+        $this->assertNothingAsked();
+    }
+
+    public function test_an_empty_name_as_posted_is_not_a_title(): void
+    {
+        $this->arbitrate($this->passable(preExtractionName: ''));
 
         $this->assertNothingAsked();
     }
@@ -212,6 +294,7 @@ final class CategoryArbiterGateTest extends TestCase
             $passable->bestResult->categoryId,
             'A decision that could not be logged is not applied.',
         );
+        $this->assertNull($passable->decisionId);
     }
 
     private function arbitrate(CategorizationPassable $passable): void
@@ -244,6 +327,16 @@ final class CategoryArbiterGateTest extends TestCase
         if ($value !== null) {
             DB::table('settings')->insert(['name' => $name, 'value' => $value]);
         }
+    }
+
+    public function test_a_release_not_asked_about_carries_no_decision(): void
+    {
+        $passable = $this->passable(result: new CategorizationResult(Category::MOVIE_OTHER, 0.70, 'invented_rule'));
+
+        $this->arbitrate($passable);
+
+        $this->assertNull($passable->decisionId);
+        $this->assertArrayNotHasKey('decision_id', $passable->toArray());
     }
 
     private function assertNothingAsked(): void

@@ -36,6 +36,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Tests\Support\ArbitratesCategoriesInShadow;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
 use Tests\Support\Reconciliation\Par2Fixture;
 use Tests\Support\TestBinariesHarness;
@@ -43,6 +44,7 @@ use Tests\TestCase;
 
 class PendingReconciliationTest extends TestCase
 {
+    use ArbitratesCategoriesInShadow;
     use CreatesPostingSchema;
 
     private array $courseHeaders = [];
@@ -227,6 +229,85 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame('associated', $service->reconcile($id, 1));
 
         $this->assertSame([0], DB::table('releases')->pluck('is_imported')->map(intval(...))->all());
+    }
+
+    public function test_a_decision_made_while_reconciling_is_linked_to_the_formed_release(): void
+    {
+        [$service, $id] = $this->quietCourseWithArbitration();
+
+        $this->assertSame('associated', $service->reconcile($id, 1));
+
+        $this->assertSame(
+            (int) DB::table('releases')->sole()->id,
+            (int) DB::table('decision_model_decisions')->sole()->subject_id,
+        );
+        $this->assertSame([], $this->decisionLinkFailures);
+    }
+
+    public function test_a_decision_that_cannot_be_linked_leaves_the_reconciled_release_in_place(): void
+    {
+        [$service, $id] = $this->quietCourseWithArbitration();
+        $this->failDecisionLinking();
+
+        $this->assertSame('associated', $service->reconcile($id, 1));
+
+        $releaseId = (int) DB::table('releases')->sole()->id;
+        $this->assertSame('created', DB::table('reconciled_postings')->where('release_id', $releaseId)->value('state'));
+        $this->assertSame([$releaseId], DB::table('collections')->distinct()->pluck('releases_id')->map(intval(...))->all());
+        $decision = DB::table('decision_model_decisions')->sole();
+        $this->assertNull($decision->subject_id);
+        $this->assertSame([(int) $decision->id], array_column($this->decisionLinkFailures, 'decision_id'));
+    }
+
+    public function test_a_rolled_back_reconciliation_links_nothing_and_the_next_attempt_links_its_own_release(): void
+    {
+        [$service, $id] = $this->quietCourseWithArbitration();
+        DB::statement("CREATE TRIGGER fail_posting_insert BEFORE INSERT ON reconciled_postings
+            BEGIN SELECT RAISE(ABORT, 'invented reconciliation failure'); END");
+
+        $this->assertStringContainsString('invented reconciliation failure', $service->reconcile($id, 1));
+
+        $this->assertSame(0, DB::table('releases')->count());
+        $this->assertSame(0, DB::table('decision_model_decisions')->count());
+        $this->assertSame(0, $this->decisionLinkUpdates);
+
+        DB::statement('DROP TRIGGER fail_posting_insert');
+        DB::table('reconciliation_claims')->delete();
+        $this->assertSame('associated', $service->reconcile($id, 1));
+
+        $this->assertSame(
+            (int) DB::table('releases')->sole()->id,
+            (int) DB::table('decision_model_decisions')->sole()->subject_id,
+        );
+        $this->assertSame(1, $this->decisionLinkUpdates);
+    }
+
+    public function test_independent_videos_are_reconciled_without_asking_or_linking(): void
+    {
+        [$service, $id] = $this->quietCourseWithArbitration(singleVideo: false);
+
+        $this->assertSame('associated', $service->reconcile($id, 1));
+
+        $this->assertSame(0, DB::table('decision_model_decisions')->count());
+        $this->assertSame(0, $this->decisionLinkUpdates);
+    }
+
+    /**
+     * @return array{PendingReconciler, int}
+     */
+    private function quietCourseWithArbitration(bool $singleVideo = true): array
+    {
+        (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
+        (require database_path('migrations/2026_09_10_140952_create_reconciled_artifact_operations.php'))->up();
+        // A posting of several independent videos is never categorized.
+        $course = $this->ingestCourse(files: $singleVideo ? array_diff_key(
+            Par2Fixture::course(),
+            array_flip(array_slice(array_keys(Par2Fixture::course()), 1, 14)),
+        ) : null);
+        DB::table('usenet_groups')->update(['last_record_postdate' => '2026-01-01 14:00:00']);
+        $this->arbitrateCategoriesInShadow();
+
+        return $course;
     }
 
     #[DataProvider('lateWriterClocks')]
@@ -724,9 +805,9 @@ class PendingReconciliationTest extends TestCase
     }
 
     /** @return array{PendingReconciler, int} */
-    private function ingestCourse(array|string|null $omit = null, bool $multipart = false): array
+    private function ingestCourse(array|string|null $omit = null, bool $multipart = false, ?array $files = null): array
     {
-        $payloads = Par2Fixture::course();
+        $payloads = $files ?? Par2Fixture::course();
         $manifest = Par2Fixture::metadata($payloads);
         $payloads['Course.Set.par2'] = $manifest;
         for ($i = 0; $i < 10; $i++) {
@@ -737,7 +818,7 @@ class PendingReconciliationTest extends TestCase
         foreach ($payloads as $filename => $data) {
             $i = ++$ordinal;
             $id = sprintf('<fixture-%06d@example.invalid>', $i);
-            $subject = sprintf('[%02d/33] - "%s" yEnc (1/1)', $i, $filename);
+            $subject = sprintf('[%02d/%d] - "%s" yEnc (1/1)', $i, count($payloads), $filename);
             $headers[] = ['Number' => 99999 + $i, 'Subject' => $subject, 'From' => 'Synthetic Poster A',
                 'Date' => 'Thu, 01 Jan 2026 12:00:00 +0000', 'Message-ID' => $id, 'Bytes' => strlen($data),
                 'Xref' => 'news.example.invalid alt.binaries.boneless:'.(99999 + $i)];
@@ -758,8 +839,10 @@ class PendingReconciliationTest extends TestCase
             }
         }
         (new TestBinariesHarness)->simulateScan(array_values(array_filter($headers, static fn ($header): bool => ! array_any((array) $omit, static fn ($name): bool => str_contains($header['Subject'], '"'.$name.'"')))), ['id' => 1, 'name' => 'alt.binaries.boneless']);
-        $this->assertSame(17 - count(array_filter((array) $omit, static fn ($name): bool => str_ends_with($name, '.mkv'))), DB::table('collections')->count());
-        $this->assertSame(33 - count((array) $omit), DB::table('binaries')->count());
+        // A collection per video, one for the bundle and one for the PAR2 set.
+        $videos = static fn (array $names): int => count(array_filter($names, static fn ($name): bool => str_ends_with($name, '.mkv')));
+        $this->assertSame($videos(array_keys($payloads)) + 2 - $videos((array) $omit), DB::table('collections')->count());
+        $this->assertSame(count($payloads) - count((array) $omit), DB::table('binaries')->count());
         $provider = new NntpProvider(1, 'fixture', 'example.invalid', 119, false, '', '', 1, 5, true);
         $client = Mockery::mock(BoundedProviderClient::class);
         $client->shouldReceive('fetchBoundedArticle')->andReturnUsing(function ($id, $head) use ($responses): BoundedArticleResponse {

@@ -294,18 +294,6 @@ class ReleaseUpdateService
 
                 $this->fixed++;
 
-                $determinedCategory = null;
-                if ($this->echoOutput && $show) {
-                    $determinedCategory = $this->category->determineCategory(
-                        $release->groups_id,
-                        $newTitle,
-                        ! empty($release->fromname) ? $release->fromname : '',
-                        releaseId: (int) $release->releases_id,
-                    );
-
-                    $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
-                }
-
                 if ($echo === true) {
                     $this->performDatabaseUpdate(
                         $release,
@@ -317,6 +305,21 @@ class ReleaseUpdateService
                         $imdbId,
                         recoveryEvidence: $recoveryEvidence,
                     );
+                }
+
+                if ($this->echoOutput && $show) {
+                    // A written rename was categorized by the rename listener inside
+                    // the update; show what it stored rather than categorizing again.
+                    $determinedCategory = $echo === true
+                        ? ['categories_id' => Release::query()->whereKey((int) $release->releases_id)->value('categories_id') ?? $release->categories_id]
+                        : $this->category->determineCategory(
+                            $release->groups_id,
+                            $newTitle,
+                            ! empty($release->fromname) ? $release->fromname : '',
+                            releaseId: (int) $release->releases_id,
+                        );
+
+                    $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
                 }
             }
         }

@@ -275,6 +275,7 @@ class ReleaseCreationService
                     }
 
                     if ($releaseID !== null) {
+                        $categorize->attachDecisionToRelease($determinedCategory, (int) $releaseID);
                         if ($recovery !== null) {
                             DB::table('obfuscation_recovery_publications')->where('id', $recovery->publicationId)->update([
                                 'releases_id' => $releaseID, 'guid' => $recovery->guid, 'state' => 'created',

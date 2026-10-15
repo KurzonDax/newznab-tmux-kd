@@ -188,9 +188,11 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             'fromname' => 'poster@example.test',
         ]);
 
+        // Only the dry run categorizes for its display; a live rename shows the
+        // category the rename listener stored.
         $category = Mockery::mock(CategorizationService::class);
         $category->shouldReceive('determineCategory')
-            ->twice()
+            ->once()
             ->with(1, $finalizedName, 'poster@example.test', false, [], 10)
             ->andReturn(['categories_id' => Category::TV_HD]);
 
