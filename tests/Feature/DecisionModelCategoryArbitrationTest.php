@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\DecisionModelDecision;
+use App\Services\Categorization\Arbitration\CategoryArbiter;
 use App\Services\Categorization\CategorizationService;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -422,6 +423,67 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $result = $this->categorize(self::UNMATCHED_NAME, groupId: self::TV_NAMED_FORCED_GROUP_ID);
 
         $this->assertSame(Category::TV_DOCU, $result['categories_id']);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function obfuscatedNamesAsPosted(): array
+    {
+        return [
+            'a short stem with a container' => ['asf5.mkv'],
+            'a rar part with a part counter' => ['25FYEKgpdJyLVBrQ.part03.rar - [04/85]'],
+        ];
+    }
+
+    #[DataProvider('obfuscatedNamesAsPosted')]
+    public function test_a_name_posted_as_an_obfuscated_file_is_never_sent_to_the_model(string $name): void
+    {
+        Http::fake();
+        $pipelineCategory = $this->categorize($name)['categories_id'];
+
+        // The arbiter keeps the mode it read; a fresh one reads the new mode.
+        $this->app->forgetInstance(CategoryArbiter::class);
+        $this->mode('apply');
+        $this->fakeAnswers(['tv', 0.95], ['hd', 0.95]);
+
+        $this->assertSame($pipelineCategory, $this->categorize($name)['categories_id']);
+        Http::assertNothingSent();
+        $this->assertSame(0, DecisionModelDecision::query()->count());
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function titlesAsPosted(): array
+    {
+        return [
+            'words' => ['An Invented Evening'],
+            'a dotted acronym before a word' => ['F.B.I. Stories'],
+        ];
+    }
+
+    #[DataProvider('titlesAsPosted')]
+    public function test_a_name_posted_as_a_title_is_sent_to_the_model(string $name): void
+    {
+        $this->mode('shadow');
+        $this->fakeAnswers(['other', 0.9]);
+
+        $this->categorize($name);
+
+        Http::assertSentCount(1);
+        $this->assertSame(1, DecisionModelDecision::query()->count());
+    }
+
+    public function test_a_dotted_acronym_alone_is_not_readable_once_cleaned(): void
+    {
+        $this->mode('apply');
+        $this->fakeAnswers(['tv', 0.95], ['hd', 0.95]);
+
+        $this->categorize('F.B.I. (2025)');
+
+        Http::assertNothingSent();
+        $this->assertSame(0, DecisionModelDecision::query()->count());
     }
 
     /**

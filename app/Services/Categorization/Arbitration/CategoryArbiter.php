@@ -38,6 +38,20 @@ final class CategoryArbiter
      */
     private const int SETTINGS_TTL_SECONDS = 60;
 
+    /** A generated word, a number and a twelve-digit timestamp. */
+    private const string GENERATED_TIMESTAMP_NAME = '/^[A-Z][a-z]+-\d+-\d{12}$/u';
+
+    /** A part counter such as `[04/85]` and everything after it. */
+    private const string PART_COUNTER = '/\s*(?:-\s*)?\[\d+\/\d+\].*$/u';
+
+    private const string ARCHIVE_EXTENSION = '/\.(?:part\d+|vol\d+\+\d+|par2|rar|r\d{2}|7z|\d{3}|zip|bin|mkv|mp4|avi|nzb|iso)$/iu';
+
+    /** Two or more letters each followed by a dot, as in `F.B.I.`. */
+    private const string DOTTED_ACRONYM = '/(?<!\p{L})(?:\p{L}\.){2,}/u';
+
+    /** Letters only, all lowercase, all uppercase, or capitalized or camel case. */
+    private const string TITLE_WORD = '/^(?=\p{L}{2,}$)(?:\p{Ll}+|\p{Lu}+|\p{Lu}*(?:\p{Lu}\p{Ll}+)+)$/u';
+
     private ?CategoryArbitrationSettings $settings = null;
 
     private int $settingsReadAt = 0;
@@ -94,7 +108,47 @@ final class CategoryArbiter
 
         $name = $passable->context->releaseName;
 
-        return $this->names->isReadableReleaseTitle($name) && ! $this->names->isHashedOrGibberish($name);
+        return $this->names->isReadableReleaseTitle($name)
+            && ! $this->names->isHashedOrGibberish($name)
+            && $this->looksLikeATitle($passable->context->preExtractionName);
+    }
+
+    /**
+     * Whether the name as posted holds at least one word a person could read.
+     *
+     * It reads the name before the obfuscated-subject extractor turned dots
+     * into spaces and title-cased it, so a container extension is still an
+     * extension rather than a word. Obfuscated subjects the shared checks let
+     * through — a short mixed-case token, a file stem with a part counter, a
+     * generated word with a timestamp — hold no such word.
+     */
+    private function looksLikeATitle(string $name): bool
+    {
+        $name = trim($name);
+
+        if (preg_match(self::GENERATED_TIMESTAMP_NAME, $name) === 1) {
+            return false;
+        }
+
+        $name = (string) preg_replace(self::PART_COUNTER, '', $name);
+
+        do {
+            $name = (string) preg_replace(self::ARCHIVE_EXTENSION, '', $name, -1, $removed);
+        } while ($removed > 0);
+
+        $name = (string) preg_replace_callback(
+            self::DOTTED_ACRONYM,
+            static fn (array $match): string => str_replace('.', '', $match[0]),
+            $name,
+        );
+
+        foreach (preg_split('/[^\p{L}\p{N}]+/u', $name, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $piece) {
+            if (preg_match(self::TITLE_WORD, $piece) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function decide(CategorizationPassable $passable, CategoryArbitrationSettings $settings, ?int $releaseId): void
