@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing\ClipHardware;
 
+use App\Services\AdditionalProcessing\ClipEncodeLimits;
+
 final class VaapiClipHardwareEncoder implements ClipHardwareEncoder
 {
     public function id(): string
@@ -22,7 +24,7 @@ final class VaapiClipHardwareEncoder implements ClipHardwareEncoder
             ],
             outputArguments: [
                 '-vf',
-                'format=nv12,hwupload',
+                ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload',
                 '-c:v',
                 'h264_vaapi',
                 '-qp',

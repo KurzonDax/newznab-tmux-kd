@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Services\AdditionalProcessing\ClipEncodeLimits;
 use App\Services\AdditionalProcessing\VideoClipEncoder;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -66,6 +67,8 @@ class VideoClipEncoderTest extends TestCase
         $this->assertContains('+faststart', $remux);
         $this->assertContains('0:a:0', $remux, 'The AAC track is mapped into the MP4.');
         $this->assertNotContains('-t', $remux, 'Stream-copy clips keep the whole downloaded head window.');
+        $this->assertNotContains('-threads', $remux, 'A stream copy decodes nothing, so it needs no thread cap.');
+        $this->assertNotContains('-vf', $remux);
         $this->assertStringEndsWith('.mp4', (string) end($remux));
     }
 
@@ -131,7 +134,8 @@ class VideoClipEncoderTest extends TestCase
         $transcode = $commands[1];
         $this->assertCommandOption($transcode, '-init_hw_device', 'vaapi=clip_hw:/dev/dri/renderD129');
         $this->assertCommandOption($transcode, '-filter_hw_device', 'clip_hw');
-        $this->assertCommandOption($transcode, '-vf', 'format=nv12,hwupload');
+        $this->assertCommandOption($transcode, '-vf', ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload');
+        $this->assertThreadsCappedAroundInput($transcode);
         $this->assertCommandOption($transcode, '-c:v', 'h264_vaapi');
         $this->assertCommandOption($transcode, '-qp', '23');
         $this->assertCommandOption($transcode, '-c:a', 'aac');
@@ -166,7 +170,8 @@ class VideoClipEncoderTest extends TestCase
         $transcode = $commands[1];
         $this->assertCommandOption($transcode, '-init_hw_device', 'qsv=clip_hw:hw,child_device=/dev/dri/renderD128');
         $this->assertCommandOption($transcode, '-filter_hw_device', 'clip_hw');
-        $this->assertCommandOption($transcode, '-vf', 'format=nv12,hwupload=extra_hw_frames=64');
+        $this->assertCommandOption($transcode, '-vf', ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload=extra_hw_frames=64');
+        $this->assertThreadsCappedAroundInput($transcode);
         $this->assertCommandOption($transcode, '-c:v', 'h264_qsv');
         $this->assertCommandOption($transcode, '-global_quality', '23');
     }
@@ -201,7 +206,11 @@ class VideoClipEncoderTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertContains('h264_vaapi', $commands[1]);
+        $this->assertCommandOption($commands[1], '-vf', ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload');
+        $this->assertThreadsCappedAroundInput($commands[1]);
         $this->assertContains('libx264', $commands[2]);
+        $this->assertCommandOption($commands[2], '-vf', ClipEncodeLimits::SCALE_FILTER);
+        $this->assertThreadsCappedAroundInput($commands[2]);
         Log::shouldHaveReceived('debug')->once()->with(
             'Clip hardware encode failed; retrying with software',
             [
@@ -237,9 +246,15 @@ class VideoClipEncoderTest extends TestCase
         $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'off-guid'));
 
         $this->assertSame(
-            ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p', '-t', '30', '-movflags', '+faststart'],
-            array_slice($commands[1], 10, -1),
+            [
+                '-threads', '4',
+                '-vf', ClipEncodeLimits::SCALE_FILTER,
+                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+                '-t', '30', '-movflags', '+faststart',
+            ],
+            array_slice($commands[1], 12, -1),
         );
+        $this->assertThreadsCappedAroundInput($commands[1]);
         $this->assertNotContains('-init_hw_device', $commands[1]);
     }
 
@@ -356,6 +371,8 @@ class VideoClipEncoderTest extends TestCase
         $this->assertCommandOption($transcode, '-c:v', 'copy');
         $this->assertCommandOption($transcode, '-c:a', 'aac');
         $this->assertCommandOption($transcode, '-t', '12');
+        $this->assertThreadsCappedAroundInput($transcode);
+        $this->assertNotContains('-vf', $transcode, 'Copied video is not re-encoded, so it is not scaled.');
         $this->assertNotContains('libx264', $transcode);
     }
 
@@ -815,6 +832,21 @@ SHELL);
     {
         return 'Duration: '.$duration.", start: 0.000000, bitrate: 2000 kb/s\n"
             .'  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661)';
+    }
+
+    /**
+     * `-threads` before `-i` caps the decoder; after `-i` it caps the encoder.
+     *
+     * @param  list<string>  $command
+     */
+    private function assertThreadsCappedAroundInput(array $command): void
+    {
+        $input = array_search('-i', $command, true);
+        $this->assertIsInt($input, 'The command has no -i.');
+
+        foreach ([array_slice($command, 0, $input), array_slice($command, $input)] as $side) {
+            $this->assertCommandOption($side, '-threads', (string) ClipEncodeLimits::THREADS);
+        }
     }
 
     /**

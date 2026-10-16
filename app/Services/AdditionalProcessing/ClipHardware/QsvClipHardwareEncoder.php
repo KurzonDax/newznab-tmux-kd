@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\AdditionalProcessing\ClipHardware;
 
+use App\Services\AdditionalProcessing\ClipEncodeLimits;
+
 final class QsvClipHardwareEncoder implements ClipHardwareEncoder
 {
     public function id(): string
@@ -22,7 +24,7 @@ final class QsvClipHardwareEncoder implements ClipHardwareEncoder
             ],
             outputArguments: [
                 '-vf',
-                'format=nv12,hwupload=extra_hw_frames=64',
+                ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload=extra_hw_frames=64',
                 '-c:v',
                 'h264_qsv',
                 '-preset',

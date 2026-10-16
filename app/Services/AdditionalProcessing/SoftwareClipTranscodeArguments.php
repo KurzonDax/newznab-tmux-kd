@@ -15,7 +15,10 @@ class SoftwareClipTranscodeArguments
     {
         $arguments = $copyVideo
             ? ['-c:v', 'copy']
-            : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p'];
+            : [
+                '-vf', ClipEncodeLimits::SCALE_FILTER,
+                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+            ];
 
         if ($hasAudio) {
             $arguments = [...$arguments, '-c:a', 'aac', '-b:a', '128k'];
