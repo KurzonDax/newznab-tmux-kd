@@ -12,17 +12,22 @@ use App\Services\DecisionModel\Exceptions\MalformedDecisionAnswer;
 use InvalidArgumentException;
 
 /**
- * Asks the decision model which category a release belongs in.
+ * Asks the decision model which category a release belongs in, from its name alone.
  *
  * Request one asks the root category and two yes-or-no questions (is the name
  * readable, is it adult); unless the root is "other", request two asks that
- * root's subcategory. The two yes-or-no answers are logged for comparison and
- * take no part in the verdict.
+ * root's subcategory and, for roots whose criteria carry one, whether the
+ * release is foreign. The readable and adult answers are logged for comparison
+ * and take no part in the verdict.
+ *
+ * The root is taken on its confidence, the subcategory on the probability of
+ * the chosen option. The subcategory only says what kind of content the
+ * release is; media probing settles format and quality afterwards.
  *
  * A root answer that is missing, failed or names no root the criteria offer is
  * malformed, and so is a confident subcategory the criteria map to no category.
- * A subcategory answer that is missing or failed is not: the root is still
- * known, and the release goes to that root's Other category.
+ * A subcategory or foreign answer that is missing or failed is not: the root
+ * is still known, and the release goes to that root's Other category.
  */
 final class CategoryArbitrationUseCase implements DecisionUseCase
 {
@@ -35,6 +40,11 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
     private const string ADULT = 'adult';
 
     private const string SUBCATEGORY = 'sub';
+
+    private const string FOREIGN = 'foreign';
+
+    /** The subcategory option that names no content type, leaving the root's Other category. */
+    private const string OTHER_LEAF = 'other';
 
     public function __construct(private ?CategoryCriteria $criteria = null) {}
 
@@ -51,19 +61,14 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
     /**
      * The name is the one handed to the pipeline, before the obfuscated-subject
      * extractor stripped a leading group tag and turned its dots into spaces:
-     * the criteria describe names in that shape.
+     * the criteria describe names in that shape. The poster says nothing about
+     * the content, and the pipeline's group rules have already used the newsgroup.
      *
      * @return array<string, string>
      */
     public function state(object $subject): array
     {
-        $context = $this->subject($subject)->context;
-
-        return array_filter([
-            'release_name' => $context->preExtractionName,
-            'newsgroup' => $context->groupName,
-            'poster' => $context->poster,
-        ], static fn (string $value): bool => $value !== '');
+        return ['release_name' => $this->subject($subject)->context->preExtractionName];
     }
 
     public function questions(object $subject, array $responses): array
@@ -87,9 +92,10 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
             return [];
         }
 
-        $question = $criteria->subcategoryQuestion((string) $root->choice);
-
-        return $question === null ? [] : [self::SUBCATEGORY => $question];
+        return array_filter([
+            self::SUBCATEGORY => $criteria->subcategoryQuestion((string) $root->choice),
+            self::FOREIGN => $criteria->foreignQuestion((string) $root->choice),
+        ]);
     }
 
     public function interpret(object $subject, array $responses): CategoryVerdict
@@ -101,9 +107,12 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
         $root = (string) $rootAnswer->choice;
         $confidence = (float) $rootAnswer->confidence;
 
-        $leafAnswer = ($responses[1] ?? null)?->usableAnswer(self::SUBCATEGORY);
+        $secondResponse = $responses[1] ?? null;
+        $leafAnswer = $secondResponse?->usableAnswer(self::SUBCATEGORY);
         $leaf = $leafAnswer?->choice;
+        $leafProbability = $leaf === null ? null : ($leafAnswer->probabilities[$leaf] ?? null);
         $leafConfidence = $leafAnswer?->confidence;
+        $foreignProbability = $secondResponse?->usableAnswer(self::FOREIGN)?->noul;
 
         $verdict = static fn (?int $categoryId, string $reason): CategoryVerdict => new CategoryVerdict(
             $categoryId,
@@ -111,7 +120,9 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
             $root,
             $confidence,
             $leaf,
+            $leafProbability,
             $leafConfidence,
+            $foreignProbability,
             $subject->applyThreshold,
         );
 
@@ -134,14 +145,24 @@ final class CategoryArbitrationUseCase implements DecisionUseCase
             return $verdict(null, CategoryVerdict::FORCED_ROOT);
         }
 
-        if ($leaf === null || $leafConfidence === null || $leafConfidence < $subject->applyThreshold) {
-            return $verdict($otherCategoryId, CategoryVerdict::ACCEPTED);
+        $choiceCategoryId = null;
+        if ($leaf !== null && $leafProbability !== null && $leafProbability >= $subject->applyThreshold) {
+            $choiceCategoryId = $criteria->categoryId($root, $leaf) ?? throw new MalformedDecisionAnswer('subcategory_without_category');
+            if ($leaf === self::OTHER_LEAF) {
+                $choiceCategoryId = null;
+            }
         }
 
-        return $verdict(
-            $criteria->categoryId($root, $leaf) ?? throw new MalformedDecisionAnswer('subcategory_without_category'),
-            CategoryVerdict::ACCEPTED,
-        );
+        $foreignCategoryId = null;
+        if ($criteria->foreignQuestion($root) !== null && $foreignProbability !== null && $foreignProbability >= $subject->applyThreshold) {
+            $foreignCategoryId = $criteria->categoryId($root, self::FOREIGN) ?? throw new MalformedDecisionAnswer('foreign_without_category');
+        }
+
+        $categoryId = $criteria->foreignBeforeChoice($root)
+            ? $foreignCategoryId ?? $choiceCategoryId
+            : $choiceCategoryId ?? $foreignCategoryId;
+
+        return $verdict($categoryId ?? $otherCategoryId, CategoryVerdict::ACCEPTED);
     }
 
     /**

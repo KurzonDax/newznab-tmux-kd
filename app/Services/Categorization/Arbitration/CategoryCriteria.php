@@ -95,6 +95,33 @@ final readonly class CategoryCriteria
     }
 
     /**
+     * The yes-or-no question whether a release of a root is foreign, or null
+     * when the root has none.
+     */
+    public function foreignQuestion(string $root): ?NoulQuestion
+    {
+        $foreign = $this->criteria['sub'][$root]['foreign'] ?? null;
+
+        if (! is_array($foreign) || ! is_string($foreign['instructions'] ?? null) || ! is_array($foreign['criteria'] ?? null)) {
+            return null;
+        }
+
+        return new NoulQuestion($foreign['instructions'], array_filter([
+            'true' => $foreign['criteria']['true'] ?? null,
+            'false' => $foreign['criteria']['false'] ?? null,
+        ], is_string(...)));
+    }
+
+    /**
+     * Whether a confident foreign answer wins over a confident subcategory
+     * choice in a root; when it does not, foreign is taken only when no choice is.
+     */
+    public function foreignBeforeChoice(string $root): bool
+    {
+        return ($this->criteria['sub'][$root]['foreign']['before_choice'] ?? false) === true;
+    }
+
+    /**
      * The root category id a root key stands for, or null when the file maps none to it.
      */
     public function rootCategoryId(string $root): ?int

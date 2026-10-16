@@ -279,7 +279,7 @@ final class CategoryArbiterGateTest extends TestCase
         $this->setting('decision_model_mode', 'apply');
         Http::fake(['*' => Http::sequence()
             ->push(['answers' => ['root' => ['choice' => 'tv', 'probabilities' => ['tv' => 0.95], 'confidence' => 0.95]]])
-            ->push(['answers' => ['sub' => ['choice' => 'hd', 'probabilities' => ['hd' => 0.95], 'confidence' => 0.95]]]),
+            ->push(['answers' => ['sub' => ['choice' => 'anime', 'probabilities' => ['anime' => 0.95], 'confidence' => 0.95]]]),
         ]);
         Schema::drop('decision_model_decisions');
         Log::shouldReceive('warning')->once()->withArgs(

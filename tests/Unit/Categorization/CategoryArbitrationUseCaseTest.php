@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Services\Categorization\Arbitration\CategoryArbitrationSubject;
 use App\Services\Categorization\Arbitration\CategoryArbitrationUseCase;
 use App\Services\Categorization\Arbitration\CategoryVerdict;
+use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\Categorization\ReleaseContext;
 use App\Services\DecisionModel\DecisionAnswer;
 use App\Services\DecisionModel\DecisionResponse;
@@ -29,12 +30,12 @@ final class CategoryArbitrationUseCaseTest extends TestCase
 
         $this->assertSame('category_arbitration', $useCase->name());
         $this->assertSame(
-            'v2 2026-10-12: leaf priority order, no webdl leaf, dated adult scenes = x264, HDR+HEVC = uhd, spaced film names',
+            'v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability',
             $useCase->criteriaVersion(),
         );
     }
 
-    public function test_the_state_is_the_name_as_posted_with_the_newsgroup_and_poster(): void
+    public function test_the_state_is_the_name_as_posted(): void
     {
         $subject = $this->subject(new ReleaseContext(
             releaseName: 'Invented Show 03 1080p',
@@ -45,20 +46,21 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         ));
 
         $this->assertSame(
-            [
-                'release_name' => '[InventedSubs] Invented.Show.-.03.(1080p)',
-                'newsgroup' => 'alt.binaries.invented',
-                'poster' => 'poster@example.test',
-            ],
+            ['release_name' => '[InventedSubs] Invented.Show.-.03.(1080p)'],
             (new CategoryArbitrationUseCase)->state($subject),
         );
     }
 
-    public function test_the_state_omits_empty_fields(): void
+    public function test_the_newsgroup_and_poster_are_never_sent(): void
     {
-        $subject = $this->subject(new ReleaseContext(releaseName: 'Invented Film 2019', groupId: 0));
+        $useCase = new CategoryArbitrationUseCase;
 
-        $this->assertSame(['release_name' => 'Invented Film 2019'], (new CategoryArbitrationUseCase)->state($subject));
+        foreach ([
+            new ReleaseContext(releaseName: 'Invented Film 2019', groupId: 7, groupName: 'alt.binaries.invented'),
+            new ReleaseContext(releaseName: 'Invented Film 2019', groupId: 0, poster: 'poster@example.test'),
+        ] as $context) {
+            $this->assertSame(['release_name' => 'Invented Film 2019'], $useCase->state($this->subject($context)));
+        }
     }
 
     public function test_the_first_request_asks_the_root_and_the_two_yes_or_no_questions(): void
@@ -90,12 +92,53 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         $this->assertSame(['magazines', 'comics', 'technical', 'foreign', 'ebook', 'unknown'], array_keys($sub['criteria'] ?? []));
     }
 
+    /**
+     * @return array<string, array{string, list<string>, list<string>}>
+     */
+    public static function secondRequests(): array
+    {
+        return [
+            'tv' => ['tv', ['sub', 'foreign'], ['anime', 'sport', 'documentary', 'other']],
+            'movies' => ['movies', ['sub', 'foreign'], ['3d', 'other']],
+            'audio' => ['audio', ['sub'], ['audiobook', 'podcast', 'video', 'foreign', 'other']],
+            'xxx' => ['xxx', ['sub'], ['vr', 'imageset', 'pack', 'clipshd', 'clipssd', 'other']],
+            'games' => ['games', ['sub'], ['ps4', 'ps3', 'psvita', 'psp', 'xboxone', 'xbox360', 'xbox', 'wiiu', 'wii', '3ds', 'nds', 'other']],
+            'pc' => ['pc', ['sub'], ['phone_ios', 'phone_android', 'phone_other', 'mac', 'games', 'iso', '0day', 'other']],
+            'books' => ['books', ['sub'], ['magazines', 'comics', 'technical', 'foreign', 'ebook', 'unknown']],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $expectedQuestions
+     * @param  list<string>  $expectedOptions
+     */
+    #[DataProvider('secondRequests')]
+    public function test_the_second_request_asks_the_subcategory_and_for_films_and_television_whether_it_is_foreign(
+        string $root,
+        array $expectedQuestions,
+        array $expectedOptions,
+    ): void {
+        $questions = (new CategoryArbitrationUseCase)->questions($this->subject(), [$this->rootResponse($root, 0.9)]);
+
+        $this->assertSame($expectedQuestions, array_keys($questions));
+        $this->assertSame($expectedOptions, array_map('strval', array_keys($questions['sub']->toArray()['criteria'] ?? [])));
+
+        if (isset($questions['foreign'])) {
+            $foreign = $questions['foreign']->toArray();
+            $this->assertSame('noul', $foreign['type']);
+            $this->assertSame('Is this film or series in a language other than English, with no English audio?', $foreign['instructions']);
+            $this->assertSame(['true', 'false'], array_keys($foreign['criteria'] ?? []));
+            $this->assertStringStartsWith('It is in another language and has no English audio', $foreign['criteria']['true'] ?? '');
+            $this->assertStringStartsWith('It is in English', $foreign['criteria']['false'] ?? '');
+        }
+    }
+
     public function test_nothing_more_is_asked_after_the_other_root_or_after_two_requests(): void
     {
         $useCase = new CategoryArbitrationUseCase;
 
         $this->assertSame([], $useCase->questions($this->subject(), [$this->rootResponse('other', 0.99)]));
-        $this->assertSame([], $useCase->questions($this->subject(), [$this->rootResponse('tv', 0.9), $this->subResponse('hd', 0.9)]));
+        $this->assertSame([], $useCase->questions($this->subject(), [$this->rootResponse('tv', 0.9), $this->subResponse('anime', 0.9)]));
         $this->assertSame([], $useCase->questions($this->subject(), [new DecisionResponse(['root' => DecisionAnswer::missing()])]));
     }
 
@@ -105,10 +148,11 @@ final class CategoryArbitrationUseCaseTest extends TestCase
     public static function interpretations(): array
     {
         return [
-            'root and leaf exactly at the threshold are accepted' => ['tv', 0.80, 'hd', 0.80, Category::TV_HD, 'accepted'],
-            'root just below the threshold keeps the pipeline result' => ['tv', 0.7999, 'hd', 0.99, null, 'root_below_threshold'],
+            'root and leaf exactly at the threshold are accepted' => ['tv', 0.80, 'anime', 0.80, Category::TV_ANIME, 'accepted'],
+            'root just below the threshold keeps the pipeline result' => ['tv', 0.7999, 'anime', 0.99, null, 'root_below_threshold'],
             'the other root keeps the pipeline result' => ['other', 0.99, null, null, null, 'root_other'],
-            'a leaf below the threshold falls to the root Other' => ['movies', 0.93, 'bluray', 0.7999, Category::MOVIE_OTHER, 'accepted'],
+            'a leaf below the threshold falls to the root Other' => ['movies', 0.93, '3d', 0.7999, Category::MOVIE_OTHER, 'accepted'],
+            'a confident music video is taken' => ['audio', 0.93, 'video', 0.90, Category::MUSIC_VIDEO, 'accepted'],
             'a confident leaf is taken' => ['xxx', 0.93, 'vr', 0.91, Category::XXX_VR, 'accepted'],
             'a missing subcategory answer falls to the root Other' => ['audio', 0.93, null, null, Category::MUSIC_OTHER, 'accepted'],
             'the books root falls to Books Unknown' => ['books', 0.88, null, null, Category::BOOKS_UNKNOWN, 'accepted'],
@@ -141,6 +185,99 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         $this->assertSame($root, $verdict->root);
     }
 
+    /**
+     * Each case answers the root tv or movies at 0.93. Foreign is the yes
+     * probability, 'failed' for a failed answer, or null when it is missing.
+     *
+     * @return array<string, array{string, string|null, float, float, float|string|null, int}>
+     */
+    public static function subcategoryAndForeignInterpretations(): array
+    {
+        return [
+            'tv takes a confident choice before foreign' => ['tv', 'anime', 0.85, 0.85, 0.90, Category::TV_ANIME],
+            'tv falls to foreign when the choice is other' => ['tv', 'other', 0.90, 0.90, 0.90, Category::TV_FOREIGN],
+            'tv with neither above the threshold falls to TV Other' => ['tv', 'sport', 0.79, 0.79, 0.79, Category::TV_OTHER],
+            'movies take foreign before a confident choice' => ['movies', '3d', 0.90, 0.90, 0.90, Category::MOVIE_FOREIGN],
+            'movies take the choice when not foreign' => ['movies', '3d', 0.90, 0.90, 0.10, Category::MOVIE_3D],
+            'movies with neither above the threshold fall to Movies Other' => ['movies', 'other', 0.95, 0.95, 0.79, Category::MOVIE_OTHER],
+            'tv with a failed foreign answer takes the choice' => ['tv', 'anime', 0.85, 0.85, 'failed', Category::TV_ANIME],
+            'movies with a failed foreign answer fall to Movies Other' => ['movies', 'other', 0.95, 0.95, 'failed', Category::MOVIE_OTHER],
+            'movies with a missing foreign answer take the choice' => ['movies', '3d', 0.90, 0.90, null, Category::MOVIE_3D],
+            'the choice is judged by its probability, not its confidence' => ['tv', 'anime', 0.92, 0.75, null, Category::TV_ANIME],
+            'tv falls to foreign when the choice is below the threshold' => ['tv', 'sport', 0.60, 0.95, 0.85, Category::TV_FOREIGN],
+            'tv falls to foreign when the subcategory answer is missing' => ['tv', null, 0.0, 0.0, 0.85, Category::TV_FOREIGN],
+        ];
+    }
+
+    #[DataProvider('subcategoryAndForeignInterpretations')]
+    public function test_it_interprets_the_subcategory_and_foreign_answers(
+        string $root,
+        ?string $leaf,
+        float $leafProbability,
+        float $leafConfidence,
+        float|string|null $foreign,
+        int $expectedCategoryId,
+    ): void {
+        $verdict = (new CategoryArbitrationUseCase)->interpret($this->subject(), [
+            $this->rootResponse($root, 0.93),
+            $this->secondResponse($leaf, $leafProbability, $leafConfidence, $foreign),
+        ]);
+
+        $this->assertSame($expectedCategoryId, $verdict->categoryId);
+        $this->assertSame('accepted', $verdict->reason);
+    }
+
+    public function test_an_adult_choice_is_judged_by_its_probability_not_its_confidence(): void
+    {
+        $verdict = (new CategoryArbitrationUseCase)->interpret($this->subject(), [
+            $this->rootResponse('xxx', 0.93),
+            $this->secondResponse('clipshd', 0.79, 0.95),
+        ]);
+
+        $this->assertSame(Category::XXX_OTHER, $verdict->categoryId);
+    }
+
+    public function test_the_root_is_still_judged_by_its_confidence_not_its_probability(): void
+    {
+        $verdict = (new CategoryArbitrationUseCase)->interpret($this->subject(), [
+            $this->rootResponse('tv', 0.79, probability: 0.95),
+            $this->secondResponse('anime', 0.95, 0.95, 0.95),
+        ]);
+
+        $this->assertNull($verdict->categoryId);
+        $this->assertSame('root_below_threshold', $verdict->reason);
+    }
+
+    public function test_a_choice_without_its_probability_falls_to_the_root_other(): void
+    {
+        $verdict = (new CategoryArbitrationUseCase)->interpret($this->subject(), [
+            $this->rootResponse('xxx', 0.93),
+            new DecisionResponse(['sub' => DecisionAnswer::fromArray(['choice' => 'vr', 'probabilities' => ['other' => 0.1], 'confidence' => 0.99])]),
+        ]);
+
+        $this->assertSame(Category::XXX_OTHER, $verdict->categoryId);
+    }
+
+    /**
+     * Media probing refuses to promote feature-length high-definition video
+     * out of Audio Other, so only the model's answer files such a concert as
+     * a music video.
+     */
+    public function test_a_feature_length_hd_concert_is_filed_as_a_music_video_by_the_model_alone(): void
+    {
+        $media = ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '1h:30m:00s'];
+        $refinement = new MediaInfoRefinementService;
+
+        $verdict = (new CategoryArbitrationUseCase)->interpret(
+            $this->subject(new ReleaseContext(releaseName: 'Invented Band Live At Invented Arena 2019 1080p BluRay x264', groupId: 0)),
+            [$this->rootResponse('audio', 0.93), $this->secondResponse('video', 0.90, 0.70)],
+        );
+
+        $this->assertSame(Category::MUSIC_VIDEO, $verdict->categoryId);
+        $this->assertNull($refinement->decisionFor(Category::MUSIC_VIDEO, $media, null), 'Probing leaves the music video alone.');
+        $this->assertNull($refinement->decisionFor(Category::MUSIC_OTHER, $media, null), 'Probing cannot recover it from Audio Other.');
+    }
+
     public function test_a_subcategory_answer_that_failed_falls_to_the_root_other(): void
     {
         $verdict = (new CategoryArbitrationUseCase)->interpret($this->subject(), [
@@ -151,10 +288,22 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         $this->assertSame(Category::TV_OTHER, $verdict->categoryId);
     }
 
-    public function test_a_confident_subcategory_the_criteria_do_not_offer_is_malformed(): void
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function unofferedConfidentSubcategories(): array
+    {
+        return [
+            'an invented key' => ['games', 'ps9'],
+            'other where the root offers unknown instead' => ['books', 'other'],
+        ];
+    }
+
+    #[DataProvider('unofferedConfidentSubcategories')]
+    public function test_a_confident_subcategory_the_criteria_do_not_offer_is_malformed(string $root, string $leaf): void
     {
         try {
-            (new CategoryArbitrationUseCase)->interpret($this->subject(), [$this->rootResponse('games', 0.9), $this->subResponse('ps9', 0.99)]);
+            (new CategoryArbitrationUseCase)->interpret($this->subject(), [$this->rootResponse($root, 0.9), $this->subResponse($leaf, 0.99)]);
             $this->fail('A subcategory with no category id must not be interpreted.');
         } catch (MalformedDecisionAnswer $failure) {
             $this->assertSame('subcategory_without_category', $failure->reason);
@@ -170,7 +319,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         ));
         $useCase = new CategoryArbitrationUseCase;
 
-        $different = $useCase->interpret($subject, [$this->rootResponse('movies', 1.0), $this->subResponse('hd', 1.0)]);
+        $different = $useCase->interpret($subject, [$this->rootResponse('movies', 1.0), $this->subResponse('3d', 1.0)]);
         $this->assertNull($different->categoryId);
         $this->assertSame('forced_root', $different->reason);
 
@@ -183,7 +332,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
     {
         $verdict = (new CategoryArbitrationUseCase)->interpret(
             $this->subject(),
-            [$this->rootResponse('movies', 0.93), $this->subResponse('bluray', 0.61)],
+            [$this->rootResponse('movies', 0.93), $this->secondResponse('3d', 0.61, 0.4, 0.2)],
         );
 
         $this->assertSame(
@@ -192,11 +341,26 @@ final class CategoryArbitrationUseCaseTest extends TestCase
                 'reason' => 'accepted',
                 'root' => 'movies',
                 'root_confidence' => 0.93,
-                'leaf' => 'bluray',
-                'leaf_confidence' => 0.61,
+                'leaf' => '3d',
+                'leaf_probability' => 0.61,
+                'leaf_confidence' => 0.4,
+                'foreign' => 0.2,
                 'apply_threshold' => 0.8,
             ],
             $verdict->toArray(),
+        );
+    }
+
+    public function test_the_verdict_logs_no_foreign_value_when_the_question_was_not_asked(): void
+    {
+        $verdict = (new CategoryArbitrationUseCase)->interpret(
+            $this->subject(),
+            [$this->rootResponse('xxx', 0.93), $this->secondResponse('vr', 0.91, 0.85)],
+        );
+
+        $this->assertSame(
+            ['leaf' => 'vr', 'leaf_probability' => 0.91, 'leaf_confidence' => 0.85, 'foreign' => null],
+            array_intersect_key($verdict->toArray(), array_flip(['leaf', 'leaf_probability', 'leaf_confidence', 'foreign'])),
         );
     }
 
@@ -236,8 +400,16 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         $useCase = new CategoryArbitrationUseCase;
 
         foreach ($roots as $root => $rootCategoryId) {
-            $options = array_keys($useCase->questions($this->subject(), [$this->rootResponse($root, 0.9)])['sub']->toArray()['criteria'] ?? []);
+            $questions = $useCase->questions($this->subject(), [$this->rootResponse($root, 0.9)]);
+            $options = array_keys($questions['sub']->toArray()['criteria'] ?? []);
             $this->assertNotSame([], $options);
+
+            if (isset($questions['foreign'])) {
+                $verdict = $useCase->interpret($this->subject(), [$this->rootResponse($root, 0.9), $this->secondResponse(null, 0.0, 0.0, 0.9)]);
+
+                $this->assertNotNull($verdict->categoryId, "{$root}/foreign has no category id.");
+                $this->assertSame($rootCategoryId, Category::rootCategoryFor($verdict->categoryId), "{$root}/foreign resolves outside its root.");
+            }
 
             foreach ($options as $option) {
                 $verdict = $useCase->interpret($this->subject(), [$this->rootResponse($root, 0.9), $this->subResponse((string) $option, 0.9)]);
@@ -256,10 +428,10 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         );
     }
 
-    private function rootResponse(string $root, float $confidence): DecisionResponse
+    private function rootResponse(string $root, float $confidence, ?float $probability = null): DecisionResponse
     {
         return new DecisionResponse([
-            'root' => DecisionAnswer::fromArray(['choice' => $root, 'probabilities' => [$root => $confidence], 'confidence' => $confidence]),
+            'root' => DecisionAnswer::fromArray(['choice' => $root, 'probabilities' => [$root => $probability ?? $confidence], 'confidence' => $confidence]),
             'readable' => DecisionAnswer::fromArray(['noul' => 0.9]),
             'adult' => DecisionAnswer::fromArray(['noul' => 0.1]),
         ]);
@@ -270,5 +442,23 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         return new DecisionResponse([
             'sub' => DecisionAnswer::fromArray(['choice' => $leaf, 'probabilities' => [$leaf => $confidence], 'confidence' => $confidence]),
         ]);
+    }
+
+    /**
+     * The second request's answers: the subcategory with its probability and
+     * confidence set apart (none when the leaf is null), and the foreign yes
+     * probability, 'failed' for a failed answer, or none when null.
+     */
+    private function secondResponse(?string $leaf, float $probability, float $confidence, float|string|null $foreign = null): DecisionResponse
+    {
+        $answers = [];
+        if ($leaf !== null) {
+            $answers['sub'] = DecisionAnswer::fromArray(['choice' => $leaf, 'probabilities' => [$leaf => $probability], 'confidence' => $confidence]);
+        }
+        if ($foreign !== null) {
+            $answers['foreign'] = DecisionAnswer::fromArray(is_float($foreign) ? ['noul' => $foreign] : ['error' => $foreign]);
+        }
+
+        return new DecisionResponse($answers);
     }
 }

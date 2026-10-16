@@ -27,7 +27,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
 
     private const string ENDPOINT = 'https://decision.example.test/v1/systemone';
 
-    private const string CRITERIA_VERSION = 'v2 2026-10-12: leaf priority order, no webdl leaf, dated adult scenes = x264, HDR+HEVC = uhd, spaced film names';
+    private const string CRITERIA_VERSION = 'v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability';
 
     /** A readable name no categorizer matches: the pipeline files it Misc at 0.0. */
     private const string UNMATCHED_NAME = 'An.Invented.Evening.With.Nobody.In.Particular';
@@ -130,7 +130,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_shadow_logs_the_decision_and_returns_the_pipeline_category(): void
     {
         $this->mode('shadow');
-        $this->fakeAnswers(['tv', 0.93], ['hd', 0.9]);
+        $this->fakeAnswers(['tv', 0.93], ['anime', 0.9], foreign: 0.1);
 
         $result = $this->categorize(self::UNMATCHED_NAME, debug: true, releaseId: 4107);
 
@@ -146,10 +146,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $this->assertSame(['release', 4107, 'shadow', false, null], [
             $row->subject_type, $row->subject_id, $row->mode, $row->applied, $row->failure_reason,
         ]);
-        $this->assertSame(
-            ['release_name' => self::UNMATCHED_NAME, 'newsgroup' => 'alt.binaries.invented', 'poster' => 'poster@example.test'],
-            $row->state,
-        );
+        $this->assertSame(['release_name' => self::UNMATCHED_NAME], $row->state);
         $this->assertSame(
             [
                 [
@@ -157,7 +154,10 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
                     'readable' => ['noul' => 0.97],
                     'adult' => ['noul' => 0.02],
                 ],
-                ['sub' => ['choice' => 'hd', 'probabilities' => ['hd' => 0.9], 'confidence' => 0.9]],
+                [
+                    'sub' => ['choice' => 'anime', 'probabilities' => ['anime' => 0.9], 'confidence' => 0.9],
+                    'foreign' => ['noul' => 0.1],
+                ],
             ],
             $row->answers,
         );
@@ -165,25 +165,26 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
             ['category_id' => Category::OTHER_MISC, 'confidence' => 0, 'matched_by' => 'no_match'],
             $row->pipeline_answer,
         );
-        $this->assertSame(Category::TV_HD, $row->interpretation['category_id'] ?? null);
+        $this->assertSame(Category::TV_ANIME, $row->interpretation['category_id'] ?? null);
         $this->assertSame('accepted', $row->interpretation['reason'] ?? null);
+        $this->assertSame([0.9, 0.1], [$row->interpretation['leaf_probability'] ?? null, $row->interpretation['foreign'] ?? null]);
     }
 
     public function test_apply_returns_the_model_category_and_logs_an_applied_row(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['tv', 0.93], ['hd', 0.9]);
+        $this->fakeAnswers(['tv', 0.93], ['anime', 0.9]);
 
         $result = $this->categorize(self::UNMATCHED_NAME, debug: true);
 
-        $this->assertSame(Category::TV_HD, $result['categories_id']);
-        $this->assertSame(Category::TV_HD, $result['debug']['final_category']);
+        $this->assertSame(Category::TV_ANIME, $result['categories_id']);
+        $this->assertSame(Category::TV_ANIME, $result['debug']['final_category']);
         $this->assertSame(0.93, $result['debug']['final_confidence']);
         $this->assertSame('decision_model', $result['debug']['matched_by']);
 
         $entry = $result['debug']['all_results']['DecisionModel'];
         $this->assertSame(
-            [Category::TV_HD, 0.93, 'decision_model', true, 'accepted'],
+            [Category::TV_ANIME, 0.93, 'decision_model', true, 'accepted'],
             [$entry['category_id'], $entry['confidence'], $entry['matched_by'], $entry['applied'], $entry['reason']],
         );
         $this->assertSame(
@@ -192,7 +193,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         );
         $this->assertSame('tv', $entry['answers'][0]['root']['choice']);
         $this->assertSame(0.97, $entry['answers'][0]['readable']['noul']);
-        $this->assertSame('hd', $entry['answers'][1]['sub']['choice']);
+        $this->assertSame('anime', $entry['answers'][1]['sub']['choice']);
 
         $row = DecisionModelDecision::query()->sole();
         $this->assertSame(['apply', true, null], [$row->mode, $row->applied, $row->subject_id]);
@@ -215,16 +216,29 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_apply_files_an_unsure_leaf_in_the_root_other_category(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['movies', 0.91], ['bluray', 0.55]);
+        $this->fakeAnswers(['movies', 0.91], ['3d', 0.55], foreign: 0.3);
 
         $this->assertSame(Category::MOVIE_OTHER, $this->categorize(self::UNMATCHED_NAME)['categories_id']);
         $this->assertTrue(DecisionModelDecision::query()->sole()->applied);
     }
 
+    public function test_apply_files_a_confidently_foreign_film_in_movies_foreign_before_its_choice(): void
+    {
+        $this->mode('apply');
+        $this->fakeAnswers(['movies', 0.91], ['3d', 0.9], foreign: 0.9);
+
+        $this->assertSame(Category::MOVIE_FOREIGN, $this->categorize(self::UNMATCHED_NAME)['categories_id']);
+
+        $requests = Http::recorded()->map(static fn (array $pair): Request => $pair[0])->values();
+        $this->assertSame(['sub', 'foreign'], array_keys($requests[1]['questions']));
+        $this->assertSame('noul', $requests[1]['questions']['foreign']['type']);
+        $this->assertSame(['true', 'false'], array_keys($requests[1]['questions']['foreign']['criteria']));
+    }
+
     public function test_apply_keeps_the_pipeline_category_when_the_model_is_unsure_of_the_root(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['tv', 0.79], ['hd', 0.99]);
+        $this->fakeAnswers(['tv', 0.79], ['anime', 0.99]);
 
         $result = $this->categorize(self::UNMATCHED_NAME, debug: true);
 
@@ -290,11 +304,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $this->categorize('[InventedTag] An.Invented_Evening.With.Nobody.In.Particular');
 
         Http::assertSent(static fn (Request $request): bool => $request->url() === self::ENDPOINT
-            && $request['state'] === [
-                'release_name' => '[InventedTag] An.Invented_Evening.With.Nobody.In.Particular',
-                'newsgroup' => 'alt.binaries.invented',
-                'poster' => 'poster@example.test',
-            ]);
+            && $request['state'] === ['release_name' => '[InventedTag] An.Invented_Evening.With.Nobody.In.Particular']);
         $this->assertSame(
             '[InventedTag] An.Invented_Evening.With.Nobody.In.Particular',
             DecisionModelDecision::query()->sole()->state['release_name'] ?? null,
@@ -304,7 +314,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_the_second_request_asks_the_subcategory_of_the_answered_root_about_the_same_state(): void
     {
         $this->mode('shadow');
-        $this->fakeAnswers(['xxx', 0.6], ['x264', 0.7]);
+        $this->fakeAnswers(['xxx', 0.6], ['clipshd', 0.7]);
 
         $this->categorize(self::UNMATCHED_NAME);
 
@@ -312,7 +322,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $this->assertCount(2, $requests);
         $this->assertSame(['root', 'readable', 'adult'], array_keys($requests[0]['questions']));
         $this->assertSame(['sub'], array_keys($requests[1]['questions']));
-        $this->assertStringStartsWith('Which Adult subcategory fits this release?', $requests[1]['questions']['sub']['instructions']);
+        $this->assertStringStartsWith('What kind of adult release is this?', $requests[1]['questions']['sub']['instructions']);
         $this->assertSame($requests[0]['state'], $requests[1]['state']);
     }
 
@@ -418,7 +428,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_a_weak_result_inside_a_forced_root_never_leaves_that_root(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['movies', 0.99], ['hd', 0.99]);
+        $this->fakeAnswers(['movies', 0.99], ['3d', 0.99]);
 
         $result = $this->categorize(self::UNMATCHED_NAME, groupId: self::TV_NAMED_FORCED_GROUP_ID, debug: true);
 
@@ -462,7 +472,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         // The arbiter keeps the mode it read; a fresh one reads the new mode.
         $this->app->forgetInstance(CategoryArbiter::class);
         $this->mode('apply');
-        $this->fakeAnswers(['tv', 0.95], ['hd', 0.95]);
+        $this->fakeAnswers(['tv', 0.95], ['anime', 0.95]);
 
         $this->assertSame($pipeline['categories_id'], $this->categorize($name)['categories_id']);
         Http::assertNothingSent();
@@ -495,7 +505,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_a_dotted_acronym_alone_is_not_readable_once_cleaned(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['tv', 0.95], ['hd', 0.95]);
+        $this->fakeAnswers(['tv', 0.95], ['anime', 0.95]);
 
         $this->categorize('F.B.I. (2025)');
 
@@ -521,19 +531,22 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     }
 
     /**
-     * Fake the root request and, when a leaf is given, the subcategory request after it.
+     * Fake the root request and, when a leaf is given, the subcategory request
+     * after it, with the foreign answer when one is given.
      *
      * @param  array{string, float}  $root
      * @param  array{string, float}|null  $leaf
      */
-    private function fakeAnswers(array $root, ?array $leaf = null): void
+    private function fakeAnswers(array $root, ?array $leaf = null, ?float $foreign = null): void
     {
         $sequence = Http::sequence()->push(['answers' => $this->rootAnswers($root[0], $root[1])]);
 
         if ($leaf !== null) {
-            $sequence->push(['answers' => [
-                'sub' => ['choice' => $leaf[0], 'probabilities' => [$leaf[0] => $leaf[1]], 'confidence' => $leaf[1]],
-            ]]);
+            $answers = ['sub' => ['choice' => $leaf[0], 'probabilities' => [$leaf[0] => $leaf[1]], 'confidence' => $leaf[1]]];
+            if ($foreign !== null) {
+                $answers['foreign'] = ['noul' => $foreign];
+            }
+            $sequence->push(['answers' => $answers]);
         }
 
         Http::fake([self::ENDPOINT => $sequence]);
