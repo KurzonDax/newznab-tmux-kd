@@ -112,12 +112,15 @@ class VideoClipEncoder
                 $sourcePath,
                 $outputPath,
                 $hasAudio,
-                $hardwareArguments->inputArguments,
-                $this->hardwareOutputArguments(
-                    $hardwareArguments->outputArguments,
-                    $hasAudio,
-                    $previewTargetSeconds,
-                ),
+                [...$this->threadArguments(), ...$hardwareArguments->inputArguments],
+                [
+                    ...$this->threadArguments(),
+                    ...$this->hardwareOutputArguments(
+                        $hardwareArguments->outputArguments,
+                        $hasAudio,
+                        $previewTargetSeconds,
+                    ),
+                ],
             );
 
             try {
@@ -151,13 +154,18 @@ class VideoClipEncoder
             @unlink($outputPath);
         }
 
+        // A stream copy decodes nothing, so only the encoding paths are capped.
+        $inputArguments = $streamCopy ? [] : $this->threadArguments();
         $outputArguments = $streamCopy
             ? ['-c', 'copy']
-            : $this->softwareTranscodeArguments->build(
-                copyVideo: $copyVideo,
-                hasAudio: $hasAudio,
-                targetSeconds: $previewTargetSeconds,
-            );
+            : [
+                ...$this->threadArguments(),
+                ...$this->softwareTranscodeArguments->build(
+                    copyVideo: $copyVideo,
+                    hasAudio: $hasAudio,
+                    targetSeconds: $previewTargetSeconds,
+                ),
+            ];
         if ($streamCopy && $container === 'mp4') {
             $outputArguments = [...$outputArguments, '-movflags', '+faststart'];
         }
@@ -166,7 +174,7 @@ class VideoClipEncoder
             $sourcePath,
             $outputPath,
             $hasAudio,
-            [],
+            $inputArguments,
             $outputArguments,
         );
 
@@ -269,6 +277,16 @@ class VideoClipEncoder
         }
 
         return [...$hardwareArguments, '-movflags', '+faststart'];
+    }
+
+    /**
+     * Placed before -i it caps the decoder; after -i, the encoder.
+     *
+     * @return list<string>
+     */
+    private function threadArguments(): array
+    {
+        return ['-threads', (string) ClipEncodeLimits::THREADS];
     }
 
     private function sanitizedProcessOutput(string $output): ?string
