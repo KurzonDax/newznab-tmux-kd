@@ -222,7 +222,7 @@ class VideoClipEncoderTest extends TestCase
         );
     }
 
-    public function test_off_hardware_mode_leaves_the_software_command_unchanged(): void
+    public function test_off_hardware_mode_runs_the_capped_software_command(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Services\AdditionalProcessing\VideoClipEncoder;
-use Illuminate\Filesystem\Filesystem;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -27,18 +26,7 @@ class VideoClipEncoderFfmpegTest extends TestCase
             $this->markTestSkipped('ffmpeg and ffprobe are required for this test.');
         }
 
-        $this->tmpPath = sys_get_temp_dir().'/clip-ffmpeg-'.bin2hex(random_bytes(6)).'/';
-        (new Filesystem)->makeDirectory($this->tmpPath, 0777, true, true);
-    }
-
-    protected function tearDown(): void
-    {
-        // setUp() skips before this is set where ffmpeg is missing.
-        if (isset($this->tmpPath)) {
-            (new Filesystem)->deleteDirectory($this->tmpPath);
-        }
-
-        parent::tearDown();
+        $this->tmpPath = $this->makeTempDirectory('clip-ffmpeg').'/';
     }
 
     /**
