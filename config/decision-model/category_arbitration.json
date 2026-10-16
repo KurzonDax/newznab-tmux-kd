@@ -1,7 +1,7 @@
 {
-  "version": "v2 2026-10-12: leaf priority order, no webdl leaf, dated adult scenes = x264, HDR+HEVC = uhd, spaced film names",
+  "version": "v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability",
   "root": {
-    "instructions": "Which kind of content is this Usenet release? Judge from the release name first; the newsgroup and poster are weaker hints.",
+    "instructions": "Which kind of content is this Usenet release? Judge from the release name.",
     "criteria": {
       "tv": "Episodic television: a series episode or season pack. Signs: S01E02, 1x05, 'Episode 8', 'Season 3', a daily-show date like 2026.08.14, HDTV/PDTV, sports events (NFL, UFC, F1, Olympics), documentary series, anime episodes from fansub groups in brackets like [SubsPlease] or [Moozzi2] followed by an episode number. Not for a film with a single year and no episode marker, and not for music concerts.",
       "movies": "A feature film: a title followed by a release year, written with dots or with spaces (Inception.2010.1080p.BluRay.x264-SPARKS, 'The Imposter 2012 Bluray-1080p', 'Gangster (2006)'), usually with quality or source tokens such as 1080p, 2160p, BluRay, WEB-DL, DVDRip, x264, x265, CAM, telesync, or a language like German, FRENCH, Hindi, Telugu. Also DVD and Blu-ray disc images of films. Not for anything with a season or episode marker, not for adult studio scenes, not for concerts.",
@@ -23,60 +23,56 @@
   },
   "sub": {
     "tv": {
-      "instructions": "Which TV subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: anime, sport, documentary, foreign, uhd, x265, hd, sd, other. A WEB-DL or WEBRip episode is hd when it is 720p or 1080p and uhd when it is 2160p; there is no separate web level.",
+      "instructions": "Which kind of TV programme is this release?",
       "criteria": {
-        "anime": "Japanese animation: fansub group in brackets, episode number without a season, Japanese title words, anime hash tag like [A1B2C3D4]",
+        "anime": "Anime: an animated series made in Japan, whatever language it is released in.",
         "sport": "A sports event or sports programme: league or event names (NFL, NBA, UFC, F1, WWE, Olympics), teams, round or match",
         "documentary": "A documentary or docu-series: 'Documentary', 'Docu', factual nature, science or history programmes",
-        "foreign": "A series in a language other than English, or marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Staffel, subbed or dubbed",
-        "uhd": "4K episode or season: 2160p, UHD, 4K; also HDR or Dolby Vision together with HEVC, H.265 or x265 at any resolution",
-        "x265": "HEVC or x265 encode from an x265 group such as MeGusta, PSA, rmteam, ONLY, HETeam, TrollHD",
-        "hd": "High definition episode or season: 720p, 1080p, 1080i, BluRay, WEB-DL or WEBRip at 720p or 1080p",
-        "sd": "Standard definition episode or season: 480p, 576p, XviD, DVDRip, HDTV with no resolution, PDTV, TVRip",
-        "other": "Television but none of the above can be told from the name"
+        "other": "Television that is none of the above"
+      },
+      "foreign": {
+        "instructions": "Is this film or series in a language other than English, with no English audio?",
+        "criteria": {
+          "true": "It is in another language and has no English audio: a title in another language or script, or a name marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Castellano, Korean, Hindi, Tamil or Telugu, or dubbed into such a language without English.",
+          "false": "It is in English, including an English film or series that only adds foreign subtitles (such as NLsub or German Sub) or that carries an extra dubbed audio track next to the English one."
+        },
+        "before_choice": false
       }
     },
     "movies": {
-      "instructions": "Which Movies subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: foreign, x265, uhd, 3d, bluray, dvd, hd, sd, other. A WEB-DL or WEBRip film is hd when it is 720p or 1080p and uhd when it is 2160p; there is no separate web level.",
+      "instructions": "Is this film a 3D release?",
       "criteria": {
-        "foreign": "A film in a language other than English, or marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Castellano, Multisub, dubbed",
-        "x265": "HEVC or x265 encode from an x265 group such as Tigole, SESKAPiLE, IAMABLE, DEFLATE, THREESOME",
-        "uhd": "4K film: 2160p, UHD, 4K; also HDR or Dolby Vision together with HEVC, H.265 or x265 at any resolution",
         "3d": "A 3D film: 3D, SBS, H-SBS, MVC",
-        "bluray": "A Blu-ray disc, remux, or a name that writes the source as 'Bluray-1080p' or 'Bluray-720p' with a hyphen: BD25, BD50, Blu-ray untouched, COMPLETE BLURAY, REMUX, 'Title 2012 Bluray-1080p'",
-        "dvd": "A full DVD disc: DVD5, DVD9, DVDR, R5, PAL or NTSC disc",
-        "hd": "High definition film encode: 720p, 1080p, x264, AVC, BDRip, BRRip, '1080p.BluRay.x264', WEB-DL or WEBRip at 720p or 1080p",
-        "sd": "Standard definition film: XviD, DivX, DVDRip, DVDScr, CAM, TS, HDTS, VHSRip, 480p",
-        "other": "A film but none of the above can be told from the name"
+        "other": "A film that is not 3D, or where 3D cannot be told from the name"
+      },
+      "foreign": {
+        "instructions": "Is this film or series in a language other than English, with no English audio?",
+        "criteria": {
+          "true": "It is in another language and has no English audio: a title in another language or script, or a name marked German, FRENCH, Dutch, Swedish, Spanish, ITA, Castellano, Korean, Hindi, Tamil or Telugu, or dubbed into such a language without English.",
+          "false": "It is in English, including an English film or series that only adds foreign subtitles (such as NLsub or German Sub) or that carries an extra dubbed audio track next to the English one."
+        },
+        "before_choice": true
       }
     },
     "audio": {
-      "instructions": "Which Audio subcategory fits this release?",
+      "instructions": "Which kind of audio release is this?",
       "criteria": {
         "audiobook": "An audiobook: Audiobook, Unabridged, Abridged, Narrated, Read By, Audible, M4B, Tantor, Blackstone",
         "podcast": "A podcast episode or series: Podcast, NPR, BBC Sounds, Wondery, Gimlet",
         "video": "A music video, concert film, live show, tour or festival recording with video tokens such as 1080p, BluRay, x264, MKV, MP4",
-        "lossless": "Lossless audio: FLAC, APE, WAV, ALAC, DSD, 24bit, 96kHz, Hi-Res, Vinyl rip, SACD",
-        "mp3": "Lossy audio: MP3, 320kbps, 256kbps, 192kbps, VBR, V0, AAC, iTunes rip, WEB",
         "foreign": "Music in or from a non-English market when the name says so: German, French, Italian, Spanish, Dutch, Russian, Japanese, Korean",
-        "other": "Audio but none of the above can be told from the name: a bare artist and album, compilation, soundtrack, DJ mix with no format token"
+        "other": "Music that is none of the above"
       }
     },
     "xxx": {
-      "instructions": "Which Adult subcategory fits this release? If more than one level fits, choose the FIRST that applies in this order: vr, uhd, imageset, pack, dvd, wmv, xvid, clipshd, clipssd, x264, sd, other. A site-dated scene name such as Tushy.25.03.02.Performer.Name or Vixen.25.05.16.Name.part1 is a standard HD scene release and belongs to x264 even without a resolution token.",
+      "instructions": "What kind of adult release is this?",
       "criteria": {
         "vr": "Virtual reality adult video: VR, VR180, VR360, Oculus, Quest, GearVR, a VR site name like VRBangers, SexBabesVR, WankzVR",
-        "uhd": "4K adult video: 2160p, UHD, 4K",
-        "x264": "Standard adult scene release: a studio or site name with a date and performer (Tushy.25.03.02.Stella.Barey, Brazzers.23.11.15.Name.XXX), or 1080p, 720p, x264, H264, MP4, WEB-DL",
-        "clipshd": "Short HD clip from a site or OnlyFans, usually a dated scene name with 1080p or 720p and MP4",
-        "clipssd": "Short SD clip: 480p, 540p, WMV or MP4 with low resolution",
-        "xvid": "XviD or DivX encoded adult video",
-        "wmv": "WMV encoded adult video",
-        "dvd": "A full adult DVD disc: DVDR, DVD5, DVD9, NTSC, PAL",
-        "sd": "Standard definition adult video with no other format clue: DVDRip, 480p, 576p",
-        "pack": "A pack or collection of many adult scenes or a site rip: Pack, SiteRip, Collection, Megapack",
-        "imageset": "Erotic photo set or adult magazine: Imageset, Photoset, pictures, JPG, Playboy or Penthouse magazine issue",
-        "other": "Adult content where the name has no studio-date shape and no format token at all, such as a bare performer name with a scene title"
+        "imageset": "A set of adult photos or an adult magazine, not a video.",
+        "pack": "A pack or collection of many adult videos or scenes in one release.",
+        "clipshd": "A single adult scene or clip in high definition, 720p or better.",
+        "clipssd": "A single adult scene or clip in standard definition, below 720p.",
+        "other": "A single adult video that is none of the above, or whose quality cannot be told."
       }
     },
     "games": {
@@ -127,42 +123,24 @@
       "sport": 5060,
       "documentary": 5080,
       "foreign": 5020,
-      "uhd": 5045,
-      "x265": 5090,
-      "hd": 5040,
-      "sd": 5030,
       "other": 5999
     },
     "movies": {
       "foreign": 2010,
-      "x265": 2090,
-      "uhd": 2045,
       "3d": 2050,
-      "bluray": 2060,
-      "dvd": 2070,
-      "hd": 2040,
-      "sd": 2030,
       "other": 2999
     },
     "audio": {
       "audiobook": 3030,
       "podcast": 3050,
       "video": 3020,
-      "lossless": 3040,
-      "mp3": 3010,
       "foreign": 3060,
       "other": 3999
     },
     "xxx": {
       "vr": 6046,
-      "uhd": 6045,
-      "x264": 6040,
       "clipshd": 6041,
       "clipssd": 6042,
-      "xvid": 6030,
-      "wmv": 6020,
-      "dvd": 6010,
-      "sd": 6080,
       "pack": 6050,
       "imageset": 6060,
       "other": 6999

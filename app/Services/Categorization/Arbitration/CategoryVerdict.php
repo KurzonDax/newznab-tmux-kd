@@ -25,6 +25,8 @@ final readonly class CategoryVerdict implements DecisionVerdict
      * @param  string  $root  The model's root key.
      * @param  float  $confidence  The model's confidence in the root.
      * @param  string|null  $leaf  The model's subcategory key, when it gave one.
+     * @param  float|null  $leafProbability  The probability the model gave its subcategory key, which decides whether it is taken.
+     * @param  float|null  $foreignProbability  The model's probability that the release is foreign, or null when that was not asked or failed.
      */
     public function __construct(
         public ?int $categoryId,
@@ -32,7 +34,9 @@ final readonly class CategoryVerdict implements DecisionVerdict
         public string $root,
         public float $confidence,
         public ?string $leaf,
+        public ?float $leafProbability,
         public ?float $leafConfidence,
+        public ?float $foreignProbability,
         public float $applyThreshold,
     ) {}
 
@@ -49,7 +53,9 @@ final readonly class CategoryVerdict implements DecisionVerdict
             'root' => $this->root,
             'root_confidence' => $this->confidence,
             'leaf' => $this->leaf,
+            'leaf_probability' => $this->leafProbability,
             'leaf_confidence' => $this->leafConfidence,
+            'foreign' => $this->foreignProbability,
             'apply_threshold' => $this->applyThreshold,
         ];
     }
