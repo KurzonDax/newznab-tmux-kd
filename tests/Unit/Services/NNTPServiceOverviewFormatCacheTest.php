@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\Services;
 
 use App\Services\NNTP\NNTPService;
+use DariusIII\NetNntp\Error as NntpError;
 use Tests\TestCase;
 
 /**
@@ -188,7 +189,7 @@ final class NNTPServiceOverviewFormatProbe extends NNTPService
         return $_full ? $this->overviewFormat : array_keys($this->overviewFormat);
     }
 
-    public function _getTextResponse(): NNTPService|array|string
+    public function _getTextResponse(): array|string|NntpError
     {
         return $this->textResponse;
     }

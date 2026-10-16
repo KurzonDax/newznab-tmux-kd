@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ObfuscationRecovery;
 
 use App\Services\NNTP\NntpProvider;
+use App\Services\NNTP\NntpTrafficMeter;
 use Closure;
 use InvalidArgumentException;
 use RuntimeException;
@@ -17,6 +18,11 @@ final class RecoveryWire
     private string $buffer = '';
 
     private int $received = 0;
+
+    /** The provider the open socket belongs to, for its traffic count. */
+    private string $providerName = '';
+
+    private ?NntpTrafficMeter $trafficMeter = null;
 
     private int $sent = 0;
 
@@ -210,6 +216,7 @@ final class RecoveryWire
             throw new RuntimeException('provider_connect_failed');
         }
         $this->socket = $socket;
+        $this->providerName = $provider->name;
         $this->opened++;
         ($this->connectionObserver ?? static function (bool $open): void {})(true);
         stream_set_read_buffer($socket, 0);
@@ -265,6 +272,7 @@ final class RecoveryWire
                 throw new RuntimeException('provider_read_failed');
             }
             $this->received += strlen($bytes);
+            ($this->trafficMeter ??= app(NntpTrafficMeter::class))->received($this->providerName, strlen($bytes));
             $this->buffer .= $bytes;
         }
         if ($offset > 8192) {

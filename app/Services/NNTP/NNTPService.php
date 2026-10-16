@@ -118,6 +118,12 @@ class NNTPService extends NntpClient implements BoundedProviderClient
     protected YencService $_yencService;
 
     /**
+     * Resolved on first read rather than in the constructor, so subclasses that skip the
+     * parent constructor (test probes) still count.
+     */
+    private ?NntpTrafficMeter $trafficMeter = null;
+
+    /**
      * Create a new NNTP service instance.
      */
     public function __construct(?Tmux $tmux = null, ?YencService $yencService = null)
@@ -836,7 +842,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
         $socket = $this->_socket;
 
         while (! feof($socket)) {
-            $line = fgets($socket, 8192);
+            $line = $this->readCounted(8192);
             if ($line === false) {
                 return $this->throwError('Failed to read line from socket.', null);
             }
@@ -970,10 +976,11 @@ class NNTPService extends NntpClient implements BoundedProviderClient
      * of their _getTextResponse function since it is incompatible at decoding
      * headers when XFeature GZip compression is enabled server side.
      *
-     * @return NNTPService|array<string, mixed>|string Our overridden function when compression is enabled.
-     *                                                 parent  Parent function when no compression.
+     * Without compression it runs the vendor body itself so every line read is counted.
+     *
+     * @return array<mixed>|string|NntpError The lines, or the error that ended the read.
      */
-    public function _getTextResponse(): NNTPService|array|string
+    public function _getTextResponse(): array|string|NntpError
     {
         if ($this->_compressionEnabled &&
             isset($this->_currentStatusResponse[1]) &&
@@ -981,7 +988,102 @@ class NNTPService extends NntpClient implements BoundedProviderClient
             return $this->_getXFeatureTextResponse();
         }
 
-        return parent::_getTextResponse();
+        // The vendor 4.1.3 body of parent::_getTextResponse(), reading through readCounted().
+        $data = [];
+        $line = '';
+        $hasEncryption = $this->_encryption !== null;
+
+        // Clear any stale OpenSSL errors once before entering the loop
+        if ($hasEncryption) {
+            $this->_clearOpensslErrors();
+        }
+
+        while (! \feof($this->_socket)) {
+            $received = @$this->readCounted(8192);
+
+            if ($received === false) {
+                if ($hasEncryption) {
+                    $this->_clearOpensslErrors();
+                }
+                $meta = \stream_get_meta_data($this->_socket);
+                if ($meta['timed_out']) {
+                    return $this->throwError('Connection timed out', null);
+                }
+
+                return $this->throwError('Failed to read line from socket.', null);
+            }
+
+            $line .= $received;
+
+            if (! \str_ends_with($line, "\r\n")) {
+                continue;
+            }
+
+            $line = \substr($line, 0, -2);
+
+            if ($line === '.') {
+                $this->_logger?->debug('T: .');
+
+                return $data;
+            }
+
+            // If 1st char is '.' it's doubled (NNTP/RFC977 2.4.1)
+            if (\str_starts_with($line, '..')) {
+                $line = \substr($line, 1);
+            }
+
+            $this->_logger?->debug('T: '.$line);
+
+            $data[] = $line;
+            $line = '';
+        }
+
+        $this->_logger?->warning('Broke out of reception loop! This shouldn\'t happen unless connection has been lost?');
+
+        return $this->throwError('End of stream! Connection lost?', null);
+    }
+
+    /**
+     * The vendor 4.1.3 body of parent::_getStatusResponse(), reading through readCounted().
+     */
+    protected function _getStatusResponse(): mixed
+    {
+        $this->_clearOpensslErrors();
+        $response = @$this->readCounted(4096);
+        $this->_clearOpensslErrors();
+
+        if ($response === false) {
+            $meta = \stream_get_meta_data($this->_socket);
+            if ($meta['timed_out']) {
+                return $this->throwError('Connection timed out', null);
+            }
+
+            return $this->throwError('Failed to read from socket...!', null);
+        }
+
+        $response = \trim($response);
+
+        $this->_logger?->debug('S: '.$response);
+
+        $this->_currentStatusResponse = [
+            (int) \substr($response, 0, 3),
+            \substr($response, 4),
+        ];
+
+        return $this->_currentStatusResponse[0];
+    }
+
+    /**
+     * Read one line off the provider socket, adding its bytes to the provider's traffic count.
+     */
+    private function readCounted(int $length): string|false
+    {
+        $line = fgets($this->_socket, $length);
+        if ($line !== false) {
+            ($this->trafficMeter ??= app(NntpTrafficMeter::class))->received($this->provider()->name, \strlen($line));
+        }
+
+        return $line;
     }
 
     /**
@@ -1018,7 +1120,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
                 if ($ready > 0) {
                     // Data available, read it
                     stream_set_blocking($socket, false);
-                    $buffer = fgets($socket, 16384);
+                    $buffer = $this->readCounted(16384);
                     stream_set_blocking($socket, true);
                 } else {
                     $buffer = '';
@@ -1054,13 +1156,13 @@ class NNTPService extends NntpClient implements BoundedProviderClient
                 $dataParts[] = $buffer;
             } else {
                 // Get data from the stream with larger buffer.
-                $buffer = fgets($socket, 16384);
+                $buffer = $this->readCounted(16384);
             }
 
             // If we got no data at all try one more time to pull data.
             if (empty($buffer)) {
                 usleep(5000);
-                $buffer = fgets($socket, 16384);
+                $buffer = $this->readCounted(16384);
 
                 // If we got nothing again, return error.
                 if (empty($buffer)) {
@@ -1153,7 +1255,7 @@ class NNTPService extends NntpClient implements BoundedProviderClient
             // Continue until connection is lost
             while (! feof($socket)) {
                 // Retrieve and append up to 8192 characters from the server (larger buffer = fewer syscalls)
-                $line = fgets($socket, 8192);
+                $line = $this->readCounted(8192);
 
                 // If the socket is empty/ an error occurs, false is returned.
                 if ($line === false) {

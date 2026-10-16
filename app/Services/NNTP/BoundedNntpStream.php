@@ -50,6 +50,9 @@ class BoundedNntpStream
             if (is_resource($stream)) {
                 fclose($stream);
             }
+            if ($this->bytes > 0) {
+                app(NntpTrafficMeter::class)->received($provider->name, $this->bytes);
+            }
         }
     }
 

@@ -1125,6 +1125,16 @@ CREATE TABLE `nntp_listing_coverage` (
   CONSTRAINT `nntp_listing_coverage_groups_id_foreign` FOREIGN KEY (`groups_id`) REFERENCES `usenet_groups` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `nntp_provider_traffic`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `nntp_provider_traffic` (
+  `provider` varchar(64) NOT NULL,
+  `day` date NOT NULL,
+  `bytes_received` bigint(20) unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`provider`,`day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `obfuscation_recovery_artifacts`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -4368,3 +4378,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (328,'2026_10_12_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (329,'2026_10_12_130000_widen_binaryblacklist_groupname_to_text',36);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (330,'2026_10_13_120000_create_decision_model_log_tables',37);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (331,'2026_10_13_120100_add_decision_model_settings',37);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (332,'2026_10_16_120000_create_nntp_provider_traffic_table',38);
