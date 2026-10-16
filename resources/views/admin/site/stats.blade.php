@@ -15,6 +15,67 @@
         </div>
     </div>
 
+    <!-- Usenet provider downloads -->
+    @php
+        // One hue per provider by position, cycling. Written out whole so Tailwind compiles them.
+        $providerHues = [
+            ['pill' => 'bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-200', 'figure' => 'text-sky-700 dark:text-sky-300'],
+            ['pill' => 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200', 'figure' => 'text-amber-700 dark:text-amber-300'],
+            ['pill' => 'bg-violet-100 text-violet-800 dark:bg-violet-900/60 dark:text-violet-200', 'figure' => 'text-violet-700 dark:text-violet-300'],
+            ['pill' => 'bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-200', 'figure' => 'text-rose-700 dark:text-rose-300'],
+            ['pill' => 'bg-lime-100 text-lime-800 dark:bg-lime-900/60 dark:text-lime-200', 'figure' => 'text-lime-700 dark:text-lime-300'],
+        ];
+        $providerColumns = 'grid grid-cols-[minmax(16rem,1fr)_12rem_12rem_12rem] gap-x-6';
+    @endphp
+    <section class="bg-gray-50 dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-300 dark:border-gray-700" aria-labelledby="provider-downloads-title">
+        <div class="bg-linear-to-r from-cyan-600 to-cyan-700 px-6 py-4">
+            <div class="flex items-center space-x-3">
+                <div class="flex items-center justify-center w-10 h-10 bg-cyan-900/40 rounded-lg">
+                    <i class="fas fa-cloud-arrow-down text-cyan-50 text-lg" aria-hidden="true"></i>
+                </div>
+                <h2 id="provider-downloads-title" class="text-xl font-bold text-white">Usenet provider downloads</h2>
+            </div>
+        </div>
+        @if(empty($providerDownloads['providers']))
+            <div class="p-6">
+                <p class="text-sm text-gray-700 dark:text-gray-200">No Usenet providers are configured, so there is nothing to count.</p>
+            </div>
+        @else
+            <div class="p-6 space-y-3">
+                <div class="{{ $providerColumns }} px-4">
+                    <div class="text-sm font-semibold text-gray-700 dark:text-gray-100 self-end">Provider</div>
+                    @foreach($providerDownloads['windows'] as $window)
+                        <div class="text-right">
+                            <div class="text-sm font-semibold text-gray-700 dark:text-gray-100">{{ $window['title'] }}</div>
+                            <div class="text-xs text-gray-600 dark:text-gray-300">{{ $window['range'] }}</div>
+                        </div>
+                    @endforeach
+                </div>
+                <ul class="space-y-3">
+                    @foreach($providerDownloads['providers'] as $index => $provider)
+                        @php($hue = $providerHues[$index % count($providerHues)])
+                        <li class="{{ $providerColumns }} items-start p-4 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-transparent">
+                            <div>
+                                <span class="inline-block px-2.5 py-0.5 rounded-full text-sm font-semibold {{ $hue['pill'] }}">{{ $provider['name'] }}</span>
+                                <div class="mt-1 text-xs text-gray-600 dark:text-gray-300">{{ $provider['address'] }}</div>
+                                <div class="mt-1.5 text-xs text-gray-600 dark:text-gray-300">
+                                    {{ $provider['began'] === null ? 'No downloads recorded yet' : 'Counting began '.$provider['began'] }}
+                                </div>
+                            </div>
+                            @foreach($provider['bytes'] as $bytes)
+                                @php($gigabytes = number_format($bytes / 1_000_000_000, 2))
+                                <div class="text-right">
+                                    <div class="text-xl font-semibold tabular-nums {{ $gigabytes === '0.00' ? 'text-gray-500 dark:text-gray-400' : $hue['figure'] }}">{{ $gigabytes }} GB</div>
+                                    <div class="text-xs tabular-nums text-gray-600 dark:text-gray-300">{{ number_format($bytes) }} bytes</div>
+                                </div>
+                            @endforeach
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+    </section>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Top Grabbers -->
         @if(!empty($topgrabs) && count($topgrabs) > 0)

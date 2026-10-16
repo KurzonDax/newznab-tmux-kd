@@ -48,6 +48,7 @@ use App\Services\MusicIdentity\MusicIdentityResolver;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\MusicIdentity\ReleaseNameAlbumCandidates;
 use App\Services\NNTP\NntpProviderPool;
+use App\Services\NNTP\NntpTrafficMeter;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Support\ReleaseRepairingContext;
 use App\Support\Settings\SettingsRegistry;
@@ -122,6 +123,8 @@ class AppServiceProvider extends ServiceProvider
         // One pool per process so its circuit-breaker state (and its per-provider
         // connections) survive across the services that share a worker.
         $this->app->singleton(NntpProviderPool::class);
+        // One meter per process: it batches every provider read into one write a minute.
+        $this->app->singleton(NntpTrafficMeter::class, static fn (): NntpTrafficMeter => new NntpTrafficMeter);
         // The settings hub builds its whole tree from the registry on every render and every
         // save; one instance per request keeps that to a single build.
         $this->app->singleton(SettingsRegistry::class);
