@@ -30,6 +30,12 @@ use Illuminate\Support\Facades\DB;
  */
 class Par2Processor
 {
+    /**
+     * PAR2-listed files never offered as a release name: HTML adverts
+     * (e.g. "..B4E Info...html") would win as the first accepted name.
+     */
+    public const string NON_NAMING_FILE_PATTERN = '/\.html?$/i';
+
     private readonly ExecutableReleaseDiscardService $discardService;
 
     public function __construct(
@@ -189,7 +195,7 @@ class Par2Processor
                 }
 
                 // Try to get a new name.
-                if ($recovery === null && $foundName === false) {
+                if ($recovery === null && $foundName === false && ! preg_match(self::NON_NAMING_FILE_PATTERN, $file['name'])) {
                     $query['textstring'] = $file['name'];
                     if ($this->nameFixingService->checkName($query, true, 'PAR2, ', true, (bool) $show)) {
                         $foundName = true;

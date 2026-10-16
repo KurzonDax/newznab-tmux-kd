@@ -42,6 +42,7 @@ use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
+use App\Support\Utf8;
 use dariusiii\rarinfo\ArchiveInfo;
 use dariusiii\rarinfo\Par2Info;
 use Illuminate\Database\QueryException;
@@ -796,6 +797,139 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $this->assertSame(25, DB::table('par_hashes')->where('releases_id', 1)->count());
     }
 
+    public function test_legacy_par2_processor_does_not_offer_html_files_for_naming(): void
+    {
+        $nameFixing = new RecordingPar2NameFixingService;
+
+        $this->runLegacyPar2Processor($this->par2ListWithHtmlAdverts(), false, $nameFixing);
+
+        $this->assertSame(['shdxxx-whitetrash.1080p.r00'], $nameFixing->textstrings);
+    }
+
+    public function test_legacy_par2_processor_still_records_html_files_and_hashes(): void
+    {
+        $files = $this->par2ListWithHtmlAdverts();
+
+        $this->runLegacyPar2Processor($files, true, new RecordingPar2NameFixingService);
+
+        $this->assertHtmlAdvertsAndHashesRecorded($files);
+    }
+
+    public function test_legacy_par2_processor_does_not_name_from_an_html_only_list(): void
+    {
+        $nameFixing = new RecordingPar2NameFixingService;
+
+        $this->runLegacyPar2Processor($this->htmlOnlyPar2List(), false, $nameFixing);
+
+        $this->assertSame([], $nameFixing->textstrings);
+    }
+
+    public function test_process_par2_file_does_not_offer_html_files_for_naming_but_records_them(): void
+    {
+        $files = $this->par2ListWithHtmlAdverts();
+        $nameFixing = new RecordingPar2NameFixingService;
+
+        $this->runProcessPar2File($files, $nameFixing);
+
+        $this->assertSame(['shdxxx-whitetrash.1080p.r00'], $nameFixing->textstrings);
+        $this->assertHtmlAdvertsAndHashesRecorded($files);
+    }
+
+    public function test_process_par2_file_does_not_name_from_an_html_only_list(): void
+    {
+        $nameFixing = new RecordingPar2NameFixingService;
+
+        $this->runProcessPar2File($this->htmlOnlyPar2List(), $nameFixing);
+
+        $this->assertSame([], $nameFixing->textstrings);
+    }
+
+    /**
+     * @return list<array{name: string, size: int, hash_16K: string}>
+     */
+    private function par2ListWithHtmlAdverts(): array
+    {
+        return array_map(
+            static fn (string $name): array => ['name' => $name, 'size' => 1_809, 'hash_16K' => md5($name)],
+            ['..B4E Info...html', 'promo.HTM', 'shdxxx-whitetrash.1080p.r00'],
+        );
+    }
+
+    /**
+     * @return list<array{name: string, size: int, hash_16K: string}>
+     */
+    private function htmlOnlyPar2List(): array
+    {
+        return array_values(array_filter(
+            $this->par2ListWithHtmlAdverts(),
+            static fn (array $file): bool => in_array($file['name'], ['..B4E Info...html', 'promo.HTM'], true),
+        ));
+    }
+
+    /**
+     * @param  list<array{name: string, size: int, hash_16K: string}>  $files
+     */
+    private function assertHtmlAdvertsAndHashesRecorded(array $files): void
+    {
+        foreach ($this->htmlOnlyPar2List() as $file) {
+            $this->assertDatabaseHas('release_files', ['releases_id' => 1, 'name' => Utf8::scrubFilename($file['name'])]);
+        }
+        foreach ($files as $file) {
+            $this->assertDatabaseHas('par_hashes', ['releases_id' => 1, 'hash' => $file['hash_16K']]);
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     */
+    private function runLegacyPar2Processor(array $files, bool $addPar2, NameFixingService $nameFixing): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(Category::OTHER_MISC), [
+            'isrenamed' => 0,
+            'postdate' => '2026-08-16 12:00:00',
+        ]));
+
+        if ($addPar2) {
+            Search::shouldReceive('updateRelease')->with(1);
+        }
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('setData')->once()->with('par2-payload');
+        $par2Info->shouldReceive('getFileList')->once()->andReturn($files);
+        $nntp = Mockery::mock(NNTPService::class)->makePartial();
+        $nntp->shouldReceive('getMessages')->once()->with('alt.binaries.test', '<message-id>')->andReturn('par2-payload');
+
+        (new Par2Processor($nameFixing, $par2Info, $addPar2))->parseFromMessage('<message-id>', 1, 1, $nntp, 0);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $files
+     */
+    private function runProcessPar2File(array $files, NameFixingService $nameFixing): void
+    {
+        DB::table('releases')->insert(array_merge($this->releaseRow(Category::OTHER_MISC), [
+            'postdate' => '2026-08-16 12:00:00',
+            'proc_pp' => 0,
+        ]));
+
+        Search::shouldReceive('updateRelease')->once()->with(1);
+
+        $par2Info = Mockery::mock(Par2Info::class);
+        $par2Info->error = '';
+        $par2Info->shouldReceive('open')->once()->andReturnTrue();
+        $par2Info->shouldReceive('getFileList')->once()->andReturn($files);
+
+        $manager = $this->makeManagerWithImageService(new ReleaseImageService, $nameFixing, [
+            'addPAR2Files' => true,
+            'renamePar2' => true,
+        ]);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+
+        $this->assertTrue($manager->processPar2File($this->makeTempPath('example', '.par2'), $context, $par2Info));
+        $manager->finalizeRelease($context, false);
+    }
+
     public function test_failed_finalization_rolls_back_buffered_rows_and_keeps_them_for_retry(): void
     {
         DB::table('releases')->insert($this->releaseRow());
@@ -1478,6 +1612,19 @@ class PersistingPar2NameFixingService extends CountingNameFixingService
 
         $release->searchname = 'Canonical.Release.2026';
         Release::query()->whereKey((int) $release->id)->update(['searchname' => $release->searchname]);
+
+        return true;
+    }
+}
+
+class RecordingPar2NameFixingService extends CountingNameFixingService
+{
+    /** @var list<string> */
+    public array $textstrings = [];
+
+    public function checkName(object $release, bool $echo, string $type, bool $nameStatus, bool $show, bool $preId = false, ?RecoveryNameEvidence $recoveryEvidence = null): bool
+    {
+        $this->textstrings[] = (string) $release->textstring;
 
         return true;
     }
