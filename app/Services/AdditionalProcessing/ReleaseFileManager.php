@@ -725,7 +725,7 @@ class ReleaseFileManager
             }
 
             // Try to get a new name
-            if (! $foundName) {
+            if (! $foundName && ! preg_match(Par2Processor::NON_NAMING_FILE_PATTERN, $file['name'])) {
                 $context->release->textstring = $file['name'];
                 $context->release->releases_id = $context->release->id;
                 if ($this->nameFixingService->checkName($context->release, $this->config->echoCLI, 'PAR2, ', true, true)) {
