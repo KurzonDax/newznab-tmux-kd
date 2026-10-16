@@ -23,7 +23,7 @@ final class ReleaseNameAlbumParser
 
     private const string COUNTER = '[\[(]\s*\d+\s*\/\s*\d+\s*[\])]';
 
-    private const string FILE_SUFFIX = '/(?:\.part\d+\.rar|\.vol\d+\+\d+\.par2|\.par2|\.rar|\.r\d{2}|\.nzb|\.zip|\.7z|\.sfv|\.nfo|\.m3u|\.cue|\.log'
+    private const string FILE_SUFFIX = '/(?:\.part\d+\.rar|\.vol\d+\+\d+\.par2|\.par2|\.rar|\.r\d{2}|\.nzb|\.zip|\.7z\.\d+|\.7z|\.sfv|\.nfo|\.m3u|\.cue|\.log'
         .'|\.flac|\.mp3|\.wav|\.wv|\.ape|\.m4a|\.ogg|\.opus)$/iu';
 
     /** The characters trimmed from both ends of an artist, a title and a format tail. */

@@ -82,6 +82,30 @@ final class ReleaseNameAlbumCandidatesTest extends TestCase
     }
 
     #[Test]
+    #[DataProvider('splitArchiveNames')]
+    public function a_name_matches_its_album_with_or_without_a_split_7z_volume(string $name): void
+    {
+        $album = $this->group(self::GROUP, 'A Man From the Future', 'Pet Shop Boys', 'Album', [], '2026-10-09');
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Pet Shop Boys|A man from the future   [FLAC].7z.001' => [$album],
+            'Pet Shop Boys|A man from the future.7z.001' => [$album],
+            'Pet Shop Boys|A man from the future' => [$album],
+        ]);
+
+        $match = $this->candidates($gateway)->match($this->evidence($name));
+
+        $this->assertNotNull($match);
+        $this->assertSame(self::GROUP, $match->releaseGroupId);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function splitArchiveNames(): iterable
+    {
+        yield 'a split 7z volume' => ['Pet Shop Boys - A man from the future (2026) [FLAC].7z.001'];
+        yield 'the name without the volume suffix' => ['Pet Shop Boys - A man from the future (2026) [FLAC]'];
+    }
+
+    #[Test]
     public function the_year_in_the_name_decides_between_passing_groups(): void
     {
         $gateway = new ScriptedReleaseGroupGateway([

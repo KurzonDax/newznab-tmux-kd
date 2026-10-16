@@ -79,6 +79,22 @@ final class ReleaseNameAlbumParserTest extends TestCase
             'The_Cure_-_Disintegration-3CD-2010-CMG.nzb http://nzb-dogz.com',
             [['The Cure', ['Disintegration'], 2010]],
         ];
+        yield 'a split 7z volume' => [
+            'Pet Shop Boys - A man from the future (2026) [FLAC].7z.001',
+            [['Pet Shop Boys', ['A man from the future'], 2026]],
+        ];
+        yield 'a later split 7z volume' => [
+            'Pet Shop Boys - A man from the future (2026) [FLAC].7z.002',
+            [['Pet Shop Boys', ['A man from the future'], 2026]],
+        ];
+        yield 'a part counter before a quoted split 7z volume' => [
+            '[01/22] "Pet Shop Boys - A man from the future (2026) [FLAC].7z.001" yEnc',
+            [['Pet Shop Boys', ['A man from the future'], 2026]],
+        ];
+        yield 'a numbered title ending that is no archive volume' => [
+            'Tycho - Epoch.001',
+            [['Tycho', ['Epoch.001'], null]],
+        ];
         yield 'a bracketed date' => [
             'Miley Cyrus - Bass Persuades (2026-09-18) [FLAC]',
             [['Miley Cyrus', ['Bass Persuades'], 2026]],
