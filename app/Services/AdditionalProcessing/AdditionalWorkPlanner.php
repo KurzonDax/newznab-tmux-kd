@@ -144,7 +144,7 @@ final readonly class AdditionalWorkPlanner
                     $mediaInfoSourceFilename = PostedFileClassifier::postedFilename($title);
                 }
             } catch (\ErrorException $e) {
-                Log::debug($e->getTraceAsString());
+                Log::debug($e->getMessage(), ['exception' => $e]);
             }
         }
 
