@@ -790,7 +790,8 @@ class NzbImportService
                     'is_imported' => true,
                     'predb_id' => $predbIdInt,
                     'nzbstatus' => NzbService::NZB_ADDED,
-                    'completion' => $nzbDetails['completion'],
+                    // Every import is stored complete; absorption above still gets the measured value.
+                    'completion' => 100,
                     'collectionhash' => $importHash,
                 ]
             );
