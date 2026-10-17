@@ -1423,20 +1423,38 @@ class NNTPService extends NntpClient implements BoundedProviderClient
             ? stream_context_create(streamSslContextOptions())
             : null;
 
-        $socket = stream_socket_client(
-            $transport.'://'.$host.':'.$port,
-            $errorNumber,
-            $errorString,
-            $timeout,
-            STREAM_CLIENT_CONNECT,
-            $context
-        );
+        // Laravel throws every warning as an ErrorException, which would skip the failure branch
+        // below and doConnect()'s retries. Keep the warnings: a TLS handshake timeout has its
+        // reason only there, with an empty $errorString.
+        $warnings = [];
+        set_error_handler(static function (int $level, string $warning) use (&$warnings): bool {
+            $warnings[] = $warning;
+
+            return true;
+        }, E_WARNING);
+        try {
+            $socket = stream_socket_client(
+                $transport.'://'.$host.':'.$port,
+                $errorNumber,
+                $errorString,
+                $timeout,
+                STREAM_CLIENT_CONNECT,
+                $context
+            );
+        } finally {
+            restore_error_handler();
+        }
         if ($socket === false) {
             $message = "Connection to $transport://$host:$port failed.";
             if (preg_match('/tls|ssl/', $transport)) {
                 $message .= ' Try disabling SSL/TLS, and/or try a different port.';
             }
-            $message .= ' [ERROR '.$errorNumber.': '.$errorString.']';
+            $reason = match (true) {
+                $errorString !== '' => $errorString,
+                $warnings !== [] => preg_replace('/^stream_socket_client\(\): /', '', $warnings[0]),
+                default => 'unknown error',
+            };
+            $message .= ' [ERROR '.$errorNumber.': '.$reason.']';
 
             return $this->throwError($message);
         }
