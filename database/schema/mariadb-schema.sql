@@ -2919,7 +2919,7 @@ CREATE TABLE `release_music_identifications` (
   KEY `release_music_identity_release` (`musicbrainz_release_id`),
   CONSTRAINT `FK_rmi_rae` FOREIGN KEY (`release_audio_evidence_id`) REFERENCES `release_audio_evidence` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `FK_rmi_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON UPDATE CASCADE
+  CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `release_music_renames`;
@@ -4380,3 +4380,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (330,'2026_10_13_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (331,'2026_10_13_120100_add_decision_model_settings',37);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (332,'2026_10_16_120000_create_nntp_provider_traffic_table',38);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (333,'2026_10_17_120000_normalize_imported_nzb_segment_message_ids',39);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (334,'2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes',40);

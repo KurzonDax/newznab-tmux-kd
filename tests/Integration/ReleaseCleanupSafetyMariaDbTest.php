@@ -72,7 +72,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
     protected function tearDown(): void
     {
         if (DB::getDefaultConnection() === 'mariadb') {
-            foreach (['kept_releases', 'categories', 'root_categories', 'parts', 'binaries', 'collections', 'release_files', 'releases', 'binaryblacklist', 'usenet_groups', 'settings'] as $table) {
+            foreach (['kept_releases', 'categories', 'root_categories', 'parts', 'binaries', 'collections', 'release_files', 'release_music_identifications', 'release_audio_evidence', 'releases', 'binaryblacklist', 'usenet_groups', 'settings'] as $table) {
                 Schema::dropIfExists($table);
             }
             DB::disconnect('cleanup_peer');
@@ -413,6 +413,89 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
         self::assertStringContainsString("'2026_10_12_130000_widen_binaryblacklist_groupname_to_text'", $dump);
     }
 
+    public function test_a_release_whose_music_identification_was_rerun_cannot_be_deleted_before_the_supersedes_link_is_relaxed(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+        $this->releaseWithIdentificationChain(1);
+
+        try {
+            DB::table('releases')->where('id', 1)->delete();
+            self::fail('Deleting a release with a chained identification was expected to fail.');
+        } catch (QueryException $exception) {
+            self::assertSame('23000', $exception->getCode());
+        }
+    }
+
+    public function test_a_release_whose_music_identification_was_rerun_can_be_deleted_once_the_supersedes_link_sets_null(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+        $this->releaseWithIdentificationChain(1);
+
+        $this->supersedesSetNull()->up();
+        DB::table('releases')->where('id', 1)->delete();
+
+        self::assertSame(0, DB::table('releases')->where('id', 1)->count());
+        self::assertSame(0, DB::table('release_music_identifications')->where('releases_id', 1)->count());
+    }
+
+    public function test_deleting_the_oldest_identification_leaves_the_newer_ones_with_the_first_survivor_unlinked(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+        [$oldest, $middle, $newest] = $this->releaseWithIdentificationChain(1);
+
+        $this->supersedesSetNull()->up();
+        DB::table('release_music_identifications')->where('id', $oldest)->delete();
+
+        self::assertSame(
+            [$middle => null, $newest => $middle],
+            DB::table('release_music_identifications')->orderBy('id')->pluck('supersedes_id', 'id')
+                ->map(static fn (mixed $id): ?int => $id === null ? null : (int) $id)->all(),
+        );
+    }
+
+    public function test_deleting_the_audio_evidence_removes_its_identifications_once_the_supersedes_link_sets_null(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+        $this->releaseWithIdentificationChain(1);
+
+        $this->supersedesSetNull()->up();
+        DB::table('release_audio_evidence')->where('releases_id', 1)->delete();
+
+        self::assertSame(0, DB::table('release_music_identifications')->count());
+        self::assertSame(1, DB::table('releases')->where('id', 1)->count());
+    }
+
+    public function test_relaxing_the_supersedes_link_a_second_time_leaves_the_same_rules(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+
+        $this->supersedesSetNull()->up();
+        $this->supersedesSetNull()->up();
+
+        self::assertSame(['DELETE_RULE' => 'SET NULL', 'UPDATE_RULE' => 'CASCADE'], $this->supersedesRules());
+    }
+
+    public function test_rolling_back_the_supersedes_link_restores_restrict_on_delete(): void
+    {
+        $this->createMusicIdentificationTablesAsBeforeSupersedesSetNull();
+        $this->supersedesSetNull()->up();
+
+        $this->supersedesSetNull()->down();
+
+        self::assertSame(['DELETE_RULE' => 'RESTRICT', 'UPDATE_RULE' => 'CASCADE'], $this->supersedesRules());
+    }
+
+    public function test_the_schema_dump_shows_the_supersedes_link_setting_null_on_delete(): void
+    {
+        $dump = (string) file_get_contents(database_path('schema/mariadb-schema.sql'));
+
+        self::assertStringContainsString(
+            'CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON DELETE SET NULL ON UPDATE CASCADE',
+            $dump,
+        );
+        self::assertStringContainsString("'2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes'", $dump);
+    }
+
     public function test_a_poster_blocked_across_twelve_groups_is_stored_with_the_group_scope_that_was_previewed(): void
     {
         $this->rebuildBlacklistAsBeforeTheGroupScopeWidening();
@@ -619,6 +702,133 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
     private function groupScopeWidening(): Migration
     {
         return require database_path('migrations/2026_10_12_130000_widen_binaryblacklist_groupname_to_text.php');
+    }
+
+    private function supersedesSetNull(): Migration
+    {
+        return require database_path('migrations/2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes.php');
+    }
+
+    /** Both tables exactly as `mariadb-schema.sql` defined them before the supersedes link set null on delete. */
+    private function createMusicIdentificationTablesAsBeforeSupersedesSetNull(): void
+    {
+        DB::statement('CREATE TABLE `release_audio_evidence` (
+            `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+            `releases_id` int(10) unsigned NOT NULL COMMENT \'FK to releases.id\',
+            `revision` int(10) unsigned NOT NULL,
+            `evidence_hash` char(64) NOT NULL,
+            `schema_version` smallint(5) unsigned NOT NULL,
+            `provenance` varchar(32) NOT NULL,
+            `release_snapshot` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`release_snapshot`)),
+            `archive_manifest_complete` tinyint(1) DEFAULT NULL,
+            `source_file_complete` tinyint(1) DEFAULT NULL,
+            `source_starts_at_zero` tinyint(1) DEFAULT NULL,
+            `whole_duration_reliable` tinyint(1) DEFAULT NULL,
+            `only_one_track_probed` tinyint(1) DEFAULT NULL,
+            `nzb_manifest` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`nzb_manifest`)),
+            `archive_manifest` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`archive_manifest`)),
+            `sidecar_manifest` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`sidecar_manifest`)),
+            `captured_at` timestamp NOT NULL,
+            `created_at` timestamp NULL DEFAULT NULL,
+            `updated_at` timestamp NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `release_audio_evidence_releases_id_revision_unique` (`releases_id`,`revision`),
+            KEY `release_audio_evidence_releases_id_evidence_hash_index` (`releases_id`,`evidence_hash`),
+            KEY `release_audio_evidence_provenance_index` (`provenance`),
+            CONSTRAINT `release_audio_evidence_releases_id_foreign` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC');
+        DB::statement('CREATE TABLE `release_music_identifications` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `releases_id` int(10) unsigned NOT NULL,
+            `release_audio_evidence_id` int(10) unsigned NOT NULL,
+            `evidence_hash` char(64) NOT NULL,
+            `state` varchar(32) NOT NULL,
+            `score` smallint(5) unsigned NOT NULL DEFAULT 0,
+            `band` varchar(16) NOT NULL,
+            `accepted_scope` varchar(32) DEFAULT NULL,
+            `musicbrainz_recording_id` char(36) DEFAULT NULL,
+            `musicbrainz_release_id` char(36) DEFAULT NULL,
+            `musicbrainz_release_group_id` char(36) DEFAULT NULL,
+            `accepted_title` text DEFAULT NULL,
+            `accepted_edition_title` text DEFAULT NULL,
+            `accepted_aliases` text DEFAULT NULL,
+            `accepted_artist_credit` text DEFAULT NULL,
+            `original_release_date` varchar(10) DEFAULT NULL,
+            `edition_release_date` varchar(10) DEFAULT NULL,
+            `reasons` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`reasons`)),
+            `feature_contributions` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`feature_contributions`)),
+            `runner_up_margin` smallint(6) DEFAULT NULL,
+            `attempt_count` smallint(5) unsigned NOT NULL DEFAULT 1,
+            `lease_token` varchar(64) DEFAULT NULL,
+            `lease_expires_at` timestamp NULL DEFAULT NULL,
+            `next_attempt_at` timestamp NULL DEFAULT NULL,
+            `last_operational_error` text DEFAULT NULL,
+            `algorithm_version` varchar(64) NOT NULL,
+            `resolver_version` varchar(64) NOT NULL,
+            `normalizer_version` varchar(64) NOT NULL,
+            `scorer_version` varchar(64) NOT NULL,
+            `policy_version` varchar(64) NOT NULL,
+            `mirror_replicated_at` timestamp NULL DEFAULT NULL,
+            `mirror_searched_at` timestamp NULL DEFAULT NULL,
+            `acoustid_looked_up_at` timestamp NULL DEFAULT NULL,
+            `supersedes_id` bigint(20) unsigned DEFAULT NULL,
+            `decided_at` timestamp NULL DEFAULT NULL,
+            `created_at` timestamp NULL DEFAULT NULL,
+            `updated_at` timestamp NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `release_music_identity_version` (`releases_id`,`evidence_hash`,`algorithm_version`),
+            KEY `release_music_identity_retry` (`state`,`next_attempt_at`),
+            KEY `FK_rmi_rae` (`release_audio_evidence_id`),
+            KEY `FK_rmi_supersedes` (`supersedes_id`),
+            KEY `release_music_identity_release_group` (`musicbrainz_release_group_id`),
+            KEY `release_music_identity_release` (`musicbrainz_release_id`),
+            CONSTRAINT `FK_rmi_rae` FOREIGN KEY (`release_audio_evidence_id`) REFERENCES `release_audio_evidence` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT `FK_rmi_releases` FOREIGN KEY (`releases_id`) REFERENCES `releases` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT `FK_rmi_supersedes` FOREIGN KEY (`supersedes_id`) REFERENCES `release_music_identifications` (`id`) ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC');
+    }
+
+    /**
+     * One release with one evidence row and three identifications, each newer one superseding the one before.
+     *
+     * @return list<int> The identification ids, oldest first.
+     */
+    private function releaseWithIdentificationChain(int $releaseId): array
+    {
+        $hash = str_repeat('e', 64);
+        DB::table('releases')->insert([
+            'id' => $releaseId, 'guid' => str_pad((string) $releaseId, 40, '0', STR_PAD_LEFT),
+            'searchname' => 'Kenny Neal - Bloodline - 2016, FLAC', 'groups_id' => 1,
+        ]);
+        $evidenceId = (int) DB::table('release_audio_evidence')->insertGetId([
+            'releases_id' => $releaseId, 'revision' => 1, 'evidence_hash' => $hash, 'schema_version' => 1,
+            'provenance' => 'test', 'release_snapshot' => '{}', 'nzb_manifest' => '[]',
+            'archive_manifest' => '[]', 'sidecar_manifest' => '[]', 'captured_at' => now(),
+        ]);
+        $ids = [];
+        $supersedes = null;
+        foreach (['v1', 'v2', 'v3'] as $algorithm) {
+            $supersedes = $ids[] = (int) DB::table('release_music_identifications')->insertGetId([
+                'releases_id' => $releaseId, 'release_audio_evidence_id' => $evidenceId, 'evidence_hash' => $hash,
+                'state' => 'decided', 'band' => 'rejected', 'reasons' => '[]', 'feature_contributions' => '{}',
+                'algorithm_version' => $algorithm, 'resolver_version' => 'test', 'normalizer_version' => 'test',
+                'scorer_version' => 'test', 'policy_version' => 'test', 'supersedes_id' => $supersedes,
+            ]);
+        }
+
+        return $ids;
+    }
+
+    /** @return array{DELETE_RULE: string, UPDATE_RULE: string} */
+    private function supersedesRules(): array
+    {
+        $rules = DB::selectOne(
+            'SELECT DELETE_RULE, UPDATE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
+             WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?',
+            ['release_music_identifications', 'FK_rmi_supersedes'],
+        );
+
+        return ['DELETE_RULE' => (string) $rules->DELETE_RULE, 'UPDATE_RULE' => (string) $rules->UPDATE_RULE];
     }
 
     /** The confirmation token is encrypted, and the test environment's APP_KEY is not a usable cipher key. */
