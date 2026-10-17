@@ -7,7 +7,9 @@ namespace Tests\Unit\Services;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NNTPService;
 use App\Support\Settings\SettingsRegistry;
+use Closure;
 use DariusIII\NetNntp\Error as NntpError;
+use ErrorException;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
@@ -37,8 +39,16 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         $this->bootIsolatedDatabase();
     }
 
+    /** @var list<resource> Loopback listeners and accepted connections, closed even when an assertion fails. */
+    private array $sockets = [];
+
     protected function tearDown(): void
     {
+        foreach ($this->sockets as $socket) {
+            if (is_resource($socket)) {
+                fclose($socket);
+            }
+        }
         $this->tearDownIsolatedDatabase();
         parent::tearDown();
     }
@@ -171,9 +181,109 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         $this->assertMatchesRegularExpression('/below 1|less than 1/i', $helpText, 'The field accepts any text, so the help must say what a 0 does.');
     }
 
+    #[Test]
+    public function a_refused_connection_is_retried_and_then_returned_as_an_error(): void
+    {
+        $this->storeRetries('3');
+
+        $client = new LoopbackProviderClient($this->closedPort(), ssl: false);
+        $result = $client->doConnect();
+
+        $this->assertSame(3, $client->connectAttempts);
+        $this->assertSame([250000, 500000], $client->retryDelays);
+        $this->assertNntpError($result, 'Cannot connect to NNTP provider');
+        $this->assertNntpError($result, '[ERROR 111: Connection refused]');
+        $this->assertLaravelTurnsWarningsIntoExceptions();
+    }
+
+    #[Test]
+    public function a_tls_handshake_that_never_completes_reports_the_handshake_timeout(): void
+    {
+        $this->storeRetries('1');
+
+        $client = new LoopbackProviderClient($this->silentListenerPort(), ssl: true);
+        $result = $client->doConnect();
+
+        $this->assertSame(1, $client->connectAttempts);
+        $this->assertNntpError($result, '[ERROR 0: SSL: Handshake timed out]');
+    }
+
+    #[Test]
+    public function a_provider_that_answers_connects_through_the_real_socket_on_the_first_attempt(): void
+    {
+        $this->storeRetries('3');
+        $listener = $this->listener();
+        $client = new LoopbackProviderClient($this->portOf($listener), ssl: false);
+        $client->beforeGreeting = function () use ($listener): void {
+            $accepted = stream_socket_accept($listener, 1);
+            $this->assertIsResource($accepted, 'The client never reached the loopback provider.');
+            $this->sockets[] = $accepted;
+            fwrite($accepted, "200 test server ready\r\n");
+        };
+
+        try {
+            $result = $client->doConnect(false);
+            $this->assertLaravelTurnsWarningsIntoExceptions();
+
+            $this->assertTrue($result);
+            $this->assertSame(1, $client->connectAttempts);
+            $this->assertSame([], $client->retryDelays);
+        } finally {
+            $client->closeSocket();
+        }
+    }
+
     private function storeRetries(string $value): void
     {
         DB::table('settings')->updateOrInsert(['name' => 'nntpretries'], ['value' => $value]);
+    }
+
+    /** A warning outside the guarded socket call still reaches Laravel's handler, which throws it. */
+    private function assertLaravelTurnsWarningsIntoExceptions(): void
+    {
+        $missing = $this->makeTempPath('nntp-missing');
+
+        try {
+            fopen($missing, 'r');
+            $this->fail('fopen() on a missing file did not throw: the connect guard left its warning handler in place.');
+        } catch (ErrorException $exception) {
+            $this->assertStringContainsString('Failed to open stream', $exception->getMessage());
+        }
+    }
+
+    /** @return resource */
+    private function listener(): mixed
+    {
+        $listener = stream_socket_server('tcp://127.0.0.1:0', $errorNumber, $errorString);
+        $this->assertIsResource($listener, "Cannot open a loopback listener: [$errorNumber] $errorString");
+        $this->sockets[] = $listener;
+
+        return $listener;
+    }
+
+    /** @param  resource  $socket */
+    private function portOf(mixed $socket): int
+    {
+        return (int) substr((string) strrchr((string) stream_socket_get_name($socket, false), ':'), 1);
+    }
+
+    /** A loopback port that was just free: connecting to it is refused. */
+    private function closedPort(): int
+    {
+        $listener = $this->listener();
+        $port = $this->portOf($listener);
+        fclose($listener);
+
+        return $port;
+    }
+
+    /**
+     * A listener that is never accepted: the kernel completes the TCP handshake from the
+     * backlog, and nothing ever answers the TLS ClientHello.
+     */
+    private function silentListenerPort(): int
+    {
+        return $this->portOf($this->listener());
     }
 
     private function assertNntpError(mixed $result, string $expectedFragment): void
@@ -282,5 +392,75 @@ final class UnreachableProviderClient extends NNTPService
         if ($attempts > self::ATTEMPT_CEILING) {
             throw new RuntimeException('doConnect() made more than '.self::ATTEMPT_CEILING.' attempts: the retry budget no longer bounds the loop.');
         }
+    }
+}
+
+/**
+ * Drives doConnect() through the real connect() against a loopback socket, with a one-second
+ * connection timeout per attempt and no sleeping between attempts.
+ */
+final class LoopbackProviderClient extends NNTPService
+{
+    public int $connectAttempts = 0;
+
+    /** @var list<int> */
+    public array $retryDelays = [];
+
+    /** Runs once the socket is open and before the greeting is read: the provider's side sends its greeting here. */
+    public ?Closure $beforeGreeting = null;
+
+    public function __construct(private readonly int $port, private readonly bool $ssl)
+    {
+        parent::__construct();
+    }
+
+    public function provider(): NntpProvider
+    {
+        return new NntpProvider(
+            position: 1,
+            name: 'test-loopback',
+            host: '127.0.0.1',
+            port: $this->port,
+            ssl: $this->ssl,
+            username: '',
+            password: '',
+            connections: 1,
+            timeout: 5,
+            enabled: true,
+        );
+    }
+
+    public function connect(?string $host = null, mixed $encryption = null, ?int $port = null, ?int $timeout = 15, int $socketTimeout = 120): mixed
+    {
+        $this->connectAttempts++;
+
+        return parent::connect($host, $encryption, $port, 1, $socketTimeout);
+    }
+
+    public function doQuit(bool $force = false): mixed
+    {
+        return true;
+    }
+
+    public function closeSocket(): void
+    {
+        if (is_resource($this->_socket)) {
+            fclose($this->_socket);
+        }
+    }
+
+    protected function _getStatusResponse(): mixed
+    {
+        if ($this->beforeGreeting !== null) {
+            ($this->beforeGreeting)();
+            $this->beforeGreeting = null;
+        }
+
+        return parent::_getStatusResponse();
+    }
+
+    protected function sleepBeforeRetry(int $microseconds): void
+    {
+        $this->retryDelays[] = $microseconds;
     }
 }
