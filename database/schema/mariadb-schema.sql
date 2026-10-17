@@ -4379,3 +4379,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (329,'2026_10_12_13
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (330,'2026_10_13_120000_create_decision_model_log_tables',37);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (331,'2026_10_13_120100_add_decision_model_settings',37);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (332,'2026_10_16_120000_create_nntp_provider_traffic_table',38);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (333,'2026_10_17_120000_normalize_imported_nzb_segment_message_ids',39);

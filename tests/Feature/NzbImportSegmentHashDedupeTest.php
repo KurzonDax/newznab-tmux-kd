@@ -542,6 +542,80 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertCount(1, $this->storedNzbFiles());
     }
 
+    public function test_an_import_strips_angle_brackets_from_segment_message_ids(): void
+    {
+        $result = $this->import($this->makeNzb([
+            ['subject' => 'Bracketed.Import.Release', 'segments' => ['<seg-b@example.com>', '<seg-a@example.com>']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $result['status']);
+        $this->assertSame(['seg-b@example.com', 'seg-a@example.com'], $this->storedSegmentIds());
+        $this->assertSame(
+            sha1("seg-a@example.com\nseg-b@example.com", true),
+            DB::table('releases')->value('collectionhash'),
+        );
+    }
+
+    public function test_a_bare_copy_of_a_bracketed_import_is_a_collectionhash_duplicate(): void
+    {
+        $this->assertSecondCopyIsCollectionHashDuplicate(['<o1@example.com>', '<o2@example.com>'], ['o2@example.com', 'o1@example.com']);
+    }
+
+    public function test_a_bracketed_copy_of_a_bare_import_is_a_collectionhash_duplicate(): void
+    {
+        $this->assertSecondCopyIsCollectionHashDuplicate(['o1@example.com', 'o2@example.com'], ['<o2@example.com>', '<o1@example.com>']);
+    }
+
+    public function test_a_bracketed_message_id_holding_an_ampersand_keeps_it_escaped(): void
+    {
+        $result = $this->import($this->makeNzb([
+            ['subject' => 'Ampersand.Import.Release', 'segments' => ['<a&b$c@example.com>']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $result['status']);
+        $this->assertSame(['a&b$c@example.com'], $this->storedSegmentIds());
+        $this->assertStringContainsString('>a&amp;b$c@example.com</segment>', $this->storedNzbContents());
+    }
+
+    public function test_an_nzb_with_bare_message_ids_is_stored_byte_for_byte(): void
+    {
+        $import = $this->importWith(new NzbImportService(['Browser' => true]), $this->makeNzb([
+            ['subject' => 'Bare.Import.Release', 'segments' => ['bare-1@example.com', 'bare-2@example.com']],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $import['result']['status']);
+        $this->assertSame(file_get_contents($import['source']), $this->storedNzbContents());
+    }
+
+    public function test_a_bracketed_duplicate_absorbed_into_a_release_replaces_its_nzb_with_bare_ids(): void
+    {
+        $partial = $this->makeNzb([
+            [
+                'subject' => '[1/1] Bracketed.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "old-{$part}@example.test", range(1, 19)),
+            ],
+        ]);
+        $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
+        // Stand in for a partial release formed from headers.
+        DB::table('releases')->update(['is_imported' => 0, 'completion' => 95]);
+        $anchor = Release::query()->firstOrFail();
+        file_put_contents(app(NzbService::class)->getNzbPath((string) $anchor->guid, 0, true), gzencode((string) $partial->asXML()));
+
+        $result = $this->import($this->makeNzb([
+            [
+                'subject' => '[1/1] Bracketed.Repost.part01.rar yEnc (1/20)',
+                'segments' => array_map(static fn (int $part): string => "<new-{$part}@example.test>", range(1, 20)),
+            ],
+        ]));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertTrue($result['absorbed']);
+        $this->assertSame(
+            array_map(static fn (int $part): string => "new-{$part}@example.test", range(1, 20)),
+            $this->storedSegmentIds(),
+        );
+    }
+
     /**
      * Import a partial anchor, store its NZB, and link it to a PreDB row titled with its cleaned
      * name, so a later copy of the same post resolves to that PreDB ID on import.
@@ -567,6 +641,25 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             'subject' => "[1/1] {$title}.part01.rar yEnc (1/20)",
             'segments' => array_map(static fn (int $part): string => "{$messageIdPrefix}-{$part}@example.test", range(1, $presentSegments)),
         ]]);
+    }
+
+    /**
+     * Import two copies of one upload under different subjects, so only the segment hash can match them.
+     *
+     * @param  list<string>  $firstSegments
+     * @param  list<string>  $secondSegments
+     */
+    private function assertSecondCopyIsCollectionHashDuplicate(array $firstSegments, array $secondSegments): void
+    {
+        Log::spy();
+
+        $first = $this->import($this->makeNzb([['subject' => 'First.Copy.Subject', 'segments' => $firstSegments]]));
+        $second = $this->import($this->makeNzb([['subject' => 'Rewritten.Copy.Subject', 'segments' => $secondSegments]]));
+
+        $this->assertSame(NzbImportStatus::Inserted, $first['status']);
+        $this->assertSame(NzbImportStatus::Duplicate, $second['status']);
+        $this->assertSame(1, DB::table('releases')->count());
+        $this->assertDuplicateReason('collectionhash_match');
     }
 
     private function assertDuplicateReason(string $reason): void
@@ -650,6 +743,38 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $paths = array_map(static fn (\SplFileInfo $file): string => $file->getPathname(), File::allFiles($this->nzbDirectory));
 
         return array_values(array_filter($paths, static fn (string $path): bool => str_ends_with($path, '.nzb.gz')));
+    }
+
+    /**
+     * The one stored NZB under the temporary NZB root, decompressed.
+     */
+    private function storedNzbContents(): string
+    {
+        $files = $this->storedNzbFiles();
+        $this->assertCount(1, $files);
+        $contents = gzdecode((string) file_get_contents($files[0]));
+        $this->assertIsString($contents);
+
+        return $contents;
+    }
+
+    /**
+     * Segment texts of the one stored NZB, in document order.
+     *
+     * @return list<string>
+     */
+    private function storedSegmentIds(): array
+    {
+        $nzb = simplexml_load_string($this->storedNzbContents());
+        $this->assertInstanceOf(\SimpleXMLElement::class, $nzb);
+        $ids = [];
+        foreach ($nzb->file as $file) {
+            foreach ($file->segments->segment as $segment) {
+                $ids[] = (string) $segment;
+            }
+        }
+
+        return $ids;
     }
 
     /**
