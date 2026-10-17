@@ -68,7 +68,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $this->assertNull(DB::table('releases')->value('lastarticle'));
     }
 
-    public function test_import_measures_partial_nzb_without_nfo_processing(): void
+    public function test_import_of_a_partial_nzb_is_stored_complete_without_nfo_processing(): void
     {
         $status = $this->scan($this->makeNzb([
             ['subject' => '[1/2] Partial.Import.Release.part01.rar yEnc (1/4)', 'segments' => ['part1-1@example.com', 'part1-2@example.com']],
@@ -76,18 +76,18 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         ]));
 
         $this->assertSame(NzbImportStatus::Inserted, $status);
-        $this->assertSame(75.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(100.0, (float) DB::table('releases')->value('completion'));
         $this->assertSame(2, DB::table('releases')->value('declaredfiles'));
     }
 
-    public function test_import_without_declared_totals_keeps_the_never_measured_sentinel(): void
+    public function test_import_without_declared_totals_is_stored_complete(): void
     {
         $status = $this->scan($this->makeNzb([
             ['subject' => 'Unmeasurable.Import.Release', 'segments' => ['unknown-total@example.com']],
         ]));
 
         $this->assertSame(NzbImportStatus::Inserted, $status);
-        $this->assertSame(0.0, (float) DB::table('releases')->value('completion'));
+        $this->assertSame(100.0, (float) DB::table('releases')->value('completion'));
         $this->assertSame(0, DB::table('releases')->value('declaredfiles'));
     }
 
@@ -141,7 +141,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         ]);
         $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
         // Stand in for a release header formation created: the same row, not marked imported.
-        DB::table('releases')->update(['is_imported' => 0]);
+        DB::table('releases')->update(['is_imported' => 0, 'completion' => 95]);
         $anchor = Release::query()->firstOrFail();
         file_put_contents(app(NzbService::class)->getNzbPath((string) $anchor->guid, 0, true), gzencode((string) $partial->asXML()));
 
@@ -215,6 +215,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             ],
         ]);
         $this->assertSame(NzbImportStatus::Inserted, $this->scan($partial));
+        DB::table('releases')->update(['is_imported' => 0, 'completion' => 95]);
 
         $anchor = Release::query()->firstOrFail();
         $anchorId = (int) $anchor->id;
@@ -618,7 +619,8 @@ class NzbImportSegmentHashDedupeTest extends TestCase
 
     /**
      * Import a partial anchor, store its NZB, and link it to a PreDB row titled with its cleaned
-     * name, so a later copy of the same post resolves to that PreDB ID on import.
+     * name, so a later copy of the same post resolves to that PreDB ID on import. The anchor
+     * stands in for a partial release formed from headers: not imported, at its measured completion.
      *
      * @return array{0: int, 1: string} The anchor's id and guid.
      */
@@ -630,7 +632,7 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         $anchor = Release::query()->firstOrFail();
         file_put_contents(app(NzbService::class)->getNzbPath((string) $anchor->guid, 0, true), gzencode((string) $partial->asXML()));
         DB::table('predb')->insert(['id' => 77, 'title' => (string) $anchor->searchname, 'filename' => '']);
-        DB::table('releases')->where('id', $anchor->id)->update(['predb_id' => 77]);
+        DB::table('releases')->where('id', $anchor->id)->update(['predb_id' => 77, 'is_imported' => 0, 'completion' => $presentSegments * 100 / 20]);
 
         return [(int) $anchor->id, (string) $anchor->guid];
     }

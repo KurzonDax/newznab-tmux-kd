@@ -432,6 +432,29 @@ final class NzbImportServiceTest extends TestCase
         $this->assertNull($results[0]['error']);
     }
 
+    public function test_an_absorbed_duplicate_is_offered_at_its_measured_completion(): void
+    {
+        $this->createDuplicateTables();
+        $absorber = Mockery::mock(ReleaseDuplicateAbsorber::class);
+        $absorber->shouldReceive('supportsReason')->andReturn(true);
+        // The fifth argument is the incoming completion: one of two declared segments.
+        $absorber->shouldReceive('absorbXml')
+            ->once()
+            ->withArgs(static fn (mixed ...$arguments): bool => $arguments[4] === 50.0)
+            ->andReturn(DuplicateAbsorbResult::notBetter());
+        $this->app->instance(ReleaseDuplicateAbsorber::class, $absorber);
+
+        $service = $this->duplicateImporter();
+        $service->beginImport(
+            [$this->makeImportableNzbFile('Existing.Release yEnc (1/2)')],
+            resultCallback: $this->collectResults($results),
+            releaseName: 'Existing.Release',
+        );
+
+        $this->assertCount(1, $results);
+        $this->assertSame(NzbImportStatus::Duplicate, $results[0]['status']);
+    }
+
     public function test_the_callback_carries_the_error_for_blacklisted_no_group_and_failed_imports(): void
     {
         $blacklist = new class extends BlacklistService
