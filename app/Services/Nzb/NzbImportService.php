@@ -257,6 +257,12 @@ class NzbImportService
                     continue;
                 }
 
+                // NZBGet wraps every segment message-ID in angle brackets itself, so
+                // store bare ones; an NZB already bare is stored as it was read.
+                if (self::normalizeSegmentMessageIds($nzbXML) && ($normalized = $nzbXML->asXML()) !== false) {
+                    $nzbString = $normalized;
+                }
+
                 // Try to insert the NZB details into the DB.
                 $nzbFileName = $releaseName
                     ?? ($useNzbName === true ? $this->deriveReleaseNameFromNzbPath($nzbFilePath) : '');
@@ -453,7 +459,6 @@ class NzbImportService
     protected function scanNZBFile(mixed &$nzbXML, mixed $nzbFileName = '', mixed $source = ''): NzbImportStatus
     {
         $binary_names = [];
-        $segmentMessageIds = [];
         $completion = new CompletionTally;
         $totalFiles = $totalSize = $groupID = 0;
         $isBlackListed = $groupName = $firstName = $posterName = $postDate = false;
@@ -525,17 +530,12 @@ class NzbImportService
 
             // If we found a group and it's not blacklisted.
             if ($groupID !== -1 && ! $isBlackListed) {
-                // Get the size of the release and collect the segment
-                // message-IDs for the deterministic import hash.
+                // Get the size of the release.
                 $segments = $file->segments->segment;
                 $segmentCount = \count($segments);
                 if ($segmentCount > 0) {
                     foreach ($segments as $segment) {
                         $totalSize += (int) $segment->attributes()->bytes;
-                        $messageId = trim((string) $segment);
-                        if ($messageId !== '') {
-                            $segmentMessageIds[] = $messageId;
-                        }
                     }
                 }
 
@@ -579,7 +579,7 @@ class NzbImportService
                 'completion' => $completionSignals->percentage(),
                 'declaredFiles' => $completionSignals->filesDeclared,
                 'nzbCategoryId' => $this->resolveNzbCategoryId($nzbXML),
-                'segmentMessageIds' => $segmentMessageIds,
+                'segmentMessageIds' => self::segmentMessageIds($nzbXML),
                 'nzbXml' => $nzbXML->asXML(),
             ]
         );
@@ -760,7 +760,7 @@ class NzbImportService
             $categoryId = (int) $determinedCategory['categories_id'];
         }
 
-        $importHash = $this->computeSegmentMessageIdHash($nzbDetails['segmentMessageIds'] ?? []);
+        $importHash = self::computeSegmentMessageIdHash($nzbDetails['segmentMessageIds'] ?? []);
 
         // Store the NZB before the row exists, so an interrupted import can leave
         // only an orphan file, never a release without its NZB.
@@ -924,7 +924,7 @@ class NzbImportService
      *
      * @param  list<string>  $messageIds
      */
-    protected function computeSegmentMessageIdHash(array $messageIds): ?string
+    public static function computeSegmentMessageIdHash(array $messageIds): ?string
     {
         if ($messageIds === []) {
             return null;
@@ -934,6 +934,50 @@ class NzbImportService
         sort($messageIds);
 
         return sha1(implode("\n", $messageIds), true);
+    }
+
+    /**
+     * Normalise every segment message-ID of an NZB in place with
+     * {@see NzbService::normalizeSegmentMessageId()}.
+     *
+     * @return bool Whether any segment text changed.
+     */
+    public static function normalizeSegmentMessageIds(\SimpleXMLElement $nzbXML): bool
+    {
+        $changed = false;
+        foreach ($nzbXML->file as $file) {
+            foreach ($file->segments->segment as $segment) {
+                $messageId = (string) $segment;
+                $bare = NzbService::normalizeSegmentMessageId($messageId);
+                if ($bare !== $messageId) {
+                    // Assigning the node's own value escapes `&`; addChild() would not.
+                    $segment[0] = $bare;
+                    $changed = true;
+                }
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
+     * The segment message-IDs an import hashes into its collectionhash, in document order.
+     *
+     * @return list<string>
+     */
+    public static function segmentMessageIds(\SimpleXMLElement $nzbXML): array
+    {
+        $messageIds = [];
+        foreach ($nzbXML->file as $file) {
+            foreach ($file->segments->segment as $segment) {
+                $messageId = trim((string) $segment);
+                if ($messageId !== '') {
+                    $messageIds[] = $messageId;
+                }
+            }
+        }
+
+        return $messageIds;
     }
 
     protected function normalizeGroupName(\SimpleXMLElement|string $group): string
