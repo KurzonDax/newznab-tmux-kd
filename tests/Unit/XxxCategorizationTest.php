@@ -236,6 +236,9 @@ class XxxCategorizationTest extends TestCase
             'hard trigger with ordinary tag' => ['Cum On Baby Bite My Black Wire 2 720P WEBRIP MP4-GUSH'],
             'ambiguous studio corroborated by adult newsgroup with ordinary tag' => ['Penthouse.Assrageous.2011.HDTV.720p.X264-SHDXXX', 'alt.binaries.town.xxx'],
             'xxx in episode title without ordinary tags' => ['Some.Series.S01E02.Scene.Title.XXX.1080p.mp4'],
+            // Dated clips without an ordinary-release tag stay in XXX (#1111)
+            'site with four-digit date and performer' => ['SomeSite.2024.03.02.Jane.Doe.1080p.mp4'],
+            'site with two-digit date and performer' => ['SomeSite.24.03.02.Jane.Doe.1080p.mp4'],
         ];
     }
 
@@ -247,6 +250,34 @@ class XxxCategorizationTest extends TestCase
 
         $this->assertSame(
             Category::XXX_ROOT,
+            Category::rootCategoryFor($categoryId),
+            "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
+        );
+    }
+
+    /**
+     * Dated TV shows and sports games whose words after the date are not a
+     * performer's name (#1111).
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function datedTvAndSportReleaseProvider(): array
+    {
+        return [
+            'nhl game with ordinary tag' => ['NHL.2026.10.15.Buffalo.Sabres.Vs.Toronto.Maple.Leafs.720p.WEB.H264-NiGHTNiNJAS'],
+            'danish daily show with ordinary tag' => ['Presselogen.2026.10.10.Bitter.Strid.Og.Beskyldninger.Efter.Hoejskolen.DANiSH.720p.WEB.h264-DontDoDrugs'],
+            'nfl game without ordinary tag' => ['nfl.2017.11.16.titans.vs.steelers.720p-dhd'],
+        ];
+    }
+
+    #[DataProvider('datedTvAndSportReleaseProvider')]
+    public function test_dated_tv_and_sport_releases_leave_xxx(string $releaseName): void
+    {
+        $passable = $this->runPipeline($releaseName, 'alt.binaries.multimedia');
+        $categoryId = $passable->bestResult->categoryId;
+
+        $this->assertSame(
+            Category::TV_ROOT,
             Category::rootCategoryFor($categoryId),
             "'{$releaseName}' resolved to {$categoryId} via {$passable->bestResult->matchedBy}"
         );
