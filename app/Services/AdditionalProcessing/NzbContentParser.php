@@ -235,7 +235,7 @@ class NzbContentParser
                     $result['bookFileCount']++;
                 }
             } catch (\ErrorException $e) {
-                Log::debug($e->getTraceAsString());
+                Log::debug($e->getMessage(), ['exception' => $e]);
             }
         }
 

@@ -114,7 +114,7 @@ class ArchiveExtractionService
             $dataSummary = $this->archiveInfo->getSummary(true);
         } catch (\Exception $e) {
             if ($this->config->debugMode) {
-                Log::warning($e->getTraceAsString());
+                Log::warning($e->getMessage(), ['exception' => $e]);
             }
 
             return $result;

@@ -11,6 +11,7 @@ use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NNTPService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Mockery;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
@@ -96,5 +97,20 @@ class GetArticleRangeProviderTest extends TestCase
             ->assertFailed();
 
         $this->assertSame(9_000, (int) DB::table('usenet_group_provider_cursors')->value('last_record'));
+    }
+
+    public function test_a_failed_usenet_connect_is_logged_with_its_reason(): void
+    {
+        $failure = new \ErrorException('stream_socket_client(): SSL: Handshake timed out');
+        $nntp = Mockery::mock(NNTPService::class);
+        $nntp->shouldReceive('doConnect')->once()->andThrow($failure);
+        $this->app->instance(NNTPService::class, $nntp);
+        Log::spy();
+
+        $this->artisan('articles:get-range', ['mode' => 'binaries', 'group' => 'alt.test', 'first' => 5_001, 'last' => 5_100])
+            ->assertFailed();
+
+        Log::shouldHaveReceived('error')->once()
+            ->with('stream_socket_client(): SSL: Handshake timed out', Mockery::on(static fn (array $context): bool => ($context['exception'] ?? null) === $failure));
     }
 }
