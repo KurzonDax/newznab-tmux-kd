@@ -34,7 +34,7 @@ class ProcessBackfill extends Command
 
             return self::SUCCESS;
         } catch (\Exception $e) {
-            Log::error($e->getTraceAsString());
+            Log::error($e->getMessage(), ['exception' => $e]);
             $this->error($e->getMessage());
 
             return self::FAILURE;

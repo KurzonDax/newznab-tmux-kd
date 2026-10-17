@@ -47,7 +47,7 @@ class ProcessReleasesCommand extends Command
 
             return self::SUCCESS;
         } catch (\Throwable $e) {
-            Log::error($e->getTraceAsString());
+            Log::error($e->getMessage(), ['exception' => $e]);
             $this->error($e->getMessage());
 
             return self::FAILURE;

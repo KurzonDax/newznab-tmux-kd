@@ -87,7 +87,7 @@ class MediaExtractionService
             )->success;
         } catch (\Throwable $e) {
             if ($this->config->debugMode) {
-                Log::error($e->getTraceAsString());
+                Log::error($e->getMessage(), ['exception' => $e]);
             }
 
             return false;
@@ -208,7 +208,7 @@ class MediaExtractionService
             return $this->videoFrameExtractor->extractRepresentativeFrame($clipPath, $framePath);
         } catch (\Throwable $e) {
             if ($this->config->debugMode) {
-                Log::error($e->getTraceAsString());
+                Log::error($e->getMessage(), ['exception' => $e]);
             }
 
             return false;
