@@ -33,14 +33,14 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
 {
     use IsolatedSqliteDatabase;
 
+    /** @var list<resource> Loopback listeners and accepted connections, closed even when an assertion fails. */
+    private array $sockets = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
     }
-
-    /** @var list<resource> Loopback listeners and accepted connections, closed even when an assertion fails. */
-    private array $sockets = [];
 
     protected function tearDown(): void
     {
@@ -193,7 +193,7 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         $this->assertSame([250000, 500000], $client->retryDelays);
         $this->assertNntpError($result, 'Cannot connect to NNTP provider');
         $this->assertNntpError($result, '[ERROR 111: Connection refused]');
-        $this->assertLaravelTurnsWarningsIntoExceptions();
+        $this->assertLaravelsWarningHandlerIsRestored();
     }
 
     #[Test]
@@ -223,7 +223,7 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
 
         try {
             $result = $client->doConnect(false);
-            $this->assertLaravelTurnsWarningsIntoExceptions();
+            $this->assertLaravelsWarningHandlerIsRestored();
 
             $this->assertTrue($result);
             $this->assertSame(1, $client->connectAttempts);
@@ -238,8 +238,8 @@ final class NNTPServiceConnectRetryBudgetTest extends TestCase
         DB::table('settings')->updateOrInsert(['name' => 'nntpretries'], ['value' => $value]);
     }
 
-    /** A warning outside the guarded socket call still reaches Laravel's handler, which throws it. */
-    private function assertLaravelTurnsWarningsIntoExceptions(): void
+    /** connect() put Laravel's handler back: a warning outside the guarded socket call still throws. */
+    private function assertLaravelsWarningHandlerIsRestored(): void
     {
         $missing = $this->makeTempPath('nntp-missing');
 
