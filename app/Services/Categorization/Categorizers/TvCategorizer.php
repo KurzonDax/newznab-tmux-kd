@@ -124,7 +124,7 @@ class TvCategorizer extends AbstractCategorizer
             return true;
         }
         // Sports events are TV-like even without SxxExx markers.
-        if ($this->isSportEvent($name)) {
+        if (self::isSportEvent($name)) {
             return true;
         }
         // Known anime release groups (should be treated as TV)
@@ -230,7 +230,7 @@ class TvCategorizer extends AbstractCategorizer
 
     protected function checkSport(string $name): ?CategorizationResult
     {
-        if ($this->isSportEvent($name)) {
+        if (self::isSportEvent($name)) {
             return $this->matched(Category::TV_SPORT, 0.85, 'sport');
         }
 
@@ -333,7 +333,7 @@ class TvCategorizer extends AbstractCategorizer
         return null;
     }
 
-    protected function isSportEvent(string $name): bool
+    public static function isSportEvent(string $name): bool
     {
         return preg_match(self::SPORTS_MARKER_REGEX, $name) === 1
             && preg_match(self::SPORTS_EVENT_CONTEXT_REGEX, $name) === 1;

@@ -155,9 +155,13 @@ class XxxCategorizer extends AbstractCategorizer
             }
             // Check for performer name patterns (firstname.lastname) after the date
             if (preg_match('/\d{2}[.\-_ ]([a-z]+)[.\-_ ]([a-z]+)[.\-_ ]/i', $name)) {
-                // Has a "firstname.lastname" pattern after date - likely adult
-                // But exclude obvious TV patterns
-                if (! preg_match('/\b(S\d{1,2}E\d{1,2}|Episode|Season|HDTV|PDTV)\b/i', $name)) {
+                // Has a "firstname.lastname" pattern after date - likely adult.
+                // But exclude obvious TV patterns, ordinary-release tags and sport events:
+                // dated TV shows and games ("NHL.2026.10.15.Buffalo.Sabres") put team or
+                // story words where a performer's name would be.
+                if (! preg_match('/\b(S\d{1,2}E\d{1,2}|Episode|Season|HDTV|PDTV)\b/i', $name) &&
+                    ! $context->hasOrdinaryReleaseTag() &&
+                    ! TvCategorizer::isSportEvent($name)) {
                     return true;
                 }
             }
