@@ -104,6 +104,36 @@
                     </div>
                 </div>
 
+                <!-- Minimum Size -->
+                <div class="mb-6">
+                    <x-label for="minsizetoformrelease">Minimum File Size:</x-label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-download text-gray-400"></i>
+                            </div>
+                            <x-input type="number"
+                                     step="any"
+                                     min="0"
+                                     id="minsizetoformrelease"
+                                     name="minsizetoformrelease"
+                                     class="pl-10"
+                                     :value="$minimumSize['value']" />
+                        </div>
+                        <div class="w-28 shrink-0">
+                            <x-select id="minsizetoformrelease_unit" name="minsizetoformrelease_unit">
+                                @foreach($sizeUnits as $unit)
+                                    <option value="{{ $unit }}" @selected($minimumSize['unit'] === $unit)>{{ $unit }}</option>
+                                @endforeach
+                            </x-select>
+                        </div>
+                    </div>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">0 means no category minimum; the site and group minimums still apply. Releases in this category smaller than this are deleted, including ones already indexed.</p>
+                    @error('minsizetoformrelease')
+                        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                    @enderror
+                </div>
+
                 <!-- Form Actions -->
                 <div class="flex justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-700">
                     <x-button-link href="{{ url('/admin/category-list') }}"
