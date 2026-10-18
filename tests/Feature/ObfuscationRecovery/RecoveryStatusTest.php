@@ -38,6 +38,7 @@ final class RecoveryStatusTest extends TestCase
 
     public function test_status_separates_candidates_from_verified_coverage_and_retains_merged_lifetime_allowances(): void
     {
+        $this->freezeSecond();
         DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
         foreach (['first', 'second'] as $owner) {
             DB::table('obfuscation_recovery_bundles')->insert(['owner_digest' => $owner, 'groups_id' => 1,
