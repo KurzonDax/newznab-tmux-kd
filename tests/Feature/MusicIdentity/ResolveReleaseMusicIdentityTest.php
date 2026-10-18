@@ -406,6 +406,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     #[Test]
     public function an_unresolved_fingerprinted_release_is_looked_up_and_its_decision_stamps_the_lookup(): void
     {
+        $this->freezeSecond();
         config([
             'music-identity.acoustid.client_key' => 'synthetic-client-key',
             'music-identity.acoustid.lookup_url' => 'https://acoustid.test/v2/lookup',
