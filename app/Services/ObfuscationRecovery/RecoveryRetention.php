@@ -9,6 +9,31 @@ use InvalidArgumentException;
 
 final class RecoveryRetention
 {
+    public const DRAIN_SECONDS = 10;
+
+    /**
+     * Repeat default-sized purge transactions until one deletes nothing or the budget elapses; the first batch always runs.
+     *
+     * @return array{headers:int,batches:int,milliseconds:int}
+     */
+    public function drain(RecoveryConfig $config, int $seconds = self::DRAIN_SECONDS): array
+    {
+        if ($seconds < 0 || $seconds > 60) {
+            throw new InvalidArgumentException('invalid_retention_budget');
+        }
+        $started = hrtime(true);
+        $deadline = $started + $seconds * 1_000_000_000;
+        $headers = 0;
+        $batches = 0;
+        do {
+            $deleted = $this->purge($config)['headers'];
+            $batches++;
+            $headers += $deleted;
+        } while ($deleted !== 0 && hrtime(true) < $deadline);
+
+        return ['headers' => $headers, 'batches' => $batches, 'milliseconds' => intdiv(hrtime(true) - $started, 1_000_000)];
+    }
+
     /**
      * Keep the default batch small to release group locks within capture's one-second wait budget.
      *

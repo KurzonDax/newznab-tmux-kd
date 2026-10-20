@@ -51,7 +51,8 @@ final class RecoveryPaneText
     public function housekeepingLine(array $counters): string
     {
         $labels = [
-            'expired_headers' => 'expired %s headers', 'expired_scans' => 'deleted %s old scans',
+            'expired_headers' => 'expired %s headers', 'expired_header_batches' => '%s purge batches',
+            'expired_header_milliseconds' => '%s ms purging', 'expired_scans' => 'deleted %s old scans',
             'expired_scan_batches' => 'deleted %s scan batches', 'compacted_incomplete_scans' => 'compacted %s incomplete scans',
             'expired_frontiers' => 'deleted %s frontier points', 'expired_frontier_conflicts' => 'deleted %s frontier conflicts',
             'expired_frontier_ranges' => 'deleted %s frontier ranges', 'compacted_attempts' => 'compacted %s attempts',
