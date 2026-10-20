@@ -13,11 +13,11 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryReleaseGate;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\ReleaseClaimWindow;
 use Closure;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PDO;
@@ -30,7 +30,8 @@ use PDO;
  * size, and {@see AudioRouting} splits the set
  * between them. What "pending" means, how a worker takes ownership, when a claim
  * goes stale, and how the bucket backlog is counted are identical, so they live
- * here and neither query may restate them.
+ * here and neither query may restate them. The stale-claim window itself lives in
+ * {@see ReleaseClaimWindow}, and {@see self::applyClaimWindow()} delegates to it.
  *
  * That rule is not stylistic. The two queries inside the *additional* path were
  * once maintained independently, and a mismatch on size filters and nzbstatus
@@ -208,13 +209,7 @@ final class ReleaseClaimant
             return;
         }
 
-        $staleBefore = self::claimStaleBefore();
-
-        $query->where(function (Builder $claimQuery) use ($staleBefore, $table): void {
-            $claimQuery
-                ->whereNull($table.'.'.self::CLAIMED_AT_COLUMN)
-                ->orWhere($table.'.'.self::CLAIMED_AT_COLUMN, '<', $staleBefore);
-        });
+        ReleaseClaimWindow::applyFree($query, $table.'.'.self::CLAIMED_AT_COLUMN);
     }
 
     /**
@@ -280,11 +275,7 @@ final class ReleaseClaimant
                     ->tap(static fn ($query) => SidecarMutationProtection::apply($query))
                     ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query))
                     ->whereRaw(BundleIdentity::availableSql())
-                    ->where(function (Builder $claimQuery): void {
-                        $claimQuery
-                            ->whereNull(self::CLAIMED_AT_COLUMN)
-                            ->orWhere(self::CLAIMED_AT_COLUMN, '<', self::claimStaleBefore());
-                    })
+                    ->tap(static fn ($query) => ReleaseClaimWindow::applyFree($query, self::CLAIMED_AT_COLUMN))
                     ->update([
                         self::CLAIMED_AT_COLUMN => now(),
                         self::CLAIM_TOKEN_COLUMN => $token,
@@ -447,18 +438,6 @@ final class ReleaseClaimant
 
         return self::$supportsClaims = Schema::hasColumn('releases', self::CLAIMED_AT_COLUMN)
             && Schema::hasColumn('releases', self::CLAIM_TOKEN_COLUMN);
-    }
-
-    public static function claimTtlSeconds(): int
-    {
-        $timeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
-
-        return max(300, $timeout * 2);
-    }
-
-    public static function claimStaleBefore(): Carbon
-    {
-        return now()->subSeconds(self::claimTtlSeconds());
     }
 
     /**

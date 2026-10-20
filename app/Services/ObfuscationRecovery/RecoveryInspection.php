@@ -7,6 +7,7 @@ namespace App\Services\ObfuscationRecovery;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\ReleaseClaimWindow;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -65,7 +66,7 @@ final readonly class RecoveryInspection
     private static function additionalOwned(Release $release, ?string $token): bool
     {
         $claimedAt = $release->{ReleaseClaimant::CLAIMED_AT_COLUMN};
-        $fresh = $claimedAt !== null && Carbon::parse($claimedAt)->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore());
+        $fresh = $claimedAt !== null && Carbon::parse($claimedAt)->greaterThanOrEqualTo(ReleaseClaimWindow::staleBefore());
 
         return $token === null ? ! $fresh : $fresh && $release->{ReleaseClaimant::CLAIM_TOKEN_COLUMN} === $token;
     }

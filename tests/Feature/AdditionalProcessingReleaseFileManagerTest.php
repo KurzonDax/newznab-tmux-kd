@@ -41,6 +41,7 @@ use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseClaimWindow;
 use App\Services\TempWorkspaceService;
 use App\Support\Utf8;
 use dariusiii\rarinfo\ArchiveInfo;
@@ -1224,6 +1225,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         });
         (new \ReflectionProperty(ReleaseClaimant::class, 'supportsClaims'))
             ->setValue(null, null);
+        ReleaseClaimWindow::flushColumnCache();
 
         try {
             $releaseRow = $this->releaseRow();
@@ -1242,6 +1244,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         } finally {
             (new \ReflectionProperty(ReleaseClaimant::class, 'supportsClaims'))
                 ->setValue(null, null);
+            ReleaseClaimWindow::flushColumnCache();
         }
     }
 

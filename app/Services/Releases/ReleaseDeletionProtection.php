@@ -44,14 +44,8 @@ final class ReleaseDeletionProtection
             });
         }
 
-        if (Schema::hasTable('releases') && Schema::hasColumn('releases', ReleaseClaimant::CLAIMED_AT_COLUMN)) {
-            $column = $table.'.'.ReleaseClaimant::CLAIMED_AT_COLUMN;
-
-            $query->where(static function (Builder $claimQuery) use ($column): void {
-                $claimQuery
-                    ->whereNull($column)
-                    ->orWhere($column, '<', ReleaseClaimant::claimStaleBefore());
-            });
+        if (ReleaseClaimWindow::releasesHasColumn(ReleaseClaimant::CLAIMED_AT_COLUMN)) {
+            ReleaseClaimWindow::applyFree($query, $table.'.'.ReleaseClaimant::CLAIMED_AT_COLUMN);
         }
 
         if (! $includeKept) {

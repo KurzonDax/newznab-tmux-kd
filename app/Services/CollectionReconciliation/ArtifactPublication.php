@@ -6,7 +6,6 @@ namespace App\Services\CollectionReconciliation;
 
 use App\Facades\Search;
 use App\Models\Release;
-use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
@@ -14,6 +13,7 @@ use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\ReleaseClaimWindow;
 use App\Support\Data\NzbCreationResult;
 use App\Support\Data\NzbReplaceResult;
 use Illuminate\Support\Carbon;
@@ -175,7 +175,7 @@ class ArtifactPublication
             if (($owner !== null && ! $owner->owns((int) $release->id))
                 || ($owner === null && ! RecoveryLease::applyAvailable(Release::query()->whereKey($release->id))->exists())
                 || ! SidecarMutationProtection::apply(Release::query()->whereKey($release->id), 'releases', $owner?->operationId())->exists()
-                || ($release->additional_pp_claimed_at !== null && Carbon::parse($release->additional_pp_claimed_at)->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore()))) {
+                || ($release->additional_pp_claimed_at !== null && Carbon::parse($release->additional_pp_claimed_at)->greaterThanOrEqualTo(ReleaseClaimWindow::staleBefore()))) {
                 return NzbReplaceResult::writeFailure('artifact_owned_by_another_worker');
             }
             if (Schema::hasTable('obfuscation_recovery_publications') && DB::table('obfuscation_recovery_publications')

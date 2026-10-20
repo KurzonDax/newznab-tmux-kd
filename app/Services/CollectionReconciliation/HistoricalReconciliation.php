@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\CollectionReconciliation;
 
 use App\Models\Release;
-use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Nzb\NzbService;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\ReleaseClaimWindow;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -252,7 +252,7 @@ final class HistoricalReconciliation
     {
         foreach (['additional_pp_claimed_at', 'recovery_claimed_at', 'nzb_creation_claimed_at'] as $column) {
             $value = $release->getAttribute($column);
-            if ($value !== null && strtotime((string) $value) >= ReleaseClaimant::claimStaleBefore()->timestamp) {
+            if ($value !== null && strtotime((string) $value) >= ReleaseClaimWindow::staleBefore()->timestamp) {
                 return true;
             }
         }
