@@ -34,8 +34,12 @@ final class RecoveryScheduler
 
             return ['engine_stopped' => 1];
         }
-        $retention = app(RecoveryRetention::class)->purge(RecoveryConfig::fromSettings());
+        $retention = app(RecoveryRetention::class)->drain(RecoveryConfig::fromSettings(), min(RecoveryRetention::DRAIN_SECONDS, max(1, $seconds)));
         $report['expired_headers'] = $retention['headers'];
+        if ($retention['headers'] > 0) {
+            $report['expired_header_batches'] = $retention['batches'];
+            $report['expired_header_milliseconds'] = $retention['milliseconds'];
+        }
         if ($stage === RecoveryStage::Discover) {
             $report += app(RecoveryHistoryRetention::class)->step(RecoveryConfig::fromSettings());
         }

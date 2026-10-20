@@ -21,6 +21,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\TestCase;
@@ -154,6 +155,70 @@ final class RecoveryRetentionTest extends TestCase
         $this->assertSame(100, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
         $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
         $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+    }
+
+    public function test_drain_repeats_bounded_batches_until_nothing_is_deleted(): void
+    {
+        for ($id = 1; $id <= 250; $id++) {
+            $this->header($id, null, 145);
+        }
+        $report = (new RecoveryRetention)->drain(RecoveryConfig::fromValues([]));
+        $this->assertSame(250, $report['headers']);
+        $this->assertSame(4, $report['batches']);
+        $this->assertSame(0, DB::table('obfuscation_recovery_headers')->count());
+        $this->assertSame(250, (int) DB::table('obfuscation_recovery_metrics')->where('metric', 'expired_headers')->sum('value'));
+    }
+
+    public function test_drain_with_zero_budget_runs_exactly_one_batch(): void
+    {
+        for ($id = 1; $id <= 250; $id++) {
+            $this->header($id, null, 145);
+        }
+        $report = (new RecoveryRetention)->drain(RecoveryConfig::fromValues([]), 0);
+        $this->assertSame(100, $report['headers']);
+        $this->assertSame(1, $report['batches']);
+        $this->assertSame(150, DB::table('obfuscation_recovery_headers')->count());
+    }
+
+    public function test_drain_stops_after_one_try_when_every_candidate_is_waiting(): void
+    {
+        $work = app(RecoveryWork::class);
+        $work->enqueue(RecoveryStage::Discover, 'expiry-owner', 1, 'discover', []);
+        $claim = $work->claim(RecoveryStage::Discover);
+        $this->header(1, $claim->bundleId, 145);
+        $report = (new RecoveryRetention)->drain(RecoveryConfig::fromValues([]));
+        $this->assertSame(0, $report['headers']);
+        $this->assertSame(1, $report['batches']);
+        $this->assertSame(1, DB::table('obfuscation_recovery_headers')->count());
+    }
+
+    #[DataProvider('outOfRangeDrainBudgets')]
+    public function test_drain_rejects_an_out_of_range_budget(int $seconds): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('invalid_retention_budget');
+        (new RecoveryRetention)->drain(RecoveryConfig::fromValues([]), $seconds);
+    }
+
+    public static function outOfRangeDrainBudgets(): array
+    {
+        return ['negative' => [-1], 'over a minute' => [61]];
+    }
+
+    public function test_scheduler_reports_purge_batches_only_when_headers_expired(): void
+    {
+        for ($id = 1; $id <= 250; $id++) {
+            $this->header($id, null, 145);
+        }
+        $report = app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 1, 60);
+        $this->assertSame(250, $report['expired_headers']);
+        $this->assertSame(4, $report['expired_header_batches']);
+        $this->assertArrayHasKey('expired_header_milliseconds', $report);
+        $this->assertGreaterThanOrEqual(0, $report['expired_header_milliseconds']);
+        $report = app(RecoveryScheduler::class)->local(RecoveryStage::Discover, 1, 60);
+        $this->assertSame(0, $report['expired_headers']);
+        $this->assertArrayNotHasKey('expired_header_batches', $report);
+        $this->assertArrayNotHasKey('expired_header_milliseconds', $report);
     }
 
     public function test_expiry_removes_tail_coverage_for_the_expired_article(): void
