@@ -21,6 +21,17 @@ final class SchemaAuthorityTest extends TestCase
         self::assertSame('id', $tables['audio_data']['autoIncrement']);
     }
 
+    public function test_reads_cascade_parents_from_the_dump(): void
+    {
+        $parents = (new SchemaAuthority(dirname(__DIR__, 2).'/database/schema/mariadb-schema.sql'))->cascadeParents();
+
+        self::assertSame(['collections'], $parents['binaries']);
+        self::assertSame(['media_info_probes'], $parents['media_info_tracks']);
+        self::assertSame(['releases', 'users'], $parents['release_reports']);
+        self::assertSame(['releases'], $parents['payload_prefix_hashes']);
+        self::assertArrayNotHasKey('tv_info', $parents);
+    }
+
     public function test_every_current_migration_is_recorded_in_the_authority(): void
     {
         $root = dirname(__DIR__, 2);

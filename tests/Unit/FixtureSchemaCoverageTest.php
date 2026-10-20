@@ -21,6 +21,7 @@ final class FixtureSchemaCoverageTest extends TestCase
         FixtureSchemaCoverageTest::class,
         FixtureSchemaGuardTest::class,
         ProductionTablesTest::class,
+        RetentionRegistryTest::class,
         SchemaAuthorityTest::class,
     ];
 

@@ -67,6 +67,36 @@ final class SchemaAuthority
         return $tables;
     }
 
+    /**
+     * Parents each table references through an ON DELETE CASCADE foreign key; SET NULL and
+     * foreign keys without an ON DELETE clause are not read. Tables without one are absent.
+     *
+     * @return array<string, list<string>>
+     */
+    public function cascadeParents(): array
+    {
+        preg_match_all('/^CREATE TABLE `([^`]+)` \(\n(.*?)\n\) ENGINE=[^\n]+;/ms', $this->sql, $matches, PREG_SET_ORDER);
+
+        $parents = [];
+        foreach ($matches as $match) {
+            foreach (explode("\n", $match[2]) as $line) {
+                $line = trim($line);
+                if (str_starts_with($line, 'CONSTRAINT ')
+                    && preg_match('/\bFOREIGN KEY \([^)]*\) REFERENCES `([^`]+)` \([^)]*\).*\bON DELETE CASCADE\b/i', $line, $foreign)) {
+                    $parents[$match[1]][] = $foreign[1];
+                }
+            }
+        }
+
+        foreach ($parents as $table => $references) {
+            $references = array_values(array_unique($references));
+            sort($references);
+            $parents[$table] = $references;
+        }
+
+        return $parents;
+    }
+
     /** @param list<string> $migrationPaths */
     public function assertFresh(array $migrationPaths): void
     {
