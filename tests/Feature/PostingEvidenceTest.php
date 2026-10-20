@@ -12,6 +12,8 @@ use App\Services\NNTP\DTO\BoundedArticleResponse;
 use App\Services\NNTP\NntpProvider;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\YencService;
+use Illuminate\Console\Scheduling\CallbackEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\DB;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -135,6 +137,63 @@ class PostingEvidenceTest extends TestCase
         $this->travel(2)->days();
         $other->resolve($files, 'expired', microtime(true) + 60);
         $this->assertCount(8, $requests, 'Loading from shared cache must not extend its original expiry.');
+    }
+
+    public function test_purge_deletes_expired_rows_and_keeps_live_ones(): void
+    {
+        DB::table('reconciliation_evidence')->insert([
+            ['key' => 'past', 'response' => 'x', 'expires_at' => now()->subSecond()],
+            ['key' => 'boundary', 'response' => 'x', 'expires_at' => now()],
+            ['key' => 'live', 'response' => 'x', 'expires_at' => now()->addSecond()],
+        ]);
+
+        $this->assertSame(2, PostingEvidence::purgeExpired());
+        $this->assertSame(['live'], DB::table('reconciliation_evidence')->pluck('key')->all());
+    }
+
+    public function test_purge_stops_at_the_per_run_cap_oldest_first(): void
+    {
+        $rows = [];
+        for ($i = 0; $i <= PostingEvidence::PURGE_CAP; $i++) {
+            $rows[] = ['key' => sprintf('k%05d', $i), 'response' => 'x', 'expires_at' => now()->subSeconds(PostingEvidence::PURGE_CAP + 1 - $i)];
+        }
+        DB::table('reconciliation_evidence')->insert($rows);
+
+        $this->assertSame(PostingEvidence::PURGE_CAP, PostingEvidence::purgeExpired());
+        $this->assertSame([sprintf('k%05d', PostingEvidence::PURGE_CAP)], DB::table('reconciliation_evidence')->pluck('key')->all());
+        $this->assertSame(1, PostingEvidence::purgeExpired());
+        $this->assertSame(0, DB::table('reconciliation_evidence')->count());
+    }
+
+    public function test_a_row_refreshed_by_upsert_survives_the_purge(): void
+    {
+        [$files, $responses] = $this->fixture();
+        $requests = [];
+        $pool = $this->pool($responses, $requests);
+        (new PostingEvidence($pool, new YencService))->resolve($files, 'first', microtime(true) + 60);
+        $this->assertCount(4, $requests);
+        $this->assertSame(4, DB::table('reconciliation_evidence')->count());
+        $this->travel(8)->days();
+        (new PostingEvidence($pool, new YencService))->resolve($files, 'refreshed', microtime(true) + 60);
+        $this->assertCount(8, $requests, 'Expired rows are fetched again and the upsert extends their expiry.');
+        DB::table('reconciliation_evidence')->insert(['key' => 'stale', 'response' => 'x', 'expires_at' => now()->subSecond()]);
+
+        $this->assertSame(1, PostingEvidence::purgeExpired());
+        $this->assertSame(4, DB::table('reconciliation_evidence')->count());
+        $this->assertSame(4, DB::table('reconciliation_evidence')->where('expires_at', '>', now())->count());
+    }
+
+    public function test_the_purge_is_scheduled_hourly_at_minute_37_without_overlap(): void
+    {
+        $event = collect(app(Schedule::class)->events())->first(static fn ($event): bool => $event->description === 'cleanup-reconciliation-evidence');
+
+        $this->assertInstanceOf(CallbackEvent::class, $event);
+        $this->assertSame('37 * * * *', $event->expression);
+        $this->assertTrue($event->withoutOverlapping);
+
+        DB::table('reconciliation_evidence')->insert(['key' => 'expired', 'response' => 'x', 'expires_at' => now()->subSecond()]);
+        $event->run($this->app);
+        $this->assertSame(0, DB::table('reconciliation_evidence')->count());
     }
 
     public function test_selective_probes_stop_at_four_and_short_prefixes_leave_duplicates_ambiguous(): void
