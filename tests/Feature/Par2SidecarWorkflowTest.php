@@ -393,25 +393,24 @@ class Par2SidecarWorkflowTest extends TestCase
     }
 
     #[DataProvider('rollbackOperations')]
-    public function test_rolling_back_nullable_nzb_copies_keeps_operations_and_their_snapshots(string $operation): void
+    public function test_rolling_back_nullable_nzb_copies_keeps_operations_and_their_snapshots(?string $failAfter, bool $absorb): void
     {
         Search::spy();
         Event::fake([ReleaseNameFixed::class]);
         $this->seedPostingPair();
-        $worker = app(SidecarWork::class);
-        if ($operation !== 'completed') {
-            $combiner = app(InterruptingSidecarCombiner::class);
-            $combiner->failAfter = $operation === 'rename_only' ? 'selected' : 'named';
-            $this->app->instance(SidecarCombiner::class, $combiner);
-            $worker = app(SidecarWork::class);
-        }
-        if ($operation === 'rename_only') {
+        if (! $absorb) {
             Settings::settingsUpsert(['par2_sidecar_absorb' => '0']);
         }
+        if ($failAfter !== null) {
+            $combiner = app(InterruptingSidecarCombiner::class);
+            $combiner->failAfter = $failAfter;
+            $this->app->instance(SidecarCombiner::class, $combiner);
+        }
+        $worker = app(SidecarWork::class);
         $worker->run();
         $before = $this->operationSnapshot();
-        $this->assertSame($operation === 'completed', $before['phase'] === 'done');
-        $this->assertSame($operation === 'absorbing', $before['target_xml'] !== null && $before['source_xml'] !== null);
+        $this->assertSame($failAfter === null, $before['phase'] === 'done');
+        $this->assertSame($failAfter !== null && $absorb, $before['target_xml'] !== null && $before['source_xml'] !== null);
         $migration = require database_path('migrations/2026_10_20_120000_make_par2_sidecar_operation_xml_nullable.php');
 
         $migration->down();
@@ -425,7 +424,7 @@ class Par2SidecarWorkflowTest extends TestCase
         $worker->run();
         $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'), (string) DB::table('par2_sidecar_operations')->value('reason'));
         $this->assertNzbCopiesCleared();
-        if ($operation === 'rename_only') {
+        if (! $absorb) {
             $this->assertSame(1, (int) Release::query()->findOrFail(1)->isrenamed);
             $this->assertNotNull(Release::query()->find(2));
             $this->assertSame(2100000, (int) Release::query()->findOrFail(1)->size);
@@ -438,9 +437,10 @@ class Par2SidecarWorkflowTest extends TestCase
         Event::assertDispatchedTimes(ReleaseNameFixed::class, 1);
     }
 
+    /** @return array<string,array{?string,bool}> */
     public static function rollbackOperations(): array
     {
-        return ['completed' => ['completed'], 'pending rename-only' => ['rename_only'], 'in-flight absorbing' => ['absorbing']];
+        return ['completed' => [null, true], 'pending rename-only' => ['selected', false], 'in-flight absorbing' => ['named', true]];
     }
 
     /** @return array<string,mixed> */
