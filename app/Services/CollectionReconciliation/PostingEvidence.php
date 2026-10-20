@@ -15,6 +15,10 @@ final class PostingEvidence
 {
     public const string VERSION = 'par2-posting-v1';
 
+    public const int PURGE_BATCH = 100;
+
+    public const int PURGE_CAP = 1000;
+
     /** @var array<string, array{data: string, expires: int}> */
     private array $memory = [];
 
@@ -82,6 +86,29 @@ final class PostingEvidence
 
         return new PostingDecision($decision->accepted, $decision->declaredTotal, $decision->setId, $decision->label,
             array_replace($decision->unresolved, $failures), $decision->evidence, $decision->reason);
+    }
+
+    /**
+     * Delete expired cache rows, oldest first, in batches of PURGE_BATCH up to PURGE_CAP per call.
+     * fetch() only reads rows with expires_at > now(), so deleted rows were already unreadable.
+     */
+    public static function purgeExpired(): int
+    {
+        $deleted = 0;
+        while ($deleted < self::PURGE_CAP) {
+            $limit = min(self::PURGE_BATCH, self::PURGE_CAP - $deleted);
+            $batch = DB::table('reconciliation_evidence')
+                ->where('expires_at', '<=', now())
+                ->orderBy('expires_at')
+                ->limit($limit)
+                ->delete();
+            $deleted += $batch;
+            if ($batch < $limit) {
+                break;
+            }
+        }
+
+        return $deleted;
     }
 
     private function fetch(string $id, bool $head, TrafficBudget $budget, float $deadline, bool $persist): string
