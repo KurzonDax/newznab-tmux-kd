@@ -14,6 +14,7 @@ use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ObfuscationRecovery\RecoveryCoverage;
+use App\Services\ObfuscationRecovery\RecoveryHistoryRetention;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
@@ -42,6 +43,7 @@ final class RecoveryCaptureTest extends TestCase
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
+        (require database_path('migrations/2026_10_20_120000_index_obfuscation_recovery_expired_headers_by_age.php'))->up();
         DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
     }
 
@@ -174,6 +176,32 @@ final class RecoveryCaptureTest extends TestCase
         $this->assertSame(1, $again->exclusions['retention_expired']);
         $this->assertFalse($again->coverageComplete);
         $this->assertSame(0, DB::table('obfuscation_recovery_headers')->count());
+    }
+
+    public function test_marker_blocks_recapture_until_twice_retention_then_allows_it(): void
+    {
+        $config = RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]);
+        $capture = new RecoveryCapture($config, new NeverBlacklistedService);
+        $raw = [$this->header(1, '0123456789abcdefghij')];
+        $context = fn (string $scan): RecoveryScanContext => new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1,
+            4000000001, 4000000001, HeaderScanDirection::Head, $scan);
+        $history = new RecoveryHistoryRetention;
+        $this->assertSame(1, $capture->capture(new RecoveryCaptureBatch($raw, []), $context('original'))->captured);
+        $this->travel(145)->hours();
+        $this->assertSame(1, app(RecoveryRetention::class)->purge($config)['headers']);
+
+        $this->travel(142)->hours();
+        $this->assertSame(0, $history->step($config)['expired_markers']);
+        $blocked = $capture->capture(new RecoveryCaptureBatch($raw, []), $context('blocked'));
+        $this->assertSame(0, $blocked->captured);
+        $this->assertSame(1, $blocked->exclusions['retention_expired']);
+
+        $this->travel(2)->hours();
+        $this->assertSame(1, $history->step($config)['expired_markers']);
+        $again = $capture->capture(new RecoveryCaptureBatch($raw, []), $context('allowed'));
+        $this->assertSame(1, $again->captured);
+        $this->assertSame(now()->format('Y-m-d H:i:s'), DB::table('obfuscation_recovery_headers')->value('first_observed_at'));
+        $this->travelBack();
     }
 
     public function test_new_membership_fences_a_ready_revision_but_preserves_an_existing_publication(): void

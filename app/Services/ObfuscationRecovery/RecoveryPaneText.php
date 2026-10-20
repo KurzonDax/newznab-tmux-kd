@@ -55,7 +55,8 @@ final class RecoveryPaneText
             'expired_header_milliseconds' => '%s ms purging', 'expired_scans' => 'deleted %s old scans',
             'expired_scan_batches' => 'deleted %s scan batches', 'compacted_incomplete_scans' => 'compacted %s incomplete scans',
             'expired_frontiers' => 'deleted %s frontier points', 'expired_frontier_conflicts' => 'deleted %s frontier conflicts',
-            'expired_frontier_ranges' => 'deleted %s frontier ranges', 'compacted_attempts' => 'compacted %s attempts',
+            'expired_frontier_ranges' => 'deleted %s frontier ranges', 'expired_markers' => 'deleted %s expired-header markers',
+            'compacted_attempts' => 'compacted %s attempts',
             'compacted_catalog_requests' => 'compacted %s catalog requests', 'compacted_coverage' => 'compacted %s scan summaries',
             'expired_evidence' => 'expired %s cached articles', 'expired_artifacts' => 'expired %s artifacts',
         ];

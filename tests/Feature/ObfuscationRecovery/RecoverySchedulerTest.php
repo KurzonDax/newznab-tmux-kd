@@ -88,7 +88,7 @@ final class RecoverySchedulerTest extends TestCase
             $this->assertArrayNotHasKey('engine_stopped', $report);
             $this->assertSame(0, $report['expired_headers']);
             foreach (['expired_scans', 'expired_scan_batches', 'compacted_incomplete_scans', 'expired_frontiers',
-                'expired_frontier_conflicts', 'expired_frontier_ranges'] as $metric) {
+                'expired_frontier_conflicts', 'expired_frontier_ranges', 'expired_markers'] as $metric) {
                 if ($stage === RecoveryStage::Discover) {
                     $this->assertSame(0, $report[$metric]);
                 } else {
