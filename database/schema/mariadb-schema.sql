@@ -2022,8 +2022,8 @@ CREATE TABLE `par2_sidecar_operations` (
   `target_fingerprint` char(64) NOT NULL,
   `source_fingerprint` char(64) NOT NULL,
   `combined_fingerprint` char(64) DEFAULT NULL,
-  `target_xml` longtext NOT NULL,
-  `source_xml` longtext NOT NULL,
+  `target_xml` longtext DEFAULT NULL,
+  `source_xml` longtext DEFAULT NULL,
   `accounting` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`accounting`)),
   `descriptors` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`descriptors`)),
   `hashes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`hashes`)),
@@ -4381,3 +4381,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (331,'2026_10_13_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (332,'2026_10_16_120000_create_nntp_provider_traffic_table',38);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (333,'2026_10_17_120000_normalize_imported_nzb_segment_message_ids',39);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (334,'2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes',40);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (335,'2026_10_20_120000_make_par2_sidecar_operation_xml_nullable',41);

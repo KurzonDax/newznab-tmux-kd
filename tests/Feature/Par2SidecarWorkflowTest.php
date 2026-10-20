@@ -88,6 +88,7 @@ class Par2SidecarWorkflowTest extends TestCase
             $table->string('recovery_claim_token')->nullable();
         });
         (require database_path('migrations/2026_09_08_205107_create_par2_sidecar_evidence_tables.php'))->up();
+        (require database_path('migrations/2026_10_20_120000_make_par2_sidecar_operation_xml_nullable.php'))->up();
         Schema::create('predb', function (Blueprint $table): void {
             $table->increments('id');
             $table->string('title')->unique();
@@ -137,6 +138,7 @@ class Par2SidecarWorkflowTest extends TestCase
         $xml = app(NzbService::class)->readNzbContents($target->guid);
         $this->assertSame(2, count(simplexml_load_string($xml)->file));
         $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'));
+        $this->assertNzbCopiesCleared();
         $worker->run();
         $this->assertSame(2200000, (int) $target->fresh()->size);
         Event::assertDispatchedTimes(ReleaseNameFixed::class, 1);
@@ -255,10 +257,13 @@ class Par2SidecarWorkflowTest extends TestCase
         $worker = app(SidecarWork::class);
         $worker->run();
         $this->assertNotSame('done', DB::table('par2_sidecar_operations')->value('phase'));
+        $this->assertNotNull(DB::table('par2_sidecar_operations')->value('target_xml'));
+        $this->assertNotNull(DB::table('par2_sidecar_operations')->value('source_xml'));
         $this->travel(4)->days();
         Settings::settingsUpsert(['par2_sidecar_absorb' => '0']);
         $worker->run();
         $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'), (string) DB::table('par2_sidecar_operations')->value('reason'));
+        $this->assertNzbCopiesCleared();
         $this->assertNull(Release::query()->find(2));
         $this->assertSame(2200000, (int) Release::query()->findOrFail(1)->size);
         $xml = app(NzbService::class)->readNzbContents(str_repeat('1', 40));
@@ -359,6 +364,104 @@ class Par2SidecarWorkflowTest extends TestCase
         $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'));
         $this->assertSame('absorb_disabled', DB::table('par2_sidecar_operations')->value('reason'));
         $this->assertSame(2100000, (int) Release::query()->findOrFail(1)->size);
+        $this->assertNzbCopiesCleared();
+    }
+
+    public function test_a_rename_only_job_never_stores_nzb_copies(): void
+    {
+        Search::spy();
+        Event::fake([ReleaseNameFixed::class]);
+        $this->seedPostingPair();
+        Settings::settingsUpsert(['par2_sidecar_absorb' => '0']);
+        $combiner = app(InterruptingSidecarCombiner::class);
+        $combiner->failAfter = 'selected';
+        $this->app->instance(SidecarCombiner::class, $combiner);
+        $worker = app(SidecarWork::class);
+        $worker->run();
+        $operation = DB::table('par2_sidecar_operations')->first();
+        $this->assertSame('selected', $operation->phase);
+        $this->assertSame(0, (int) $operation->absorb);
+        $this->assertNull($operation->target_xml);
+        $this->assertNull($operation->source_xml);
+        $this->assertSame(64, strlen((string) $operation->target_fingerprint));
+        $this->assertSame(64, strlen((string) $operation->source_fingerprint));
+        $this->travel(4)->days();
+        $worker->run();
+        $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'), (string) DB::table('par2_sidecar_operations')->value('reason'));
+        $this->assertSame(1, (int) Release::query()->findOrFail(1)->isrenamed);
+        $this->assertNotNull(Release::query()->find(2));
+    }
+
+    #[DataProvider('rollbackOperations')]
+    public function test_rolling_back_nullable_nzb_copies_keeps_operations_and_their_snapshots(?string $failAfter, bool $absorb): void
+    {
+        Search::spy();
+        Event::fake([ReleaseNameFixed::class]);
+        $this->seedPostingPair();
+        if (! $absorb) {
+            Settings::settingsUpsert(['par2_sidecar_absorb' => '0']);
+        }
+        if ($failAfter !== null) {
+            $combiner = app(InterruptingSidecarCombiner::class);
+            $combiner->failAfter = $failAfter;
+            $this->app->instance(SidecarCombiner::class, $combiner);
+        }
+        $worker = app(SidecarWork::class);
+        $worker->run();
+        $before = $this->operationSnapshot();
+        $this->assertSame($failAfter === null, $before['phase'] === 'done');
+        $this->assertSame($failAfter !== null && $absorb, $before['target_xml'] !== null && $before['source_xml'] !== null);
+        $migration = require database_path('migrations/2026_10_20_120000_make_par2_sidecar_operation_xml_nullable.php');
+
+        $migration->down();
+        $this->assertNzbCopyColumnsNullable();
+        $this->assertSame($before, $this->operationSnapshot());
+        $migration->up();
+        $this->assertNzbCopyColumnsNullable();
+        $this->assertSame($before, $this->operationSnapshot());
+
+        $this->travel(4)->days();
+        $worker->run();
+        $this->assertSame('done', DB::table('par2_sidecar_operations')->value('phase'), (string) DB::table('par2_sidecar_operations')->value('reason'));
+        $this->assertNzbCopiesCleared();
+        if (! $absorb) {
+            $this->assertSame(1, (int) Release::query()->findOrFail(1)->isrenamed);
+            $this->assertNotNull(Release::query()->find(2));
+            $this->assertSame(2100000, (int) Release::query()->findOrFail(1)->size);
+        } else {
+            $this->assertNull(Release::query()->find(2));
+            $this->assertSame(2200000, (int) Release::query()->findOrFail(1)->size);
+            $xml = app(NzbService::class)->readNzbContents(str_repeat('1', 40));
+            $this->assertSame(2, count(simplexml_load_string($xml)->file));
+        }
+        Event::assertDispatchedTimes(ReleaseNameFixed::class, 1);
+    }
+
+    /** @return array<string,array{?string,bool}> */
+    public static function rollbackOperations(): array
+    {
+        return ['completed' => [null, true], 'pending rename-only' => ['selected', false], 'in-flight absorbing' => ['named', true]];
+    }
+
+    /** @return array<string,mixed> */
+    private function operationSnapshot(): array
+    {
+        return (array) DB::table('par2_sidecar_operations')
+            ->select(['id', 'phase', 'absorb', 'target_fingerprint', 'source_fingerprint', 'target_xml', 'source_xml'])->sole();
+    }
+
+    private function assertNzbCopyColumnsNullable(): void
+    {
+        $columns = collect(Schema::getColumns('par2_sidecar_operations'))->keyBy('name');
+        $this->assertTrue($columns['target_xml']['nullable']);
+        $this->assertTrue($columns['source_xml']['nullable']);
+    }
+
+    private function assertNzbCopiesCleared(): void
+    {
+        $operation = DB::table('par2_sidecar_operations')->sole();
+        $this->assertNull($operation->target_xml);
+        $this->assertNull($operation->source_xml);
     }
 
     public function test_expired_prefixes_cannot_start_work_but_unmatched_prefixes_wait_for_late_descriptors(): void

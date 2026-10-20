@@ -44,12 +44,13 @@ class SidecarCombiner
                 }
                 $accounting = ['target' => $this->accounting($target), 'source' => $this->accounting($source),
                     'add_files' => (bool) config('nntmux_settings.add_par2')];
+                $absorbing = $absorb && $decision->combine;
                 $id = DB::table('par2_sidecar_operations')->insertGetId([
                     'target_id' => $targetId, 'source_id' => $source->id, 'target_guid' => $target->guid, 'source_guid' => $source->guid,
                     'leftguid' => substr($target->guid, 0, 1), 'phase' => 'selected', 'reason' => $absorb ? $decision->reason : 'absorb_disabled',
-                    'absorb' => $absorb && $decision->combine, 'filename' => $decision->filename,
+                    'absorb' => $absorbing, 'filename' => $decision->filename,
                     'target_fingerprint' => hash('sha256', $targetXml), 'source_fingerprint' => hash('sha256', $sourceXml),
-                    'target_xml' => $targetXml, 'source_xml' => $sourceXml,
+                    'target_xml' => $absorbing ? $targetXml : null, 'source_xml' => $absorbing ? $sourceXml : null,
                     'accounting' => json_encode($accounting, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION),
                     'descriptors' => json_encode($descriptors, JSON_THROW_ON_ERROR),
                     'hashes' => json_encode(DB::table('par_hashes')->where('releases_id', $source->id)->pluck('hash')->all(), JSON_THROW_ON_ERROR),
@@ -339,6 +340,9 @@ class SidecarCombiner
     /** @param array<string,mixed> $values */
     private function progress(int $id, string $phase, array $values = []): void
     {
+        if ($phase === 'done') {
+            $values += ['target_xml' => null, 'source_xml' => null];
+        }
         DB::table('par2_sidecar_operations')->where('id', $id)->update($values + ['phase' => $phase, 'retry_at' => null, 'updated_at' => now()]);
     }
 
