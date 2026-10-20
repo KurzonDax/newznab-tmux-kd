@@ -189,7 +189,7 @@ class ReleaseDuplicateAbsorber
             }
             $additionalClaim = $locked->{ReleaseClaimant::CLAIMED_AT_COLUMN};
             if (! RecoveryLease::applyAvailable(Release::query()->whereKey($locked->id))->exists()
-                || ($additionalClaim !== null && Carbon::parse($additionalClaim)->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore()))) {
+                || ($additionalClaim !== null && Carbon::parse($additionalClaim)->greaterThanOrEqualTo(ReleaseClaimWindow::staleBefore()))) {
                 return DuplicateAbsorbResult::deferred();
             }
 

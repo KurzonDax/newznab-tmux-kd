@@ -8,6 +8,7 @@ use App\Models\Release;
 use App\Models\Settings;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\Releases\CandidateReleaseQuery;
+use App\Services\Releases\ReleaseClaimWindow;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -257,11 +258,11 @@ final class AdditionalCandidateQuery
 
     public static function claimTtlSeconds(): int
     {
-        return ReleaseClaimant::claimTtlSeconds();
+        return ReleaseClaimWindow::ttlSeconds();
     }
 
     public static function claimStaleBefore(): Carbon
     {
-        return ReleaseClaimant::claimStaleBefore();
+        return ReleaseClaimWindow::staleBefore();
     }
 }

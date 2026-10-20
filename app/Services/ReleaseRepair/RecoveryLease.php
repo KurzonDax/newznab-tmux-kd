@@ -8,9 +8,9 @@ use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
+use App\Services\Releases\ReleaseClaimWindow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -38,16 +38,15 @@ final class RecoveryLease
         }
 
         $claimedAt = now();
-        $token = Schema::hasColumn('releases', 'recovery_claim_token') ? (string) Str::uuid() : null;
+        $token = ReleaseClaimWindow::releasesHasColumn('recovery_claim_token') ? (string) Str::uuid() : null;
         $query = self::applyAvailable(Release::query()->whereKey($release->id));
         $query->whereRaw(ArtifactPublication::availableSql());
-        if (Schema::hasColumn('releases', ReleaseClaimant::CLAIMED_AT_COLUMN)) {
+        if (ReleaseClaimWindow::releasesHasColumn(ReleaseClaimant::CLAIMED_AT_COLUMN)) {
             if ($additionalToken === null) {
-                $query->where(fn (Builder $q) => $q->whereNull(ReleaseClaimant::CLAIMED_AT_COLUMN)
-                    ->orWhere(ReleaseClaimant::CLAIMED_AT_COLUMN, '<', ReleaseClaimant::claimStaleBefore()));
+                ReleaseClaimWindow::applyFree($query, ReleaseClaimant::CLAIMED_AT_COLUMN);
             } else {
                 $query->where(ReleaseClaimant::CLAIM_TOKEN_COLUMN, $additionalToken)
-                    ->where(ReleaseClaimant::CLAIMED_AT_COLUMN, '>=', ReleaseClaimant::claimStaleBefore());
+                    ->where(ReleaseClaimant::CLAIMED_AT_COLUMN, '>=', ReleaseClaimWindow::staleBefore());
             }
         }
         SidecarMutationProtection::apply($query, 'releases', $sidecarOperationId);
@@ -72,13 +71,7 @@ final class RecoveryLease
             return $query;
         }
 
-        $column = $table.'.'.self::COLUMN;
-
-        return $query->where(static function (Builder $leaseQuery) use ($column): void {
-            $leaseQuery
-                ->whereNull($column)
-                ->orWhere($column, '<', ReleaseClaimant::claimStaleBefore());
-        });
+        return ReleaseClaimWindow::applyFree($query, $table.'.'.self::COLUMN);
     }
 
     public function owns(int $releaseId): bool
@@ -90,7 +83,7 @@ final class RecoveryLease
             return ! self::isSupported() && Release::query()->whereKey($releaseId)->exists();
         }
 
-        return $this->claimedAt->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore())
+        return $this->claimedAt->greaterThanOrEqualTo(ReleaseClaimWindow::staleBefore())
             && Release::query()->whereKey($releaseId)->where(self::COLUMN, $this->claimedAt)
                 ->when($this->token !== null, fn (Builder $query) => $query->where('recovery_claim_token', $this->token))->exists();
     }
@@ -115,6 +108,6 @@ final class RecoveryLease
 
     public static function isSupported(): bool
     {
-        return Schema::hasTable('releases') && Schema::hasColumn('releases', self::COLUMN);
+        return ReleaseClaimWindow::releasesHasColumn(self::COLUMN);
     }
 }

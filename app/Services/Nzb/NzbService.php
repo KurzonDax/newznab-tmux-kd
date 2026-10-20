@@ -8,7 +8,6 @@ use App\Models\Collection;
 use App\Models\Release;
 use App\Models\ReleaseNzbCreationFailure;
 use App\Models\Settings;
-use App\Services\AdditionalProcessing\ReleaseClaimant;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\ArtifactPublication;
@@ -25,6 +24,7 @@ use App\Services\ObfuscationRecovery\RecoveryPlan;
 use App\Services\Par2Sidecar\SidecarMutationProtection;
 use App\Services\ReleaseRepair\RecoveryLease;
 use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\ReleaseClaimWindow;
 use App\Support\Data\NzbCreationResult;
 use App\Support\Data\NzbReplaceResult;
 use App\Support\Utf8;
@@ -926,7 +926,7 @@ class NzbService
                 || ($owner === null && ! RecoveryLease::applyAvailable(Release::query()->whereKey($release->id))->exists())
                 || ! SidecarMutationProtection::apply(Release::query()->whereKey($release->id), 'releases', $owner?->operationId())->exists()
                 || ($release->additional_pp_claimed_at !== null && Carbon::parse($release->additional_pp_claimed_at)
-                    ->greaterThanOrEqualTo(ReleaseClaimant::claimStaleBefore()))) {
+                    ->greaterThanOrEqualTo(ReleaseClaimWindow::staleBefore()))) {
                 return NzbReplaceResult::writeFailure('Release membership is held by another worker.');
             }
             if ($expectedFingerprint !== null && ($current = $this->readNzbContents($releaseGuid)) !== false
