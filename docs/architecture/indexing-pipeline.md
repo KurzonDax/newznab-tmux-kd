@@ -238,6 +238,31 @@ The per-group sequence:
    (`maxnzbsprocessed`) keeps coming back.
 6. **`deleteCollections()`** — final cleanup of stale/orphaned CBP rows.
 
+The tmux worker runs these steps per discovered page (`formReleases()`).
+`Sized` and `CompleteParts` collections are walked by ID every run. The
+waiting states (0, 1, 10, 15 and 16) are found by index lookups instead
+(`DueCollectionLookup`), so a run reads the collections that may have become
+due rather than every waiting collection of the group:
+
+- **frontier-due** — no head stamp, or a head at least `delaytime` behind
+  the group frontier (on an inactive group: no `last_seen_at`, or none
+  for `delaytime` hours);
+- **touched** — a header stored since the previous pass started, less a
+  five-minute overlap for transactions that committed after it started;
+- **late** — the last header crossed the 15-minute late line since the
+  previous pass.
+
+Each lookup only chooses rows: the readiness predicate, ownership,
+admission screening, late-header merge, recount and the steps above still
+decide every row it returns. A lookup walks in (stamp, id) order from a
+position kept in `collection_sweep_cursors`, so due rows that stay held
+cannot starve the rows behind them. Every run serves all lookups before
+any walk work. The full ID walk of each waiting state stays as a safety
+net: it starts a new pass at most once an hour per group and state, and a
+pass under way resumes in later runs until it is exhausted. A row every
+lookup misses, such as one an ownership reset returned to `filecheck = 0`
+without a new header, waits at most about an hour longer.
+
 When run for all groups (no `groupId`), the command finishes with
 release-level cleanup: `deletedReleasesByGroup()`, `deleteReleases()`
 (removes releases violating retention/size/completion rules), and
@@ -440,6 +465,14 @@ already has a release, is ready once no header has been stored into it for
 post from forming before its last part; a late collection's release
 already exists, and every header it receives would restart that wait.
 Stuck deletion and split-posting reconciliation keep the shared predicate.
+
+Formation and stuck deletion find candidates with lookups on these clocks
+rather than by walking every waiting collection (see Stage two). The head
+stamp only rises and normal scanning only moves the frontier forward, so a
+due row stays due until it forms, is deleted, or gets a new header, which
+moves it later in the lookup order. Stuck deletion uses the frontier-due
+lookup with `collection_timeout` in place of `delaytime`, and its walk
+becomes the same hourly safety net.
 
 An active frontier that stops moving freezes its collections indefinitely.
 Operators can hand a direction back to wall-clock silence by disabling

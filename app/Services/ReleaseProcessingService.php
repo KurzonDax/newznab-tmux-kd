@@ -29,6 +29,7 @@ use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionQuietPredicate;
 use App\Services\Releases\CollectionSweep;
 use App\Services\Releases\CollectionSweepLease;
+use App\Services\Releases\DueCollectionLookup;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\LateHeaderMerger;
@@ -47,6 +48,7 @@ use App\Support\DatabaseClock;
 use App\Support\ReleaseRepairingContext;
 use App\Support\ReleaseSearchIndexSync;
 use App\Support\SchemaCapabilities;
+use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
@@ -207,62 +209,38 @@ final class ReleaseProcessingService
                 $this->publishPendingPage($group, $totals);
                 $deadline = microtime(true) + self::FORMATION_SECONDS_PER_GROUP;
                 $lastProgress = 0.0;
-                $states = [CollectionFileCheckStatus::Sized->value, CollectionFileCheckStatus::CompleteParts->value,
-                    CollectionFileCheckStatus::Default->value, CollectionFileCheckStatus::CompleteCollection->value,
-                    10, CollectionFileCheckStatus::TempComplete->value, CollectionFileCheckStatus::ZeroPart->value];
+                $lookups = DueCollectionLookup::available();
+                // [lookup?, state]: every waiting state's lookups come before any safety-net walk work.
+                $tasks = [[false, CollectionFileCheckStatus::Sized->value], [false, CollectionFileCheckStatus::CompleteParts->value]];
+                foreach ($lookups ? CollectionDeletionSelection::WAITING_STATUSES : [] as $status) {
+                    $tasks[] = [true, $status];
+                }
+                foreach (CollectionDeletionSelection::WAITING_STATUSES as $status) {
+                    $tasks[] = [false, $status];
+                }
                 $firstRound = true;
                 do {
-                    foreach ($states as $key => $status) {
-                        $population = DB::table('collections')->where('groups_id', $group)->where('filecheck', $status)
-                            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
-                                static fn ($query) => $query->forceIndex('collections_formation_queue'));
-                        $result = app(CollectionSweep::class)->run('formation:'.$status, $group,
-                            function (array $ids, CollectionSweepLease $lease) use ($group, $status, &$totals, &$lastProgress): int {
-                                $started = microtime(true);
-                                $before = $totals;
-                                $echo = $this->echoCLI;
-                                $this->echoCLI = false;
-                                try {
-                                    $candidates = $this->formationCollectionIds($group, $ids, $status);
-                                    foreach (array_chunk($candidates, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
-                                        $lease->renew();
-                                        // Late headers for an incomplete release fill it instead of
-                                        // being discarded as a duplicate.
-                                        $chunk = array_values(array_diff($chunk, $this->lateHeaderMerger->merge($chunk)));
-                                        if ($chunk === []) {
-                                            continue;
-                                        }
-                                        $this->reconcileIncompleteCollections($group, $chunk);
-                                        $this->processCollectionSizes($group, $chunk);
-                                        $this->deleteUnwantedCollections($group, $chunk);
-                                        $created = $this->releaseCreationService->createSelectedCollections($group, $chunk, false);
-                                        $totals['releases'] += $created['added'];
-                                        $totals['dupes'] += $created['dupes'];
-                                        $releaseIds = DB::table('collections')->whereIn('id', $chunk)->whereNotNull('releases_id')
-                                            ->pluck('releases_id')->map(static fn ($id): int => (int) $id)->unique()->values()->all();
-                                        $totals['nzbs'] += $this->createNZBs($group, $releaseIds);
-                                    }
-                                } finally {
-                                    $this->echoCLI = $echo;
-                                }
-                                $totals['iterations']++;
-                                if ($candidates !== [] || microtime(true) - $lastProgress >= 1) {
-                                    $lastProgress = microtime(true);
-                                    $this->outputStat('Formation group '.$group.' examined', count($ids));
-                                    $this->outputStat('Releases created', $totals['releases'] - $before['releases']);
-                                    $this->outputStat('NZBs published', $totals['nzbs'] - $before['nzbs']);
-                                    $this->outputInfo(sprintf('Formation page completed in %.2fs; last source ID %d', microtime(true) - $started, end($ids)));
-                                }
-
-                                return 0;
-                            }, population: $population, pageSize: min(128, $this->settings->releaseCreationLimit),
-                            maxPages: $firstRound ? 1 : 1000, seconds: min(5, max(0.01, $deadline - microtime(true))));
+                    foreach ($tasks as $key => [$lookup, $status]) {
+                        $waiting = in_array($status, CollectionDeletionSelection::WAITING_STATUSES, true);
+                        if (! $lookup && $waiting && in_array(true, array_column($tasks, 0), true)) {
+                            continue;
+                        }
+                        $page = $this->formationPage($group, $status, $totals, $lastProgress);
+                        $pageSize = min(128, $this->settings->releaseCreationLimit);
+                        $maxPages = $firstRound ? 1 : 1000;
+                        $seconds = min(5, max(0.01, $deadline - microtime(true)));
+                        $result = $lookup
+                            ? app(DueCollectionLookup::class)->run('formation:'.$status, $group, $status, $this->settings->collectionDelayTime,
+                                $page, $pageSize, $maxPages, $seconds, touched: true, lateMinutes: self::LATE_COLLECTION_QUIET_MINUTES)
+                            : app(CollectionSweep::class)->run('formation:'.$status, $group, $page,
+                                population: $this->formationPopulation($group, $status), pageSize: $pageSize, maxPages: $maxPages,
+                                seconds: $seconds, passEverySeconds: $lookups && $waiting ? DueCollectionLookup::SAFETY_NET_WALK_SECONDS : null);
                         if ($result->outcome !== CollectionSweepOutcome::BudgetYielded) {
-                            unset($states[$key]);
+                            unset($tasks[$key]);
                         }
                     }
                     $firstRound = false;
-                } while ($states !== [] && microtime(true) < $deadline);
+                } while ($tasks !== [] && microtime(true) < $deadline);
                 app(PendingReconciler::class)->run($group, $this->settings->collectionDelayTime);
                 $this->publishPendingPage($group, $totals);
                 $this->processStuckCollections($group);
@@ -270,6 +248,62 @@ final class ReleaseProcessingService
 
             return $totals;
         });
+    }
+
+    /**
+     * One discovered page of a state, carried all the way to publication.
+     *
+     * @param  array{releases: int, nzbs: int, dupes: int, iterations: int}  $totals
+     * @return Closure(list<int>, CollectionSweepLease): int
+     */
+    private function formationPage(int $group, int $status, array &$totals, float &$lastProgress): Closure
+    {
+        return function (array $ids, CollectionSweepLease $lease) use ($group, $status, &$totals, &$lastProgress): int {
+            $started = microtime(true);
+            $before = $totals;
+            $echo = $this->echoCLI;
+            $this->echoCLI = false;
+            try {
+                $candidates = $this->formationCollectionIds($group, $ids, $status);
+                foreach (array_chunk($candidates, CollectionAdmission::MUTATION_BATCH_SIZE) as $chunk) {
+                    $lease->renew();
+                    // Late headers for an incomplete release fill it instead of
+                    // being discarded as a duplicate.
+                    $chunk = array_values(array_diff($chunk, $this->lateHeaderMerger->merge($chunk)));
+                    if ($chunk === []) {
+                        continue;
+                    }
+                    $this->reconcileIncompleteCollections($group, $chunk);
+                    $this->processCollectionSizes($group, $chunk);
+                    $this->deleteUnwantedCollections($group, $chunk);
+                    $created = $this->releaseCreationService->createSelectedCollections($group, $chunk, false);
+                    $totals['releases'] += $created['added'];
+                    $totals['dupes'] += $created['dupes'];
+                    $releaseIds = DB::table('collections')->whereIn('id', $chunk)->whereNotNull('releases_id')
+                        ->pluck('releases_id')->map(static fn ($id): int => (int) $id)->unique()->values()->all();
+                    $totals['nzbs'] += $this->createNZBs($group, $releaseIds);
+                }
+            } finally {
+                $this->echoCLI = $echo;
+            }
+            $totals['iterations']++;
+            if ($candidates !== [] || microtime(true) - $lastProgress >= 1) {
+                $lastProgress = microtime(true);
+                $this->outputStat('Formation group '.$group.' examined', count($ids));
+                $this->outputStat('Releases created', $totals['releases'] - $before['releases']);
+                $this->outputStat('NZBs published', $totals['nzbs'] - $before['nzbs']);
+                $this->outputInfo(sprintf('Formation page completed in %.2fs; last source ID %d', microtime(true) - $started, end($ids)));
+            }
+
+            return 0;
+        };
+    }
+
+    private function formationPopulation(int $group, int $status): Builder
+    {
+        return DB::table('collections')->where('groups_id', $group)->where('filecheck', $status)
+            ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
+                static fn ($query) => $query->forceIndex('collections_formation_queue'));
     }
 
     /**

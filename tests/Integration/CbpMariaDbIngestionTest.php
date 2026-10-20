@@ -24,6 +24,7 @@ use App\Services\ReleaseProcessingService;
 use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionSweep;
 use App\Services\Releases\CollectionSweepLease;
+use App\Services\Releases\DueCollectionLookup;
 use App\Services\YencService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Console\Kernel;
@@ -36,6 +37,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Process\Process;
@@ -1234,6 +1236,52 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame(1, (int) $collections[12]->totalfiles);
         $this->assertSame(CollectionFileCheckStatus::CompleteParts->value, (int) $collections[13]->filecheck);
         $this->assertSame(1, (int) $collections[13]->totalfiles);
+    }
+
+    public function test_due_lookups_and_stuck_maintenance_find_due_collections_through_their_indexes(): void
+    {
+        (require database_path('migrations/2026_10_20_180000_add_collection_due_lookups.php'))->up();
+        $this->assertTrue(Schema::hasIndex('collections', 'ix_collections_group_filecheck_head_id'));
+        DB::table('usenet_groups')->where('id', 1)->update(['active' => 1, 'last_record_postdate' => '2026-01-01 12:00:00']);
+        DB::table('usenet_groups')->insert(['id' => 2, 'name' => 'alt.binaries.inactive', 'active' => 0]);
+        $collection = static function (int $id, int $group, ?string $head, string $seen): void {
+            DB::table('collections')->insert(['id' => $id, 'subject' => 'Due.'.$id, 'fromname' => 'poster@example.test',
+                'groups_id' => $group, 'collectionhash' => hash('sha1', 'due-'.$id, true), 'filecheck' => 0,
+                'last_seen_head_postdate' => $head, 'last_seen_at' => DB::raw($seen)]);
+        };
+        $collection(1, 1, null, 'NOW()');
+        $collection(2, 1, '2026-01-01 09:00:00', 'NOW()');
+        $collection(3, 1, '2026-01-01 11:00:00', 'DATE_SUB(NOW(), INTERVAL 40 MINUTE)');
+        $collection(7, 2, '2026-01-01 11:00:00', 'DATE_SUB(NOW(), INTERVAL 3 HOUR)');
+        $collection(8, 2, '2026-01-01 11:00:00', 'DATE_SUB(NOW(), INTERVAL 10 MINUTE)');
+        $lookup = static function (int $group): array {
+            $found = [];
+            app(DueCollectionLookup::class)->run('formation:0', $group, 0, 2,
+                static function (array $ids) use (&$found): int {
+                    array_push($found, ...$ids);
+
+                    return 0;
+                }, touched: true, lateMinutes: 15);
+            sort($found);
+
+            return $found;
+        };
+
+        $this->assertSame([1, 2], $lookup(1));
+        $this->assertSame([7], $lookup(2));
+        // Touched since that pass, and crossed the late line since it.
+        $collection(4, 1, '2026-01-01 11:00:00', 'DATE_SUB(NOW(), INTERVAL 1 MINUTE)');
+        $collection(5, 1, '2026-01-01 11:00:00', 'DATE_SUB(NOW(), INTERVAL 16 MINUTE)');
+        $this->assertSame([1, 2, 4, 5], $lookup(1));
+
+        $collection(9, 1, '2025-12-29 00:00:00', 'NOW()');
+        $stuck = new CollectionDeletionSelection(CollectionDeletionReason::Stuck, 48);
+        $this->assertSame(1, app(CollectionCleanupService::class)->runMaintenance($stuck, 1)->deleted);
+        $this->assertFalse(DB::table('collections')->where('id', 9)->exists());
+        $collection(10, 1, '2025-12-29 00:00:00', 'NOW()');
+        $result = app(CollectionCleanupService::class)->runMaintenance($stuck, 1);
+        // The lookup also hands over collection 1, which has no head stamp; the walk rests for the hour.
+        $this->assertSame([2, 1, CollectionSweepOutcome::Resting], [$result->examined, $result->deleted, $result->outcome]);
     }
 
     public function test_a_late_collection_is_promoted_after_fifteen_quiet_minutes(): void

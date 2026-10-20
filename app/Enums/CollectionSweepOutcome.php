@@ -10,4 +10,6 @@ enum CollectionSweepOutcome: string
     case BudgetYielded = 'budget_yielded';
     case LeaseBusy = 'lease_busy';
     case LeaseLost = 'lease_lost';
+    /** The previous pass started too recently for a new one. */
+    case Resting = 'resting';
 }

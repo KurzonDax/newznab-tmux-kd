@@ -14,6 +14,7 @@ use App\Services\Releases\CollectionSweep;
 use App\Services\Releases\CollectionSweepLease;
 use App\Services\Releases\CollectionSweepLeaseLost;
 use App\Services\Releases\CollectionSweepResult;
+use App\Services\Releases\DueCollectionLookup;
 use App\Support\SettingNumber;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -188,17 +189,28 @@ class CollectionCleanupService
     {
         $selection = new CollectionDeletionSelection($selection->reason, $selection->hours, $selection->expectedLinks, $groupId);
 
-        $result = (new CollectionSweep)->run($selection->reason->value, $groupId,
-            function (array $ids, CollectionSweepLease $lease) use ($selection, $echoCLI): int {
-                $rows = $selection->query($ids)->get(['id', 'releases_id']);
-                $eligible = $rows->pluck('id')->map(static fn ($id): int => (int) $id)->all();
-                if ($selection->reason === CollectionDeletionReason::MissedNzb) {
-                    $selection = new CollectionDeletionSelection($selection->reason, $selection->hours, $rows->pluck('releases_id', 'id')->all(), $selection->groupId);
-                }
+        $page = function (array $ids, CollectionSweepLease $lease) use ($selection, $echoCLI): int {
+            $rows = $selection->query($ids)->get(['id', 'releases_id']);
+            $eligible = $rows->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+            if ($selection->reason === CollectionDeletionReason::MissedNzb) {
+                $selection = new CollectionDeletionSelection($selection->reason, $selection->hours, $rows->pluck('releases_id', 'id')->all(), $selection->groupId);
+            }
 
-                return $this->deleteCollectionsAndDescendants($eligible, $selection->reason->value, $echoCLI,
-                    selection: $selection, lease: $lease);
-            });
+            return $this->deleteCollectionsAndDescendants($eligible, $selection->reason->value, $echoCLI,
+                selection: $selection, lease: $lease);
+        };
+        // Stuck collections of a group are found by the frontier-due lookup; the walk becomes
+        // the hourly safety net for any the lookup misses.
+        $lookups = $selection->reason === CollectionDeletionReason::Stuck && $groupId !== null && DueCollectionLookup::available();
+        $examined = 0;
+        $deleted = 0;
+        foreach ($lookups ? CollectionDeletionSelection::WAITING_STATUSES : [] as $status) {
+            $found = app(DueCollectionLookup::class)->run($selection->reason->value.':'.$status, $groupId, $status, $selection->hours, $page);
+            $examined += $found->examined;
+            $deleted += $found->deleted;
+        }
+        $result = (new CollectionSweep)->run($selection->reason->value, $groupId, $page, passEverySeconds: $lookups ? DueCollectionLookup::SAFETY_NET_WALK_SECONDS : null);
+        $result = new CollectionSweepResult($result->outcome, $result->examined + $examined, $result->deleted + $deleted);
         if ($echoCLI) {
             cli()->primary(sprintf('%s maintenance: %s; examined %d, deleted %d.',
                 $selection->reason->value, $result->outcome->value, $result->examined, $result->deleted), true);

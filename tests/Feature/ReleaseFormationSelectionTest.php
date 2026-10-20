@@ -4,9 +4,20 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Enums\CollectionDeletionReason;
+use App\Enums\CollectionSweepOutcome;
 use App\Models\Settings;
+use App\Services\CollectionCleanupService;
+use App\Services\ReleaseCleaningService;
+use App\Services\ReleaseCreationService;
 use App\Services\ReleaseProcessingService;
+use App\Services\Releases\CollectionCompletionMeasurer;
+use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionSweep;
+use App\Services\Releases\CollectionSweepResult;
+use App\Services\Releases\DueCollectionLookup;
+use App\Services\Releases\ReleaseDuplicateAbsorber;
+use App\Services\Releases\ReleaseDuplicateFinder;
 use Carbon\Carbon;
 use Closure;
 use Illuminate\Database\Schema\Blueprint;
@@ -17,6 +28,7 @@ use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
+use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
 use Tests\TestCase;
 
@@ -34,6 +46,7 @@ class ReleaseFormationSelectionTest extends TestCase
         $this->createPostingSchema();
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
+        (require database_path('migrations/2026_10_20_180000_add_collection_due_lookups.php'))->up();
         Cache::flush();
         DB::table('settings')->insert([
             ['name' => 'delaytime', 'value' => '1'],
@@ -45,22 +58,11 @@ class ReleaseFormationSelectionTest extends TestCase
 
     public function test_an_ineligible_state_page_advances_without_running_empty_downstream_batches(): void
     {
-        foreach (range(1, 128) as $id) {
-            $this->source($id);
-        }
-        $processing = app(ReleaseProcessingService::class)->setEchoCLI(false);
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-        try {
-            $result = $processing->formReleases(1);
-            $queries = DB::getQueryLog();
-        } finally {
-            DB::disableQueryLog();
-            DB::flushQueryLog();
-        }
+        $single = $this->formationQueries(1);
+        $queries = $this->formationQueries(128);
 
-        $this->assertSame(['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 1], $result);
-        $this->assertLessThan(180, count($queries), 'A 128-row ineligible page must not run sixteen empty formation pipelines.');
+        // Every run's lookups cost the same; the walk page is what grows with the population.
+        $this->assertLessThan(20, $queries - $single, 'A 128-row ineligible page must not run sixteen empty formation pipelines.');
         $this->assertSame(128, DB::table('collections')->count());
         $cursor = DB::table('collection_sweep_cursors')->where('scope', 'formation:0:group:1')->first();
         $this->assertSame(0, (int) $cursor->last_id);
@@ -223,6 +225,342 @@ class ReleaseFormationSelectionTest extends TestCase
         $this->assertSame(0, (int) $cursor->last_id);
         $this->assertSame(0, (int) $cursor->high_water_id);
         $this->assertNull($cursor->lease_token);
+    }
+
+    public function test_a_formation_run_forms_exactly_the_collections_each_readiness_route_admits(): void
+    {
+        $this->pinnedRouteFixtures();
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+
+        $processing->formReleases(1);
+        $processing->formReleases(2);
+
+        $this->assertSame([1, 2, 3, 4, 5, 6, 7, 9, 13, 21], $creation->formed());
+    }
+
+    public function test_stuck_maintenance_deletes_exactly_the_collections_quiet_past_the_timeout(): void
+    {
+        $this->pinnedStuckFixtures();
+
+        app(CollectionCleanupService::class)->runMaintenance(new CollectionDeletionSelection(CollectionDeletionReason::Stuck, 2), 1);
+
+        $this->assertSame([1, 4, 5, 7, 8, 9, 10], DB::table('collections')->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+    }
+
+    public function test_formation_examines_the_same_collections_however_many_wait_without_being_due(): void
+    {
+        $this->assertSame($this->formationExamined(50), $this->formationExamined(100));
+    }
+
+    public function test_a_held_due_collection_does_not_stop_the_due_collections_behind_it(): void
+    {
+        DB::table('settings')->where('name', 'maxnzbsprocessed')->update(['value' => '1']);
+        Settings::forgetCachedSettings();
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        // Due first in head order, but held by an admission window, recovery and a reconciliation claim.
+        foreach ([1, 2, 3] as $id) {
+            $this->waiting($id, ['last_seen_head_postdate' => '2026-01-01 09:00:00']);
+        }
+        DB::table('reconciliation_admissions')->insert(['collection_id' => 1, 'decision_id' => 'held',
+            'revision' => 'current', 'admitted_at' => now(), 'expires_at' => now()->addHour(), 'state' => 'admitted']);
+        $this->recoveryOwns(2);
+        $this->release(502, sha1('claimed release'));
+        DB::table('reconciled_postings')->insert(['release_id' => 502, 'digest' => 'claimed', 'state' => 'prepared',
+            'inventory' => '[]', 'decision' => '[]']);
+        DB::table('reconciliation_claims')->insert(['collection_id' => 3, 'deadline' => now()->addHour(),
+            'reason' => 'accepted', 'release_id' => 502]);
+        $this->waiting(4, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(5, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+
+        $processing->formReleases(1);
+
+        $this->assertSame([4, 5], $creation->formed());
+    }
+
+    public function test_a_collection_touched_after_a_pass_is_examined_on_the_next_pass(): void
+    {
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        $this->waiting(1, ['totalfiles' => 1]);
+        // Counters complete, but stamped before that pass: only the hourly walk returns it.
+        $this->waiting(2, ['totalfiles' => 1, 'last_seen_at' => $this->databaseNow('-30 minutes')]);
+
+        $processing->formReleases(1);
+
+        $this->assertSame([1], $creation->formed());
+    }
+
+    public function test_a_collection_no_lookup_returns_forms_through_the_hourly_walk(): void
+    {
+        $this->app->instance(DueCollectionLookup::class, new class extends DueCollectionLookup
+        {
+            public function run(string $kind, int $group, int $status, int $hours, callable $page, int $pageSize = 1000,
+                int $maxPages = 20, float $seconds = 5, bool $touched = false, ?int $lateMinutes = null): CollectionSweepResult
+            {
+                return new CollectionSweepResult(CollectionSweepOutcome::Exhausted, 0, 0);
+            }
+        });
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+
+        $processing->formReleases(1);
+        $this->assertSame([1], $creation->formed());
+
+        $this->waiting(2, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->travel(59)->minutes();
+        $processing->formReleases(1);
+        $this->assertSame([1], $creation->formed(), 'The walk starts at most one pass an hour.');
+
+        $this->travel(2)->minutes();
+        $processing->formReleases(1);
+        $this->assertSame([1, 2], $creation->formed());
+    }
+
+    public function test_stuck_maintenance_examines_the_same_collections_however_many_wait_without_being_stuck(): void
+    {
+        $this->assertSame($this->stuckExamined(50), $this->stuckExamined(100));
+    }
+
+    /**
+     * One collection per readiness route on group 1 (active, frontier 12:00, one-hour wait) and
+     * group 2 (inactive). Header clocks are relative to the database clock, which the quiet
+     * predicate reads; head stamps are relative to the group frontier.
+     */
+    private function pinnedRouteFixtures(): void
+    {
+        DB::table('settings')->insert(['name' => 'collection_timeout', 'value' => '48']);
+        Settings::forgetCachedSettings();
+        DB::table('usenet_groups')->insert(['id' => 2, 'name' => 'alt.binaries.inactive', 'active' => 0,
+            'last_record_postdate' => '2026-01-01 12:00:00']);
+        $this->waiting(1, ['filecheck' => 3, 'filesize' => 100]);
+        $this->waiting(2, ['filecheck' => 2]);
+        // Counters complete: the evidence route, whatever the clocks say.
+        $this->waiting(3, ['totalfiles' => 1]);
+        // Head two hours behind the frontier: quiet in every waiting state the recount promotes.
+        $this->waiting(4, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(5, ['filecheck' => 1, 'last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(6, ['filecheck' => 10, 'last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(7, ['filecheck' => 15, 'totalfiles' => 1]);
+        // States 15 and 16 form on evidence only.
+        $this->waiting(8, ['filecheck' => 16, 'last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        // No head stamp: the wall clock decides.
+        $this->waiting(9, ['last_seen_head_postdate' => null, 'last_seen_at' => $this->databaseNow('-2 hours')]);
+        $this->waiting(10, ['last_seen_head_postdate' => null]);
+        // An inactive group's head route is the wall clock.
+        $this->waiting(11, ['groups_id' => 2]);
+        $this->waiting(21, ['groups_id' => 2, 'last_seen_at' => $this->databaseNow('-2 hours')]);
+        // A late collection, whose release already exists, waits only 15 quiet minutes.
+        $this->waiting(13, ['last_seen_at' => $this->databaseNow('-16 minutes')]);
+        $this->waiting(14, ['last_seen_at' => $this->databaseNow('-14 minutes')]);
+        foreach ([13 => 500, 14 => 501] as $id => $release) {
+            $this->release($release, (string) DB::table('collections')->where('id', $id)->value('collectionhash'));
+        }
+        // A live secondary provider still reading the stretch holds a head that is due by provider 1.
+        $this->waiting(15, ['last_seen_head_postdate' => '2026-01-01 10:30:00']);
+        (require database_path('migrations/2026_10_02_000000_create_usenet_group_provider_cursors.php'))->up();
+        DB::table('usenet_group_provider_cursors')->insert(['usenet_groups_id' => 1, 'provider' => 'second',
+            'provider_host' => 'news.example.invalid', 'last_record' => 1, 'last_record_postdate' => '2026-01-01 11:00:00',
+            'last_advanced_at' => $this->databaseNow('-5 minutes')]);
+        foreach ([16, 17, 18] as $id) {
+            $this->waiting($id, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        }
+        DB::table('reconciliation_admissions')->insert(['collection_id' => 16, 'decision_id' => 'held',
+            'revision' => 'current', 'admitted_at' => now(), 'expires_at' => now()->addHour(), 'state' => 'admitted']);
+        Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('collections_id')->primary();
+            $table->string('state');
+        });
+        DB::table('obfuscation_recovery_publications')->insert(['collections_id' => 17, 'state' => 'prepared']);
+        $this->release(502, sha1('claimed release'));
+        DB::table('reconciled_postings')->insert(['release_id' => 502, 'digest' => 'claimed', 'state' => 'prepared',
+            'inventory' => '[]', 'decision' => '[]']);
+        DB::table('reconciliation_claims')->insert(['collection_id' => 18, 'deadline' => now()->addHour(),
+            'reason' => 'accepted', 'release_id' => 502]);
+        // Not due on any route.
+        $this->waiting(19);
+    }
+
+    /** Collections waiting in group 1 with a two-hour stuck timeout: head at or before 10:00 is stuck. */
+    private function pinnedStuckFixtures(): void
+    {
+        foreach ([0, 1, 10, 15, 16] as $index => $status) {
+            $this->waiting(2 + $index, ['filecheck' => $status, 'last_seen_head_postdate' => '2026-01-01 09:00:00']);
+        }
+        DB::table('collections')->whereIn('id', [4, 5])->update(['last_seen_head_postdate' => '2026-01-01 10:30:00']);
+        $this->waiting(1, ['filecheck' => 3, 'last_seen_head_postdate' => '2026-01-01 09:00:00']);
+        $this->waiting(7, ['last_seen_head_postdate' => null]);
+        $this->waiting(11, ['last_seen_head_postdate' => null, 'last_seen_at' => $this->databaseNow('-3 hours')]);
+        foreach ([8, 9] as $id) {
+            $this->waiting($id, ['last_seen_head_postdate' => '2026-01-01 09:00:00']);
+        }
+        DB::table('reconciliation_admissions')->insert(['collection_id' => 8, 'decision_id' => 'held',
+            'revision' => 'current', 'admitted_at' => now(), 'expires_at' => now()->addHour(), 'state' => 'admitted']);
+        Schema::create('obfuscation_recovery_publications', static function (Blueprint $table): void {
+            $table->unsignedBigInteger('collections_id')->primary();
+            $table->string('state');
+        });
+        DB::table('obfuscation_recovery_publications')->insert(['collections_id' => 9, 'state' => 'prepared']);
+        $this->waiting(10);
+    }
+
+    /**
+     * Collection IDs formation hands to the readiness predicate in a run after a first, full
+     * pass, with three due collections and the given number waiting without being due.
+     */
+    private function formationExamined(int $notDue): int
+    {
+        $this->resetCollections();
+        foreach (range(1000, 999 + $notDue) as $id) {
+            $this->waiting($id, ['last_seen_at' => $this->databaseNow('-30 minutes')]);
+        }
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(2, ['totalfiles' => 1]);
+        $this->waiting(3, ['last_seen_at' => $this->databaseNow('-16 minutes')]);
+        $this->release(500, sha1('source 3'));
+
+        $examined = $this->readinessExamined(static fn () => $processing->formReleases(1));
+
+        $this->assertSame([1, 2, 3], $creation->formed());
+
+        return $examined;
+    }
+
+    /** Queries in a first formation run over the given number of ineligible sources: one walk page. */
+    private function formationQueries(int $sources): int
+    {
+        $this->resetCollections();
+        foreach (range(1, $sources) as $id) {
+            $this->source($id);
+        }
+        $processing = app(ReleaseProcessingService::class)->setEchoCLI(false);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $result = $processing->formReleases(1);
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertSame(['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 1], $result);
+
+        return count($queries);
+    }
+
+    /** Collection IDs stuck maintenance examines in a run after a first, full pass. */
+    private function stuckExamined(int $notStuck): int
+    {
+        $this->resetCollections();
+        foreach (range(1000, 999 + $notStuck) as $id) {
+            $this->waiting($id);
+        }
+        $selection = new CollectionDeletionSelection(CollectionDeletionReason::Stuck, 2);
+        app(CollectionCleanupService::class)->runMaintenance($selection, 1);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 09:00:00']);
+
+        $result = app(CollectionCleanupService::class)->runMaintenance($selection, 1);
+
+        $this->assertNull(DB::table('collections')->where('id', 1)->first());
+        $this->assertSame($notStuck, DB::table('collections')->count());
+
+        return $result->examined;
+    }
+
+    /** Count the collection IDs a callback hands to formation's readiness predicate. */
+    private function readinessExamined(Closure $run): int
+    {
+        $examined = 0;
+        DB::listen(static function ($query) use (&$examined): void {
+            if (str_contains($query->sql, 'HAVING COUNT(*) IN (collections.totalfiles')
+                && preg_match('/"id" in \(([?, ]+)\)/', $query->sql, $ids) === 1) {
+                $examined += substr_count($ids[1], '?');
+            }
+        });
+        $run();
+
+        return $examined;
+    }
+
+    private function resetCollections(): void
+    {
+        foreach (['parts', 'binaries', 'collections', 'releases', 'collection_sweep_cursors'] as $table) {
+            DB::table($table)->delete();
+        }
+    }
+
+    /**
+     * A waiting collection with one stored, complete file. By default its head is at the group
+     * frontier and its last header was stored two minutes ago, so no route admits it.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function waiting(int $id, array $attributes = []): void
+    {
+        $seen = $this->databaseNow('-2 minutes');
+        DB::table('collections')->insert([...['id' => $id, 'groups_id' => 1, 'fromname' => 'Synthetic Poster',
+            'subject' => 'Synthetic source '.$id, 'date' => $seen, 'dateadded' => $seen, 'added' => $seen,
+            'last_seen_at' => $seen, 'last_seen_head_postdate' => '2026-01-01 12:00:00', 'totalfiles' => 0,
+            'declaredfiles' => 1, 'filecheck' => 0, 'filesize' => 0, 'collectionhash' => sha1('source '.$id)], ...$attributes]);
+        $binary = DB::table('binaries')->insertGetId(['binaryhash' => md5('binary '.$id, true), 'name' => 'source'.$id.'.rar',
+            'collections_id' => $id, 'totalparts' => 1, 'currentparts' => 1, 'filenumber' => 1, 'partsize' => 100, 'partcheck' => 1]);
+        DB::table('parts')->insert(['binaries_id' => $binary, 'number' => $id, 'messageid' => 'source-'.$id.'@example.invalid',
+            'partnumber' => 1, 'size' => 100]);
+    }
+
+    private function recoveryOwns(int $collectionId): void
+    {
+        if (! Schema::hasTable('obfuscation_recovery_publications')) {
+            ProductionTables::fromAuthority()->create('obfuscation_recovery_publications', ['collections_id', 'state']);
+        }
+        DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $collectionId, 'state' => 'prepared']);
+    }
+
+    private function release(int $id, string $collectionHash): void
+    {
+        DB::table('releases')->insert(['id' => $id, 'name' => 'Release '.$id, 'searchname' => 'Release '.$id,
+            'guid' => sha1('guid '.$id), 'groups_id' => 1, 'nzbstatus' => 1, 'completion' => 100, 'size' => 100,
+            'collectionhash' => $collectionHash]);
+    }
+
+    /** The database clock the quiet predicate reads, moved by an SQLite modifier such as '-2 hours'. */
+    private function databaseNow(string $modifier = '+0 seconds'): string
+    {
+        return (string) DB::selectOne('SELECT datetime(CURRENT_TIMESTAMP, ?) AS now', [$modifier])->now;
+    }
+
+    /** Release creation that records the sized collections it is handed instead of forming them. */
+    private function recordingCreation(): ReleaseCreationService
+    {
+        return new class(new ReleaseCleaningService, new CollectionCleanupService, app(ReleaseDuplicateFinder::class), app(CollectionCompletionMeasurer::class), app(ReleaseDuplicateAbsorber::class)) extends ReleaseCreationService
+        {
+            /** @var list<int> */
+            private array $formed = [];
+
+            public function createSelectedCollections(int $groupId, array $collectionIds, bool $echoCLI): array
+            {
+                array_push($this->formed, ...DB::table('collections')->whereIn('id', $collectionIds)
+                    ->where('filecheck', 3)->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+
+                return ['added' => 0, 'dupes' => 0];
+            }
+
+            /** @return list<int> */
+            public function formed(): array
+            {
+                $formed = array_values(array_unique($this->formed));
+                sort($formed);
+
+                return $formed;
+            }
+        };
     }
 
     private function source(int $id): void

@@ -38,4 +38,12 @@ final class DatabaseClock
             default => throw new LogicException('Unsupported database driver for database-clock cutoff.'),
         };
     }
+
+    /** The database's own current time, as it stores a DATETIME written with NOW(). */
+    public static function now(): string
+    {
+        $now = self::cutoff(now());
+
+        return (string) DB::selectOne('SELECT '.$now['sql'].' AS now', $now['bindings'])->now;
+    }
 }

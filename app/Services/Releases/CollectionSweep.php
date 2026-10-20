@@ -9,13 +9,17 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use LogicException;
 
 /** Resume discovery by IDs examined, independently of whether a page contains eligible work. */
 final class CollectionSweep
 {
-    /** @param callable(list<int>, CollectionSweepLease): int $page */
+    /**
+     * With $passEverySeconds, a new pass starts at most that long after the previous one started;
+     * a pass already under way resumes regardless.
+     *
+     * @param  callable(list<int>, CollectionSweepLease): int  $page
+     */
     public function run(
         string $kind,
         ?int $group,
@@ -24,6 +28,7 @@ final class CollectionSweep
         int $pageSize = 1000,
         int $maxPages = 20,
         float $seconds = 5,
+        ?int $passEverySeconds = null,
     ): CollectionSweepResult {
         if (DB::transactionLevel() !== 0) {
             throw new LogicException('Collection maintenance must commit each mutation independently.');
@@ -31,29 +36,30 @@ final class CollectionSweep
         $deadline = microtime(true) + $seconds;
         $population ??= $this->population($group);
         $scope = $kind.':'.($group === null ? 'global' : 'group:'.$group);
-        $token = (string) Str::uuid();
-        $cursor = DB::transaction(function () use ($scope, $token, $population): ?object {
-            DB::table('collection_sweep_cursors')->insertOrIgnore(['scope' => $scope, 'created_at' => now(), 'updated_at' => now()]);
-            $row = DB::table('collection_sweep_cursors')->where('scope', $scope)->lockForUpdate()->first();
-            if ($row->lease_token !== null && $row->lease_expires_at !== null
-                && CarbonImmutable::parse($row->lease_expires_at, config('app.timezone'))->greaterThan(now())) {
-                return null;
-            }
+        $cursor = null;
+        $resting = false;
+        $lease = CollectionSweepLease::acquire($scope, static function (object $row) use (&$cursor, &$resting, $population, $passEverySeconds): ?array {
+            $values = [];
             if ((int) $row->high_water_id === 0) {
+                if ($passEverySeconds !== null && $row->pass_started_at !== null
+                    && CarbonImmutable::parse($row->pass_started_at, config('app.timezone'))->greaterThan(now()->subSeconds($passEverySeconds))) {
+                    $resting = true;
+
+                    return null;
+                }
                 $row->last_id = 0;
                 $row->high_water_id = (int) (clone $population)->max('id');
+                if ($passEverySeconds !== null) {
+                    $values['pass_started_at'] = now();
+                }
             }
-            DB::table('collection_sweep_cursors')->where('scope', $scope)->update([
-                'last_id' => $row->last_id, 'high_water_id' => $row->high_water_id,
-                'lease_token' => $token, 'lease_expires_at' => now()->addSeconds(60), 'updated_at' => now(),
-            ]);
+            $cursor = $row;
 
-            return $row;
-        }, 3);
-        if ($cursor === null) {
-            return new CollectionSweepResult(CollectionSweepOutcome::LeaseBusy, 0, 0);
+            return [...$values, 'last_id' => $row->last_id, 'high_water_id' => $row->high_water_id];
+        });
+        if ($lease === null || $cursor === null) {
+            return new CollectionSweepResult($resting ? CollectionSweepOutcome::Resting : CollectionSweepOutcome::LeaseBusy, 0, 0);
         }
-        $lease = new CollectionSweepLease($scope, $token);
         $deleted = 0;
         $examined = 0;
         $outcome = CollectionSweepOutcome::BudgetYielded;
