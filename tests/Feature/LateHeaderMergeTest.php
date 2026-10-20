@@ -61,6 +61,7 @@ class LateHeaderMergeTest extends TestCase
         }
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
+        (require database_path('migrations/2026_10_20_180000_add_collection_due_lookups.php'))->up();
         $this->seed(CollectionRegexesTableSeeder::class);
         Cache::flush();
         Search::shouldReceive('updateRelease')->zeroOrMoreTimes();
@@ -269,6 +270,21 @@ class LateHeaderMergeTest extends TestCase
 
         $result = $this->formReleases();
 
+        $this->assertSame(range(1, self::SEGMENTS), array_keys($this->storedDocument($release)->segments()[0]));
+        $this->assertLateCollectionGone($lateId);
+        $this->assertSame(0, $result['dupes']);
+    }
+
+    public function test_a_late_collection_merges_once_it_crosses_the_quiet_line_without_frontier_movement(): void
+    {
+        $release = $this->publishRelease(missing: [1 => [3, 7]]);
+        // A run with nothing waiting: the hourly walk has had its pass and the lookups their watermarks.
+        $this->formReleases();
+        $lateId = $this->ingestLateWaiting([1 => range(1, self::SEGMENTS)], quietMinutes: 16);
+
+        $result = $this->formReleases();
+
+        $this->assertSame(self::FRONTIER, DB::table('usenet_groups')->where('id', 1)->value('last_record_postdate'));
         $this->assertSame(range(1, self::SEGMENTS), array_keys($this->storedDocument($release)->segments()[0]));
         $this->assertLateCollectionGone($lateId);
         $this->assertSame(0, $result['dupes']);

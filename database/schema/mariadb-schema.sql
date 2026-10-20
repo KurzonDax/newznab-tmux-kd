@@ -227,6 +227,13 @@ CREATE TABLE `collection_sweep_cursors` (
   `lease_expires_at` datetime DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
+  `pass_started_at` datetime DEFAULT NULL COMMENT 'When the current or last safety-net walk pass started',
+  `lookup_stage` tinyint(3) unsigned DEFAULT NULL COMMENT 'Lookup the current pass is serving',
+  `lookup_stamp` datetime DEFAULT NULL COMMENT 'Stamp of the last row the current lookup returned',
+  `lookup_id` bigint(20) unsigned DEFAULT NULL COMMENT 'ID of the last row the current lookup returned',
+  `lookup_started_at` datetime DEFAULT NULL COMMENT 'Database clock when the current lookup pass started',
+  `touched_since` datetime DEFAULT NULL COMMENT 'Rows stamped at or after this are touched since the last pass',
+  `late_since` datetime DEFAULT NULL COMMENT 'Rows stamped at or after this have not yet crossed the late line',
   PRIMARY KEY (`scope`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -270,7 +277,8 @@ CREATE TABLE `collections` (
   KEY `ix_collections_filecheck_filesize_groups` (`filecheck`,`filesize`,`groups_id`),
   KEY `collections_reconciliation_discovery` (`groups_id`,`declaredfiles`,`date`),
   KEY `collections_admission_window` (`groups_id`,`declaredfiles`,`fromname`,`filecheck`,`date`,`id`),
-  KEY `collections_formation_queue` (`groups_id`,`filecheck`,`id`)
+  KEY `collections_formation_queue` (`groups_id`,`filecheck`,`id`),
+  KEY `ix_collections_group_filecheck_head_id` (`groups_id`,`filecheck`,`last_seen_head_postdate`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `companies`;
@@ -4384,3 +4392,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (333,'2026_10_17_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (334,'2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes',40);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (335,'2026_10_20_120000_make_par2_sidecar_operation_xml_nullable',41);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (336,'2026_10_20_120000_index_obfuscation_recovery_expired_headers_by_age',42);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (337,'2026_10_20_180000_add_collection_due_lookups',43);

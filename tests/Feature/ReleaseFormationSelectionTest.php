@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\CollectionDeletionReason;
+use App\Enums\CollectionSweepOutcome;
 use App\Models\Settings;
 use App\Services\CollectionCleanupService;
 use App\Services\ReleaseCleaningService;
@@ -13,6 +14,8 @@ use App\Services\ReleaseProcessingService;
 use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\CollectionDeletionSelection;
 use App\Services\Releases\CollectionSweep;
+use App\Services\Releases\CollectionSweepResult;
+use App\Services\Releases\DueCollectionLookup;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Carbon\Carbon;
@@ -25,6 +28,7 @@ use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
+use Tests\Support\ProductionTables;
 use Tests\Support\Reconciliation\CreatesPostingSchema;
 use Tests\TestCase;
 
@@ -42,6 +46,7 @@ class ReleaseFormationSelectionTest extends TestCase
         $this->createPostingSchema();
         (require database_path('migrations/2026_09_10_134847_add_reconciliation_admissions.php'))->up();
         (require database_path('migrations/2026_09_10_224820_create_collection_sweep_cursors_table.php'))->up();
+        (require database_path('migrations/2026_10_20_180000_add_collection_due_lookups.php'))->up();
         Cache::flush();
         DB::table('settings')->insert([
             ['name' => 'delaytime', 'value' => '1'],
@@ -53,22 +58,11 @@ class ReleaseFormationSelectionTest extends TestCase
 
     public function test_an_ineligible_state_page_advances_without_running_empty_downstream_batches(): void
     {
-        foreach (range(1, 128) as $id) {
-            $this->source($id);
-        }
-        $processing = app(ReleaseProcessingService::class)->setEchoCLI(false);
-        DB::flushQueryLog();
-        DB::enableQueryLog();
-        try {
-            $result = $processing->formReleases(1);
-            $queries = DB::getQueryLog();
-        } finally {
-            DB::disableQueryLog();
-            DB::flushQueryLog();
-        }
+        $single = $this->formationQueries(1);
+        $queries = $this->formationQueries(128);
 
-        $this->assertSame(['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 1], $result);
-        $this->assertLessThan(180, count($queries), 'A 128-row ineligible page must not run sixteen empty formation pipelines.');
+        // Every run's lookups cost the same; the walk page is what grows with the population.
+        $this->assertLessThan(20, $queries - $single, 'A 128-row ineligible page must not run sixteen empty formation pipelines.');
         $this->assertSame(128, DB::table('collections')->count());
         $cursor = DB::table('collection_sweep_cursors')->where('scope', 'formation:0:group:1')->first();
         $this->assertSame(0, (int) $cursor->last_id);
@@ -254,6 +248,84 @@ class ReleaseFormationSelectionTest extends TestCase
         $this->assertSame([1, 4, 5, 7, 8, 9, 10], DB::table('collections')->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all());
     }
 
+    public function test_formation_examines_the_same_collections_however_many_wait_without_being_due(): void
+    {
+        $this->assertSame($this->formationExamined(50), $this->formationExamined(100));
+    }
+
+    public function test_a_held_due_collection_does_not_stop_the_due_collections_behind_it(): void
+    {
+        DB::table('settings')->where('name', 'maxnzbsprocessed')->update(['value' => '1']);
+        Settings::forgetCachedSettings();
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        // Due first in head order, but held by an admission window, recovery and a reconciliation claim.
+        foreach ([1, 2, 3] as $id) {
+            $this->waiting($id, ['last_seen_head_postdate' => '2026-01-01 09:00:00']);
+        }
+        DB::table('reconciliation_admissions')->insert(['collection_id' => 1, 'decision_id' => 'held',
+            'revision' => 'current', 'admitted_at' => now(), 'expires_at' => now()->addHour(), 'state' => 'admitted']);
+        $this->recoveryOwns(2);
+        $this->release(502, sha1('claimed release'));
+        DB::table('reconciled_postings')->insert(['release_id' => 502, 'digest' => 'claimed', 'state' => 'prepared',
+            'inventory' => '[]', 'decision' => '[]']);
+        DB::table('reconciliation_claims')->insert(['collection_id' => 3, 'deadline' => now()->addHour(),
+            'reason' => 'accepted', 'release_id' => 502]);
+        $this->waiting(4, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(5, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+
+        $processing->formReleases(1);
+
+        $this->assertSame([4, 5], $creation->formed());
+    }
+
+    public function test_a_collection_touched_after_a_pass_is_examined_on_the_next_pass(): void
+    {
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        $this->waiting(1, ['totalfiles' => 1]);
+        // Counters complete, but stamped before that pass: only the hourly walk returns it.
+        $this->waiting(2, ['totalfiles' => 1, 'last_seen_at' => $this->databaseNow('-30 minutes')]);
+
+        $processing->formReleases(1);
+
+        $this->assertSame([1], $creation->formed());
+    }
+
+    public function test_a_collection_no_lookup_returns_forms_through_the_hourly_walk(): void
+    {
+        $this->app->instance(DueCollectionLookup::class, new class extends DueCollectionLookup
+        {
+            public function run(string $kind, int $group, int $status, int $hours, callable $page, int $pageSize = 1000,
+                int $maxPages = 20, float $seconds = 5, bool $touched = false, ?int $lateMinutes = null): CollectionSweepResult
+            {
+                return new CollectionSweepResult(CollectionSweepOutcome::Exhausted, 0, 0);
+            }
+        });
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+
+        $processing->formReleases(1);
+        $this->assertSame([1], $creation->formed());
+
+        $this->waiting(2, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->travel(59)->minutes();
+        $processing->formReleases(1);
+        $this->assertSame([1], $creation->formed(), 'The walk starts at most one pass an hour.');
+
+        $this->travel(2)->minutes();
+        $processing->formReleases(1);
+        $this->assertSame([1, 2], $creation->formed());
+    }
+
+    public function test_stuck_maintenance_examines_the_same_collections_however_many_wait_without_being_stuck(): void
+    {
+        $this->assertSame($this->stuckExamined(50), $this->stuckExamined(100));
+    }
+
     /**
      * One collection per readiness route on group 1 (active, frontier 12:00, one-hour wait) and
      * group 2 (inactive). Header clocks are relative to the database clock, which the quiet
@@ -337,6 +409,94 @@ class ReleaseFormationSelectionTest extends TestCase
     }
 
     /**
+     * Collection IDs formation hands to the readiness predicate in a run after a first, full
+     * pass, with three due collections and the given number waiting without being due.
+     */
+    private function formationExamined(int $notDue): int
+    {
+        $this->resetCollections();
+        foreach (range(1000, 999 + $notDue) as $id) {
+            $this->waiting($id, ['last_seen_at' => $this->databaseNow('-30 minutes')]);
+        }
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+        $processing->formReleases(1);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $this->waiting(2, ['totalfiles' => 1]);
+        $this->waiting(3, ['last_seen_at' => $this->databaseNow('-16 minutes')]);
+        $this->release(500, sha1('source 3'));
+
+        $examined = $this->readinessExamined(static fn () => $processing->formReleases(1));
+
+        $this->assertSame([1, 2, 3], $creation->formed());
+
+        return $examined;
+    }
+
+    /** Queries in a first formation run over the given number of ineligible sources: one walk page. */
+    private function formationQueries(int $sources): int
+    {
+        $this->resetCollections();
+        foreach (range(1, $sources) as $id) {
+            $this->source($id);
+        }
+        $processing = app(ReleaseProcessingService::class)->setEchoCLI(false);
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        try {
+            $result = $processing->formReleases(1);
+            $queries = DB::getQueryLog();
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
+        $this->assertSame(['releases' => 0, 'nzbs' => 0, 'dupes' => 0, 'iterations' => 1], $result);
+
+        return count($queries);
+    }
+
+    /** Collection IDs stuck maintenance examines in a run after a first, full pass. */
+    private function stuckExamined(int $notStuck): int
+    {
+        $this->resetCollections();
+        foreach (range(1000, 999 + $notStuck) as $id) {
+            $this->waiting($id);
+        }
+        $selection = new CollectionDeletionSelection(CollectionDeletionReason::Stuck, 2);
+        app(CollectionCleanupService::class)->runMaintenance($selection, 1);
+        $this->waiting(1, ['last_seen_head_postdate' => '2026-01-01 09:00:00']);
+
+        $result = app(CollectionCleanupService::class)->runMaintenance($selection, 1);
+
+        $this->assertNull(DB::table('collections')->where('id', 1)->first());
+        $this->assertSame($notStuck, DB::table('collections')->count());
+
+        return $result->examined;
+    }
+
+    /** Count the collection IDs a callback hands to formation's readiness predicate. */
+    private function readinessExamined(Closure $run): int
+    {
+        $examined = 0;
+        DB::listen(static function ($query) use (&$examined): void {
+            if (str_contains($query->sql, 'HAVING COUNT(*) IN (collections.totalfiles')
+                && preg_match('/"id" in \(([?, ]+)\)/', $query->sql, $ids) === 1) {
+                $examined += substr_count($ids[1], '?');
+            }
+        });
+        $run();
+
+        return $examined;
+    }
+
+    private function resetCollections(): void
+    {
+        foreach (['parts', 'binaries', 'collections', 'releases', 'collection_sweep_cursors'] as $table) {
+            DB::table($table)->delete();
+        }
+    }
+
+    /**
      * A waiting collection with one stored, complete file. By default its head is at the group
      * frontier and its last header was stored two minutes ago, so no route admits it.
      *
@@ -353,6 +513,14 @@ class ReleaseFormationSelectionTest extends TestCase
             'collections_id' => $id, 'totalparts' => 1, 'currentparts' => 1, 'filenumber' => 1, 'partsize' => 100, 'partcheck' => 1]);
         DB::table('parts')->insert(['binaries_id' => $binary, 'number' => $id, 'messageid' => 'source-'.$id.'@example.invalid',
             'partnumber' => 1, 'size' => 100]);
+    }
+
+    private function recoveryOwns(int $collectionId): void
+    {
+        if (! Schema::hasTable('obfuscation_recovery_publications')) {
+            ProductionTables::fromAuthority()->create('obfuscation_recovery_publications', ['collections_id', 'state']);
+        }
+        DB::table('obfuscation_recovery_publications')->insert(['collections_id' => $collectionId, 'state' => 'prepared']);
     }
 
     private function release(int $id, string $collectionHash): void

@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\DB;
 /** Maintenance eligibility is applied both to a bounded discovery page and under source locks. */
 final readonly class CollectionDeletionSelection
 {
+    /** Collections still waiting to form: formation finds them by lookups, and retention leaves them to the stuck sweep. */
+    public const array WAITING_STATUSES = [0, 1, 10, 15, 16];
+
     /** @param array<int, int|null>|null $expectedLinks */
     public function __construct(public CollectionDeletionReason $reason, public int $hours = 72, public ?array $expectedLinks = null, public ?int $groupId = null) {}
 
@@ -35,10 +38,10 @@ final readonly class CollectionDeletionSelection
                 ->when($currentRead, static fn ($query) => $query->lockForUpdate()));
         } elseif ($this->reason === CollectionDeletionReason::Retention) {
             $cutoff = DatabaseClock::cutoff(now()->subHours($this->hours));
-            $query->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])->whereNotIn('filecheck', [0, 1, 10, 15, 16]);
+            $query->whereRaw('dateadded < '.$cutoff['sql'], $cutoff['bindings'])->whereNotIn('filecheck', self::WAITING_STATUSES);
         } elseif ($this->reason === CollectionDeletionReason::Stuck) {
             $quiet = CollectionQuietPredicate::build($this->hours, DB::getTablePrefix().'collections', 'added', $currentRead);
-            $query->whereIn('filecheck', [0, 1, 10, 15, 16])->whereRaw($quiet['sql'], $quiet['bindings']);
+            $query->whereIn('filecheck', self::WAITING_STATUSES)->whereRaw($quiet['sql'], $quiet['bindings']);
         } else {
             $releaseIds = $currentRead ? array_values($expectedLinks)
                 : DB::table('collections')->whereIn('id', $ids)->pluck('releases_id')->all();
