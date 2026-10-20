@@ -27,6 +27,7 @@ final class RecoveryPaneTextTest extends TestCase
         self::assertSame('Housekeeping: nothing to do', $text->housekeepingLine(['expired_headers' => 0]));
         self::assertSame('Housekeeping: expired 1,000 headers, compacted 250 incomplete scans', $text->housekeepingLine(['expired_headers' => 1000, 'compacted_incomplete_scans' => 250]));
         self::assertSame('Housekeeping: expired 1,000 headers, 10 purge batches, 8,512 ms purging', $text->housekeepingLine(['expired_headers' => 1000, 'expired_header_batches' => 10, 'expired_header_milliseconds' => 8512]));
+        self::assertSame('Housekeeping: deleted 1,500 expired-header markers', $text->housekeepingLine(['expired_markers' => 1500]));
         self::assertSame('Housekeeping: 2 new counter', $text->housekeepingLine(['new_counter' => 2]));
         self::assertSame('Planning: nothing to do', $text->planningLine(['gaps_queued' => 0, 'runs_refreshed' => 0, 'bundles_refreshed' => 0, 'frontier' => []]));
         self::assertSame('Planning: 12 gap downloads queued, 3 runs refreshed, 2 candidates refreshed, frontier: 1 frontier evidence rebuilt', $text->planningLine(['gaps_queued' => 12, 'runs_refreshed' => 3, 'bundles_refreshed' => 2, 'frontier' => ['frontier_rebuilt' => 1]]));

@@ -1371,7 +1371,8 @@ CREATE TABLE `obfuscation_recovery_expired_headers` (
   `groups_id` int(10) unsigned NOT NULL,
   `message_id_digest` char(64) NOT NULL,
   `first_observed_at` timestamp(6) NOT NULL,
-  PRIMARY KEY (`source_epoch`,`groups_id`,`message_id_digest`)
+  PRIMARY KEY (`source_epoch`,`groups_id`,`message_id_digest`),
+  KEY `recovery_expired_age` (`first_observed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `obfuscation_recovery_files`;
@@ -4382,3 +4383,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (332,'2026_10_16_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (333,'2026_10_17_120000_normalize_imported_nzb_segment_message_ids',39);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (334,'2026_10_16_230000_set_null_on_delete_for_release_music_identification_supersedes',40);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (335,'2026_10_20_120000_make_par2_sidecar_operation_xml_nullable',41);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (336,'2026_10_20_120000_index_obfuscation_recovery_expired_headers_by_age',42);

@@ -11,6 +11,8 @@ use InvalidArgumentException;
 
 final class RecoveryHistoryRetention
 {
+    private const int MARKER_BATCHES = 4;
+
     /** @return array<string,int> */
     public function step(RecoveryConfig $config, int $limit = 1000): array
     {
@@ -29,6 +31,16 @@ final class RecoveryHistoryRetention
         $report['compacted_incomplete_scans'] = $incomplete->whereIn('id', $ids)->update([
             'date_points' => null, 'date_conflicts' => null, 'invalid_date_articles' => null,
         ]);
+        $markerCutoff = now()->subHours(2 * min($config->retentionHours, 876000));
+        $report['expired_markers'] = 0;
+        for ($batch = 0; $batch < self::MARKER_BATCHES; $batch++) {
+            $deleted = DB::table('obfuscation_recovery_expired_headers')->where('first_observed_at', '<', $markerCutoff)
+                ->orderBy('first_observed_at')->limit($limit)->delete();
+            $report['expired_markers'] += $deleted;
+            if ($deleted < $limit) {
+                break;
+            }
+        }
 
         $report += ['expired_frontiers' => 0, 'expired_frontier_conflicts' => 0, 'expired_frontier_ranges' => 0];
         // Retained coverage and scan windows outlive raw headers and scan details.

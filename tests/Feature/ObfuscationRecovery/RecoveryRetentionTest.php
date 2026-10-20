@@ -17,6 +17,7 @@ use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoverySettlement;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,7 @@ final class RecoveryRetentionTest extends TestCase
         (require database_path('migrations/2026_09_13_190549_add_recovery_frontier_request_attribution.php'))->up();
         (require database_path('migrations/2026_09_14_110835_add_recovery_handoff_and_process_identity.php'))->up();
         (require database_path('migrations/2026_09_18_120000_bucket_obfuscation_recovery_dirty_marks.php'))->up();
+        (require database_path('migrations/2026_10_20_120000_index_obfuscation_recovery_expired_headers_by_age.php'))->up();
     }
 
     protected function tearDown(): void
@@ -522,6 +524,65 @@ final class RecoveryRetentionTest extends TestCase
         return [['ready'], ['publishing'], ['published']];
     }
 
+    public function test_history_deletes_markers_older_than_twice_retention(): void
+    {
+        $this->freezeTime();
+        $this->marker('epoch', 1, 'old', 289);
+        $this->marker('epoch', 1, 'recent', 287);
+        $this->marker('other-epoch', 2, 'old', 289);
+
+        $this->assertSame(2, (new RecoveryHistoryRetention)->step(RecoveryConfig::fromValues([]))['expired_markers']);
+        $this->assertSame([hash('sha256', 'recent')], DB::table('obfuscation_recovery_expired_headers')->pluck('message_id_digest')->all());
+        $this->travelBack();
+    }
+
+    public function test_marker_horizon_follows_the_retention_setting(): void
+    {
+        $this->freezeTime();
+        $this->marker('epoch', 1, 'old', 21);
+        $this->marker('epoch', 1, 'recent', 19);
+
+        $report = (new RecoveryHistoryRetention)->step(RecoveryConfig::fromValues(['obfuscation_recovery_retention_hours' => 10]));
+
+        $this->assertSame(1, $report['expired_markers']);
+        $this->assertSame([hash('sha256', 'recent')], DB::table('obfuscation_recovery_expired_headers')->pluck('message_id_digest')->all());
+        $this->travelBack();
+    }
+
+    public function test_marker_delete_is_capped_at_four_batches_per_step(): void
+    {
+        $this->freezeTime();
+        foreach (range(1, 6) as $marker) {
+            $this->marker('epoch', 1, (string) $marker, 300);
+        }
+        $history = new RecoveryHistoryRetention;
+        $config = RecoveryConfig::fromValues([]);
+
+        $this->assertSame(4, $history->step($config, 1)['expired_markers']);
+        $this->assertSame(2, DB::table('obfuscation_recovery_expired_headers')->count());
+        $this->assertSame(2, $history->step($config, 1)['expired_markers']);
+        $this->assertSame(0, DB::table('obfuscation_recovery_expired_headers')->count());
+        $this->travelBack();
+    }
+
+    public function test_marker_delete_stops_after_a_short_batch(): void
+    {
+        $this->freezeTime();
+        foreach (range(1, 3) as $marker) {
+            $this->marker('epoch', 1, (string) $marker, 300);
+        }
+        $deletes = 0;
+        DB::listen(function (QueryExecuted $query) use (&$deletes): void {
+            if (str_starts_with(strtolower($query->sql), 'delete') && str_contains($query->sql, 'obfuscation_recovery_expired_headers')) {
+                $deletes++;
+            }
+        });
+
+        $this->assertSame(3, (new RecoveryHistoryRetention)->step(RecoveryConfig::fromValues([]), 2)['expired_markers']);
+        $this->assertSame(2, $deletes);
+        $this->travelBack();
+    }
+
     public function test_live_header_floor_uses_the_lowest_article_across_generations(): void
     {
         $this->coverage(1, 500);
@@ -648,6 +709,14 @@ final class RecoveryRetentionTest extends TestCase
     {
         DB::transaction(fn () => (new RecoveryPositiveCoverage)->record(DB::connection(),
             new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, $first, $last, $direction, 'retention-fixture')));
+    }
+
+    private function marker(string $epoch, int $group, string $message, int $age): void
+    {
+        DB::table('obfuscation_recovery_expired_headers')->insert([
+            'source_epoch' => $epoch, 'groups_id' => $group, 'message_id_digest' => hash('sha256', $message),
+            'first_observed_at' => now()->subHours($age),
+        ]);
     }
 
     private function header(int $id, ?int $bundle, int $age): void
