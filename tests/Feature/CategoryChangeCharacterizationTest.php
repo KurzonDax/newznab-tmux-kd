@@ -101,7 +101,8 @@ class CategoryChangeCharacterizationTest extends TestCase
         $this->assertSame([$id], $this->synchronized);
     }
 
-    public function test_recategorizing_clears_every_link_but_the_movie_and_ignores_the_forced_root(): void
+    /** Decision 5 (#1120): a move inside TV keeps the show links. */
+    public function test_recategorizing_within_a_section_keeps_its_links_and_ignores_the_forced_root(): void
     {
         DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => Category::MOVIE_ROOT]);
         $id = $this->owedRelease(Category::TV_HD);
@@ -110,10 +111,7 @@ class CategoryChangeCharacterizationTest extends TestCase
 
         $this->assertSame(1, $recategorizer->refileCategory(Category::TV_HD));
 
-        $this->assertMoved($id, Category::TV_OTHER, categorized: 1, links: $this->links([
-            'videos_id' => 0, 'tv_episodes_id' => 0, 'imdbid' => null, 'musicinfo_id' => null, 'consoleinfo_id' => null,
-            'gamesinfo_id' => 0, 'bookinfo_id' => null, 'anidbid' => null,
-        ]), preview: -1);
+        $this->assertMoved($id, Category::TV_OTHER, categorized: 1, links: $this->links(), preview: -1);
         $this->assertSame([$id, $id], $this->synchronized);
     }
 
@@ -167,22 +165,22 @@ class CategoryChangeCharacterizationTest extends TestCase
         $this->assertMoved($id, Category::XXX_OTHER, categorized: 0, links: $this->links(), preview: -2);
     }
 
-    public function test_the_admin_bulk_edit_moves_every_release_in_one_update_and_keeps_links(): void
+    /** Decision 5 (#1120): the bulk move clears only the links each release's old category owned. */
+    public function test_the_admin_bulk_edit_moves_every_release_in_one_update_and_clears_the_links_it_leaves(): void
     {
         $first = $this->owedRelease(Category::TV_HD);
         $second = $this->owedRelease(Category::MOVIE_HD, [], 2);
         $this->hevcVideo($first);
         $statements = 0;
         DB::listen(static function (QueryExecuted $query) use (&$statements): void {
-            $statements += str_starts_with(strtolower($query->sql), 'update "releases" set "categories_id"') ? 1 : 0;
+            $statements += str_starts_with(strtolower($query->sql), 'update "releases" set') && str_contains($query->sql, '"categories_id" =') ? 1 : 0;
         });
 
         $this->assertSame(2, (new ReleaseManagementService)->bulkUpdateCategory([sprintf('%040d', $first), sprintf('%040d', $second)], Category::MOVIE_OTHER));
 
         $this->assertSame(1, $statements);
-        foreach ([$first, $second] as $id) {
-            $this->assertMoved($id, Category::MOVIE_OTHER, categorized: 1, links: $this->links(), preview: -1);
-        }
+        $this->assertMoved($first, Category::MOVIE_OTHER, categorized: 1, links: $this->links(['videos_id' => 0, 'tv_episodes_id' => 0]), preview: -1);
+        $this->assertMoved($second, Category::MOVIE_OTHER, categorized: 1, links: $this->links(), preview: -1);
         $this->assertSame([$first, $second, $first, $second], $this->synchronized);
     }
 
@@ -206,6 +204,7 @@ class CategoryChangeCharacterizationTest extends TestCase
         $this->assertSame([$id, $id], $this->synchronized);
     }
 
+    /** Decision 5 (#1120): leaving Movies clears the movie links. */
     public function test_a_movie_handed_to_tv_moves_to_tv_other_and_is_refined(): void
     {
         $id = $this->owedRelease(Category::MOVIE_OTHER);
@@ -213,17 +212,18 @@ class CategoryChangeCharacterizationTest extends TestCase
 
         $this->assertFalse($this->handoffToTv($id, MovieLookupOutcome::NotFound, ['video_id' => 41]));
 
-        $this->assertMoved($id, Category::TV_X265, categorized: 1, links: $this->links(), preview: -1);
+        $this->assertMoved($id, Category::TV_X265, categorized: 1, links: $this->links(['movieinfo_id' => null, 'imdbid' => null]), preview: -1);
         $this->assertSame([$id, $id], $this->synchronized);
     }
 
+    /** Decision 5 (#1120): leaving Movies clears the movie links. */
     public function test_a_movie_handed_to_tv_restores_no_previews_of_its_own(): void
     {
         $id = $this->owedRelease(Category::MOVIE_OTHER);
 
         $this->assertTrue($this->handoffToTv($id, MovieLookupOutcome::Series, ['video_id' => 41]));
 
-        $this->assertMoved($id, Category::TV_OTHER, categorized: 0, links: $this->links(), preview: -2);
+        $this->assertMoved($id, Category::TV_OTHER, categorized: 0, links: $this->links(['movieinfo_id' => null, 'imdbid' => null]), preview: -2);
         $this->assertSame([$id], $this->synchronized);
     }
 

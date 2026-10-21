@@ -111,14 +111,9 @@ class AdultCategoryRowsTest extends TestCase
         $this->assertSame(Category::XXX_ROOT, Category::rootCategoryFor($expected));
         $this->assertSame($expected, (int) $release->categories_id);
         $this->assertSame(1, (int) $release->iscategorized);
-        $this->assertSame(0, (int) $release->videos_id);
-        $this->assertSame(0, (int) $release->tv_episodes_id);
-        $this->assertSame(0, (int) $release->gamesinfo_id);
-        $this->assertNull($release->imdbid);
-        $this->assertNull($release->musicinfo_id);
-        $this->assertNull($release->consoleinfo_id);
-        $this->assertNull($release->bookinfo_id);
-        $this->assertNull($release->anidbid);
+        // A move inside XXX leaves every link alone: XXX owns none of them (#1120, decision 5).
+        $this->assertSame([9, 8, 'tt1234567', 7, 6, 5, 4, 3], [(int) $release->videos_id, (int) $release->tv_episodes_id, $release->imdbid,
+            (int) $release->musicinfo_id, (int) $release->consoleinfo_id, (int) $release->gamesinfo_id, (int) $release->bookinfo_id, (int) $release->anidbid]);
         $this->assertSame(-1, (int) $release->haspreview, 'the preview the old category owed is queued again');
         Search::shouldHaveReceived('updateRelease')->with(1);
         Search::shouldNotHaveReceived('updateRelease', [2]);

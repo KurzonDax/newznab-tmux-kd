@@ -10,6 +10,7 @@ use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Support\ReleaseSearchIndexSync;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The one writer of an existing release's category after it was formed. Each move is a
@@ -32,7 +33,8 @@ final readonly class CategoryChange
             return false;
         }
 
-        $columns = [...$kind->clearedLinks(), 'categories_id' => $toCategoryId];
+        $links = $kind->clearsOwnedLinks() ? CategoryLinkOwnership::clearedLinks($fromCategoryId, $toCategoryId) : [];
+        $columns = [...$links, 'categories_id' => $toCategoryId];
         if ($kind->marksCategorized()) {
             $columns['iscategorized'] = 1;
         }
@@ -70,9 +72,15 @@ final readonly class CategoryChange
     public function applyBulk(array $guids, iterable $releaseIds, int $toCategoryId): int
     {
         $kind = CategoryChangeKind::AdminBulk;
+        // Each link is set from its row's old category, so the links come before categories_id:
+        // MariaDB evaluates the assignments left to right.
+        $links = [];
+        foreach (CategoryLinkOwnership::clearedLinksByOldCategory($toCategoryId) as $link => [$ownedBefore, $cleared]) {
+            $links[$link] = DB::raw("CASE WHEN {$ownedBefore} THEN ".($cleared === null ? 'NULL' : $cleared)." ELSE {$link} END");
+        }
         $moved = Release::query()
             ->whereIn('guid', $guids)
-            ->update([...$kind->clearedLinks(), 'categories_id' => $toCategoryId, 'iscategorized' => 1]);
+            ->update([...$links, 'categories_id' => $toCategoryId, 'iscategorized' => 1]);
 
         if ($moved > 0) {
             $this->previewPolicy->restoreOwedPreviews($releaseIds, $kind->previewRestoreSynchronizes());

@@ -32,25 +32,12 @@ enum CategoryChangeKind
     case AdminBulk;
 
     /**
-     * The metadata links the move clears, with the value each takes.
-     *
-     * @return array<string, int|null>
+     * Whether the move clears the links the old category owns ({@see CategoryLinkOwnership}). A
+     * rename has already cleared every link.
      */
-    public function clearedLinks(): array
+    public function clearsOwnedLinks(): bool
     {
-        return match ($this) {
-            self::Recategorize => [
-                'videos_id' => 0,
-                'tv_episodes_id' => 0,
-                'imdbid' => null,
-                'musicinfo_id' => null,
-                'consoleinfo_id' => null,
-                'gamesinfo_id' => 0,
-                'bookinfo_id' => null,
-                'anidbid' => null,
-            ],
-            default => [],
-        };
+        return $this !== self::Rename;
     }
 
     /** Whether the move marks the release categorized. */
