@@ -252,6 +252,24 @@ class NfoProcessingReliabilityTest extends TestCase
         }
     }
 
+    #[Test]
+    public function archive_nfo_extraction_passes_the_nzb_password_to_unrar(): void
+    {
+        config([
+            'nntmux_settings.unrar_path' => '/usr/bin/unrar',
+            'nntmux.tmp_unrar_path' => $this->makeTempDirectory('nfo-archive-password'),
+        ]);
+        $service = new CommandRecordingNfoService;
+
+        $this->assertFalse($service->extractNfo('ARCHIVE', ['release.nfo'], 'guid', 'it\'s $x'));
+        $this->assertFalse($service->extractNfo('ARCHIVE', ['release.nfo'], 'guid', null));
+
+        $this->assertCount(2, $service->commands);
+        $this->assertStringContainsString('" e -y -c- -inul -p\'it\'\\\'\'s $x\' "', $service->commands[0]);
+        $this->assertStringNotContainsString('-p-', $service->commands[0]);
+        $this->assertStringContainsString('" e -y -c- -inul -p- "', $service->commands[1]);
+    }
+
     /**
      * Statuses the main retry pass admits, lowest first.
      *
@@ -509,5 +527,26 @@ class RecordingArchiveNfoService extends NfoService
         $this->archiveReleaseStatuses[] = (int) DB::table('releases')->where('id', $releaseId)->value('nfostatus');
 
         return false;
+    }
+}
+
+class CommandRecordingNfoService extends NfoService
+{
+    /** @var list<string> */
+    public array $commands = [];
+
+    /**
+     * @param  list<string>  $nfoFilenames
+     */
+    public function extractNfo(string $compressedData, array $nfoFilenames, string $guid, ?string $password): string|false
+    {
+        return $this->extractNfoViaUnrar($compressedData, $nfoFilenames, $guid, $password);
+    }
+
+    protected function runArchiveCommand(string $command): string
+    {
+        $this->commands[] = $command;
+
+        return '';
     }
 }

@@ -8,6 +8,7 @@ use App\Enums\NzbParseFailure;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\CollectionReconciliation\PostingPublication;
 use App\Services\Nzb\NzbParserService;
+use App\Services\Nzb\NzbPassword;
 use App\Services\Nzb\NzbService;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -28,8 +29,11 @@ class NzbContentParser
     /**
      * Parse an NZB file and return its contents as an array of files.
      *
+     * The password is the archive password the NZB's header carries, if any
+     * ({@see NzbPassword::fromXml()}).
+     *
      * @param  string  $guid  The release GUID to find the NZB for
-     * @return array{contents: array<string, mixed>, error: string|null, failure: NzbParseFailure|null}
+     * @return array{contents: array<string, mixed>, error: string|null, failure: NzbParseFailure|null, password: string|null}
      */
     public function parseNzb(string $guid): array
     {
@@ -40,6 +44,7 @@ class NzbContentParser
                     'contents' => [],
                     'error' => 'NZB storage is unavailable while resolving GUID: '.$guid,
                     'failure' => NzbParseFailure::StorageUnavailable,
+                    'password' => null,
                 ];
             }
 
@@ -47,6 +52,7 @@ class NzbContentParser
                 'contents' => [],
                 'error' => 'NZB not found for GUID: '.$guid,
                 'failure' => NzbParseFailure::Missing,
+                'password' => null,
             ];
         }
 
@@ -59,6 +65,7 @@ class NzbContentParser
                     'contents' => [],
                     'error' => 'NZB is empty or broken for GUID: '.$guid,
                     'failure' => NzbParseFailure::Broken,
+                    'password' => null,
                 ];
             }
         }
@@ -76,6 +83,7 @@ class NzbContentParser
                     'contents' => [],
                     'error' => 'NZB is potentially broken for GUID: '.$guid,
                     'failure' => NzbParseFailure::Broken,
+                    'password' => null,
                 ];
             }
         }
@@ -83,7 +91,12 @@ class NzbContentParser
         // Sort keys naturally
         ksort($fileList, SORT_NATURAL);
 
-        return ['contents' => $fileList, 'error' => null, 'failure' => null];
+        return [
+            'contents' => $fileList,
+            'error' => null,
+            'failure' => null,
+            'password' => NzbPassword::fromXml($nzbContents),
+        ];
     }
 
     /**

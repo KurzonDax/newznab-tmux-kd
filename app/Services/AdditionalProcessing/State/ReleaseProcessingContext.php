@@ -58,6 +58,14 @@ class ReleaseProcessingContext
 
     public bool $releaseHasPassword = false;
 
+    // The archive password the release's stored NZB carries. Encrypted
+    // archives it opens leave the release unpassworded; an encryption verdict
+    // only marks it passworded when there is none, or when unrar/unzip
+    // rejected it (or could not run to try it).
+    public ?string $nzbPassword = null;
+
+    public bool $nzbPasswordRejected = false;
+
     // Discard state: the release was purged mid-processing (executable file
     // detected); all remaining processing for it must be skipped.
     public bool $releaseDiscarded = false;
@@ -242,6 +250,8 @@ class ReleaseProcessingContext
         $this->inspectedSevenZipTitles = [];
         $this->passwordStatus = 0;
         $this->releaseHasPassword = false;
+        $this->nzbPassword = null;
+        $this->nzbPasswordRejected = false;
         $this->releaseDiscarded = false;
         $this->previewGenerationSkippedByPolicy = false;
         $this->imagerySkippedByDiskGuard = [];
@@ -317,7 +327,7 @@ class ReleaseProcessingContext
                 default => $verdict,
             };
         }
-        if ($verdict === PasswordVerdict::VerifiedEncrypted) {
+        if ($verdict === PasswordVerdict::VerifiedEncrypted && $this->nzbPassword === null) {
             $this->releaseHasPassword = true;
             $this->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
         }

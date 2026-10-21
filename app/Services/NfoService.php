@@ -14,6 +14,7 @@ use App\Services\MetadataProcessing\NfoProcessingCandidateQuery;
 use App\Services\NNTP\NNTPService;
 use App\Services\Nzb\NzbContentsService;
 use App\Services\Nzb\NzbParserService;
+use App\Services\Nzb\NzbPassword;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryEvidencePending;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
@@ -579,6 +580,7 @@ class NfoService
             return false;
         }
 
+        $password = NzbPassword::fromXml($nzbContents);
         $parserService = app(NzbParserService::class);
         $fileList = $parserService->parseNzbFileList($nzbContents);
         if (empty($fileList)) {
@@ -610,7 +612,7 @@ class NfoService
             }
 
             $triedArchive = true;
-            $extracted = $this->extractNfoViaUnrar($compressedData, $nfoFiles, $guid);
+            $extracted = $this->extractNfoViaUnrar($compressedData, $nfoFiles, $guid, $password);
             if ($extracted !== false) {
                 return $extracted;
             }
@@ -631,10 +633,16 @@ class NfoService
      * @param  string  $compressedData  Raw archive bytes
      * @param  array<string>  $nfoFilenames  NFO filenames to try extracting
      * @param  string  $guid  Release GUID for NFO validation
+     * @param  string|null  $password  The archive password from the release's NZB
      * @return string|false Extracted NFO content, or false on failure
      */
-    private function extractNfoViaUnrar(string $compressedData, array $nfoFilenames, string $guid): string|false
-    {
+    protected function extractNfoViaUnrar(
+        string $compressedData,
+        array $nfoFilenames,
+        string $guid,
+        ?string $password = null,
+    ): string|false {
+        $passwordSwitch = $password === null ? '-p-' : '-p'.escapeshellarg($password);
         $uniqueId = uniqid('nfo_', true);
         $archiveFile = $this->tmpPath.'archive_'.$uniqueId.'.rar';
         $extractDir = $this->tmpPath.'extract_'.$uniqueId.'/';
@@ -649,7 +657,8 @@ class NfoService
             $killString = $this->getKillString();
 
             foreach ($nfoFilenames as $nfoFilename) {
-                runCmd($killString.$this->unrarPath.'" e -y -c- -inul -p- "'.$archiveFile.'" "'.$nfoFilename.'" "'.$extractDir.'"');
+                $this->runArchiveCommand($killString.$this->unrarPath.'" e -y -c- -inul '.$passwordSwitch
+                    .' "'.$archiveFile.'" "'.$nfoFilename.'" "'.$extractDir.'"');
 
                 $extractedPath = $extractDir.basename($nfoFilename);
                 if (! File::isFile($extractedPath)) {
@@ -688,6 +697,11 @@ class NfoService
         } catch (Throwable) {
             return 0;
         }
+    }
+
+    protected function runArchiveCommand(string $command): string
+    {
+        return runCmd($command);
     }
 
     private function getKillString(): string

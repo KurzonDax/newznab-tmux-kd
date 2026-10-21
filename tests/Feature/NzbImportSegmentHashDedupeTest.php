@@ -5,11 +5,15 @@ namespace Tests\Feature;
 use App\Enums\NzbImportStatus;
 use App\Facades\Search;
 use App\Models\Release;
+use App\Services\CollectionCleanupService;
 use App\Services\Nzb\NzbImportService;
+use App\Services\Nzb\NzbPassword;
 use App\Services\Nzb\NzbService;
+use App\Services\Releases\ReleaseClaimWindow;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
@@ -50,6 +54,13 @@ class NzbImportSegmentHashDedupeTest extends TestCase
 
         $this->createTables();
         $this->seedSettings();
+    }
+
+    protected function tearDown(): void
+    {
+        // Some tests add claim columns to this fixture's releases table.
+        ReleaseClaimWindow::flushColumnCache();
+        parent::tearDown();
     }
 
     public function test_import_persists_sorted_segment_message_id_hash(): void
@@ -615,6 +626,204 @@ class NzbImportSegmentHashDedupeTest extends TestCase
             array_map(static fn (int $part): string => "new-{$part}@example.test", range(1, 20)),
             $this->storedSegmentIds(),
         );
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function fileNamePasswords(): array
+    {
+        return ['plain' => ['Movie.2024{{s3cret}}.nzb', false], 'gzipped' => ['Movie.2024{{s3cret}}.nzb.gz', true]];
+    }
+
+    #[DataProvider('fileNamePasswords')]
+    public function test_a_password_in_the_nzb_file_name_is_stored_in_its_header(string $fileName, bool $gzip): void
+    {
+        $result = $this->importFile($fileName, $this->makeNzb([
+            ['subject' => 'Some.Obfuscated.Subject yEnc (1/1)', 'segments' => ['fn1@example.com']],
+        ]), $gzip, useNzbName: true);
+
+        $this->assertSame(NzbImportStatus::Inserted, $result['status']);
+        $this->assertSame('s3cret', NzbPassword::fromXml($this->storedNzbContents()));
+        $this->assertSame('Movie.2024', DB::table('releases')->value('searchname'));
+    }
+
+    public function test_a_password_the_nzb_already_carries_wins_over_the_file_name(): void
+    {
+        $this->importFile('Movie{{s3cret}}.nzb', $this->withNzbPassword($this->makeNzb([
+            ['subject' => 'Tagged.Release yEnc (1/1)', 'segments' => ['tag1@example.com']],
+        ]), 'other'));
+
+        $stored = $this->storedNzbContents();
+        $this->assertSame('other', NzbPassword::fromXml($stored));
+        $this->assertSame(1, substr_count($stored, 'type="password"'));
+    }
+
+    public function test_a_duplicate_of_the_same_upload_adds_its_password_to_the_existing_release(): void
+    {
+        $files = [['subject' => 'Shared.Upload.Release yEnc (1/2)', 'segments' => ['su1@example.com', 'su2@example.com']]];
+        $this->assertSame(NzbImportStatus::Inserted, $this->import($this->makeNzb($files))['status']);
+
+        $result = $this->import($this->withNzbPassword($this->makeNzb($files), 'pa55word-x'));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertFalse($result['absorbed']);
+        $this->assertSame('pa55word-x', NzbPassword::fromXml($this->storedNzbContents()));
+        $this->assertSame(['su1@example.com', 'su2@example.com'], $this->storedSegmentIds());
+    }
+
+    public function test_a_duplicate_never_replaces_the_password_the_existing_release_has(): void
+    {
+        $files = [['subject' => 'Kept.Password.Release yEnc (1/2)', 'segments' => ['kp1@example.com', 'kp2@example.com']]];
+        $this->import($this->withNzbPassword($this->makeNzb($files), 'q'));
+        $before = (string) file_get_contents($this->storedNzbFiles()[0]);
+
+        $result = $this->import($this->withNzbPassword($this->makeNzb($files), 'pa55word-x'));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame($before, (string) file_get_contents($this->storedNzbFiles()[0]));
+        $this->assertSame('q', NzbPassword::fromXml($this->storedNzbContents()));
+    }
+
+    public function test_a_duplicate_leaves_a_release_another_worker_holds_and_logs_without_the_password(): void
+    {
+        $files = [['subject' => 'Busy.Release yEnc (1/2)', 'segments' => ['by1@example.com', 'by2@example.com']]];
+        $this->import($this->makeNzb($files));
+        DB::statement('ALTER TABLE releases ADD COLUMN recovery_claimed_at DATETIME NULL');
+        ReleaseClaimWindow::flushColumnCache();
+        DB::table('releases')->update(['recovery_claimed_at' => now()]);
+        $before = (string) file_get_contents($this->storedNzbFiles()[0]);
+        Log::spy();
+
+        $result = $this->import($this->withNzbPassword($this->makeNzb($files), 'pa55word-x'));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame($before, (string) file_get_contents($this->storedNzbFiles()[0]));
+        $this->assertPasswordNotAddedWarning('release busy');
+    }
+
+    public function test_a_duplicate_does_not_overwrite_an_nzb_that_changed_after_it_was_read(): void
+    {
+        $files = [['subject' => 'Changing.Release yEnc (1/2)', 'segments' => ['ch1@example.com', 'ch2@example.com']]];
+        $this->import($this->makeNzb($files));
+        $path = $this->storedNzbFiles()[0];
+        $changed = gzencode((string) $this->makeNzb([
+            ['subject' => 'Changing.Release yEnc (1/2)', 'segments' => ['ch1@example.com', 'ch2@example.com', 'ch3@example.com']],
+        ])->asXML());
+        $service = new NzbImportService(['Browser' => true]);
+        $service->nzb = new class($path, (string) $changed) extends NzbService
+        {
+            private bool $changedOnce = false;
+
+            public function __construct(private readonly string $path, private readonly string $changed)
+            {
+                parent::__construct(app(CollectionCleanupService::class));
+            }
+
+            public function readNzbContents(string $releaseGuid): string|false
+            {
+                $contents = parent::readNzbContents($releaseGuid);
+                if (! $this->changedOnce) {
+                    // Another writer replaces the NZB between the duplicate's read and its write.
+                    $this->changedOnce = true;
+                    file_put_contents($this->path, $this->changed);
+                }
+
+                return $contents;
+            }
+        };
+        Log::spy();
+
+        $result = $this->importWith($service, $this->withNzbPassword($this->makeNzb($files), 'pa55word-x'))['result'];
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame($changed, (string) file_get_contents($path));
+        $this->assertPasswordNotAddedWarning('NZB membership changed before replacement.');
+    }
+
+    public function test_a_duplicate_of_a_different_upload_does_not_add_its_password(): void
+    {
+        $this->import($this->makeNzb([['subject' => 'Same.Name.Release yEnc (1/2)', 'segments' => ['up1-a@example.com', 'up1-b@example.com']]]));
+        $before = (string) file_get_contents($this->storedNzbFiles()[0]);
+
+        $result = $this->import($this->withNzbPassword(
+            $this->makeNzb([['subject' => 'Same.Name.Release yEnc (1/2)', 'segments' => ['up2-a@example.com', 'up2-b@example.com']]]),
+            'pa55word-x',
+        ));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame($before, (string) file_get_contents($this->storedNzbFiles()[0]));
+    }
+
+    public function test_a_collectionhash_duplicate_adds_its_password_to_the_existing_release(): void
+    {
+        $this->import($this->makeNzb([['subject' => 'Original.Password.Subject', 'segments' => ['ph1@example.com', 'ph2@example.com']]]));
+        Log::spy();
+
+        $result = $this->import($this->withNzbPassword(
+            $this->makeNzb([['subject' => 'Rewritten.Password.Subject', 'segments' => ['ph2@example.com', 'ph1@example.com']]]),
+            'pa55word-x',
+        ));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertDuplicateReason('collectionhash_match');
+        $this->assertSame('pa55word-x', NzbPassword::fromXml($this->storedNzbContents()));
+    }
+
+    public function test_a_duplicate_never_edits_a_published_nzb(): void
+    {
+        $files = [['subject' => 'Published.Release yEnc (1/2)', 'segments' => ['pb1@example.com', 'pb2@example.com']]];
+        $this->import($this->makeNzb($files));
+        ProductionTables::fromAuthority()->create('reconciled_artifacts', ['release_id', 'pending_operation']);
+        ProductionTables::fromAuthority()->create('reconciled_postings', ['id', 'release_id']);
+        DB::table('reconciled_postings')->insert(['id' => 1, 'release_id' => (int) DB::table('releases')->value('id')]);
+        $before = (string) file_get_contents($this->storedNzbFiles()[0]);
+
+        $result = $this->import($this->withNzbPassword($this->makeNzb($files), 'pa55word-x'));
+
+        $this->assertSame(NzbImportStatus::Duplicate, $result['status']);
+        $this->assertSame($before, (string) file_get_contents($this->storedNzbFiles()[0]));
+    }
+
+    private function assertPasswordNotAddedWarning(string $reason): void
+    {
+        Log::shouldHaveReceived('warning')->once()->withArgs(
+            static fn (string $message, array $context): bool => $message === 'NZB import could not add the duplicate\'s password to the existing release.'
+                && ($context['reason'] ?? null) === $reason
+                && ! str_contains((string) json_encode($context), 'pa55word-x')
+        );
+    }
+
+    private function withNzbPassword(\SimpleXMLElement $nzbXML, string $password): \SimpleXMLElement
+    {
+        $tagged = simplexml_load_string(NzbPassword::withPassword((string) $nzbXML->asXML(), $password));
+        $this->assertInstanceOf(\SimpleXMLElement::class, $tagged);
+
+        return $tagged;
+    }
+
+    /**
+     * Import an NZB saved under the given file name through `beginImport()`.
+     *
+     * @return array<string, mixed>
+     */
+    private function importFile(string $fileName, \SimpleXMLElement $nzbXML, bool $gzip = false, bool $useNzbName = false): array
+    {
+        $path = $this->makeTempDirectory('import-file-name').DIRECTORY_SEPARATOR.$fileName;
+        $xml = (string) $nzbXML->asXML();
+        file_put_contents($path, $gzip ? (string) gzencode($xml) : $xml);
+        $results = [];
+
+        (new NzbImportService(['Browser' => true]))->beginImport(
+            [$path],
+            useNzbName: $useNzbName,
+            resultCallback: static function (array $result) use (&$results): void {
+                $results[] = $result;
+            },
+        );
+        $this->assertCount(1, $results);
+
+        return $results[0];
     }
 
     /**

@@ -144,8 +144,9 @@ class ReleaseFileManager
             return false;
         }
 
-        // Check for password
-        if (! empty($file['pass'])) {
+        // An encrypted entry marks the release passworded unless the password
+        // from its NZB opened the archive; then the entry is recorded as open.
+        if (! empty($file['pass']) && ($context->nzbPassword === null || $context->nzbPasswordRejected)) {
             $context->releaseHasPassword = true;
             $context->passwordStatus = ReleaseBrowseService::PASSWD_RAR;
 
@@ -195,7 +196,7 @@ class ReleaseFileManager
             $file['name'],
             $size,
             $file['date'] ?? now(),
-            $file['pass'] ?? 0,
+            0,
             '',
             $file['crc32'] ?? ''
         );

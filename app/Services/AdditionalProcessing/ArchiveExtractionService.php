@@ -14,6 +14,7 @@ use dariusiii\rarinfo\RarInfo;
 use dariusiii\rarinfo\ZipInfo;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\Process\Process;
 
 /**
  * Service for extracting and processing archive files (RAR, ZIP).
@@ -22,6 +23,8 @@ use Illuminate\Support\Facades\Log;
 class ArchiveExtractionService
 {
     private const int UNZIP_INCORRECT_PASSWORD_EXIT_CODE = 82;
+
+    private const int UNRAR_WRONG_PASSWORD_EXIT_CODE = 11;
 
     private const string UNZIP_EXIT_CODE_MARKER = '__NNTMUX_UNZIP_EXIT_CODE__';
 
@@ -32,15 +35,33 @@ class ArchiveExtractionService
     /** @var Closure(string): string */
     private readonly Closure $commandRunner;
 
+    /**
+     * Runs the commands whose exit code decides whether an NZB's password opened the archive.
+     *
+     * @var Closure(string): array{exitCode: int, output: string}
+     */
+    private readonly Closure $processRunner;
+
+    /**
+     * @param  (Closure(string): array{exitCode: int, output: string})|null  $processRunner
+     */
     public function __construct(
         private readonly ProcessingConfiguration $config,
         ?ArchiveInfo $archiveInfo = null,
         ?Par2Info $par2Info = null,
         ?Closure $commandRunner = null,
+        ?Closure $processRunner = null,
     ) {
         $this->archiveInfo = $archiveInfo ?? new ArchiveInfo;
         $this->par2Info = $par2Info ?? new Par2Info;
         $this->commandRunner = $commandRunner ?? static fn (string $command): string => runCmd($command);
+        $this->processRunner = $processRunner ?? static function (string $command): array {
+            $process = Process::fromShellCommandline('exec '.$command);
+            $process->setTimeout(1800);
+            $process->run();
+
+            return ['exitCode' => $process->getExitCode() ?? -1, 'output' => $process->getOutput()];
+        };
 
         // Configure external clients for ArchiveInfo
         if ($this->config->unrarPath) {
@@ -70,7 +91,9 @@ class ArchiveExtractionService
 
         if ($this->config->processPasswords && str_starts_with($compressedData, SevenZip\Inspector::SIGNATURE)) {
             $inspection = (new SevenZip\Inspector)->inspect($archiveRead ?? static fn (int $offset, int $length): string => substr($compressedData, $offset, $length), $context->passwordInspectionBudget?->deadline);
-            $encrypted = $inspection['verdict'] === Enums\PasswordVerdict::VerifiedEncrypted;
+            // 7z can't be test-opened here, so a password from the NZB counts as opening it.
+            $encrypted = $inspection['verdict'] === Enums\PasswordVerdict::VerifiedEncrypted
+                && $context->nzbPassword === null;
 
             return [
                 'success' => $inspection['files'] !== [],
@@ -128,6 +151,10 @@ class ArchiveExtractionService
                 Log::debug('ArchiveInfo: Compressed file has a password.');
             }
 
+            if ($context->nzbPassword !== null && $this->canRunUnrar()) {
+                return $this->openHeaderEncryptedRar($compressedData, $context->nzbPassword, $context, $tmpPath);
+            }
+
             return [
                 'success' => false,
                 'files' => [],
@@ -140,7 +167,7 @@ class ArchiveExtractionService
         $this->prepareExtractionDirectories($tmpPath);
 
         // Process based on archive type
-        $extraction = $this->extractArchive($compressedData, $dataSummary, $tmpPath);
+        $extraction = $this->extractArchive($compressedData, $dataSummary, $tmpPath, $context);
         if ($extraction['hasPassword']) {
             return [
                 'success' => false,
@@ -165,6 +192,117 @@ class ArchiveExtractionService
             'dataSummary' => $dataSummary,
             'manifestComplete' => $this->hasCompleteManifest($this->archiveInfo),
         ];
+    }
+
+    /**
+     * List and extract a RAR whose headers are encrypted, using the NZB's password.
+     *
+     * Nothing about such an archive is readable without the password, so the
+     * listing comes from `unrar lt`. A wrong password lists no file names: RAR5
+     * exits 11, RAR4 exits 3. Either way the password counts as rejected.
+     *
+     * @return array<string, mixed>
+     */
+    private function openHeaderEncryptedRar(
+        string $compressedData,
+        string $password,
+        ReleaseProcessingContext $context,
+        string $tmpPath,
+    ): array {
+        $this->prepareExtractionDirectories($tmpPath);
+        $fileName = $tmpPath.uniqid('', true).'.rar';
+        File::put($fileName, $compressedData);
+
+        try {
+            // `-inul` would suppress the listing itself.
+            $listing = ($this->processRunner)(
+                $this->config->getKillString().$this->config->unrarPath.'" lt -c- '
+                .self::unrarPasswordSwitch($password).' "'.$fileName.'"'
+            );
+            $files = $listing['exitCode'] === self::UNRAR_WRONG_PASSWORD_EXIT_CODE
+                ? []
+                : self::parseUnrarTechnicalListing($listing['output']);
+
+            if ($files === []) {
+                $context->nzbPasswordRejected = true;
+
+                return [
+                    'success' => false,
+                    'files' => [],
+                    'hasPassword' => true,
+                    'passwordStatus' => ReleaseBrowseService::PASSWD_RAR,
+                ];
+            }
+
+            ($this->processRunner)($this->rarExtractionCommand($fileName, $tmpPath, $password));
+        } finally {
+            File::delete($fileName);
+        }
+
+        return [
+            'success' => true,
+            'files' => $files,
+            'hasPassword' => false,
+            'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
+            'archiveMarker' => 'r',
+            'manifestComplete' => false,
+        ];
+    }
+
+    /**
+     * The file entries of `unrar lt` output: one block per entry, `Key: value` lines.
+     *
+     * @return list<array{name: string, size: int, pass: int, date?: int}>
+     */
+    private static function parseUnrarTechnicalListing(string $output): array
+    {
+        $files = [];
+        foreach (preg_split('/\R[ \t]*\R/', $output) ?: [] as $block) {
+            preg_match_all('/^[ \t]*([^:\r\n]+?):[ \t]?(.*?)[ \t]*$/m', $block, $lines, PREG_SET_ORDER);
+            $fields = [];
+            foreach ($lines as [, $key, $value]) {
+                $fields[$key] ??= $value;
+            }
+
+            if (($fields['Name'] ?? '') === '' || ($fields['Type'] ?? '') !== 'File') {
+                continue;
+            }
+
+            $file = ['name' => $fields['Name'], 'size' => (int) ($fields['Size'] ?? 0), 'pass' => 1];
+            $modified = isset($fields['mtime']) ? strtotime(explode(',', $fields['mtime'], 2)[0]) : false;
+            if ($modified !== false) {
+                $file['date'] = $modified;
+            }
+            $files[] = $file;
+        }
+
+        return $files;
+    }
+
+    private function canRunUnrar(): bool
+    {
+        return ! $this->config->extractUsingRarInfo && (bool) $this->config->unrarPath;
+    }
+
+    private function canRunUnzip(): bool
+    {
+        return ! $this->config->extractUsingRarInfo && (bool) $this->config->unzipPath;
+    }
+
+    private function rarExtractionCommand(string $fileName, string $tmpPath, ?string $password): string
+    {
+        return $this->config->getKillString().$this->config->unrarPath.'" e -ai -ep -c- -id -inul -kb -or '
+            .self::unrarPasswordSwitch($password).' -r -y "'.$fileName.'" "'.$tmpPath.'unrar/"';
+    }
+
+    private static function unrarPasswordSwitch(?string $password): string
+    {
+        return $password === null ? '-p-' : '-p'.escapeshellarg($password);
+    }
+
+    private static function unzipPasswordOption(?string $password): string
+    {
+        return $password === null ? '' : ' -P '.escapeshellarg($password);
     }
 
     private function hasCompleteManifest(ArchiveInfo $archive): bool
@@ -444,26 +582,76 @@ class ArchiveExtractionService
     /**
      * Extract archive based on type.
      *
+     * With a password from the NZB, the extraction's exit code says whether it
+     * was the archive's password. Only a definite "wrong password" rejects it;
+     * an exit that can't tell (a partial volume, RAR4, a ZIP encryption or
+     * shape unzip can't test) keeps it. When no tool can run to try it, it is
+     * rejected so the release keeps today's verdict.
+     *
      * @param  array<string, mixed>  $dataSummary
      * @return array{marker: string, hasPassword: bool}
      */
-    private function extractArchive(string $compressedData, array $dataSummary, string $tmpPath): array
-    {
+    private function extractArchive(
+        string $compressedData,
+        array $dataSummary,
+        string $tmpPath,
+        ReleaseProcessingContext $context,
+    ): array {
         $killString = $this->config->getKillString();
+        $password = $context->nzbPassword;
 
         switch ($dataSummary['main_type']) {
             case ArchiveInfo::TYPE_RAR:
-                if (! $this->config->extractUsingRarInfo && $this->config->unrarPath) {
-                    $fileName = $tmpPath.uniqid('', true).'.rar';
-                    File::put($fileName, $compressedData);
-                    runCmd($killString.$this->config->unrarPath.'" e -ai -ep -c- -id -inul -kb -or -p- -r -y "'.$fileName.'" "'.$tmpPath.'unrar/"');
+                if (! $this->canRunUnrar()) {
+                    if ($password !== null) {
+                        $context->nzbPasswordRejected = true;
+                    }
+
+                    return ['marker' => 'r', 'hasPassword' => false];
+                }
+
+                $fileName = $tmpPath.uniqid('', true).'.rar';
+                File::put($fileName, $compressedData);
+                $command = $this->rarExtractionCommand($fileName, $tmpPath, $password);
+                try {
+                    if ($password === null) {
+                        ($this->commandRunner)($command);
+                    } elseif (($this->processRunner)($command)['exitCode'] === self::UNRAR_WRONG_PASSWORD_EXIT_CODE) {
+                        $context->nzbPasswordRejected = true;
+
+                        return ['marker' => 'r', 'hasPassword' => true];
+                    }
+                } finally {
                     File::delete($fileName);
                 }
 
                 return ['marker' => 'r', 'hasPassword' => false];
 
             case ArchiveInfo::TYPE_ZIP:
-                if (! $this->config->extractUsingRarInfo && $this->config->unzipPath) {
+                if (! $this->canRunUnzip()) {
+                    if ($password !== null) {
+                        $context->nzbPasswordRejected = true;
+                    }
+                } elseif ($password !== null) {
+                    $fileName = $tmpPath.uniqid('', true).'.zip';
+                    File::put($fileName, $compressedData);
+                    try {
+                        // 81 (an encryption unzip can't decrypt, AES) and 9 (no end of
+                        // archive in the fetched head) never tried the password.
+                        $exitCode = ($this->processRunner)(
+                            $killString.$this->config->unzipPath.'"'.self::unzipPasswordOption($password)
+                            .' -qq -o "'.$fileName.'" -d "'.$tmpPath.'unzip/"'
+                        )['exitCode'];
+                    } finally {
+                        File::delete($fileName);
+                    }
+
+                    if ($exitCode === self::UNZIP_INCORRECT_PASSWORD_EXIT_CODE) {
+                        $context->nzbPasswordRejected = true;
+
+                        return ['marker' => 'z', 'hasPassword' => true];
+                    }
+                } else {
                     $fileName = $tmpPath.uniqid('', true).'.zip';
                     File::put($fileName, $compressedData);
                     try {
@@ -587,11 +775,16 @@ class ArchiveExtractionService
      * @param  string  $compressedData  The raw archive data
      * @param  string  $filename  The filename to extract (exact match)
      * @param  string  $tmpPath  Temporary directory path
+     * @param  string|null  $password  The archive password from the release's NZB
      * @return string|null The extracted file content, or null if extraction failed
      */
-    public function extractSpecificFile(string $compressedData, string $filename, string $tmpPath): ?string
-    {
-        return $this->extractSpecificFiles($compressedData, [$filename], $tmpPath)[$filename] ?? null;
+    public function extractSpecificFile(
+        string $compressedData,
+        string $filename,
+        string $tmpPath,
+        ?string $password = null,
+    ): ?string {
+        return $this->extractSpecificFiles($compressedData, [$filename], $tmpPath, $password)[$filename] ?? null;
     }
 
     /**
@@ -599,6 +792,8 @@ class ArchiveExtractionService
      *
      * The ArchiveInfo fallback still materializes one extracted file in memory;
      * operators should configure unrar/unzip for very large compressed entries.
+     * It returns an encrypted entry's ciphertext, so with a password an
+     * encrypted entry is left to the external tools.
      *
      * @return string|null Path of the extracted file, or null on failure.
      */
@@ -607,13 +802,14 @@ class ArchiveExtractionService
         string $filename,
         string $destinationDir,
         bool $keepBroken = false,
+        ?string $password = null,
     ): ?string {
         if ($this->config->unrarPath) {
             $extractedPath = $this->extractFileAtPathViaExternalTool(
                 $filename,
                 $destinationDir,
                 fn (string $extractDir): string => $this->config->getKillString()
-                    .$this->config->unrarPath.'" e -y -c- -inul -p-'
+                    .$this->config->unrarPath.'" e -y -c- -inul '.self::unrarPasswordSwitch($password)
                     .($keepBroken ? ' -kb' : '')
                     .' "'.$archivePath.'" "'.$filename.'" "'.$extractDir.'"',
             );
@@ -626,7 +822,7 @@ class ArchiveExtractionService
             $extractedPath = $this->extractFileAtPathViaExternalTool(
                 $filename,
                 $destinationDir,
-                fn (string $extractDir): string => $this->config->unzipPath
+                fn (string $extractDir): string => $this->config->unzipPath.self::unzipPasswordOption($password)
                     .' -j "'.$archivePath.'" "'.$filename.'" -d "'.$extractDir.'"',
             );
             if ($extractedPath !== null) {
@@ -634,7 +830,8 @@ class ArchiveExtractionService
             }
         }
 
-        if (! $this->archiveInfo->open($archivePath, true)) {
+        if (! $this->archiveInfo->open($archivePath, true)
+            || ($password !== null && $this->loadedEntryIsEncrypted($filename))) {
             return null;
         }
 
@@ -752,11 +949,18 @@ class ArchiveExtractionService
     /**
      * Inspect one archive and extract several exact filenames from it.
      *
+     * With a password, encrypted entries skip the in-memory read, which would
+     * return their ciphertext, and go straight to the external tools.
+     *
      * @param  list<string>  $filenames
      * @return array<string, string>
      */
-    public function extractSpecificFiles(string $compressedData, array $filenames, string $tmpPath): array
-    {
+    public function extractSpecificFiles(
+        string $compressedData,
+        array $filenames,
+        string $tmpPath,
+        ?string $password = null,
+    ): array {
         $filenames = array_values(array_unique(array_filter(
             $filenames,
             static fn (string $filename): bool => $filename !== '',
@@ -766,6 +970,10 @@ class ArchiveExtractionService
 
         if ($this->archiveInfo->setData($compressedData, true)) {
             foreach ($filenames as $filename) {
+                if ($password !== null && $this->loadedEntryIsEncrypted($filename)) {
+                    continue;
+                }
+
                 try {
                     $extracted = $this->archiveInfo->getFileData($filename);
                     if ($extracted !== false && $extracted !== '') {
@@ -781,7 +989,7 @@ class ArchiveExtractionService
         }
 
         foreach ($remaining as $filename) {
-            $extracted = $this->extractSpecificFileWithExternalTools($compressedData, $filename, $tmpPath);
+            $extracted = $this->extractSpecificFileWithExternalTools($compressedData, $filename, $tmpPath, $password);
             if ($extracted !== null) {
                 $extractedFiles[$filename] = $extracted;
             }
@@ -790,10 +998,25 @@ class ArchiveExtractionService
         return $extractedFiles;
     }
 
+    /**
+     * Whether the loaded archive lists this entry as encrypted. An entry that
+     * isn't listed is not known to be encrypted.
+     */
+    private function loadedEntryIsEncrypted(string $filename): bool
+    {
+        $files = $this->archiveInfo->getArchiveFileList();
+
+        return is_array($files) && array_any(
+            $files,
+            static fn (mixed $file): bool => is_array($file) && ($file['name'] ?? null) === $filename && ! empty($file['pass']),
+        );
+    }
+
     private function extractSpecificFileWithExternalTools(
         string $compressedData,
         string $filename,
         string $tmpPath,
+        ?string $password,
     ): ?string {
         if ($this->config->unrarPath) {
             $extracted = $this->extractFileViaExternalTool(
@@ -802,7 +1025,8 @@ class ArchiveExtractionService
                 $tmpPath,
                 'rar',
                 fn (string $archiveFile, string $extractDir): string => $this->config->getKillString().
-                    $this->config->unrarPath.'" e -y -c- -inul -p- "'.$archiveFile.'" "'.$filename.'" "'.$extractDir.'"'
+                    $this->config->unrarPath.'" e -y -c- -inul '.self::unrarPasswordSwitch($password)
+                    .' "'.$archiveFile.'" "'.$filename.'" "'.$extractDir.'"'
             );
             if ($extracted !== null) {
                 return $extracted;
@@ -815,8 +1039,8 @@ class ArchiveExtractionService
                 $filename,
                 $tmpPath,
                 'zip',
-                fn (string $archiveFile, string $extractDir): string => $this->config->unzipPath.
-                    ' -j "'.$archiveFile.'" "'.$filename.'" -d "'.$extractDir.'"'
+                fn (string $archiveFile, string $extractDir): string => $this->config->unzipPath
+                    .self::unzipPasswordOption($password).' -j "'.$archiveFile.'" "'.$filename.'" -d "'.$extractDir.'"'
             );
             if ($extracted !== null) {
                 return $extracted;
@@ -845,7 +1069,7 @@ class ArchiveExtractionService
             $archiveFile = $tmpPath.'archive_'.uniqid('', true).'.'.$archiveExtension;
             File::put($archiveFile, $compressedData);
 
-            runCmd($commandBuilder($archiveFile, $extractDir));
+            ($this->commandRunner)($commandBuilder($archiveFile, $extractDir));
 
             File::delete($archiveFile);
 

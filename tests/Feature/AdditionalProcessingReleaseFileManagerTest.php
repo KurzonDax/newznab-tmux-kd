@@ -13,6 +13,7 @@ use App\Services\AdditionalProcessing\ArchiveExtractionService;
 use App\Services\AdditionalProcessing\Config\PasswordInspectionMode;
 use App\Services\AdditionalProcessing\ConsoleOutputService;
 use App\Services\AdditionalProcessing\DTO\DownloadMetrics;
+use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\PasswordVerdict;
@@ -660,6 +661,32 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
 
     public function test_encrypted_zip_entry_is_stamped_passworded_and_removed_from_additional_candidates(): void
     {
+        [$result, $release] = $this->processEncryptedZipRelease(null);
+
+        $this->assertSame(ProcessingOutcome::Passworded, $result->outcome);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, (int) $release->passwordstatus);
+        $this->assertSame(0, (int) $release->haspreview);
+        $this->assertFalse(AdditionalCandidateQuery::hasAnyCandidate());
+    }
+
+    public function test_an_encrypted_zip_the_nzb_password_opens_is_not_passworded(): void
+    {
+        $commands = [];
+        [$result, $release] = $this->processEncryptedZipRelease('secret', $commands);
+
+        $this->assertNotSame(ProcessingOutcome::Passworded, $result->outcome);
+        $this->assertSame(ReleaseBrowseService::PASSWD_NONE, (int) $release->passwordstatus);
+        $this->assertCount(1, $commands);
+        $this->assertStringContainsString('"/usr/bin/unzip" -P \'secret\' -qq -o "', $commands[0]);
+        $this->assertSame([0, 0], DB::table('release_files')->pluck('passworded')->map(intval(...))->all());
+    }
+
+    /**
+     * @param  list<string>  $commands
+     * @return array{0: ReleaseProcessingResult, 1: Release}
+     */
+    private function processEncryptedZipRelease(?string $nzbPassword, array &$commands = []): array
+    {
         DB::table('releases')->insert(array_merge($this->releaseRow(), [
             'size' => 2 * 1048576,
             'nfostatus' => 1,
@@ -686,6 +713,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $nzbParser = Mockery::mock(NzbContentParser::class);
         $nzbParser->shouldReceive('parseNzb')->once()->with('guid-1')->andReturn([
             'error' => null,
+            'password' => $nzbPassword,
             'contents' => [[
                 'title' => 'archive.zip',
                 'segments' => ['<archive>'],
@@ -716,6 +744,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             'main_type' => ArchiveInfo::TYPE_ZIP,
             'is_encrypted' => 0,
         ]);
+        $archiveInfo->shouldReceive('getReader')->andReturnNull();
         $archiveInfo->shouldReceive('getArchiveFileList')->once()->andReturn([
             ['name' => 'readme.txt', 'size' => 128, 'pass' => 0],
             ['name' => 'activation.exe', 'size' => 1024, 'pass' => 1],
@@ -725,6 +754,11 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             $archiveInfo,
             Mockery::mock(Par2Info::class),
             static fn (string $command): string => "\n__NNTMUX_UNZIP_EXIT_CODE__=1\n",
+            static function (string $command) use (&$commands): array {
+                $commands[] = $command;
+
+                return ['exitCode' => 0, 'output' => ''];
+            },
         );
 
         $tmpPath = $this->makeTempDirectory('nntmux-passworded-zip').'/';
@@ -735,6 +769,10 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $output->shouldReceive('echoReleaseStart')->once()->andReturnNull();
         $output->shouldReceive('setProcessTitle')->once()->andReturnNull();
         $output->shouldReceive('echoCompressedDownload')->once()->andReturnNull();
+        if ($nzbPassword !== null) {
+            // An opened archive goes on to the progress markers of a normal run.
+            $output->shouldIgnoreMissing();
+        }
 
         $processor = new ReleaseProcessor(
             $config,
@@ -761,12 +799,8 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
             new ReleaseProcessingContext(Release::query()->findOrFail(1)),
             $tmpPath,
         );
-        $release = Release::query()->findOrFail(1);
 
-        $this->assertSame(ProcessingOutcome::Passworded, $result->outcome);
-        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, (int) $release->passwordstatus);
-        $this->assertSame(0, (int) $release->haspreview);
-        $this->assertFalse(AdditionalCandidateQuery::hasAnyCandidate());
+        return [$result, Release::query()->findOrFail(1)];
     }
 
     public function test_legacy_par2_processor_persists_hashes_when_release_file_listing_is_disabled(): void
@@ -1408,6 +1442,116 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
         $context->recordPasswordVerdict(PasswordVerdict::VerifiedUnencrypted, 'validated-header');
         $this->makeManager()->finalizeRelease($context, true);
         $this->assertSame(0, DB::table('releases')->where('id', 1)->value('passwordstatus'));
+    }
+
+    public function test_an_encrypted_entry_opened_by_the_nzb_password_is_recorded_open_and_survives_remove_bad(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        Search::shouldReceive('updateRelease')->once()->with(1);
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbHasCompressedFile = true;
+        $context->nzbPassword = 'secret';
+
+        $manager = $this->makeManager();
+        $this->assertTrue($manager->addFileInfo(
+            ['name' => 'Example.Movie.2026.mkv', 'size' => 1024, 'pass' => 1],
+            $context,
+            '\\.(?:par2|sfv|nzb)',
+        ));
+        $this->assertFalse($context->releaseHasPassword);
+        $manager->finalizeRelease($context, true);
+
+        $this->assertSame(0, (int) DB::table('release_files')->value('passworded'));
+        $this->assertSame(ReleaseBrowseService::PASSWD_NONE, (int) DB::table('releases')->where('id', 1)->value('passwordstatus'));
+
+        $this->artisan('nntmux:remove-bad')->assertSuccessful();
+
+        $this->assertSame(ReleaseBrowseService::PASSWD_NONE, (int) DB::table('releases')->where('id', 1)->value('passwordstatus'));
+    }
+
+    /**
+     * @return array<string, array{string|null, bool}>
+     */
+    public static function encryptedEntriesThatStayPassworded(): array
+    {
+        return [
+            'no NZB password' => [null, false],
+            'NZB password rejected' => ['secret', true],
+        ];
+    }
+
+    #[DataProvider('encryptedEntriesThatStayPassworded')]
+    public function test_an_encrypted_entry_marks_the_release_passworded_without_a_usable_nzb_password(
+        ?string $password,
+        bool $rejected,
+    ): void {
+        DB::table('releases')->insert($this->releaseRow());
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbPassword = $password;
+        $context->nzbPasswordRejected = $rejected;
+
+        $this->assertFalse($this->makeManager()->addFileInfo(
+            ['name' => 'Example.Movie.2026.mkv', 'size' => 1024, 'pass' => 1],
+            $context,
+            '\\.(?:par2|sfv|nzb)',
+        ));
+        $this->assertTrue($context->releaseHasPassword);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, $context->passwordStatus);
+        $this->assertSame([], $context->pendingReleaseFiles);
+    }
+
+    public function test_an_nzb_password_does_not_clear_an_inner_file_blacklist_hit(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbPassword = 'secret';
+        $manager = $this->makeManagerWithImageService(
+            new ReleaseImageService,
+            configOverrides: ['innerFileBlacklist' => '/password\\.url$/i'],
+        );
+
+        $this->assertFalse($manager->addFileInfo(
+            ['name' => 'password.url', 'size' => 10, 'pass' => 1],
+            $context,
+            '\\.(?:par2|sfv|nzb)',
+        ));
+        $this->assertTrue($context->releaseHasPassword);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, $context->passwordStatus);
+    }
+
+    public function test_an_nzb_password_no_tool_can_try_leaves_encrypted_entries_passworded(): void
+    {
+        DB::table('releases')->insert($this->releaseRow());
+        $context = new ReleaseProcessingContext(Release::query()->findOrFail(1));
+        $context->nzbPassword = 'secret';
+        $config = $this->makeConfig(['extractUsingRarInfo' => true, 'unrarPath' => false]);
+        $archiveInfo = Mockery::mock(ArchiveInfo::class);
+        $archiveInfo->error = '';
+        $archiveInfo->isEncrypted = false;
+        $archiveInfo->shouldReceive('getReader')->andReturn(null);
+        $archiveInfo->shouldReceive('setData')->once()->with('ARCHIVE', true)->andReturnTrue();
+        $archiveInfo->shouldReceive('getSummary')->once()->with(true)->andReturn([
+            'main_type' => ArchiveInfo::TYPE_RAR,
+            'is_encrypted' => 0,
+        ]);
+        $archiveInfo->shouldReceive('getArchiveFileList')->once()->andReturn([
+            ['name' => 'Example.Movie.2026.mkv', 'size' => 1024, 'pass' => 1],
+        ]);
+        $archiveService = new ArchiveExtractionService(
+            $config,
+            $archiveInfo,
+            Mockery::mock(Par2Info::class),
+            processRunner: function (string $command): array {
+                $this->fail('No extraction tool may run: '.$command);
+            },
+        );
+
+        $result = $archiveService->processCompressedData('ARCHIVE', $context, $this->makeTempDirectory('no-tool').'/');
+        $this->assertTrue($context->nzbPasswordRejected);
+        $this->assertFalse($this->makeManager()->addFileInfo($result['files'][0], $context, '\\.(?:par2|sfv|nzb)'));
+
+        $this->assertTrue($context->releaseHasPassword);
+        $this->assertSame(ReleaseBrowseService::PASSWD_RAR, $context->passwordStatus);
     }
 
     private function makeManager(?NameFixingService $nameFixing = null): ReleaseFileManager

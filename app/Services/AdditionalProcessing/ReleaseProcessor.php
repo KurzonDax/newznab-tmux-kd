@@ -137,6 +137,7 @@ class ReleaseProcessor
                 ProcessingStage::NzbParsing,
                 fn (): array => $this->nzbParser->parseNzb($release->guid),
             );
+            $context->nzbPassword = $nzbResult['password'] ?? null;
             if ($nzbResult['error'] !== null) {
                 $this->output->warning($nzbResult['error']);
 
@@ -1365,6 +1366,7 @@ class ReleaseProcessor
             $videoEntryName,
             $context->tmpPath.'unrar/',
             keepBroken: true,
+            password: $context->nzbPassword,
         );
 
         return $fragmentPath !== null && File::isFile($fragmentPath) ? $fragmentPath : null;
