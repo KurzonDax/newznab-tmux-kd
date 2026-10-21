@@ -534,12 +534,15 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame('prepared', DB::table('reconciled_postings')->value('state'));
         $this->assertSame(1, DB::table('collections')->count());
         $this->app->instance(PostingPublication::class, new PostingPublication);
+        DB::table('releases')->where('id', $release->id)->update(Release::searchNameValues('Unlabelled.Placeholder'));
         $service->run(1, 1);
         $this->assertSame('published', DB::table('reconciled_postings')->value('state'));
         $this->assertCount(33, (new PostingNzb)->parse($nzbs->readNzbContents($release->guid), 'after'));
         $this->assertSame(100.0, (float) $release->fresh()->completion);
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(1, DB::table('releases')->count());
+        // The posting's label is written with its normalized and display forms (#1120, decision 4).
+        $this->assertSame(Release::searchNameValues('Course.Set'), array_intersect_key($release->fresh()->getRawOriginal(), Release::searchNameValues('x')));
     }
 
     public function test_late_addition_keeps_a_name_that_name_fixing_already_set(): void

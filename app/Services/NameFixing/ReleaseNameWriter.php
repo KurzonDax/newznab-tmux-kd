@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
  *
  *  - rename: a candidate through {@see NamePolicy} and its {@see NameSource} case; the rename
  *    clears the metadata links and dispatches {@see ReleaseNameFixed};
+ *  - reset name: a neutral or reconciliation label, outside the name policy;
  *  - restore prior values: the exact columns a caller recorded before an earlier rename.
  */
 class ReleaseNameWriter
@@ -69,6 +70,23 @@ class ReleaseNameWriter
         $refusal = $this->persist($release, $candidate, $decision, $nameStatus);
 
         return new NameWriteOutcome($decision, $refusal === null, $refusal);
+    }
+
+    /**
+     * Give the release a label that names no evidence: untrusted and not renamed, its name source
+     * left as it is. The caller's other columns are written in the same update. It opens no
+     * transaction and syncs nothing: callers write it under their own row lock and re-sync.
+     *
+     * @param  array<string, mixed>  $columns
+     */
+    public function resetName(int $releaseId, string $name, array $columns = []): void
+    {
+        Release::query()->whereKey($releaseId)->update([
+            ...$columns,
+            ...Release::searchNameValues($name),
+            'isrenamed' => 0,
+            'is_trusted_name' => false,
+        ]);
     }
 
     /**
