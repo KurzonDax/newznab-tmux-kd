@@ -13,10 +13,11 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\Categorization\Categorizers\BookCategorizer;
+use App\Services\Categorization\CategoryChange;
+use App\Services\Categorization\CategoryChangeKind;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use App\Services\NameFixing\ReleaseUpdateService;
-use App\Services\Releases\PreviewGenerationPolicy;
 use App\Support\BookIsbn;
 use App\Support\BookMatchScorer;
 use App\Support\Data\BookParseResult;
@@ -295,6 +296,15 @@ class BookService
         }
     }
 
+    /** File a junk book or a magazine under its Books category. */
+    private function fileBook(int $releaseId, int $categoryId): void
+    {
+        $current = Release::query()->whereKey($releaseId)->value('categories_id');
+        if ($current !== null) {
+            (new CategoryChange)->apply($releaseId, (int) $current, $categoryId, CategoryChangeKind::BookFiling);
+        }
+    }
+
     /**
      * Parse release title.
      *
@@ -321,9 +331,7 @@ class BookService
                 if ($this->echooutput) {
                     cli()->headerOver('Changing category to misc books: ').cli()->primary($releasename);
                 }
-                Release::query()->where('id', $releaseID)->update(['categories_id' => Category::BOOKS_UNKNOWN]);
-                (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $releaseID]);
-                Search::updateRelease((int) $releaseID);
+                $this->fileBook((int) $releaseID, Category::BOOKS_UNKNOWN);
 
                 return false;
             }
@@ -332,9 +340,7 @@ class BookService
                 if ($this->echooutput) {
                     cli()->headerOver('Changing category to magazines: ').cli()->primary($releasename);
                 }
-                Release::query()->where('id', $releaseID)->update(['categories_id' => Category::BOOKS_MAGAZINES]);
-                (new PreviewGenerationPolicy)->restoreOwedPreviews([(int) $releaseID]);
-                Search::updateRelease((int) $releaseID);
+                $this->fileBook((int) $releaseID, Category::BOOKS_MAGAZINES);
 
                 return false;
             }

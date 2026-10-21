@@ -6,6 +6,7 @@ namespace App\Services\CollectionReconciliation;
 
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\NameFixing\NameTrust;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use InvalidArgumentException;
@@ -61,7 +62,7 @@ final readonly class ArtifactReleaseUpdate
         $values = $this->values;
         if ($this->kind === 'reconciliation' && $this->allows($release)) {
             // Never wipe a name that name fixing already set (isrenamed = 1).
-            if ($this->label !== null && ! $release->is_trusted_name && (int) $release->isrenamed !== 1) {
+            if ($this->label !== null && ! NameTrust::isRenamedOrTrusted($release)) {
                 $values += ['name' => $this->label, ...Release::searchNameValues($this->label), 'is_trusted_name' => false, 'isrenamed' => 0];
             }
             if ($this->independentVideos) {

@@ -9,11 +9,15 @@ use App\Services\NameFixing\DonorMatchSelector;
 use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
+use App\Services\NameFixing\NameCandidate;
+use App\Services\NameFixing\NameDecision;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
 use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\NameUpdateResult;
+use App\Services\NameFixing\NameWriteRefusal;
 use App\Services\NameFixing\PredbMatchSelector;
+use App\Services\NameFixing\ReleaseNameWriter;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NameFixing\Srrdb\SrrdbLookupService;
 use Illuminate\Database\Connection;
@@ -478,16 +482,20 @@ class NameFixingBatchTest extends TestCase
     {
         $renames = new \ArrayObject;
         $flags = new \ArrayObject;
-        $updates = $this->stubUpdateService(['performDatabaseUpdate', 'updateSingleColumn']);
-        $updates->method('performDatabaseUpdate')->willReturnCallback(static function (object $release, string $title, NameSource $source) use ($renames): void {
-            $renames[] = [$title, $source];
+        $writer = $this->getStubBuilder(ReleaseNameWriter::class)->onlyMethods(['persist'])->getStub();
+        $writer->method('persist')->willReturnCallback(static function (object $release, NameCandidate $candidate, NameDecision $decision) use ($renames): ?NameWriteRefusal {
+            $renames[] = [$decision->title, $candidate->source];
+
+            return null;
         });
+        $updates = $this->stubUpdateService(['updateSingleColumn']);
         $updates->method('updateSingleColumn')->willReturnCallback(static function (string $column, int $value, int $id) use ($flags): void {
             $flags[] = [$column, $value, $id];
         });
         $reflection = new ReflectionClass(ReleaseUpdateService::class);
         $reflection->getProperty('fileNameCleaner')->setValue($updates, new FileNameCleaner);
         $reflection->getProperty('echoOutput')->setValue($updates, false);
+        $reflection->getProperty('writer')->setValue($updates, $writer);
 
         return [$updates, $renames, $flags];
     }

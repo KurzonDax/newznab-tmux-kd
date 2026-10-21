@@ -14,7 +14,6 @@ use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
-use App\Support\ReleaseSearchIndexSync;
 use Illuminate\Support\Facades\Log;
 
 final class MediaInfoRefinementService
@@ -86,20 +85,11 @@ final class MediaInfoRefinementService
             return $decision;
         }
 
-        $updated = Release::query()
-            ->where('id', $releaseId)
-            ->where('categories_id', $release->categories_id)
-            ->update([
-                'categories_id' => $decision->categoryId,
-                'iscategorized' => 1,
-            ]);
-
-        if ($updated !== 1) {
+        $moved = (new CategoryChange(previewPolicy: $this->previewPolicy, searchSync: $this->searchSyncCoordinator))
+            ->apply($releaseId, (int) $release->categories_id, $decision->categoryId, CategoryChangeKind::Refinement);
+        if (! $moved) {
             return null;
         }
-
-        $this->previewPolicy->restoreOwedPreviews([$releaseId], false);
-        $this->synchronize($releaseId);
 
         if (config('nntmux.categorization.log', false)) {
             Log::info('categorization.mediainfo_refined', [
@@ -257,15 +247,4 @@ final class MediaInfoRefinementService
         private readonly ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null,
         private readonly ForcedRootPolicy $forcedRootPolicy = new ForcedRootPolicy,
     ) {}
-
-    private function synchronize(int $releaseId): void
-    {
-        if ($this->searchSyncCoordinator !== null) {
-            $this->searchSyncCoordinator->request($releaseId);
-
-            return;
-        }
-
-        ReleaseSearchIndexSync::forIds([$releaseId]);
-    }
 }

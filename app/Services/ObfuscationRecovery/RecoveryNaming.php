@@ -6,6 +6,7 @@ namespace App\Services\ObfuscationRecovery;
 
 use App\Models\Release;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameTrust;
 use Illuminate\Support\Facades\DB;
 
 final class RecoveryNaming
@@ -70,9 +71,9 @@ final class RecoveryNaming
         return $identified;
     }
 
+    /** @see NameTrust::hasRecoveryExistingName() */
     public static function hasExistingName(Release $release, string $publicationIdentity): bool
     {
-        return (int) $release->isrenamed !== 0 || (bool) $release->is_trusted_name || (int) $release->predb_id > 0
-            || $release->searchname !== 'Recovered.'.substr($publicationIdentity, 0, 24);
+        return NameTrust::hasRecoveryExistingName($release, $publicationIdentity);
     }
 }

@@ -7,6 +7,8 @@ namespace App\Listeners;
 use App\Events\ReleaseNameFixed;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\CategoryChange;
+use App\Services\Categorization\CategoryChangeKind;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -54,15 +56,8 @@ class RecategorizeReleaseAfterNameFix
             return;
         }
 
-        Release::query()
-            ->where('id', $release->id)
-            ->update([
-                'categories_id' => $newCategoryId,
-                'iscategorized' => 1,
-            ]);
-
-        $this->previewPolicy->restoreOwedPreviews([(int) $release->id]);
-        $this->mediaInfoRefinement->refine((int) $release->id);
+        (new CategoryChange($this->mediaInfoRefinement, $this->previewPolicy))
+            ->apply((int) $release->id, (int) $release->categories_id, $newCategoryId, CategoryChangeKind::Rename);
 
         if (config('nntmux.categorization.log', false)) {
             Log::info('categorization.rename_recategorized', [

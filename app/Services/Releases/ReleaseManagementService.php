@@ -6,6 +6,7 @@ namespace App\Services\Releases;
 
 use App\Facades\Search;
 use App\Models\Release;
+use App\Services\Categorization\CategoryChange;
 use App\Services\Nzb\NzbService;
 use App\Services\ObfuscationRecovery\RecoveryPublications;
 use App\Services\ReleaseImageService;
@@ -357,12 +358,9 @@ class ReleaseManagementService
                 ->whereIn('guid', $guids)
                 ->pluck('id');
 
-            $updated = Release::query()
-                ->whereIn('guid', $guids)
-                ->update(['categories_id' => $categoryId, 'iscategorized' => 1]);
+            $updated = (new CategoryChange)->applyBulk($guids, $releaseIds, $categoryId);
 
             if ($updated > 0) {
-                (new PreviewGenerationPolicy)->restoreOwedPreviews($releaseIds);
                 $this->syncReleasesToSearchIndex($releaseIds);
                 Release::clearAdminReleasesRangeCache();
             }

@@ -4,19 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\NameFixing;
 
-use App\Events\ReleaseNameFixed;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
-use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
-use App\Services\Releases\ForcedRootPolicy;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -98,9 +94,11 @@ class ReleaseUpdateService
 
     protected bool $echoOutput;
 
-    private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
+    private ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null;
 
     private ?NamePolicy $namePolicy = null;
+
+    private ?ReleaseNameWriter $writer = null;
 
     /**
      * The releases this instance renamed: each is renamed once per instance.
@@ -126,8 +124,7 @@ class ReleaseUpdateService
     ) {
         $this->category = $category ?? new CategorizationService;
         $this->fileNameCleaner = $fileNameCleaner ?? new FileNameCleaner;
-        $this->searchSyncCoordinator = $searchSyncCoordinator
-            ?? new ReleaseSearchSyncCoordinator(new PersistenceMetricsCollector);
+        $this->searchSyncCoordinator = $searchSyncCoordinator;
         $this->echoOutput = config('nntmux.echocli');
     }
 
@@ -179,13 +176,15 @@ class ReleaseUpdateService
             recoveryEvidence: $recoveryEvidence,
         );
 
-        $decision = $this->namePolicy()->decide(
+        $decision = $this->writer()->rename(
             $release,
             $candidate,
+            $nameStatus,
+            $echo === true,
             ! $echo || (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence),
             isset($this->renamedReleaseIds[$releaseId]),
             static fn (): array => self::storedFileSizes($releaseId),
-        );
+        )->decision;
         if (! $decision->accepted()) {
             return NameUpdateResult::declined($decision->rejection);
         }
@@ -194,18 +193,6 @@ class ReleaseUpdateService
         $this->renamedReleaseIds[$releaseId] = true;
 
         $this->fixed++;
-
-        if ($echo === true) {
-            $this->performDatabaseUpdate(
-                $release,
-                $newTitle,
-                $source,
-                $nameStatus,
-                $preId,
-                $candidate->imdbId,
-                recoveryEvidence: $recoveryEvidence,
-            );
-        }
 
         if ($this->echoOutput && $show) {
             // A written rename was categorized by the rename listener inside
@@ -229,6 +216,11 @@ class ReleaseUpdateService
     private function namePolicy(): NamePolicy
     {
         return $this->namePolicy ??= new NamePolicy($this->fileNameCleaner);
+    }
+
+    private function writer(): ReleaseNameWriter
+    {
+        return $this->writer ??= new ReleaseNameWriter($this->searchSyncCoordinator, $this->namePolicy());
     }
 
     /**
@@ -295,109 +287,6 @@ class ReleaseUpdateService
     }
 
     /**
-     * Perform the actual database update.
-     */
-    protected function performDatabaseUpdate(
-        object $release,
-        string $newTitle,
-        NameSource $source,
-        bool $nameStatus,
-        int $preId,
-        ?string $imdbId,
-        ?int $categoryOverride = null,
-        bool $preserveBookInfo = false,
-        ?RecoveryNameEvidence $recoveryEvidence = null,
-        bool $preserveMusicInfo = false,
-    ): void {
-        $releaseId = (int) ($release->releases_id ?? $release->id);
-        $trustedDonorName = NamePolicy::trust($source, $preId)[1] === TrustedDonor::Trusted;
-        $nameSource = $source->storedName();
-        DB::transaction(function () use ($source, $release, $releaseId, $newTitle, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
-            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-                return;
-            }
-            if ($categoryOverride !== null && $current !== null) {
-                $categoryOverride = (new ForcedRootPolicy)->categoryForRelease($current->groups_id, $releaseId, $categoryOverride);
-            }
-            $recoveryEvidence?->assertNamingAllowed();
-            if ($nameStatus === true) {
-                $status = $source->statusColumns();
-
-                $updateColumns = [
-                    'videos_id' => 0,
-                    'tv_episodes_id' => 0,
-                    'movieinfo_id' => null,
-                    'imdbid' => $imdbId,
-                    'musicinfo_id' => null,
-                    'consoleinfo_id' => null,
-                    'bookinfo_id' => null,
-                    'anidbid' => null,
-                    'gamesinfo_id' => 0,
-                    'predb_id' => $preId,
-                    ...Release::searchNameValues($newTitle),
-                    'is_trusted_name' => $trustedDonorName,
-                    'name_source' => $nameSource,
-                ];
-
-                if ($preserveBookInfo) {
-                    unset($updateColumns['bookinfo_id']);
-                }
-
-                if ($preserveMusicInfo) {
-                    unset($updateColumns['musicinfo_id']);
-                }
-
-                if ($categoryOverride !== null) {
-                    $updateColumns['categories_id'] = $categoryOverride;
-                }
-
-                if (! empty($status)) {
-                    foreach ($status as $key => $stat) {
-                        $updateColumns = Arr::add($updateColumns, $key, $stat);
-                    }
-                }
-
-                Release::query()
-                    ->where('id', $releaseId)
-                    ->update($updateColumns);
-            } else {
-                Release::query()
-                    ->where('id', $releaseId)
-                    ->update(array_filter([
-                        'videos_id' => 0,
-                        'tv_episodes_id' => 0,
-                        'movieinfo_id' => null,
-                        'imdbid' => $imdbId,
-                        'musicinfo_id' => null,
-                        'consoleinfo_id' => null,
-                        'bookinfo_id' => null,
-                        'anidbid' => null,
-                        'gamesinfo_id' => 0,
-                        'predb_id' => $preId,
-                        ...Release::searchNameValues($newTitle),
-                        'is_trusted_name' => $trustedDonorName,
-                        'name_source' => $nameSource,
-                        'iscategorized' => 1,
-                        'categories_id' => $categoryOverride,
-                    ], static fn (mixed $value, string $key): bool => $key !== 'categories_id' || $value !== null, ARRAY_FILTER_USE_BOTH));
-            }
-
-            event(new ReleaseNameFixed(
-                $releaseId,
-                (string) $release->searchname,
-                $newTitle,
-                (int) $release->categories_id,
-                $release->groups_id,
-                (string) ($release->fromname ?? ''),
-                $categoryOverride,
-            ));
-        });
-
-        $this->searchSyncCoordinator->request($releaseId);
-    }
-
-    /**
      * The `releases.name_source` a rename of this type records: the type without its trailing
      * separator ("Audio tags, " records "Audio tags"); null for an empty type.
      */
@@ -427,8 +316,8 @@ class ReleaseUpdateService
         if (! (new RecoveryIdentityPolicy)->allowsDescriptiveCandidate((int) $release->id, $candidate, $evidence)) {
             return false;
         }
-        $this->performDatabaseUpdate($release, $candidate, NameSource::RecoveryInventory, true,
-            0, null, Category::TV_OTHER, recoveryEvidence: $evidence);
+        $this->writer()->rename($release, new NameCandidate((int) $release->id, $candidate, NameSource::RecoveryInventory,
+            'Consistent protected inventory', categoryId: Category::TV_OTHER, recoveryEvidence: $evidence));
 
         return true;
     }
@@ -446,15 +335,14 @@ class ReleaseUpdateService
         }
 
         $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
-        $this->performDatabaseUpdate(
-            $release,
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
             $title,
             NameSource::PreDbExactAttach,
-            true,
+            'Exact title match',
             $predbId,
-            null,
             recoveryEvidence: $recoveryEvidence,
-        );
+        ));
         $this->renamedReleaseIds[$releaseId] = true;
 
         return NameUpdateResult::renamed($title);
@@ -477,15 +365,7 @@ class ReleaseUpdateService
 
         $newTitle = $this->namePolicy()->preserveEvidence($release, $newTitle);
 
-        $this->performDatabaseUpdate(
-            $release,
-            $newTitle,
-            NameSource::AudioTags,
-            true,
-            0,
-            null,
-            $categoryId,
-        );
+        $this->writer()->rename($release, new NameCandidate($releaseId, $newTitle, NameSource::AudioTags, 'Embedded media tags', categoryId: $categoryId));
 
         return $newTitle;
     }
@@ -512,16 +392,14 @@ class ReleaseUpdateService
 
         // The name is whole as built: carrying a token over from the outgoing name would guess
         // a component (a format, a year) the accepted identity and observed audio do not give.
-        $this->performDatabaseUpdate(
-            $release,
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
             $newTitle,
             NameSource::MusicBrainz,
-            true,
-            0,
-            null,
-            (int) $release->categories_id,
-            preserveMusicInfo: true,
-        );
+            'Accepted MusicBrainz album',
+            categoryId: (int) $release->categories_id,
+            keepLinks: ['musicinfo_id'],
+        ));
 
         return $newTitle;
     }
@@ -535,36 +413,7 @@ class ReleaseUpdateService
      */
     public function restoreFromMusicIdentity(int $releaseId, array $columns): bool
     {
-        if ($releaseId === 0 || ! isset($columns['searchname'])) {
-            return false;
-        }
-        $columns = [...$columns, ...Release::searchNameValues((string) $columns['searchname'])];
-
-        $written = DB::transaction(function () use ($releaseId, $columns): bool {
-            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if ($current === null || ! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId)) {
-                return false;
-            }
-            $category = (int) ($columns['categories_id'] ?? $current->categories_id);
-            Release::query()->where('id', $releaseId)->update($columns);
-
-            event(new ReleaseNameFixed(
-                $releaseId,
-                (string) $current->searchname,
-                (string) $columns['searchname'],
-                (int) $current->categories_id,
-                $current->groups_id,
-                (string) ($current->fromname ?? ''),
-                $category,
-            ));
-
-            return true;
-        });
-        if ($written) {
-            $this->searchSyncCoordinator->request($releaseId);
-        }
-
-        return $written;
+        return $this->writer()->restorePriorValues($releaseId, $columns);
     }
 
     public function renameFromBookMetadata(int $releaseId, string $newTitle): void
@@ -582,15 +431,13 @@ class ReleaseUpdateService
             return;
         }
 
-        $this->performDatabaseUpdate(
-            $release,
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
             $this->namePolicy()->preserveEvidence($release, $newTitle),
             NameSource::BookTitle,
-            true,
-            0,
-            null,
-            preserveBookInfo: true,
-        );
+            'Parsed book metadata',
+            keepLinks: ['bookinfo_id'],
+        ));
     }
 
     /** Gives a release a verified SRRDB match's PreDB entry and IMDb id, and trusts its name. */
@@ -610,14 +457,7 @@ class ReleaseUpdateService
         }
 
         $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
-        $this->performDatabaseUpdate(
-            $release,
-            $title,
-            NameSource::SrrdbAttach,
-            true,
-            $predbId,
-            $imdbId,
-        );
+        $this->writer()->rename($release, new NameCandidate($releaseId, $title, NameSource::SrrdbAttach, 'Verified archive CRC match', $predbId, $imdbId));
         $this->renamedReleaseIds[$releaseId] = true;
 
         return NameUpdateResult::renamed($title);
