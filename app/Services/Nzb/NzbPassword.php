@@ -41,4 +41,36 @@ final class NzbPassword
 
         return null;
     }
+
+    /**
+     * The NZB with `<meta type="password">` added to its header, creating the header when there
+     * is none.
+     *
+     * The tag is inserted by byte offset rather than through a regex replacement string, which
+     * would mangle a password containing `$1` or `\`. Unprefixed, it takes the document's default
+     * namespace, so `->head->meta` reads it.
+     */
+    public static function withPassword(string $xml, string $password): string
+    {
+        $meta = '<meta type="password">'.htmlspecialchars($password, ENT_XML1 | ENT_QUOTES, 'UTF-8').'</meta>';
+        $fileStart = stripos($xml, '<file');
+        $head = $fileStart === false ? $xml : substr($xml, 0, $fileStart);
+
+        if (preg_match('/<head\b[^>]*>/i', $head, $tag, PREG_OFFSET_CAPTURE) === 1) {
+            [$startTag, $offset] = $tag[0];
+            if (str_ends_with($startTag, '/>')) {
+                return substr_replace($xml, '<head>'.$meta.'</head>', $offset, strlen($startTag));
+            }
+
+            return substr_replace($xml, $meta, $offset + strlen($startTag), 0);
+        }
+
+        if (preg_match('/<nzb\b[^>]*>/i', $xml, $tag, PREG_OFFSET_CAPTURE) === 1) {
+            [$startTag, $offset] = $tag[0];
+
+            return substr_replace($xml, '<head>'.$meta.'</head>', $offset + strlen($startTag), 0);
+        }
+
+        return $xml;
+    }
 }

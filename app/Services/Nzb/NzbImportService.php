@@ -13,7 +13,9 @@ use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\BlacklistService;
 use App\Services\Categorization\CategorizationService;
+use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\ReleaseCleaningService;
+use App\Services\ReleaseRepair\RecoveryLease;
 use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
@@ -263,6 +265,18 @@ class NzbImportService
                     $nzbString = $normalized;
                 }
 
+                // SABnzbd's file-name password goes into the stored NZB's header, the
+                // one place post-processing and users' downloaders read it from. A
+                // password the NZB already carries wins.
+                $fileNamePassword = self::passwordFromNzbFileName($nzbFilePath);
+                if ($fileNamePassword !== null && NzbPassword::fromXml($nzbString) === null) {
+                    $nzbString = NzbPassword::withPassword($nzbString, $fileNamePassword);
+                    $withPassword = @simplexml_load_string($nzbString);
+                    if ($withPassword !== false) {
+                        $nzbXML = $withPassword;
+                    }
+                }
+
                 // Try to insert the NZB details into the DB.
                 $nzbFileName = $releaseName
                     ?? ($useNzbName === true ? $this->deriveReleaseNameFromNzbPath($nzbFilePath) : '');
@@ -367,6 +381,82 @@ class NzbImportService
     /**
      * Remember the existing release the current file matched, and keep it when asked to.
      */
+    /**
+     * @param  list<string>  $incomingMessageIds
+     */
+    private function addIncomingPasswordToDuplicate(Release $existing, array $incomingMessageIds): void
+    {
+        $password = $this->currentNzbString === null ? null : NzbPassword::fromXml($this->currentNzbString);
+        if ($password !== null) {
+            $this->addPasswordToExistingRelease($existing, $password, $incomingMessageIds);
+        }
+    }
+
+    /**
+     * Save a duplicate's password in the existing release's stored NZB, when that NZB has none
+     * and both are the same upload: the duplicate finder matches on name and size, so a release
+     * sharing no segment with the incoming NZB may be a different upload with its own password.
+     *
+     * @param  list<string>  $incomingMessageIds
+     */
+    private function addPasswordToExistingRelease(Release $existing, string $password, array $incomingMessageIds): void
+    {
+        $guid = (string) $existing->guid;
+        // Published NZBs are written through digest-checked receipts; an outside edit would conflict.
+        if (ArtifactPublication::handles($guid)) {
+            return;
+        }
+
+        $lease = RecoveryLease::acquire($existing);
+        if ($lease === null) {
+            $this->logDuplicatePasswordNotAdded($existing, 'release busy');
+
+            return;
+        }
+
+        try {
+            $xml = $this->nzb->readNzbContents($guid);
+            if ($xml === false || NzbPassword::fromXml($xml) !== null) {
+                return;
+            }
+
+            $document = @simplexml_load_string($xml);
+            if ($document === false) {
+                return;
+            }
+
+            $existingIds = array_flip(array_map(NzbService::normalizeSegmentMessageId(...), self::segmentMessageIds($document)));
+            unset($existingIds['']);
+            $sameUpload = array_any(
+                $incomingMessageIds,
+                static fn (string $messageId): bool => isset($existingIds[NzbService::normalizeSegmentMessageId($messageId)]),
+            );
+            if (! $sameUpload) {
+                return;
+            }
+
+            $result = $this->nzb->replaceNzbContentsWithLease(
+                $guid,
+                NzbPassword::withPassword($xml, $password),
+                $lease,
+                hash('sha256', $xml),
+            );
+            if (! $result->success) {
+                $this->logDuplicatePasswordNotAdded($existing, $result->reason);
+            }
+        } finally {
+            $lease->release();
+        }
+    }
+
+    private function logDuplicatePasswordNotAdded(Release $existing, string $reason): void
+    {
+        Log::warning('NZB import could not add the duplicate\'s password to the existing release.', [
+            'matched_release_id' => (int) $existing->id,
+            'reason' => $reason,
+        ]);
+    }
+
     private function recordDuplicate(Release $existing): void
     {
         $this->duplicateReleaseId = (int) $existing->id;
@@ -390,12 +480,15 @@ class NzbImportService
     /**
      * Derive a clean release name from an NZB file path by stripping the
      * trailing ".nzb"/".nzb.gz" wrapper and a known trailing media/container
-     * extension (e.g. ".mkv", ".mp4"). Example:
+     * extension (e.g. ".mkv", ".mp4"). A SABnzbd "{{password}}" right before
+     * the wrapper is not part of the name. Example:
      *   "Show - S01E07 [1080p].mkv.nzb.gz" => "Show - S01E07 [1080p]".
      */
     protected function deriveReleaseNameFromNzbPath(string $path): string
     {
         $name = basename($path);
+
+        $name = preg_replace('/\{\{.+?\}\}(?=\.nzb(?:\.gz)?$)/i', '', $name) ?? $name;
 
         // Strip trailing .nzb or .nzb.gz (case-insensitive).
         $name = preg_replace('/\.nzb(\.gz)?$/i', '', $name) ?? $name;
@@ -409,6 +502,20 @@ class NzbImportService
 
         // Tidy up any trailing dots/whitespace left behind.
         return rtrim($name, ". \t\n\r\0\x0B");
+    }
+
+    /**
+     * The password in a SABnzbd-style NZB file name, "Name{{password}}.nzb" (or ".nzb.gz").
+     */
+    private static function passwordFromNzbFileName(string $path): ?string
+    {
+        if (preg_match('/\{\{(.+?)\}\}\.nzb(?:\.gz)?$/i', basename($path), $matches) !== 1) {
+            return null;
+        }
+
+        $password = trim($matches[1]);
+
+        return $password === '' ? null : $password;
     }
 
     protected function writeCompressedNzb(string $path, string $contents): bool
@@ -748,6 +855,9 @@ class NzbImportService
                 'existing_name' => $dupeCheck->name,
             ]);
             $this->recordDuplicate($dupeCheck);
+            if (! $absorbed) {
+                $this->addIncomingPasswordToDuplicate($dupeCheck, $nzbDetails['segmentMessageIds'] ?? []);
+            }
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
             return NzbImportStatus::Duplicate;
@@ -822,6 +932,7 @@ class NzbImportService
                 'existing_name' => $existing->name,
             ]);
             $this->recordDuplicate($existing);
+            $this->addIncomingPasswordToDuplicate($existing, $nzbDetails['segmentMessageIds'] ?? []);
             $this->echoOut('This release is already in our DB so skipping: '.$subject);
 
             return NzbImportStatus::Duplicate;

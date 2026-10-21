@@ -10,6 +10,7 @@ use App\Models\Collection;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
 use App\Services\CollectionReconciliation\ArtifactPublication;
+use App\Services\Nzb\NzbPassword;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Support\Data\NzbReplaceResult;
@@ -130,6 +131,22 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $this->assertIsString($contents);
         $this->assertStringContainsString('new@example.test', $contents);
         $this->assertStringNotContainsString('old@example.test', $contents);
+    }
+
+    public function test_absorption_does_not_carry_the_replaced_nzbs_password_to_the_better_copy(): void
+    {
+        Search::shouldReceive('updateRelease')->once()->with(1)->andReturnTrue();
+        $anchor = $this->anchor();
+        $nzb = app(NzbService::class);
+        $this->writeStoredNzb($nzb, (string) $anchor->guid, NzbPassword::withPassword($this->nzbXml('old@example.test', 1, 2), 'p'));
+
+        $result = app(ReleaseDuplicateAbsorber::class)->absorbXml($anchor, $this->nzbXml('new@example.test', 2, 2), 2_000, 1, 100.0);
+
+        $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $result->outcome);
+        $contents = $nzb->readNzbContents((string) $anchor->guid);
+        $this->assertIsString($contents);
+        $this->assertStringContainsString('new@example.test', $contents);
+        $this->assertNull(NzbPassword::fromXml($contents));
     }
 
     public function test_absorption_cannot_replace_a_release_while_recovery_holds_its_lease(): void
