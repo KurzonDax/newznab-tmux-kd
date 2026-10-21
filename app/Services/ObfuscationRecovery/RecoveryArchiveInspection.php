@@ -8,6 +8,7 @@ use App\Events\ReleaseNameFixed;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\AdditionalProcessing\ArchiveExtractionService;
+use App\Services\NameFixing\ReleaseNameWriter;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\ReleaseBrowseService;
@@ -86,8 +87,7 @@ final class RecoveryArchiveInspection
                 ]);
                 $neutralName = 'Recovered.'.substr($publication->identity, 0, 24);
                 $category = (new ForcedRootPolicy)->categoryForRelease($release->groups_id, (int) $release->id, Category::OTHER_MISC);
-                Release::query()->whereKey($release->id)->update([
-                    ...Release::searchNameValues($neutralName), 'isrenamed' => 0, 'is_trusted_name' => false,
+                (new ReleaseNameWriter)->resetName((int) $release->id, $neutralName, [
                     'videos_id' => 0, 'tv_episodes_id' => 0, 'movieinfo_id' => null, 'imdbid' => null,
                     'musicinfo_id' => null, 'consoleinfo_id' => null, 'bookinfo_id' => null, 'anidbid' => null,
                     'gamesinfo_id' => 0, 'predb_id' => 0, 'categories_id' => $category, 'iscategorized' => 1,

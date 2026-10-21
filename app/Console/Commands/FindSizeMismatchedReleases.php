@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Release;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -114,7 +115,7 @@ class FindSizeMismatchedReleases extends Command
                 name: $newName,
                 method: 'size-mismatch / season pack',
                 echo: true,
-                type: '',
+                source: NameSource::SizeMismatch,
                 nameStatus: true,
                 show: true,
                 preId: 0

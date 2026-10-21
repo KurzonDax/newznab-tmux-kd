@@ -8,6 +8,9 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
+use App\Services\NameFixing\NameCandidate;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\ReleaseNameWriter;
 use Illuminate\Console\Command;
 
 class RequeueFailedBooks extends Command
@@ -20,7 +23,7 @@ class RequeueFailedBooks extends Command
 
     protected $description = 'Requeue failed book metadata rows (bookinfo_id = -2) and normalize obfuscated search names.';
 
-    public function handle(ObfuscatedSubjectExtractor $extractor): int
+    public function handle(ObfuscatedSubjectExtractor $extractor, ReleaseNameWriter $writer): int
     {
         $limit = max(0, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
@@ -28,7 +31,7 @@ class RequeueFailedBooks extends Command
         $normalizeObfuscatedAll = (bool) $this->option('normalize-obfuscated-all');
 
         $query = Release::query()
-            ->select(['id', 'name', 'searchname', 'categories_id', 'bookinfo_id'])
+            ->select(['id', 'name', 'searchname', 'fromname', 'groups_id', 'categories_id', 'bookinfo_id'])
             ->where(function ($builder): void {
                 $builder->whereBetween('categories_id', [Category::BOOKS_ROOT, Category::BOOKS_UNKNOWN])
                     ->orWhere('categories_id', Category::MUSIC_AUDIOBOOK);
@@ -79,46 +82,58 @@ class RequeueFailedBooks extends Command
                 continue;
             }
 
-            $updates = [];
             $shouldRequeue = (int) $release->bookinfo_id === -2;
-            if ($shouldRequeue) {
-                $updates['bookinfo_id'] = null;
-            }
-            if ($normalized !== null && $normalized !== $release->searchname) {
-                $updates += Release::searchNameValues($normalized);
-                $updates['isrenamed'] = 1;
-            }
+            $rename = $normalized !== null && $normalized !== $release->searchname;
 
-            if ($updates === []) {
+            if (! $shouldRequeue && ! $rename) {
                 $skipped++;
 
                 continue;
             }
 
             if ($dryRun) {
-                if (isset($updates['searchname'])) {
+                if ($rename) {
                     $this->newLine();
                     $this->line(sprintf(
                         '[dry-run] #%d searchname: "%s" -> "%s"',
                         (int) $release->id,
                         (string) $release->searchname,
-                        (string) $updates['searchname']
+                        (string) $normalized
                     ));
                 }
 
                 $queued++;
-                if (isset($updates['searchname'])) {
+                if ($rename) {
                     $renamed++;
                 }
 
                 continue;
             }
 
-            Release::query()->where('id', $release->id)->update($updates);
-            Search::updateRelease((int) $release->id);
+            // A written rename clears bookinfo_id with the other links, which requeues the lookup too.
+            $written = false;
+            if ($rename) {
+                $outcome = $writer->rename($release, new NameCandidate((int) $release->id, (string) $normalized, NameSource::BookSubjectRepair,
+                    'Obfuscated subject', categoryId: (int) $release->categories_id));
+                $written = $outcome->written;
+                if (! $written) {
+                    $this->newLine();
+                    $this->warn(sprintf('#%d not renamed: %s', (int) $release->id, $outcome->reason()));
+                }
+            }
+            if (! $written && $shouldRequeue) {
+                Release::query()->where('id', $release->id)->update(['bookinfo_id' => null]);
+                Search::updateRelease((int) $release->id);
+            }
+
+            if (! $written && ! $shouldRequeue) {
+                $skipped++;
+
+                continue;
+            }
 
             $queued++;
-            if (isset($updates['searchname'])) {
+            if ($written) {
                 $renamed++;
             }
         }

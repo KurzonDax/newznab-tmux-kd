@@ -22,6 +22,7 @@ use App\Services\NameFixing\ArchiveNamingPath;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
@@ -259,7 +260,7 @@ class ReleaseFileManager
                 $candidate,
                 'NZBSPLIT wrapper',
                 true,
-                'Filenames, ',
+                NameSource::FileNzbSplitWrapper,
                 true,
                 true
             );
@@ -960,7 +961,7 @@ class ReleaseFileManager
                         $candidate,
                         'RarInfo FileName Match',
                         true,
-                        'Filenames, ',
+                        NameSource::FileRarInfoName,
                         true,
                         true,
                         $context->release->preid
@@ -995,7 +996,7 @@ class ReleaseFileManager
                     $preCheck->title,
                     'RarInfo PreDB Match',
                     true,
-                    'Filenames, ',
+                    NameSource::FileRarInfoPreDb,
                     true,
                     true,
                     $preCheck->id,
@@ -1009,7 +1010,7 @@ class ReleaseFileManager
                 $this->seasonPackTitle($basename, $fileNames, $context),
                 'RarInfo: Descriptive title',
                 true,
-                'Filenames, ',
+                NameSource::FileDescriptiveTitle,
                 true,
                 true,
                 0,

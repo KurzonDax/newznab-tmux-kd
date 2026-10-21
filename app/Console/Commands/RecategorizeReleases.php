@@ -76,7 +76,7 @@ class RecategorizeReleases extends Command
                     if ($this->option('test')) {
                         $this->info('Would have changed '.$release->searchname.' from '.$release->categories_id.' to '.$newCategoryId);
                     } else {
-                        $recategorizer->moveTo((int) $release->id, $newCategoryId);
+                        $recategorizer->moveTo((int) $release->id, (int) $release->categories_id, $newCategoryId);
 
                         /** @var Category|null $newCategory */
                         $newCategory = Category::query()->where('id', $newCategoryId)->first();

@@ -31,6 +31,8 @@ use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\CollectionCleanupService;
 use App\Services\DTO\YencArticleMetadata;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\NNTP\NNTPService;
@@ -224,7 +226,7 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
                 string $name,
                 string $method,
                 bool $echo,
-                string $type,
+                NameSource $source,
                 bool $nameStatus,
                 bool $show,
                 ?int $preId,
@@ -234,12 +236,13 @@ class AdditionalProcessingReleaseFileManagerTest extends TestCase
                     && $name === '2016-04-17 - Anita Bellini - Playful And Petite (4k).mp4'
                     && str_contains($method, 'Descriptive title')
                     && $echo
-                    && $type === 'Filenames, '
+                    && $source === NameSource::FileDescriptiveTitle
                     && $nameStatus
                     && $show
                     && $preId === 0
                     && $descriptiveTitleCandidate;
-            });
+            })
+            ->andReturn(NameUpdateResult::renamed('x'));
 
         $manager = new ReleaseFileManager(
             $this->makeConfig(),

@@ -17,6 +17,7 @@ use App\Services\CollectionReconciliation\PendingReconciler;
 use App\Services\CollectionReconciliation\PostingEvidence;
 use App\Services\CollectionReconciliation\PostingNzb;
 use App\Services\CollectionReconciliation\PostingPublication;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NNTP\Contracts\BoundedProviderClient;
 use App\Services\NNTP\DTO\BoundedArticleResponse;
@@ -485,7 +486,7 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame('associated', $service->reconcile($id, 1));
         $release = Release::query()->first();
         $updater = app(ReleaseUpdateService::class);
-        $updater->updateRelease($release, 'Single.Movie.2026.1080p', 'PAR2', true, 'PAR2, ', true, false);
+        $updater->updateRelease($release, 'Single.Movie.2026.1080p', 'PAR2', true, NameSource::Par2File, true, false);
         $this->assertSame('Course.Set', $release->fresh()->searchname);
         $this->assertSame(0, (int) $release->fresh()->is_trusted_name);
     }
@@ -533,12 +534,15 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame('prepared', DB::table('reconciled_postings')->value('state'));
         $this->assertSame(1, DB::table('collections')->count());
         $this->app->instance(PostingPublication::class, new PostingPublication);
+        DB::table('releases')->where('id', $release->id)->update(Release::searchNameValues('Unlabelled.Placeholder'));
         $service->run(1, 1);
         $this->assertSame('published', DB::table('reconciled_postings')->value('state'));
         $this->assertCount(33, (new PostingNzb)->parse($nzbs->readNzbContents($release->guid), 'after'));
         $this->assertSame(100.0, (float) $release->fresh()->completion);
         $this->assertSame(0, DB::table('collections')->count());
         $this->assertSame(1, DB::table('releases')->count());
+        // The posting's label is written with its normalized and display forms (#1120, decision 4).
+        $this->assertSame(Release::searchNameValues('Course.Set'), array_intersect_key($release->fresh()->getRawOriginal(), Release::searchNameValues('x')));
     }
 
     public function test_late_addition_keeps_a_name_that_name_fixing_already_set(): void
@@ -767,7 +771,7 @@ class PendingReconciliationTest extends TestCase
         $title = 'Some.Movie.2024.1080p.BluRay.x264-GROUP';
         // Recategorization after a rename is not under test and needs tables this schema lacks.
         Event::fake([ReleaseNameFixed::class]);
-        app(ReleaseUpdateService::class)->updateRelease(Release::query()->findOrFail($releaseId), $title, 'Filenames', true, 'Filenames, ', true, false);
+        app(ReleaseUpdateService::class)->updateRelease(Release::query()->findOrFail($releaseId), $title, 'Filenames', true, NameSource::FileName, true, false);
         $renamed = Release::query()->findOrFail($releaseId);
         $this->assertSame($title, $renamed->searchname);
         $this->assertSame(1, (int) $renamed->isrenamed);

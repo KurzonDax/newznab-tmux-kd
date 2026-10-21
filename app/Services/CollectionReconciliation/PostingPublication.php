@@ -8,6 +8,8 @@ use App\Facades\Search;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\CollectionCleanupService;
+use App\Services\NameFixing\NameTrust;
+use App\Services\NameFixing\ReleaseNameWriter;
 use App\Services\Nzb\CompletionTally;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
@@ -133,14 +135,14 @@ class PostingPublication
                 $decision = json_decode($journal->decision, true, flags: JSON_THROW_ON_ERROR);
                 $label = ($decision['decision'] ?? $decision)['label'];
                 // Never wipe a name that name fixing already set (isrenamed = 1).
-                $identity = $lockedRelease->is_trusted_name || (int) $lockedRelease->isrenamed === 1
-                    ? [] : ['name' => $label, 'searchname' => $label, 'is_trusted_name' => false, 'isrenamed' => 0];
-                if ($journal->independent_videos) {
-                    $identity['categories_id'] = Category::OTHER_MISC;
-                }
-                Release::query()->whereKey($release->id)->update([...$identity, 'nzbstatus' => NzbService::NZB_ADDED,
+                $columns = [...($journal->independent_videos ? ['categories_id' => Category::OTHER_MISC] : []), 'nzbstatus' => NzbService::NZB_ADDED,
                     'completion' => $tally->signals()->percentage(), 'totalpart' => count($files),
-                    'size' => array_sum(array_map(static fn (PostingFile $file): int => array_sum(array_column($file->segments, 'bytes')), $files))]);
+                    'size' => array_sum(array_map(static fn (PostingFile $file): int => array_sum(array_column($file->segments, 'bytes')), $files))];
+                if (NameTrust::isRenamedOrTrusted($lockedRelease)) {
+                    Release::query()->whereKey($release->id)->update($columns);
+                } else {
+                    (new ReleaseNameWriter)->resetName((int) $release->id, $label, ['name' => $label, ...$columns]);
+                }
                 DB::table('reconciled_postings')->where('id', $journal->id)->update(['state' => 'published', 'updated_at' => now()]);
                 DB::afterCommit(static fn () => Search::updateRelease((int) $release->id));
 
@@ -164,10 +166,10 @@ class PostingPublication
         }
     }
 
+    /** @see NameTrust::hasTrustedIdentity() */
     public static function hasTrustedIdentity(Release $release): bool
     {
-        return (bool) $release->is_trusted_name || (int) $release->predb_id > 0 || (int) $release->movieinfo_id > 0
-            || (int) $release->imdbid > 0 || (int) $release->videos_id > 0 || (int) $release->tv_episodes_id > 0;
+        return NameTrust::hasTrustedIdentity($release);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Release;
 use App\Models\ReleaseInform;
 use App\Models\User;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,7 +39,7 @@ class ApiInformController extends Controller
             ReleaseInform::insertOrIgnore(['relOName' => $releaseObName, 'relPName' => $releasePrName, 'api_token' => $apiToken, 'created_at' => now(), 'updated_at' => now()]);
             $release = Release::whereSearchname($releaseObName)->first();
             if (! empty($release)) {
-                (new ReleaseUpdateService)->updateRelease($release, $releasePrName, 'Release Inform API', true, 'Filenames, ', true, true);
+                (new ReleaseUpdateService)->updateRelease($release, $releasePrName, 'Release Inform API', true, NameSource::FileReleaseInform, true, true);
             }
 
             return response()->json(['message' => 'Release Information Added!'], 200);

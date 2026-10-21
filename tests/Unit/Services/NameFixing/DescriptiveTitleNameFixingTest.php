@@ -9,6 +9,8 @@ use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\PredbMatchSelector;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
@@ -214,7 +216,7 @@ class TestableDescriptiveTitleNameFixingService extends NameFixingService
         $this->processFileCandidates($release, $files, $echo, true, false, false, false);
     }
 
-    protected function preDbFileCheck(object $release, bool $echo, string $type, bool $nameStatus, bool $show): bool
+    protected function preDbFileCheck(object $release, bool $echo, bool $nameStatus, bool $show): bool
     {
         return false;
     }
@@ -236,43 +238,36 @@ class RecordingDescriptiveTitleUpdater extends ReleaseUpdateService
      */
     public array $statusUpdates = [];
 
-    public function __construct()
-    {
-        $this->matched = false;
-    }
+    public function __construct() {}
 
     public function updateRelease(
         object|array $release,
         string $name,
         string $method,
         bool $echo,
-        string $type,
+        NameSource $source,
         bool $nameStatus,
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
-    ): void {
+    ): NameUpdateResult {
         if (! $descriptiveTitleCandidate) {
             $this->ordinaryName = $name;
             $this->ordinaryCalls[] = [$method, $name];
 
-            return;
+            return NameUpdateResult::declined();
         }
 
         $this->descriptiveName = $name;
         $this->descriptiveMethod = $method;
-        $this->matched = true;
+
+        return NameUpdateResult::renamed($name);
     }
 
     public function updateSingleColumn(string $column, int $status, int $id): void
     {
         $this->statusUpdates[] = [$column, $status, $id];
-    }
-
-    public function reset(): void
-    {
-        $this->matched = false;
     }
 
     public function incrementChecked(): void
@@ -301,17 +296,19 @@ class AcceptanceRecordingUpdater extends ReleaseUpdateService
         string $name,
         string $method,
         bool $echo,
-        string $type,
+        NameSource $source,
         bool $nameStatus,
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
-    ): void {
-        parent::updateRelease($release, $name, $method, $echo, $type, $nameStatus, $show, $preId, $descriptiveTitleCandidate, $recoveryEvidence);
-        if ($this->matched && $this->accepted === null) {
+    ): NameUpdateResult {
+        $result = parent::updateRelease($release, $name, $method, $echo, $source, $nameStatus, $show, $preId, $descriptiveTitleCandidate, $recoveryEvidence);
+        if ($result->renamed && $this->accepted === null) {
             $this->accepted = $name;
             $this->acceptedMethod = $method;
         }
+
+        return $result;
     }
 }

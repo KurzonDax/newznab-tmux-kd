@@ -13,6 +13,8 @@ use App\Models\MovieInfo;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Models\VideoData;
+use App\Services\Categorization\CategoryChange;
+use App\Services\Categorization\CategoryChangeKind;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\MetadataProcessing\MovieCredits;
@@ -1345,12 +1347,10 @@ class MovieService
             Release::query()->whereKey($releaseId)->update(['imdbid' => '']);
             ReleaseSearchIndexSync::forIds([$releaseId]);
         }
-        if ($forcedRoot === null || $forcedRoot === Category::TV_ROOT) {
-            Release::query()->whereKey($releaseId)->update(['categories_id' => Category::TV_OTHER]);
-            if ($bound) {
-                app(MediaInfoRefinementService::class)->refine($releaseId);
-            }
-            ReleaseSearchIndexSync::forIds([$releaseId]);
+        $current = Release::query()->whereKey($releaseId)->value('categories_id');
+        if ($current !== null) {
+            (new CategoryChange(app(MediaInfoRefinementService::class)))->apply($releaseId, (int) $current, Category::TV_OTHER,
+                $bound ? CategoryChangeKind::MatchedTvHandoff : CategoryChangeKind::UnmatchedSeriesHandoff);
         }
 
         return $outcome === MovieLookupOutcome::Series;

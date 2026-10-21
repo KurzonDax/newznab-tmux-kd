@@ -41,7 +41,7 @@ class FileNameExtractor
             $unwrapped = $this->cleaner->extractNzbSplitName($filename);
 
             if ($unwrapped !== null && $this->cleaner->isPlausibleReleaseTitle($unwrapped)) {
-                return NameFixResult::fromMatch($unwrapped, 'NZBSPLIT wrapper', 'File');
+                return NameFixResult::fromNzbSplitWrapper($unwrapped, 'File');
             }
 
             return null;

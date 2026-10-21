@@ -6,6 +6,7 @@ namespace Tests\Unit\Services\NameFixing;
 
 use App\Models\Category;
 use App\Services\NameFixing\FilePrioritizer;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
@@ -117,27 +118,27 @@ class XxxPostingLabelRenameTest extends TestCase
     {
         $title = 'Example Studio - Extended Evening Feature (2026-01-11)';
         $attempts = [
-            'media title' => [$title, ReleaseUpdateService::DESCRIPTIVE_MEDIA_TITLE_METHOD, 'Mediainfo, ', true],
-            'ordinary filename method' => [self::EVENING, 'fileCheck: Folder name', 'Filenames, ', false],
-            'undeclared filename candidate' => [self::EVENING, 'fileCheck: Descriptive title', 'Filenames, ', false],
-            'nfo' => [self::EVENING, 'fileCheck: Descriptive title', 'NFO, ', true],
+            'media title' => [$title, ReleaseUpdateService::DESCRIPTIVE_MEDIA_TITLE_METHOD, NameSource::MediaDescriptiveTitle, true],
+            'ordinary filename method' => [self::EVENING, 'fileCheck: Folder name', NameSource::FileName, false],
+            'undeclared filename candidate' => [self::EVENING, 'fileCheck: Descriptive title', NameSource::FileDescriptiveTitle, false],
+            'nfo' => [self::EVENING, 'fileCheck: Descriptive title', NameSource::NfoPattern, true],
         ];
 
-        foreach ($attempts as $source => [$name, $method, $type, $descriptive]) {
+        foreach ($attempts as $label => [$name, $method, $source, $descriptive]) {
             $updater = new ReleaseUpdateService;
-            $updater->updateRelease(
+            $result = $updater->updateRelease(
                 $this->release('Exampleab12', Category::XXX_X264, [self::EVENING]),
                 $name,
                 $method,
                 false,
-                $type,
+                $source,
                 true,
                 false,
                 0,
                 $descriptive,
             );
 
-            $this->assertFalse($updater->matched, $source);
+            $this->assertFalse($result->renamed, $label);
         }
     }
 
@@ -165,18 +166,18 @@ class XxxPostingLabelRenameTest extends TestCase
         $files = (new FilePrioritizer)->prioritizeForMatching($files);
         $updater = new ReleaseUpdateService;
         foreach ($files as $file) {
-            $updater->updateRelease(
+            $result = $updater->updateRelease(
                 $this->release($currentName, $category, $files),
                 $file,
                 $method,
                 false,
-                'Filenames, ',
+                in_array($method, ['fileCheck: Descriptive title', 'RarInfo: Descriptive title'], true) ? NameSource::FileDescriptiveTitle : NameSource::FileName,
                 true,
                 false,
                 0,
                 true,
             );
-            if ($updater->matched) {
+            if ($result->renamed) {
                 return $file;
             }
         }

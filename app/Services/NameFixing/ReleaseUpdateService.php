@@ -4,21 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\NameFixing;
 
-use App\Events\ReleaseNameFixed;
 use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
-use App\Services\AdditionalProcessing\PostedFileClassifier;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
-use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
-use App\Services\ReleaseCleaningService;
-use App\Services\Releases\ForcedRootPolicy;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -35,42 +29,6 @@ class ReleaseUpdateService
 
     /** The rename type of a name built from a release's own audio tags. */
     public const AUDIO_TAGS_TYPE = 'Audio tags, ';
-
-    /** The rename type of the canonical name of an accepted MusicBrainz album (issue #309). */
-    public const MUSICBRAINZ_TYPE = 'MusicBrainz, ';
-
-    /**
-     * Methods that offer a descriptive video filename from stored files or an archive listing.
-     */
-    private const DESCRIPTIVE_FILENAME_METHODS = ['fileCheck: Descriptive title', 'RarInfo: Descriptive title'];
-
-    /**
-     * @var list<string>
-     */
-    private const PLAUSIBILITY_TRUSTED_TYPES = [
-        'UID, ',
-        'PAR2 hash, ',
-        'CRC32, ',
-        'SRRDB, ',
-        'SRR, ',
-    ];
-
-    /**
-     * @var list<string>
-     */
-    private const DONOR_TRUSTED_TYPES = [
-        'NFO, ',
-        'PAR2, ',
-        'UID, ',
-        'PAR2 hash, ',
-        'SRR, ',
-        'CRC32, ',
-        'SRRDB, ',
-        'PreDB FT Exact, ',
-        'PreDB file match, ',
-        self::AUDIO_TAGS_TYPE,
-        self::MUSICBRAINZ_TYPE,
-    ];
 
     /**
      * @var list<string>
@@ -133,22 +91,18 @@ class ReleaseUpdateService
 
     protected bool $echoOutput;
 
-    private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
+    private ?ReleaseSearchSyncCoordinator $searchSyncCoordinator = null;
+
+    private ?NamePolicy $namePolicy = null;
+
+    private ?ReleaseNameWriter $writer = null;
 
     /**
-     * The release ID we are trying to rename.
+     * The releases this instance renamed: each is renamed once per instance.
+     *
+     * @var array<int, true>
      */
-    protected int $relid = 0;
-
-    /**
-     * Has the current release found a new name?
-     */
-    public bool $matched = false;
-
-    /**
-     * Was the check completed?
-     */
-    public bool $done = false;
+    private array $renamedReleaseIds = [];
 
     /**
      * How many releases have got a new name?
@@ -167,8 +121,7 @@ class ReleaseUpdateService
     ) {
         $this->category = $category ?? new CategorizationService;
         $this->fileNameCleaner = $fileNameCleaner ?? new FileNameCleaner;
-        $this->searchSyncCoordinator = $searchSyncCoordinator
-            ?? new ReleaseSearchSyncCoordinator(new PersistenceMetricsCollector);
+        $this->searchSyncCoordinator = $searchSyncCoordinator;
         $this->echoOutput = config('nntmux.echocli');
     }
 
@@ -179,7 +132,7 @@ class ReleaseUpdateService
      * @param  string  $name  The new name
      * @param  string  $method  The method that found the name
      * @param  bool  $echo  Whether to actually update the database
-     * @param  string  $type  The type string for logging
+     * @param  NameSource  $source  The source and evidence kind of the name
      * @param  bool  $nameStatus  Whether to update status columns
      * @param  bool  $show  Whether to show output
      * @param  int|null  $preId  PreDB ID if matched
@@ -192,275 +145,96 @@ class ReleaseUpdateService
         string $name,
         string $method,
         bool $echo,
-        string $type,
+        NameSource $source,
         bool $nameStatus,
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
-    ): void {
+    ): NameUpdateResult {
         $preId = $preId ?? 0;
         if (is_array($release)) {
             $release = (object) $release;
         }
-        $imdbId = $type === 'SRRDB, ' && isset($release->srrdb_imdbid)
-            ? (string) $release->srrdb_imdbid
-            : null;
 
         // If $release does not have a releases_id, we should add it.
         if (! isset($release->releases_id)) {
             $release->releases_id = $release->id;
         }
+        $releaseId = (int) $release->releases_id;
+        $candidate = new NameCandidate(
+            $releaseId,
+            $name,
+            $source,
+            $method,
+            $preId,
+            $source === NameSource::SrrdbArchiveCrc && isset($release->srrdb_imdbid) ? (string) $release->srrdb_imdbid : null,
+            descriptiveTitle: $descriptiveTitleCandidate,
+            recoveryEvidence: $recoveryEvidence,
+        );
 
-        if ($echo && ! (new RecoveryIdentityPolicy)->allowsParent((int) $release->releases_id, $recoveryEvidence)) {
-            $this->matched = false;
-            $this->done = true;
-
-            return;
+        $decision = $this->writer()->rename(
+            $release,
+            $candidate,
+            $nameStatus,
+            $echo === true,
+            ! $echo || (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence),
+            isset($this->renamedReleaseIds[$releaseId]),
+            static fn (): array => self::storedFileSizes($releaseId),
+        )->decision;
+        if (! $decision->accepted()) {
+            return NameUpdateResult::declined($decision->rejection);
         }
-        if ($this->relid !== $release->releases_id) {
-            // Download-site advertising is never a name, whatever source or PreDB id presents it.
-            if ($this->fileNameCleaner->isPromotionalTitle($name)) {
-                $this->done = true;
 
-                return;
-            }
+        $newTitle = $decision->title;
+        $this->renamedReleaseIds[$releaseId] = true;
 
-            $descriptiveMediaTitle = $method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD;
-            if ($descriptiveMediaTitle
-                && (! $descriptiveTitleCandidate
-                    || ! $this->fileNameCleaner->isDescriptiveContainerTitle($name)
-                    || $this->fileNameCleaner->isReadableReleaseTitle((string) $release->searchname)
-                    || $this->fileNameCleaner->isDescriptiveContainerTitle((string) $release->searchname))) {
-                $this->done = true;
+        $this->fixed++;
 
-                return;
-            }
+        if ($this->echoOutput && $show) {
+            // A written rename was categorized by the rename listener inside
+            // the update; show what it stored rather than categorizing again.
+            $determinedCategory = $echo === true
+                ? ['categories_id' => Release::query()->whereKey($releaseId)->value('categories_id') ?? $release->categories_id]
+                : $this->category->determineCategory(
+                    $release->groups_id,
+                    $newTitle,
+                    ! empty($release->fromname) ? $release->fromname : '',
+                    releaseId: $releaseId,
+                );
 
-            $newTitle = $this->finalizeCandidate($release, $name, $type, $descriptiveMediaTitle);
-            if ($this->fileNameCleaner->isPromotionalTitle($newTitle)) {
-                $this->done = true;
-
-                return;
-            }
-
-            $categoryId = (int) ($release->categories_id ?? $release->categoryid ?? 0);
-            $replacesXxxPostingLabel = $descriptiveTitleCandidate
-                && $this->replacesXxxPostingLabel($release, $name, $method, $type, $categoryId);
-
-            // An episode's title is not the name of a release that holds more than that episode.
-            if (! $replacesXxxPostingLabel && $this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {
-                $this->done = true;
-
-                return;
-            }
-
-            // Determine if the source is trusted enough to bypass plausibility checks
-            $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
-            $trustedSource = $sourceTrust['bypass_plausibility'];
-            $currentNameObfuscated = $this->fileNameCleaner->currentNameLooksObfuscated(
-                (string) $release->searchname,
-                $categoryId,
-                isset($release->matchedBy)
-                    ? (string) $release->matchedBy
-                    : (isset($release->matched_by) ? (string) $release->matched_by : null),
-            );
-            $acceptedDescriptiveTitle = $replacesXxxPostingLabel
-                || ($descriptiveTitleCandidate
-                    && ($descriptiveMediaTitle || $this->fileNameCleaner->isDescriptiveTitle($name))
-                    && $currentNameObfuscated);
-
-            if (! $trustedSource
-                && ! $acceptedDescriptiveTitle
-                && ! $this->fileNameCleaner->isPlausibleReleaseTitle($newTitle)) {
-                // Skip low-quality rename candidates for untrusted sources
-                $this->done = true;
-
-                return;
-            }
-
-            if (! $trustedSource
-                && ! $acceptedDescriptiveTitle
-                && ! $currentNameObfuscated
-                && $this->fileNameCleaner->isLessInformativeThan($newTitle, (string) $release->searchname)) {
-                $this->done = true;
-
-                return;
-            }
-
-            if (strtolower($newTitle) !== strtolower($release->searchname)) {
-                $this->matched = true;
-                $this->relid = (int) $release->releases_id;
-
-                $this->fixed++;
-
-                if ($echo === true) {
-                    $this->performDatabaseUpdate(
-                        $release,
-                        $newTitle,
-                        $type,
-                        $method,
-                        $nameStatus,
-                        $preId,
-                        $imdbId,
-                        recoveryEvidence: $recoveryEvidence,
-                    );
-                }
-
-                if ($this->echoOutput && $show) {
-                    // A written rename was categorized by the rename listener inside
-                    // the update; show what it stored rather than categorizing again.
-                    $determinedCategory = $echo === true
-                        ? ['categories_id' => Release::query()->whereKey((int) $release->releases_id)->value('categories_id') ?? $release->categories_id]
-                        : $this->category->determineCategory(
-                            $release->groups_id,
-                            $newTitle,
-                            ! empty($release->fromname) ? $release->fromname : '',
-                            releaseId: (int) $release->releases_id,
-                        );
-
-                    $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
-                }
-            }
+            $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $source->type(), $method);
         }
-        $this->done = true;
+
+        return NameUpdateResult::renamed($newTitle);
+    }
+
+    /** Built on first use: test doubles skip the constructor and set the cleaner themselves. */
+    private function namePolicy(): NamePolicy
+    {
+        return $this->namePolicy ??= new NamePolicy($this->fileNameCleaner);
+    }
+
+    private function writer(): ReleaseNameWriter
+    {
+        return $this->writer ??= new ReleaseNameWriter($this->searchSyncCoordinator, $this->namePolicy());
     }
 
     /**
-     * Under XXX, a descriptive video filename may replace an opaque posting label. The release
-     * may hold several videos, so neither the episode guard nor a size share applies to it.
+     * The release's stored file names and sizes, for the episode guard.
+     *
+     * @return array<string, int>
      */
-    private function replacesXxxPostingLabel(object $release, string $name, string $method, string $type, int $categoryId): bool
+    private static function storedFileSizes(int $releaseId): array
     {
-        return $type === 'Filenames, '
-            && in_array($method, self::DESCRIPTIVE_FILENAME_METHODS, true)
-            && Category::rootCategoryFor($categoryId) === Category::XXX_ROOT
-            && $this->fileNameCleaner->isDescriptiveTitle($name)
-            && $this->fileNameCleaner->isUnresolvedPostingLabel((string) $release->searchname);
-    }
-
-    private const string EPISODE_TOKEN_REGEX = '/(?<![A-Za-z0-9])S(\d{1,4})[._ -]?E(\d{1,4})(?!\d)/i';
-
-    /**
-     * An episode title stands for a whole release only when the release is that one episode:
-     * no known inner file names another episode, and the episode's own video is not the
-     * smaller part of the release. Without such evidence the candidate is judged as before.
-     */
-    private function namesOneEpisodeOfLargerRelease(object $release, string $title): bool
-    {
-        $episode = $this->soleEpisode($title);
-        if ($episode === null) {
-            return false;
-        }
-
         $sizes = [];
         if (Schema::hasTable('release_files')) {
-            foreach (ReleaseFile::query()->where('releases_id', (int) $release->releases_id)->get() as $file) {
+            foreach (ReleaseFile::query()->where('releases_id', $releaseId)->get() as $file) {
                 $sizes[(string) $file->name] = (int) ($file->size ?? 0);
             }
         }
-        // Files the archive inspector has listed but not yet stored.
-        foreach ($release->knownFiles ?? [] as $file) {
-            $sizes[(string) $file['name']] = (int) ($file['size'] ?? 0);
-        }
 
-        $episodeSize = 0;
-        foreach ($sizes as $fileName => $size) {
-            $fileName = (string) $fileName;
-            if (! ArchiveNamingPath::eligible($fileName)
-                || ! preg_match_all(self::EPISODE_TOKEN_REGEX, $fileName, $named, PREG_SET_ORDER)) {
-                continue;
-            }
-            $episodes = array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named);
-            if (! in_array($episode, $episodes, true)) {
-                return true;
-            }
-            if (preg_match('/'.PostedFileClassifier::VIDEO_FILE_REGEX.'$/i', $fileName)
-                && ! preg_match('~(?:^|[\\\\/._ -])sample(?:[\\\\/._ -]|$)~i', $fileName)) {
-                $episodeSize += $size;
-            }
-        }
-
-        return $episodeSize > 0 && $episodeSize * 2 < (int) ($release->relsize ?? $release->size ?? 0);
-    }
-
-    /** The one episode a title names, or null when it names none, several, or a range. */
-    private function soleEpisode(string $title): ?string
-    {
-        if (! preg_match_all(self::EPISODE_TOKEN_REGEX, $title, $named, PREG_SET_ORDER)
-            || preg_match('/(?<![A-Za-z0-9])S\d{1,4}[._ -]?E\d{1,4}(?:[._ -]?E\d|\s?-\s?E?\d{1,3}(?![\dpi])|\s?[&+])/i', $title)) {
-            return null;
-        }
-        $episodes = array_unique(array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named));
-
-        return count($episodes) === 1 ? $episodes[0] : null;
-    }
-
-    private function finalizeCandidate(
-        object $release,
-        string $name,
-        string $type,
-        bool $descriptiveMediaTitle,
-    ): string {
-        $cleanedName = $descriptiveMediaTitle ? trim($name) : (new ReleaseCleaningService)->fixerCleaner($name);
-        $normalizedName = $this->fileNameCleaner->normalizeCandidateTitle($cleanedName);
-        $candidate = $descriptiveMediaTitle
-            ? $cleanedName
-            : $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
-
-        if ($type === 'PAR2, ') {
-            $candidate = ucwords($candidate);
-            if (preg_match('/(.+?)\.[a-z0-9]{2,3}(PAR2)?$/i', $name, $hit)) {
-                $candidate = $hit[1];
-            }
-        }
-
-        if (! $descriptiveMediaTitle) {
-            $pathParts = explode('\\', $candidate);
-            $candidate = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $pathParts[0]) ?? $pathParts[0];
-        }
-
-        return $this->finalizeEvidencePreservation($release, substr($candidate, 0, 299));
-    }
-
-    private function finalizeEvidencePreservation(object $release, string $candidate): string
-    {
-        return $this->fileNameCleaner->preserveEvidenceTokens(
-            $candidate,
-            (string) $release->searchname,
-            (string) ($release->name ?? ''),
-        );
-    }
-
-    /**
-     * Classify the evidence once for plausibility and donor-trust decisions.
-     *
-     * @return array{bypass_plausibility: bool, trusted_donor: bool}
-     */
-    protected function sourceTrustPolicy(string $type, string $method, int $preId): array
-    {
-        if ($method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD) {
-            return ['bypass_plausibility' => false, 'trusted_donor' => false];
-        }
-
-        $normalizedMethod = strtolower($method);
-        $sharedTrustedMethod = str_contains($normalizedMethod, 'title match')
-            || str_contains($normalizedMethod, 'file matched source')
-            || str_contains($normalizedMethod, 'predb');
-        $preDbType = str_starts_with($type, 'PreDB') || str_starts_with($type, 'PreDb');
-
-        return [
-            'bypass_plausibility' => $preId > 0
-                || $preDbType
-                || in_array($type, self::PLAUSIBILITY_TRUSTED_TYPES, true)
-                || $sharedTrustedMethod,
-            'trusted_donor' => $preId > 0
-                || in_array($type, self::DONOR_TRUSTED_TYPES, true)
-                || $sharedTrustedMethod
-                || str_contains($normalizedMethod, 'nzbsplit wrapper')
-                || str_contains($normalizedMethod, 'rarinfo filename match')
-                || str_contains($normalizedMethod, 'rarinfo predb match'),
-        ];
+        return $sizes;
     }
 
     /**
@@ -510,110 +284,6 @@ class ReleaseUpdateService
     }
 
     /**
-     * Perform the actual database update.
-     */
-    protected function performDatabaseUpdate(
-        object $release,
-        string $newTitle,
-        string $type,
-        string $method,
-        bool $nameStatus,
-        int $preId,
-        ?string $imdbId,
-        ?int $categoryOverride = null,
-        bool $preserveBookInfo = false,
-        ?RecoveryNameEvidence $recoveryEvidence = null,
-        bool $preserveMusicInfo = false,
-    ): void {
-        $releaseId = (int) ($release->releases_id ?? $release->id);
-        $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
-        $nameSource = self::nameSource($type);
-        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
-            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-                return;
-            }
-            if ($categoryOverride !== null && $current !== null) {
-                $categoryOverride = (new ForcedRootPolicy)->categoryForRelease($current->groups_id, $releaseId, $categoryOverride);
-            }
-            $recoveryEvidence?->assertNamingAllowed();
-            if ($nameStatus === true) {
-                $status = $this->getStatusColumnsForType($type);
-
-                $updateColumns = [
-                    'videos_id' => 0,
-                    'tv_episodes_id' => 0,
-                    'movieinfo_id' => null,
-                    'imdbid' => $imdbId,
-                    'musicinfo_id' => null,
-                    'consoleinfo_id' => null,
-                    'bookinfo_id' => null,
-                    'anidbid' => null,
-                    'gamesinfo_id' => 0,
-                    'predb_id' => $preId,
-                    ...Release::searchNameValues($newTitle),
-                    'is_trusted_name' => $trustedDonorName,
-                    'name_source' => $nameSource,
-                ];
-
-                if ($preserveBookInfo) {
-                    unset($updateColumns['bookinfo_id']);
-                }
-
-                if ($preserveMusicInfo) {
-                    unset($updateColumns['musicinfo_id']);
-                }
-
-                if ($categoryOverride !== null) {
-                    $updateColumns['categories_id'] = $categoryOverride;
-                }
-
-                if (! empty($status)) {
-                    foreach ($status as $key => $stat) {
-                        $updateColumns = Arr::add($updateColumns, $key, $stat);
-                    }
-                }
-
-                Release::query()
-                    ->where('id', $releaseId)
-                    ->update($updateColumns);
-            } else {
-                Release::query()
-                    ->where('id', $releaseId)
-                    ->update(array_filter([
-                        'videos_id' => 0,
-                        'tv_episodes_id' => 0,
-                        'movieinfo_id' => null,
-                        'imdbid' => $imdbId,
-                        'musicinfo_id' => null,
-                        'consoleinfo_id' => null,
-                        'bookinfo_id' => null,
-                        'anidbid' => null,
-                        'gamesinfo_id' => 0,
-                        'predb_id' => $preId,
-                        ...Release::searchNameValues($newTitle),
-                        'is_trusted_name' => $trustedDonorName,
-                        'name_source' => $nameSource,
-                        'iscategorized' => 1,
-                        'categories_id' => $categoryOverride,
-                    ], static fn (mixed $value, string $key): bool => $key !== 'categories_id' || $value !== null, ARRAY_FILTER_USE_BOTH));
-            }
-
-            event(new ReleaseNameFixed(
-                $releaseId,
-                (string) $release->searchname,
-                $newTitle,
-                (int) $release->categories_id,
-                $release->groups_id,
-                (string) ($release->fromname ?? ''),
-                $categoryOverride,
-            ));
-        });
-
-        $this->searchSyncCoordinator->request($releaseId);
-    }
-
-    /**
      * The `releases.name_source` a rename of this type records: the type without its trailing
      * separator ("Audio tags, " records "Audio tags"); null for an empty type.
      */
@@ -622,34 +292,6 @@ class ReleaseUpdateService
         $source = trim(rtrim($type, ' ,:'));
 
         return $source === '' ? null : substr($source, 0, 64);
-    }
-
-    /**
-     * Get the status columns to update for a given type.
-     *
-     * @return array<string, mixed>
-     */
-    protected function getStatusColumnsForType(string $type): array
-    {
-        return match ($type) {
-            'NFO, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_nfo' => 1],
-            'Recovery inventory, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
-            'PAR2, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
-            'Filenames, ', 'file matched source: ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_files' => 1],
-            'XXX filenames, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_xxx' => 1],
-            'PreDB FT Exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'PreDB exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            self::AUDIO_TAGS_TYPE, self::MUSICBRAINZ_TYPE => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_pp' => 1],
-            'Book title, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'sorter, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'UID, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_uid' => 1],
-            'Mediainfo, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_media_movie' => 1],
-            'PAR2 hash, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_hash16k' => 1],
-            'SRR, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srr' => 1],
-            'CRC32, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_crc32' => 1],
-            'SRRDB, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srrdb' => 1],
-            default => [],
-        };
     }
 
     /**
@@ -671,36 +313,39 @@ class ReleaseUpdateService
         if (! (new RecoveryIdentityPolicy)->allowsDescriptiveCandidate((int) $release->id, $candidate, $evidence)) {
             return false;
         }
-        $this->performDatabaseUpdate($release, $candidate, 'Recovery inventory, ', 'Consistent protected inventory', true,
-            0, null, Category::TV_OTHER, recoveryEvidence: $evidence);
+        $this->writer()->rename($release, new NameCandidate((int) $release->id, $candidate, NameSource::RecoveryInventory,
+            'Consistent protected inventory', categoryId: Category::TV_OTHER, recoveryEvidence: $evidence));
 
         return true;
     }
 
-    public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): void
+    /** Gives a release whose name equals a PreDB title that PreDB entry, and trusts the name. */
+    public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): NameUpdateResult
     {
-        if ($releaseId === 0 || $predbId === 0 || (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-            return;
+        if ($releaseId === 0 || $predbId === 0) {
+            return NameUpdateResult::declined();
+        }
+        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId)) {
+            return NameUpdateResult::declined(NameRejection::RecoveryRefused);
         }
 
         $release = Release::query()->find($releaseId);
         if ($release === null) {
-            return;
+            return NameUpdateResult::declined();
         }
 
-        $this->performDatabaseUpdate(
-            $release,
-            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
-            'PreDB exact, ',
+        $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
+            $title,
+            NameSource::PreDbExactAttach,
             'Exact title match',
-            true,
             $predbId,
-            null,
             recoveryEvidence: $recoveryEvidence,
-        );
-        $this->relid = $releaseId;
-        $this->matched = true;
-        $this->done = true;
+        ));
+        $this->renamedReleaseIds[$releaseId] = true;
+
+        return NameUpdateResult::renamed($title);
     }
 
     public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): ?string
@@ -718,18 +363,9 @@ class ReleaseUpdateService
             return null;
         }
 
-        $newTitle = $this->finalizeEvidencePreservation($release, $newTitle);
+        $newTitle = $this->namePolicy()->preserveEvidence($release, $newTitle);
 
-        $this->performDatabaseUpdate(
-            $release,
-            $newTitle,
-            self::AUDIO_TAGS_TYPE,
-            'Embedded media tags',
-            true,
-            0,
-            null,
-            $categoryId,
-        );
+        $this->writer()->rename($release, new NameCandidate($releaseId, $newTitle, NameSource::AudioTags, 'Embedded media tags', categoryId: $categoryId));
 
         return $newTitle;
     }
@@ -756,17 +392,14 @@ class ReleaseUpdateService
 
         // The name is whole as built: carrying a token over from the outgoing name would guess
         // a component (a format, a year) the accepted identity and observed audio do not give.
-        $this->performDatabaseUpdate(
-            $release,
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
             $newTitle,
-            self::MUSICBRAINZ_TYPE,
+            NameSource::MusicBrainz,
             'Accepted MusicBrainz album',
-            true,
-            0,
-            null,
-            (int) $release->categories_id,
-            preserveMusicInfo: true,
-        );
+            categoryId: (int) $release->categories_id,
+            keepLinks: ['musicinfo_id'],
+        ));
 
         return $newTitle;
     }
@@ -780,36 +413,7 @@ class ReleaseUpdateService
      */
     public function restoreFromMusicIdentity(int $releaseId, array $columns): bool
     {
-        if ($releaseId === 0 || ! isset($columns['searchname'])) {
-            return false;
-        }
-        $columns = [...$columns, ...Release::searchNameValues((string) $columns['searchname'])];
-
-        $written = DB::transaction(function () use ($releaseId, $columns): bool {
-            $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
-            if ($current === null || ! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId)) {
-                return false;
-            }
-            $category = (int) ($columns['categories_id'] ?? $current->categories_id);
-            Release::query()->where('id', $releaseId)->update($columns);
-
-            event(new ReleaseNameFixed(
-                $releaseId,
-                (string) $current->searchname,
-                (string) $columns['searchname'],
-                (int) $current->categories_id,
-                $current->groups_id,
-                (string) ($current->fromname ?? ''),
-                $category,
-            ));
-
-            return true;
-        });
-        if ($written) {
-            $this->searchSyncCoordinator->request($releaseId);
-        }
-
-        return $written;
+        return $this->writer()->restorePriorValues($releaseId, $columns);
     }
 
     public function renameFromBookMetadata(int $releaseId, string $newTitle): void
@@ -827,45 +431,36 @@ class ReleaseUpdateService
             return;
         }
 
-        $this->performDatabaseUpdate(
-            $release,
-            $this->finalizeEvidencePreservation($release, $newTitle),
-            'Book title, ',
+        $this->writer()->rename($release, new NameCandidate(
+            $releaseId,
+            $this->namePolicy()->preserveEvidence($release, $newTitle),
+            NameSource::BookTitle,
             'Parsed book metadata',
-            true,
-            0,
-            null,
-            preserveBookInfo: true,
-        );
+            keepLinks: ['bookinfo_id'],
+        ));
     }
 
-    public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): void
+    /** Gives a release a verified SRRDB match's PreDB entry and IMDb id, and trusts its name. */
+    public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): NameUpdateResult
     {
         if ($releaseId === 0 || $predbId === 0) {
-            return;
+            return NameUpdateResult::declined();
         }
 
         if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-            return;
+            return NameUpdateResult::declined(NameRejection::RecoveryRefused);
         }
 
         $release = Release::query()->find($releaseId);
         if ($release === null) {
-            return;
+            return NameUpdateResult::declined();
         }
 
-        $this->performDatabaseUpdate(
-            $release,
-            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
-            'SRRDB, ',
-            'Verified archive CRC match',
-            true,
-            $predbId,
-            $imdbId,
-        );
-        $this->relid = $releaseId;
-        $this->matched = true;
-        $this->done = true;
+        $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
+        $this->writer()->rename($release, new NameCandidate($releaseId, $title, NameSource::SrrdbAttach, 'Verified archive CRC match', $predbId, $imdbId));
+        $this->renamedReleaseIds[$releaseId] = true;
+
+        return NameUpdateResult::renamed($title);
     }
 
     /**
@@ -913,14 +508,6 @@ class ReleaseUpdateService
     }
 
     /**
-     * Reset status variables for new processing.
-     */
-    public function reset(): void
-    {
-        $this->done = $this->matched = false;
-    }
-
-    /**
      * Increment the checked counter.
      */
     public function incrementChecked(): void
@@ -931,15 +518,13 @@ class ReleaseUpdateService
     /**
      * Get the current statistics.
      *
-     * @return array<string, mixed>
+     * @return array{fixed: int, checked: int}
      */
     public function getStats(): array
     {
         return [
             'fixed' => $this->fixed,
             'checked' => $this->checked,
-            'matched' => $this->matched,
-            'done' => $this->done,
         ];
     }
 }

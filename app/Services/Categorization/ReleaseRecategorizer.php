@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Categorization;
 
-use App\Facades\Search;
 use App\Models\Release;
-use App\Services\Releases\PreviewGenerationPolicy;
 
 /**
  * Moves stored releases to the category the categorization pipeline gives them now.
@@ -17,43 +15,39 @@ class ReleaseRecategorizer
     // Built on first use, so a refile with nothing to move never builds the pipeline.
     private ?CategorizationService $categorization = null;
 
-    private ?PreviewGenerationPolicy $previewPolicy = null;
+    private ?CategoryChange $categoryChange = null;
 
-    /** The category the pipeline files the release under today. */
+    private ?MediaInfoRefinementService $refinement = null;
+
+    /**
+     * The category the pipeline files the release under today, refined from its stored MediaInfo
+     * as a rename would be, so a recategorize run does not undo a refinement.
+     */
     public function categoryFor(Release $release): int
     {
-        $this->categorization ??= new CategorizationService;
+        $this->categorization ??= app(CategorizationService::class);
+        $this->refinement ??= new MediaInfoRefinementService;
 
-        return (int) $this->categorization->determineCategory(
+        $categoryId = (int) $this->categorization->determineCategory(
             $release->groups_id,
             $release->searchname,
             $release->fromname,
             releaseId: (int) $release->id,
         )['categories_id'];
+
+        return $this->refinement->evaluate((int) $release->id, $categoryId, $release->groups_id)->categoryId ?? $categoryId;
     }
 
     /**
      * Files the release under the category, clears the metadata links the old category
-     * owned, queues a preview the old category's policy skipped and re-indexes it.
+     * owned, queues a preview the old category's policy skipped and re-indexes it. Returns
+     * whether the release was still in the category it was read from.
      */
-    public function moveTo(int $releaseId, int $categoryId): void
+    public function moveTo(int $releaseId, int $fromCategoryId, int $toCategoryId): bool
     {
-        Release::query()->where('id', $releaseId)->update([
-            'iscategorized' => 1,
-            'videos_id' => 0,
-            'tv_episodes_id' => 0,
-            'imdbid' => null,
-            'musicinfo_id' => null,
-            'consoleinfo_id' => null,
-            'gamesinfo_id' => 0,
-            'bookinfo_id' => null,
-            'anidbid' => null,
-            'categories_id' => $categoryId,
-        ]);
+        $this->categoryChange ??= new CategoryChange;
 
-        $this->previewPolicy ??= new PreviewGenerationPolicy;
-        $this->previewPolicy->restoreOwedPreviews([$releaseId]);
-        Search::updateRelease($releaseId);
+        return $this->categoryChange->apply($releaseId, $fromCategoryId, $toCategoryId, CategoryChangeKind::Recategorize);
     }
 
     /**
@@ -69,8 +63,7 @@ class ReleaseRecategorizer
             ->select(['id', 'searchname', 'fromname', 'groups_id', 'categories_id'])
             ->eachById(function (Release $release) use ($categoryId, &$moved): void {
                 $newCategoryId = $this->categoryFor($release);
-                if ($newCategoryId !== $categoryId) {
-                    $this->moveTo((int) $release->id, $newCategoryId);
+                if ($newCategoryId !== $categoryId && $this->moveTo((int) $release->id, $categoryId, $newCategoryId)) {
                     $moved++;
                 }
             }, 1000);

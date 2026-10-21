@@ -10,6 +10,7 @@ use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -120,7 +121,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
             $targetName,
             'Heuristic filename',
             true,
-            'Filenames, ',
+            NameSource::FileName,
             true,
             false,
         );
@@ -208,9 +209,9 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         $live->updateRelease(
             Release::query()->findOrFail(10),
             $candidate,
-            'file matched source: title match',
+            'PreDb: Filename match',
             true,
-            'Filenames, ',
+            NameSource::FilePreDbFilenameMatch,
             true,
             true,
         );
@@ -229,9 +230,9 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         $dryRun->updateRelease(
             Release::query()->findOrFail(10),
             $candidate,
-            'file matched source: title match',
+            'PreDb: Filename match',
             false,
-            'Filenames, ',
+            NameSource::FilePreDbFilenameMatch,
             true,
             true,
         );

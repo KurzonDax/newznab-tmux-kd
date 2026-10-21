@@ -17,6 +17,8 @@ use App\Models\Settings;
 use App\Models\UsenetGroup;
 use App\Services\Binaries\BinariesConfig;
 use App\Services\Categorization\CategorizationService;
+use App\Services\Categorization\CategoryChange;
+use App\Services\Categorization\CategoryChangeKind;
 use App\Services\CollectionReconciliation\CollectionAdmission;
 use App\Services\CollectionReconciliation\CollectionOwnership;
 use App\Services\CollectionReconciliation\PendingReconciler;
@@ -33,7 +35,6 @@ use App\Services\Releases\DueCollectionLookup;
 use App\Services\Releases\ExecutableReleaseDiscardService;
 use App\Services\Releases\IncompleteReleaseSweepQuery;
 use App\Services\Releases\LateHeaderMerger;
-use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseDeletionProtection;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
@@ -46,7 +47,6 @@ use App\Support\Data\ReleaseCreationResult;
 use App\Support\Data\ReleaseDeleteStats;
 use App\Support\DatabaseClock;
 use App\Support\ReleaseRepairingContext;
-use App\Support\ReleaseSearchIndexSync;
 use App\Support\SchemaCapabilities;
 use Closure;
 use DateTimeInterface;
@@ -450,7 +450,7 @@ final class ReleaseProcessingService
     public function categorizeRelease(string $type, int|string|null $groupId): int
     {
         $categorizer = new CategorizationService;
-        $previewPolicy = new PreviewGenerationPolicy;
+        $categoryChange = new CategoryChange;
         $categorized = 0;
 
         $query = Release::query()
@@ -469,7 +469,7 @@ final class ReleaseProcessingService
 
         $this->outputSubHeader('Categorizing Releases');
 
-        $query->chunkById(self::CATEGORIZE_CHUNK_SIZE, function ($releases) use ($categorizer, $previewPolicy, $type, &$categorized, $total): bool {
+        $query->chunkById(self::CATEGORIZE_CHUNK_SIZE, function ($releases) use ($categorizer, $categoryChange, $type, &$categorized, $total): bool {
             foreach ($releases as $release) {
                 $categoryResult = $categorizer->determineCategory(
                     $release->groups_id,
@@ -478,15 +478,7 @@ final class ReleaseProcessingService
                     releaseId: (int) $release->id,
                 );
 
-                Release::query()
-                    ->where('id', $release->id)
-                    ->update([
-                        'categories_id' => $categoryResult['categories_id'],
-                        'iscategorized' => 1,
-                    ]);
-
-                $previewPolicy->restoreOwedPreviews([(int) $release->id]);
-                ReleaseSearchIndexSync::forIds([(int) $release->id]);
+                $categoryChange->apply((int) $release->id, Category::OTHER_MISC, (int) $categoryResult['categories_id'], CategoryChangeKind::LegacyCategorize);
 
                 $categorized++;
                 $this->outputProgress($categorized, $total, 'Categorizing');

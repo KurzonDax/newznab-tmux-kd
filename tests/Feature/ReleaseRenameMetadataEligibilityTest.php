@@ -12,6 +12,7 @@ use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\MetadataProcessing\AnimeProcessingCandidateQuery;
 use App\Services\MetadataProcessing\BookProcessingCandidateQuery;
 use App\Services\MetadataProcessing\ConsoleProcessingCandidateQuery;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Runners\PostProcessRunner;
 use Illuminate\Database\Schema\Blueprint;
@@ -82,9 +83,9 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $updateService->updateRelease(
                 $release,
                 'Renamed.Metadata.Candidate.'.$releaseId,
-                'nfoCheck: Title Match',
+                'preDB: Match',
                 true,
-                'NFO, ',
+                NameSource::NfoPreDbMatch,
                 true,
                 false,
             );

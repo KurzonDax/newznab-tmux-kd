@@ -28,6 +28,7 @@ use App\Services\MusicIdentity\MusicIdentityRetryPolicy;
 use App\Services\MusicIdentity\Persistence\IdentificationDecisionStore;
 use App\Services\MusicIdentity\Persistence\MusicIdentityLeaseManager;
 use App\Services\MusicIdentity\Rename\MusicRenameProjection;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\Releases\PreviewGenerationPolicy;
 use Illuminate\Database\Migrations\Migration;
@@ -129,7 +130,7 @@ final class MusicRenameProjectionTest extends TestCase
         $updates->renameFromAudioTags(self::RELEASE, 'Artist - Album (2001) FLAC', Category::MUSIC_LOSSLESS);
         $this->assertSame(['Audio tags', 1], $this->source());
 
-        $updates->updateRelease(Release::query()->findOrFail(self::RELEASE), 'Artist-Album-2001-GRP', 'NFO name', true, 'NFO, ', true, false);
+        $updates->updateRelease(Release::query()->findOrFail(self::RELEASE), 'Artist-Album-2001-GRP', 'NFO name', true, NameSource::NfoPattern, true, false);
         $this->assertSame(['NFO', 1], $this->source());
 
         $this->adminEdit('Artist - Album (typed)');

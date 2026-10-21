@@ -11,6 +11,7 @@ use App\Models\MediaInfo as MediaInfoRecord;
 use App\Models\Release;
 use App\Models\Settings;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -614,7 +615,7 @@ class TrustedDonorNameFixingTest extends TestCase
             'Weakly.Guessed.Movie.2026.1080p-GROUP',
             'fileCheck: Filename',
             true,
-            'Filenames, ',
+            NameSource::FileName,
             true,
             false,
         );

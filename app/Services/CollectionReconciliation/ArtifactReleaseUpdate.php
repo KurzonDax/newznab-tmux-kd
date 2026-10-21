@@ -6,6 +6,8 @@ namespace App\Services\CollectionReconciliation;
 
 use App\Models\Category;
 use App\Models\Release;
+use App\Services\NameFixing\NameTrust;
+use App\Services\NameFixing\ReleaseNameWriter;
 use App\Services\ReleaseRepair\EvidenceChangedTransition;
 use App\Services\ReleaseRepair\NzbRepairDocument;
 use InvalidArgumentException;
@@ -59,19 +61,24 @@ final readonly class ArtifactReleaseUpdate
         $requeued = $this->evidenceChanged && (new EvidenceChangedTransition)->apply($release, $document, $this->declaredFiles, false);
         $completion = $document->measure($this->declaredFiles)->percentage();
         $values = $this->values;
+        $label = null;
         if ($this->kind === 'reconciliation' && $this->allows($release)) {
             // Never wipe a name that name fixing already set (isrenamed = 1).
-            if ($this->label !== null && ! $release->is_trusted_name && (int) $release->isrenamed !== 1) {
-                $values += ['name' => $this->label, ...Release::searchNameValues($this->label), 'is_trusted_name' => false, 'isrenamed' => 0];
+            if ($this->label !== null && ! NameTrust::isRenamedOrTrusted($release)) {
+                $label = $this->label;
+                $values += ['name' => $label];
             }
             if ($this->independentVideos) {
                 $values['categories_id'] = Category::OTHER_MISC;
             }
         }
         $result = $this->result;
-        $release->newQuery()->whereKey($release->id)->update($values + [
-            'totalpart' => $document->fileCount(), 'completion' => $completion,
-        ]);
+        $values += ['totalpart' => $document->fileCount(), 'completion' => $completion];
+        if ($label === null) {
+            $release->newQuery()->whereKey($release->id)->update($values);
+        } else {
+            (new ReleaseNameWriter)->resetName((int) $release->id, $label, $values);
+        }
 
         return array_replace($result, ['success' => true, 'requeuedForAdditionalProcessing' => $requeued]);
     }

@@ -10,8 +10,11 @@ use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NamePolicy;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\PredbMatchSelector;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\NameFixing\TrustedDonor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\TestCase;
@@ -33,10 +36,10 @@ class PromotionalTitleNameFixingTest extends TestCase
             [$service, $updater] = $this->mediaService();
 
             $accepted = (new ReflectionClass(NameFixingService::class))->getMethod('mediaMovieNameCheck')
-                ->invoke($service, $this->release($currentName, $category, $title), false, 'Mediainfo, ', true, false);
+                ->invoke($service, $this->release($currentName, $category, $title), false, true, false);
 
             $this->assertFalse($accepted, "{$title} renamed {$currentName}");
-            $this->assertFalse($updater->matched);
+            $this->assertSame(0, $updater->fixed);
         }
     }
 
@@ -65,56 +68,51 @@ class PromotionalTitleNameFixingTest extends TestCase
             $service,
             $this->release(self::HASHED_NAME, Category::OTHER_HASHED, 'Example.site | Visible.Release.2026.1080p.10bit.WEBRip.6CH.x265.HEVC-GROUP'),
             false,
-            'Mediainfo, ',
             true,
             false,
         );
 
         $this->assertTrue($accepted);
-        $this->assertTrue($updater->matched);
+        $this->assertSame(1, $updater->fixed);
     }
 
     #[DataProvider('promotionalCandidates')]
     public function test_the_updater_rejects_a_promotional_candidate_from_any_source(
         string $candidate,
         string $method,
-        string $type,
+        NameSource $source,
         int $preId,
     ): void {
         foreach ([[self::READABLE_NAME, Category::XXX_OTHER], [self::HASHED_NAME, Category::OTHER_HASHED]] as [$currentName, $category]) {
             $updater = $this->updater();
 
-            $updater->updateRelease($this->release($currentName, $category), $candidate, $method, false, $type, true, false, $preId);
+            $result = $updater->updateRelease($this->release($currentName, $category), $candidate, $method, false, $source, true, false, $preId);
 
-            $this->assertFalse($updater->matched, "{$type}{$method} accepted {$candidate} over {$currentName}");
-            $this->assertTrue($updater->done);
+            $this->assertFalse($result->renamed, "{$source->type()}{$method} accepted {$candidate} over {$currentName}");
             $this->assertSame(0, $updater->fixed);
         }
     }
 
     /**
-     * @return array<string, array{string, string, string, int}>
+     * @return array<string, array{string, string, NameSource, int}>
      */
     public static function promotionalCandidates(): array
     {
         return [
-            'embedded title' => ['Downloaded from example.org', 'MediaInfo: Movie Name', 'Mediainfo, ', 0],
-            'embedded title with a PreDB id' => ['example.org - HEVC x265 Video Downloads', 'MediaInfo: Movie Name', 'Mediainfo, ', 77],
-            'UID donor' => ['example.org - HEVC x265 Porn Downloads', 'uidCheck: Unique_ID group election', 'UID, ', 77],
-            'PAR2 hash donor' => ['Downloaded from example 1080p WEB-DL.org', 'hashCheck: PAR2 hash_16K', 'PAR2 hash, ', 0],
-            'CRC32 donor' => ['example.org - HEVC x265 Video Downloads 1080p WEB-DL', 'crcCheck: CRC32', 'CRC32, ', 0],
-            'PreDB title match' => ['Downloaded from https://example.org/', 'preDB: Title Match', 'PreDB FT Exact, ', 77],
-            'filename' => ['example.org - HEVC x265 Porn Downloads.mp4', 'fileCheck: Filename', 'Filenames, ', 0],
+            'embedded title' => ['Downloaded from example.org', 'MediaInfo: Movie Name', NameSource::MediaMovieName, 0],
+            'embedded title with a PreDB id' => ['example.org - HEVC x265 Video Downloads', 'MediaInfo: Movie Name', NameSource::MediaMovieName, 77],
+            'UID donor' => ['example.org - HEVC x265 Porn Downloads', 'uidCheck: Unique_ID group election', NameSource::UidElection, 77],
+            'PAR2 hash donor' => ['Downloaded from example 1080p WEB-DL.org', 'hashCheck: PAR2 hash_16K', NameSource::Par2HashDonor, 0],
+            'CRC32 donor' => ['example.org - HEVC x265 Video Downloads 1080p WEB-DL', 'crcCheck: CRC32', NameSource::Crc32Donor, 0],
+            'PreDB title match' => ['Downloaded from https://example.org/', 'preDB: Title Match', NameSource::PreDbFullText, 77],
+            'filename' => ['example.org - HEVC x265 Porn Downloads.mp4', 'fileCheck: Filename', NameSource::FileName, 0],
         ];
     }
 
     public function test_an_uncorroborated_media_title_does_not_make_a_trusted_donor(): void
     {
-        $policy = (new ReflectionClass(ReleaseUpdateService::class))->getMethod('sourceTrustPolicy');
-        $updater = $this->updater();
-
-        $this->assertFalse($policy->invoke($updater, 'Mediainfo, ', 'MediaInfo: Movie Name', 0)['trusted_donor']);
-        $this->assertTrue($policy->invoke($updater, 'Mediainfo, ', 'MediaInfo: Movie Name', 77)['trusted_donor']);
+        $this->assertSame(TrustedDonor::Untrusted, NamePolicy::trust(NameSource::MediaMovieName, 0)[1]);
+        $this->assertSame(TrustedDonor::Trusted, NamePolicy::trust(NameSource::MediaMovieName, 77)[1]);
     }
 
     public function test_a_promotional_video_filename_is_not_a_descriptive_title(): void
@@ -126,7 +124,7 @@ class PromotionalTitleNameFixingTest extends TestCase
         $release->name = 'Example.Upload.1080p.WEB-DL.x264';
         $this->assertTrue((new FileNameCleaner)->isDescriptiveTitle('example.org - HEVC x265 Porn Downloads.mp4'));
 
-        (new ReflectionClass(NameFixingService::class))->getMethod('processFileCandidates')->invoke(
+        $renamed = (new ReflectionClass(NameFixingService::class))->getMethod('processFileCandidates')->invoke(
             $service,
             $release,
             [(object) ['textstring' => 'example.org - HEVC x265 Porn Downloads.mp4']],
@@ -137,7 +135,7 @@ class PromotionalTitleNameFixingTest extends TestCase
             false,
         );
 
-        $this->assertFalse($updater->matched);
+        $this->assertFalse($renamed);
         $this->assertSame(0, $updater->fixed);
     }
 

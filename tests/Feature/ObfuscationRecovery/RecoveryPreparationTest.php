@@ -19,6 +19,7 @@ use App\Services\Binaries\HeaderStorageService;
 use App\Services\MovieService;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\NNTP\NntpProvider;
@@ -906,7 +907,7 @@ final class RecoveryPreparationTest extends TestCase
         $this->assertSame($count, (int) $release->fresh()->rarinnerfilecount);
         $before = $release->fresh()->searchname;
         $updater = app(ReleaseUpdateService::class);
-        $updater->updateRelease($release->fresh(), 'Synthetic.Show.S01E01.1080p', 'preDB: Match', true, 'PAR2, ', true, false, 123);
+        $updater->updateRelease($release->fresh(), 'Synthetic.Show.S01E01.1080p', 'preDB: Match', true, NameSource::Par2PreDbMatch, true, false, 123);
         $updater->attachPredbId((int) $release->id, 123);
         $this->assertSame($before, $release->fresh()->searchname);
         $this->assertSame(0, (int) $release->fresh()->predb_id);

@@ -23,7 +23,6 @@ final class NameFixResult extends Data
         public string $newName,
         public string $method,
         public string $checkerName,
-        public int $preDbId = 0,
         public float $confidence = 1.0,
         public array $metadata = [],
     ) {}
@@ -35,43 +34,30 @@ final class NameFixResult extends Data
         string $newName,
         string $method,
         string $checkerName,
-        int $preDbId = 0,
         float $confidence = 1.0
     ): self {
         return new self(
             newName: $newName,
             method: $method,
             checkerName: $checkerName,
-            preDbId: $preDbId,
             confidence: $confidence,
         );
     }
 
-    /**
-     * Create a result from PreDB match.
-     */
-    public static function fromPreDb(
-        string $newName,
-        int $preDbId,
-        string $source,
-        string $checkerName = 'PreDB'
-    ): self {
+    /** A name unwrapped from an NZBSPLIT wrapper, which the file sources trust as a donor. */
+    public static function fromNzbSplitWrapper(string $newName, string $checkerName): self
+    {
         return new self(
             newName: $newName,
-            method: "PreDB: {$source}",
+            method: 'NZBSPLIT wrapper',
             checkerName: $checkerName,
-            preDbId: $preDbId,
-            confidence: 1.0,
-            metadata: ['source' => $source],
+            metadata: ['nzbsplit_wrapper' => true],
         );
     }
 
-    /**
-     * Check if this result has a PreDB ID.
-     */
-    public function hasPreDbId(): bool
+    public function unwrapsNzbSplit(): bool
     {
-        return $this->preDbId > 0;
+        return ($this->metadata['nzbsplit_wrapper'] ?? false) === true;
     }
 
     /**

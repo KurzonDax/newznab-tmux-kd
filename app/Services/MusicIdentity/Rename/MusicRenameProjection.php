@@ -13,6 +13,7 @@ use App\Services\MusicIdentity\CurrentMusicIdentityReader;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use App\Services\MusicIdentity\Enums\MusicRenameDeclineReason;
 use App\Services\MusicIdentity\Enums\MusicRenameOutcome;
+use App\Services\NameFixing\NameTrust;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -174,23 +175,13 @@ final class MusicRenameProjection
     }
 
     /**
-     * A name set by audio tags is provisional; an untrusted name is no protection. Any other
-     * trusted name protects the release, including one whose source was never recorded, and so
-     * does a name an admin typed.
+     * @see NameTrust::isReplaceableByMusicIdentity()
      *
      * @param  array<string, scalar|null>  $release
      */
     private function nameIsReplaceable(array $release): bool
     {
-        $source = $release['name_source'] ?? null;
-        if ($source === Release::MANUAL_NAME_SOURCE) {
-            return false;
-        }
-        if ($source === ReleaseUpdateService::nameSource(ReleaseUpdateService::AUDIO_TAGS_TYPE)) {
-            return true;
-        }
-
-        return (int) ($release['is_trusted_name'] ?? 0) === 0;
+        return NameTrust::isReplaceableByMusicIdentity($release);
     }
 
     /**

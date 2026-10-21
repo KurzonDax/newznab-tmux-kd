@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class RecategorizeReleasesCommandTest extends TestCase
@@ -56,6 +57,7 @@ class RecategorizeReleasesCommandTest extends TestCase
             $table->unsignedInteger('videos_id')->default(0);
             $table->unsignedInteger('tv_episodes_id')->default(0);
             $table->string('imdbid')->nullable();
+            $table->integer('movieinfo_id')->nullable();
             $table->integer('musicinfo_id')->nullable();
             $table->integer('consoleinfo_id')->nullable();
             $table->integer('gamesinfo_id')->default(0);
@@ -69,6 +71,9 @@ class RecategorizeReleasesCommandTest extends TestCase
             $table->unsignedInteger('groups_id');
             $table->primary(['releases_id', 'groups_id']);
         });
+        // A pipeline category in an Other bucket is refined from the stored MediaInfo.
+        ProductionTables::fromAuthority()->create('video_data', ['releases_id', 'containerformat', 'videoformat', 'videocodec', 'videowidth', 'videoheight', 'videoduration']);
+        ProductionTables::fromAuthority()->create('audio_data', ['id', 'releases_id', 'audioid', 'audioformat']);
 
         DB::table('settings')->insert([
             ['name' => 'categorizeforeign', 'value' => '0'],
@@ -126,12 +131,14 @@ class RecategorizeReleasesCommandTest extends TestCase
             $this->assertSame(1, (int) $release->iscategorized);
         }
 
+        // A move clears only the links the category it leaves owns (#1120, decision 5).
         $this->assertSame(Category::BOOKS_EBOOK, (int) $releases[1]->categories_id);
-        $this->assertNull($releases[1]->bookinfo_id);
+        $this->assertSame(41, (int) $releases[1]->bookinfo_id);
         $this->assertSame(Category::OTHER_MISC, (int) $releases[2]->categories_id);
         $this->assertSame(42, (int) $releases[2]->bookinfo_id);
         $this->assertSame(Category::BOOKS_EBOOK, (int) $releases[3]->categories_id);
-        $this->assertNull($releases[3]->bookinfo_id);
+        $this->assertSame(43, (int) $releases[3]->bookinfo_id);
+        $this->assertNull($releases[3]->imdbid);
         $this->assertSame(Category::BOOKS_EBOOK, (int) $releases[4]->categories_id);
         $this->assertSame(44, (int) $releases[4]->bookinfo_id);
     }
@@ -205,14 +212,9 @@ class RecategorizeReleasesCommandTest extends TestCase
         $this->assertSame($name, $release->searchname);
         $this->assertSame(Category::MOVIE_SD, (int) $release->categories_id);
         $this->assertSame(1, (int) $release->iscategorized);
-        $this->assertSame(0, (int) $release->videos_id);
-        $this->assertSame(0, (int) $release->tv_episodes_id);
-        $this->assertSame(0, (int) $release->gamesinfo_id);
-        $this->assertNull($release->imdbid);
-        $this->assertNull($release->musicinfo_id);
-        $this->assertNull($release->consoleinfo_id);
-        $this->assertNull($release->bookinfo_id);
-        $this->assertNull($release->anidbid);
+        // Other › Misc owns no link, so the move keeps them all (#1120, decision 5).
+        $this->assertSame([9, 8, 'tt1234567', 7, 6, 5, 41, 4], [(int) $release->videos_id, (int) $release->tv_episodes_id, $release->imdbid,
+            (int) $release->musicinfo_id, (int) $release->consoleinfo_id, (int) $release->gamesinfo_id, (int) $release->bookinfo_id, (int) $release->anidbid]);
 
         DB::enableQueryLog();
         DB::flushQueryLog();

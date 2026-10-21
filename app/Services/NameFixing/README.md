@@ -6,6 +6,28 @@ selection to `NameFixingQueryService` and persistence to
 work. Only strong evidence may set `releases.is_trusted_name`; see the
 repository glossary for the Trusted donor definition.
 
+## Sources, policy and the writer
+
+- `NameSource` is the registry: one case per source and evidence kind. Each
+  case declares its stored `name_source`, its status columns on acceptance, its
+  `proc_*` column on a miss, whether it skips plausibility, its `trustedDonor`
+  value (`Trusted`, `Untrusted` or `Keep`) and the guards that apply. Call
+  sites pass their case; method labels are only CLI echo text. A candidate
+  carrying a PreDB id is trusted whatever its case, except a descriptive
+  container title, which stays untrusted (`NamePolicy::trust()`).
+- `NamePolicy::decide()` judges a `NameCandidate` without queries: the
+  caller passes the recovery verdict and a loader for the stored files.
+- `ReleaseNameWriter` is the only writer of an existing release's name, trust,
+  `name_source` and rename status: *rename* (through the policy and the
+  registry; clears the links and dispatches `ReleaseNameFixed`), *reset name*
+  (reconciliation and neutral recovery labels) and *restore prior values*
+  (a reverted MusicBrainz rename). `ReleaseUpdateService::updateRelease()` is
+  its adapter and returns a `NameUpdateResult`.
+- `NameTrust` holds the trust predicates the code reads.
+- A formed release changes category through `CategoryChange`. Every kind of
+  move except a rename clears only the links the category being left owns
+  (`CategoryLinkOwnership`).
+
 ## Standard sweep
 
 `NameFixingQueryService::standardSweepPredicate()` is the single definition of
