@@ -64,7 +64,8 @@ class NameWriteCharacterizationTest extends TestCase
         'PAR2 PreDB match' => ['PAR2, ', 'preDB: Match', [77], false],
         'PAR2 file name' => ['PAR2, ', 'fileCheck: Scene release with group', [0], false],
         'PAR2 NZBSPLIT wrapper' => ['PAR2, ', 'fileCheck: NZBSPLIT wrapper', [0], false],
-        'PreDB file match' => ['PreDB file match, ', 'file matched source: srrdb', [0], false],
+        // Decision 7 (#1120): the PreDB file match passes the matched entry's id.
+        'PreDB file match' => ['PreDB file match, ', 'file matched source: srrdb', [77], false],
         'NZB contents NZBSPLIT wrapper' => ['Filenames, ', 'NZBSPLIT wrapper', [0], false],
         'RarInfo file name' => ['Filenames, ', 'RarInfo FileName Match', [0, 77], false],
         'RarInfo PreDB' => ['Filenames, ', 'RarInfo PreDB Match', [77], false],

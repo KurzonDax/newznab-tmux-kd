@@ -252,6 +252,25 @@ class DirectNameWriteCharacterizationTest extends TestCase
         $this->assertEvent($id, $wrapped, $unwrapped, Category::OTHER_HASHED, null);
     }
 
+    /** Decision 7 (#1120): the rename stores the PreDB entry the file matched. */
+    public function test_a_predb_file_match_rename_stores_the_matched_predb_id(): void
+    {
+        $id = $this->linkedRelease(1);
+        $naming = new class($this->updates) extends NameFixingService
+        {
+            protected function findBestPredbMatch(string $fileName): ?array
+            {
+                return ['id' => 55, 'title' => 'Some.Movie.2024.1080p.BluRay.x264-GROUP', 'source' => 'srrdb'];
+            }
+        };
+
+        $this->assertSame(1, $naming->matchPreDbFiles((object) [...(array) $this->snapshot($id), 'filename' => 'some.movie.2024.1080p.bluray.x264-group.mkv'], true, true, false));
+
+        $row = $this->releaseRow($id);
+        $this->assertSame(['Some.Movie.2024.1080p.BluRay.x264-GROUP', 55, 1, 'PreDB file match'], [$row['searchname'], (int) $row['predb_id'],
+            (int) $row['is_trusted_name'], $row['name_source']]);
+    }
+
     /** @return iterable<string, array{array<string, mixed>, bool}> */
     public static function donorRows(): iterable
     {

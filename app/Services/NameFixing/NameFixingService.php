@@ -1805,7 +1805,7 @@ class NameFixingService
 
             if ($bestMatch !== null) {
                 if (strcasecmp((string) $bestMatch['title'], (string) $release->searchname) !== 0) {
-                    $this->updateService->updateRelease($release, $bestMatch['title'], 'file matched source: '.($bestMatch['source'] ?? ''), $echo, NameSource::PreDbFileMatch, $nameStatus, $show);
+                    $this->updateService->updateRelease($release, $bestMatch['title'], 'file matched source: '.($bestMatch['source'] ?? ''), $echo, NameSource::PreDbFileMatch, $nameStatus, $show, (int) ($bestMatch['id'] ?? 0));
                 } elseif ($echo) {
                     $this->updateService->attachPredbId((int) $release->releases_id, (int) ($bestMatch['id'] ?? 0));
                 }
