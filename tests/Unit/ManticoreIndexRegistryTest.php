@@ -17,7 +17,7 @@ final class ManticoreIndexRegistryTest extends TestCase
         $definitions = ManticoreIndexRegistry::definitions();
 
         self::assertSame(
-            ['releases', 'predb', 'movies', 'tvshows', 'music', 'books', 'games', 'console', 'steam', 'anime'],
+            ['releases', 'predb', 'movies', 'music', 'books', 'games', 'console', 'steam', 'anime'],
             array_keys($definitions)
         );
 
@@ -42,8 +42,8 @@ final class ManticoreIndexRegistryTest extends TestCase
     public function it_provides_title_first_field_weights(): void
     {
         self::assertGreaterThan(
-            ManticoreIndexRegistry::profile('movies')['fields']['plot'],
-            ManticoreIndexRegistry::profile('movies')['fields']['title']
+            ManticoreIndexRegistry::profile('music')['fields']['artist'],
+            ManticoreIndexRegistry::profile('music')['fields']['title']
         );
         self::assertGreaterThan(
             ManticoreIndexRegistry::profile('releases')['fields']['fromname'],

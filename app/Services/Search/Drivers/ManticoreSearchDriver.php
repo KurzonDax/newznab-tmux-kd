@@ -5,14 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Search\Drivers;
 
 use App\Enums\SecondarySearchIndex;
-use App\Models\BookInfo;
-use App\Models\ConsoleInfo;
-use App\Models\GamesInfo;
-use App\Models\MovieInfo;
-use App\Models\MusicInfo;
 use App\Models\Release;
-use App\Models\SteamApp;
-use App\Models\Video;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchPage;
@@ -22,7 +15,6 @@ use App\Services\Search\Support\ManticoreClientFactory;
 use App\Services\Search\Support\ManticoreIndexRegistry;
 use App\Services\Search\Support\ReleaseIndexProjection;
 use App\Support\ReleaseSearchIndexDocument;
-use App\Support\SecondaryIndexDocuments;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Manticoresearch\Client;
@@ -77,14 +69,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     protected array $config;
 
-    /**
-     * @var array<string, mixed>
-     */
-    protected array $connection;
-
     public Client $manticoreSearch;
-
-    public Search $search;
 
     /** @var array<string, true> Tables already confirmed to exist (avoids repeated CREATE TABLE attempts). */
     private array $verifiedTables = [];
@@ -97,9 +82,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     public function __construct(array $config = [])
     {
         $this->config = ! empty($config) ? $config : config('search.drivers.manticore');
-        $this->connection = ManticoreClientFactory::clientConfig($this->config);
         $this->manticoreSearch = ManticoreClientFactory::make($this->config);
-        $this->search = new Search($this->manticoreSearch);
     }
 
     /**
@@ -286,14 +269,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Check if autocomplete is enabled.
-     */
-    public function isAutocompleteEnabled(): bool
-    {
-        return ($this->config['autocomplete']['enabled'] ?? true) === true;
-    }
-
-    /**
      * Check if suggest is enabled.
      */
     public function isSuggestEnabled(): bool
@@ -314,7 +289,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      *
      * @return array<string, mixed>
      */
-    public function getFuzzyConfig(): array
+    private function getFuzzyConfig(): array
     {
         return $this->config['fuzzy'] ?? [
             'enabled' => true,
@@ -334,7 +309,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * Get the predb index name.
      */
-    public function getPredbIndex(): string
+    private function getPredbIndex(): string
     {
         return $this->config['indexes']['predb'] ?? 'predb_rt';
     }
@@ -342,17 +317,9 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * Get the movies index name.
      */
-    public function getMoviesIndex(): string
+    private function getMoviesIndex(): string
     {
         return $this->config['indexes']['movies'] ?? 'movies_rt';
-    }
-
-    /**
-     * Get the TV shows index name.
-     */
-    public function getTvShowsIndex(): string
-    {
-        return $this->config['indexes']['tvshows'] ?? 'tvshows_rt';
     }
 
     /**
@@ -584,29 +551,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
                     ReleaseSearchIndexFailures::record((int) $id, 'deleteReleases: '.$e->getMessage(), 'delete');
                 }
             }
-        }
-    }
-
-    /**
-     * Delete a predb record from the index.
-     *
-     * @param  int  $id  Predb ID
-     */
-    public function deletePreDb(int $id): void
-    {
-        if (empty($id)) {
-            Log::warning('ManticoreSearch: Cannot delete predb without ID');
-
-            return;
-        }
-
-        try {
-            $this->manticoreSearch->table($this->config['indexes']['predb'])
-                ->deleteDocument($id);
-        } catch (ResponseException $e) {
-            Log::error('ManticoreSearch deletePreDb error: '.$e->getMessage(), [
-                'id' => $id,
-            ]);
         }
     }
 
@@ -1067,7 +1011,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * @param  array<string, mixed>  $indexes
      */
-    public function truncateRTIndex(array $indexes = []): bool
+    private function truncateRTIndex(array $indexes = []): bool
     {
         if (empty($indexes)) {
             cli()->error('You need to provide index name to truncate');
@@ -1161,7 +1105,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * Optimize the RT indices.
      */
-    public function optimizeRTIndex(): bool
+    private function optimizeRTIndex(): bool
     {
         $success = true;
 
@@ -1287,7 +1231,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      * @param  int  $limit  Maximum number of results
      * @return array<string, mixed> Array of release IDs
      */
-    public function fuzzySearchReleases(array|string $phrases, int $limit = 1000): array
+    private function fuzzySearchReleases(array|string $phrases, int $limit = 1000): array
     {
         if (! $this->isFuzzyEnabled()) {
             return [];
@@ -1324,7 +1268,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
      * @param  int  $limit  Maximum number of results
      * @return array<string, mixed> Array with 'id' and 'data' keys
      */
-    public function fuzzySearchIndexes(string $index, array $searchArray, int $limit = 1000): array
+    private function fuzzySearchIndexes(string $index, array $searchArray, int $limit = 1000): array
     {
         if (empty($index) || empty($searchArray)) {
             return [];
@@ -1685,170 +1629,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Get autocomplete suggestions for a search query.
-     * Searches the releases index and returns matching searchnames.
-     *
-     * @param  string  $query  The partial search query
-     * @param  string|null  $index  Index to search (defaults to releases index)
-     * @return array<array{suggest: string, distance: int, docs: int}>
-     */
-    public function autocomplete(string $query, ?string $index = null): array
-    {
-        $autocompleteConfig = $this->config['autocomplete'] ?? [
-            'enabled' => true,
-            'min_length' => 2,
-            'max_results' => 10,
-            'cache_minutes' => 10,
-        ];
-
-        if (! ($autocompleteConfig['enabled'] ?? true)) {
-            return [];
-        }
-
-        $query = trim($query);
-        $minLength = $autocompleteConfig['min_length'] ?? 2;
-        if (strlen($query) < $minLength) {
-            return [];
-        }
-
-        $index = $index ?? ($this->config['indexes']['releases'] ?? 'releases_rt');
-        $logical = ManticoreIndexRegistry::logicalName($index, $this->config['indexes'] ?? []);
-        $fields = ManticoreIndexRegistry::autocompleteFields($logical ?? '');
-        if ($fields === []) {
-            return [];
-        }
-        $cacheKey = 'manticore:autocomplete:'.config('search.index_generation', '1').':'.md5($index.$query);
-
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        $suggestions = [];
-        $maxResults = $autocompleteConfig['max_results'] ?? 10;
-
-        try {
-            // Search releases index for matching searchnames
-            $escapedQuery = self::escapeString($query);
-            if (empty($escapedQuery)) {
-                return [];
-            }
-
-            $searchExpr = '@@relaxed @('.implode(',', $fields).') '.$escapedQuery.'*';
-
-            $search = (new Search($this->manticoreSearch))
-                ->setTable($index)
-                ->search($searchExpr)
-                ->sort('id', 'desc')
-                ->limit($maxResults * 3)
-                ->stripBadUtf8(true);
-
-            $results = $search->get();
-
-            $ranked = [];
-            foreach ($results as $doc) {
-                $data = $doc->getData();
-                $searchname = '';
-                foreach ($fields as $field) {
-                    if (! empty($data[$field])) {
-                        $searchname = (string) $data[$field];
-                        break;
-                    }
-                }
-
-                if (empty($searchname)) {
-                    continue;
-                }
-
-                // Create a clean suggestion from the searchname
-                $suggestion = $this->extractSuggestion($searchname, $query);
-                if ($suggestion === null || $suggestion === '') {
-                    continue;
-                }
-
-                $normalized = mb_strtolower(trim((string) preg_replace('/\s+/', ' ', $suggestion)));
-                if ($normalized !== '') {
-                    if (! isset($ranked[$normalized])) {
-                        $ranked[$normalized] = [
-                            'suggest' => $suggestion,
-                            'distance' => 0,
-                            'docs' => 0,
-                            'prefix' => str_starts_with($normalized, mb_strtolower($query)) ? 1 : 0,
-                        ];
-                    }
-                    $ranked[$normalized]['docs']++;
-                }
-            }
-
-            uasort($ranked, static fn (array $a, array $b): int => [$b['prefix'], $b['docs']] <=> [$a['prefix'], $a['docs']]);
-            foreach (array_slice($ranked, 0, $maxResults) as $item) {
-                unset($item['prefix']);
-                $suggestions[] = $item;
-            }
-        } catch (\Throwable $e) {
-            if (config('app.debug')) {
-                Log::warning('ManticoreSearch autocomplete error: '.$e->getMessage());
-            }
-        }
-
-        if (! empty($suggestions)) {
-            $cacheMinutes = (int) ($autocompleteConfig['cache_minutes'] ?? 10);
-            Cache::put($cacheKey, $suggestions, now()->addMinutes($cacheMinutes));
-        }
-
-        return $suggestions;
-    }
-
-    /**
-     * Extract a clean suggestion from a searchname.
-     *
-     * @param  string  $searchname  The full searchname
-     * @param  string  $query  The user's query
-     * @return string|null The extracted suggestion
-     */
-    private function extractSuggestion(string $searchname, string $query): ?string
-    {
-        // Clean up the searchname - remove file extensions, quality tags at the end
-        $clean = (string) preg_replace('/\.(mkv|avi|mp4|wmv|nfo|nzb|par2|rar|zip|r\d+)$/i', '', $searchname);
-
-        // Replace dots and underscores with spaces for readability
-        $clean = str_replace(['.', '_'], ' ', $clean);
-
-        // Remove multiple spaces
-        $clean = (string) preg_replace('/\s+/', ' ', $clean);
-        $clean = trim($clean);
-
-        if (empty($clean)) {
-            return null;
-        }
-
-        // If the clean name is reasonable length, use it
-        if (strlen($clean) <= 80) {
-            return $clean;
-        }
-
-        // For very long names, try to extract the relevant part
-        // Find where the query matches and extract context around it
-        $pos = stripos($clean, $query);
-        if ($pos !== false) {
-            // Get up to 80 chars starting from the match position, or from beginning if match is early
-            $start = max(0, $pos - 10);
-            $extracted = substr($clean, $start, 80);
-
-            // Clean up - don't cut mid-word
-            if ($start > 0) {
-                $extracted = (string) preg_replace('/^\S*\s/', '', $extracted);
-            }
-            $extracted = (string) preg_replace('/\s\S*$/', '', $extracted);
-
-            return trim($extracted);
-        }
-
-        // Fallback: just truncate
-        return substr($clean, 0, 80);
-    }
-
-    /**
      * Get spell correction suggestions ("Did you mean?").
      *
      * @param  string  $query  The search query to check
@@ -2052,34 +1832,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Update a movie in the search index.
-     *
-     * @param  int  $movieId  Movie ID
-     */
-    public function updateMovie(int $movieId): void
-    {
-        if (empty($movieId)) {
-            Log::warning('ManticoreSearch: Cannot update movie without ID');
-
-            return;
-        }
-
-        try {
-            $movie = MovieInfo::find($movieId);
-
-            if ($movie !== null) {
-                $this->insertMovie($movie->toArray());
-            } else {
-                Log::warning('ManticoreSearch: Movie not found for update', ['id' => $movieId]);
-            }
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch updateMovie error: '.$e->getMessage(), [
-                'movie_id' => $movieId,
-            ]);
-        }
-    }
-
-    /**
      * Delete a movie from the search index.
      *
      * @param  int  $id  Movie ID
@@ -2154,20 +1906,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
         return ['success' => $success, 'errors' => $errors];
     }
 
-    /**
-     * Search the movies index.
-     *
-     * @param  array<string, mixed>|string  $searchTerm  Search term(s)
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed> Array with 'id' (movie IDs) and 'data' (movie data)
-     */
-    public function searchMovies(array|string $searchTerm, int $limit = 1000): array
-    {
-        $searchString = is_array($searchTerm) ? implode(' ', $searchTerm) : $searchTerm;
-
-        return $this->searchIndexes($this->getMoviesIndex(), $searchString, ['title', 'actors', 'director'], []); // @phpstan-ignore argument.type
-    }
-
     private static function prepareWebSearchQuery(string $text, bool $partial = false): string
     {
         preg_match_all('/[!-]?"[^"]*"|[!-]?\(|\)|\||[^\s()|]+/u', $text, $matches);
@@ -2199,8 +1937,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
         $terms = [];
         foreach ($fields as $field => $text) {
-            $selector = $index === 'movies' && $field === 'all' ? '(title,actors,director,plot)' : $field;
-            $terms[] = '@'.$selector.' ('.self::prepareWebSearchQuery($text, partial: true).')';
+            $terms[] = '@'.$field.' ('.self::prepareWebSearchQuery($text, partial: true).')';
         }
         try {
             $results = (new Search($this->manticoreSearch))
@@ -2224,302 +1961,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
-     * Search movies by external ID (IMDB, TMDB, Trakt).
-     *
-     * @param  string  $field  Field name (imdbid, tmdbid, traktid)
-     * @param  int|string  $value  The external ID value
-     * @return array<string, mixed>|null Movie data or null if not found
-     */
-    public function searchMovieByExternalId(string $field, int|string $value): ?array
-    {
-        if (empty($value)) {
-            return null;
-        }
-
-        return $this->searchMovieByExternalIds([$field => $value]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $externalIds
-     * @return array<string, mixed>|null
-     */
-    public function searchMovieByExternalIds(array $externalIds): ?array
-    {
-        $allowedFields = ['imdbid', 'tmdbid', 'traktid'];
-        $normalized = [];
-
-        foreach ($allowedFields as $field) {
-            $value = $externalIds[$field] ?? null;
-            if (empty($value)) {
-                continue;
-            }
-
-            $normalized[$field] = $field === 'imdbid' ? (string) $value : (int) $value;
-        }
-
-        if ($normalized === []) {
-            return null;
-        }
-
-        $cacheKey = 'manticore:movie:any:'.md5(serialize($normalized));
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            foreach ($normalized as $field => $value) {
-                $query = (new Search($this->manticoreSearch))
-                    ->setTable($this->getMoviesIndex())
-                    ->filter($field, '=', $value)
-                    ->limit(1);
-
-                $results = $query->get();
-
-                foreach ($results as $doc) {
-                    $data = $doc->getData();
-                    $data['id'] = $doc->getId();
-                    Cache::put($cacheKey, $data, now()->addMinutes($this->config['cache_minutes'] ?? 5));
-
-                    return $data;
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchMovieByExternalIds error: '.$e->getMessage(), [
-                'externalIds' => $externalIds,
-            ]);
-        }
-
-        return null;
-    }
-
-    /**
-     * Insert a TV show into the tvshows search index.
-     *
-     * @param  array<string, mixed>  $parameters  TV show data
-     */
-    public function insertTvShow(array $parameters): void
-    {
-        if (empty($parameters['id'])) {
-            Log::warning('ManticoreSearch: Cannot insert TV show without ID');
-
-            return;
-        }
-
-        try {
-            $document = [
-                'title' => (string) ($parameters['title'] ?? ''),
-                'tvdb' => (int) ($parameters['tvdb'] ?? 0),
-                'trakt' => (int) ($parameters['trakt'] ?? 0),
-                'tvmaze' => (int) ($parameters['tvmaze'] ?? 0),
-                'tvrage' => (int) ($parameters['tvrage'] ?? 0),
-                'imdb' => (string) ($parameters['imdb'] ?? ''),
-                'tmdb' => (int) ($parameters['tmdb'] ?? 0),
-                'started' => (string) ($parameters['started'] ?? ''),
-                'type' => (int) ($parameters['type'] ?? 0),
-            ];
-
-            $this->manticoreSearch->table($this->getTvShowsIndex())
-                ->replaceDocument($document, $parameters['id']);
-
-        } catch (ResponseException $e) {
-            Log::error('ManticoreSearch insertTvShow ResponseException: '.$e->getMessage(), [
-                'tvshow_id' => $parameters['id'],
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch insertTvShow unexpected error: '.$e->getMessage(), [
-                'tvshow_id' => $parameters['id'],
-            ]);
-        }
-    }
-
-    /**
-     * Update a TV show in the search index.
-     *
-     * @param  int  $videoId  Video/TV show ID
-     */
-    public function updateTvShow(int $videoId): void
-    {
-        if (empty($videoId)) {
-            Log::warning('ManticoreSearch: Cannot update TV show without ID');
-
-            return;
-        }
-
-        try {
-            $video = Video::find($videoId);
-
-            if ($video !== null) {
-                $this->insertTvShow($video->toArray());
-            } else {
-                Log::warning('ManticoreSearch: TV show not found for update', ['id' => $videoId]);
-            }
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch updateTvShow error: '.$e->getMessage(), [
-                'tvshow_id' => $videoId,
-            ]);
-        }
-    }
-
-    /**
-     * Delete a TV show from the search index.
-     *
-     * @param  int  $id  TV show ID
-     */
-    public function deleteTvShow(int $id): void
-    {
-        if (empty($id)) {
-            Log::warning('ManticoreSearch: Cannot delete TV show without ID');
-
-            return;
-        }
-
-        try {
-            $this->manticoreSearch->table($this->getTvShowsIndex())
-                ->deleteDocument($id);
-        } catch (ResponseException $e) {
-            Log::error('ManticoreSearch deleteTvShow error: '.$e->getMessage(), [
-                'id' => $id,
-            ]);
-        }
-    }
-
-    /**
-     * Bulk insert multiple TV shows into the index.
-     *
-     * @param  array<string, mixed>  $tvShows  Array of TV show data arrays
-     * @return array<string, mixed> Results with 'success' and 'errors' counts
-     */
-    public function bulkInsertTvShows(array $tvShows): array
-    {
-        if (empty($tvShows)) {
-            return ['success' => 0, 'errors' => 0];
-        }
-
-        $success = 0;
-        $errors = 0;
-
-        $documents = [];
-        foreach ($tvShows as $tvShow) {
-            if (empty($tvShow['id'])) {
-                $errors++;
-
-                continue;
-            }
-
-            $documents[] = [
-                'id' => $tvShow['id'],
-                'title' => (string) ($tvShow['title'] ?? ''),
-                'tvdb' => (int) ($tvShow['tvdb'] ?? 0),
-                'trakt' => (int) ($tvShow['trakt'] ?? 0),
-                'tvmaze' => (int) ($tvShow['tvmaze'] ?? 0),
-                'tvrage' => (int) ($tvShow['tvrage'] ?? 0),
-                'imdb' => (string) ($tvShow['imdb'] ?? ''),
-                'tmdb' => (int) ($tvShow['tmdb'] ?? 0),
-                'started' => (string) ($tvShow['started'] ?? ''),
-                'type' => (int) ($tvShow['type'] ?? 0),
-            ];
-        }
-
-        if (! empty($documents)) {
-            try {
-                $this->manticoreSearch->table($this->getTvShowsIndex())
-                    ->replaceDocuments($documents);
-                $success = count($documents);
-            } catch (\Throwable $e) {
-                Log::error('ManticoreSearch bulkInsertTvShows error: '.$e->getMessage());
-                $errors += count($documents);
-            }
-        }
-
-        return ['success' => $success, 'errors' => $errors];
-    }
-
-    /**
-     * Search the TV shows index.
-     *
-     * @param  array<string, mixed>|string  $searchTerm  Search term(s)
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed> Array with 'id' (TV show IDs) and 'data' (TV show data)
-     */
-    public function searchTvShows(array|string $searchTerm, int $limit = 1000): array
-    {
-        $searchString = is_array($searchTerm) ? implode(' ', $searchTerm) : $searchTerm;
-
-        return $this->searchIndexes($this->getTvShowsIndex(), $searchString, ['title'], []); // @phpstan-ignore argument.type
-    }
-
-    /**
-     * Search TV shows by external ID (TVDB, Trakt, TVMaze, TVRage, IMDB, TMDB).
-     *
-     * @param  string  $field  Field name (tvdb, trakt, tvmaze, tvrage, imdb, tmdb)
-     * @param  int|string  $value  The external ID value
-     * @return array<string, mixed>|null TV show data or null if not found
-     */
-    public function searchTvShowByExternalId(string $field, int|string $value): ?array
-    {
-        if (empty($value)) {
-            return null;
-        }
-
-        return $this->searchTvShowByExternalIds([$field => $value]);
-    }
-
-    /**
-     * @param  array<string, mixed>  $externalIds
-     * @return array<string, mixed>|null
-     */
-    public function searchTvShowByExternalIds(array $externalIds): ?array
-    {
-        $allowedFields = ['tvdb', 'trakt', 'tvmaze', 'tvrage', 'imdb', 'tmdb'];
-        $normalized = [];
-
-        foreach ($allowedFields as $field) {
-            $value = $externalIds[$field] ?? null;
-            if (empty($value)) {
-                continue;
-            }
-
-            $normalized[$field] = $field === 'imdb' ? (string) $value : (int) $value;
-        }
-
-        if ($normalized === []) {
-            return null;
-        }
-
-        $cacheKey = 'manticore:tvshow:any:'.md5(serialize($normalized));
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            foreach ($normalized as $field => $value) {
-                $query = (new Search($this->manticoreSearch))
-                    ->setTable($this->getTvShowsIndex())
-                    ->filter($field, '=', $value)
-                    ->limit(1);
-
-                $results = $query->get();
-
-                foreach ($results as $doc) {
-                    $data = $doc->getData();
-                    $data['id'] = $doc->getId();
-                    Cache::put($cacheKey, $data, now()->addMinutes($this->config['cache_minutes'] ?? 5));
-
-                    return $data;
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchTvShowByExternalIds error: '.$e->getMessage(), [
-                'externalIds' => $externalIds,
-            ]);
-        }
-
-        return null;
-    }
-
-    /**
      * Search releases by external media IDs.
      * Used to find releases associated with a specific movie or TV show.
      *
@@ -2529,40 +1970,25 @@ class ManticoreSearchDriver implements SearchDriverInterface
      */
     public function searchReleasesByExternalId(array $externalIds, int $limit = 1000): array
     {
-        return $this->searchReleasesByMultipleExternalIds([$externalIds], $limit);
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $externalIdSets
-     * @return array<string, mixed>
-     */
-    public function searchReleasesByMultipleExternalIds(array $externalIdSets, int $limit = 1000): array
-    {
-        if ($externalIdSets === []) {
-            return [];
-        }
-
         $normalizedLimit = min($limit, 10000);
-        $cacheKey = 'manticore:releases:extid_sets:'.md5(serialize([$externalIdSets, $normalizedLimit]));
+        $cacheKey = 'manticore:releases:extid:'.md5(serialize([$externalIds, $normalizedLimit]));
         $cached = Cache::get($cacheKey);
         if ($cached !== null) {
             return $cached;
         }
 
         $queries = [];
-        foreach ($externalIdSets as $externalIds) {
-            foreach ($externalIds as $field => $value) {
-                if (empty($value) || ! in_array($field, ['imdbid', 'tmdbid', 'traktid', 'tvdb', 'tvmaze', 'tvrage'], true)) {
-                    continue;
-                }
-
-                $typedValue = $field === 'imdbid' ? (string) $value : (int) $value;
-                $key = $field.':'.$typedValue;
-                $queries[$key] = [
-                    'field' => $field,
-                    'value' => $typedValue,
-                ];
+        foreach ($externalIds as $field => $value) {
+            if (empty($value) || ! in_array($field, ['imdbid', 'tmdbid', 'traktid', 'tvdb', 'tvmaze', 'tvrage'], true)) {
+                continue;
             }
+
+            $typedValue = $field === 'imdbid' ? (string) $value : (int) $value;
+            $key = $field.':'.$typedValue;
+            $queries[$key] = [
+                'field' => $field,
+                'value' => $typedValue,
+            ];
         }
 
         if ($queries === []) {
@@ -2594,8 +2020,8 @@ class ManticoreSearchDriver implements SearchDriverInterface
                 }
             }
         } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchReleasesByMultipleExternalIds error: '.$e->getMessage(), [
-                'externalIdSets' => $externalIdSets,
+            Log::error('ManticoreSearch searchReleasesByExternalId error: '.$e->getMessage(), [
+                'externalIds' => $externalIds,
             ]);
 
             return [];
@@ -2606,136 +2032,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
 
         return $resultIds;
-    }
-
-    /**
-     * Search releases by category ID using the search index.
-     * This provides a fast way to get release IDs for a specific category without hitting the database.
-     *
-     * @param  array<string, mixed>  $categoryIds  Array of category IDs to filter by
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed>
-     */
-    public function searchReleasesByCategory(array $categoryIds, int $limit = 1000): array
-    {
-        if (empty($categoryIds)) {
-            return [];
-        }
-
-        // Filter out invalid category IDs (-1 means "all categories")
-        $validCategoryIds = array_filter($categoryIds, fn ($id) => $id > 0);
-        if (empty($validCategoryIds)) {
-            return [];
-        }
-
-        $cacheKey = 'manticore:releases:cat:'.md5(serialize($validCategoryIds).':'.$limit);
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            $query = (new Search($this->manticoreSearch))
-                ->setTable($this->getReleasesIndex())
-                ->limit(min($limit, 10000));
-
-            // Use IN filter for multiple category IDs
-            if (count($validCategoryIds) === 1) {
-                $query->filter('categories_id', '=', (int) $validCategoryIds[0]); // @phpstan-ignore offsetAccess.notFound
-            } else {
-                $query->filter('categories_id', 'in', array_map('intval', $validCategoryIds));
-            }
-
-            $results = $query->get();
-
-            $resultIds = [];
-            foreach ($results as $doc) {
-                $resultIds[] = $doc->getId();
-            }
-
-            if (! empty($resultIds)) {
-                Cache::put($cacheKey, $resultIds, now()->addMinutes($this->config['cache_minutes'] ?? 5));
-            }
-
-            return $resultIds; // @phpstan-ignore return.type
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchReleasesByCategory error: '.$e->getMessage(), [
-                'categoryIds' => $categoryIds,
-            ]);
-        }
-
-        return [];
-    }
-
-    /**
-     * Combined search: text search with category filtering.
-     * First searches by text, then filters by category IDs using the search index.
-     *
-     * @param  string  $searchTerm  Search text
-     * @param  array<string, mixed>  $categoryIds  Array of category IDs to filter by (empty for all categories)
-     * @param  int  $limit  Maximum number of results
-     * @return array<string, mixed>
-     */
-    public function searchReleasesWithCategoryFilter(string $searchTerm, array $categoryIds = [], int $limit = 1000): array
-    {
-        if (empty($searchTerm)) {
-            // If no search term, just filter by category
-            return $this->searchReleasesByCategory($categoryIds, $limit);
-        }
-
-        // Filter out invalid category IDs
-        $validCategoryIds = array_filter($categoryIds, fn ($id) => $id > 0);
-
-        $cacheKey = 'manticore:releases:search_cat:'.md5($searchTerm.':'.serialize($validCategoryIds).':'.$limit);
-        $cached = Cache::get($cacheKey);
-        if ($cached !== null) {
-            return $cached;
-        }
-
-        try {
-            $preparedSearch = self::prepareUserSearchQuery($searchTerm);
-            if (empty($preparedSearch)) {
-                return $this->searchReleasesByCategory($categoryIds, $limit);
-            }
-
-            $searchExpr = '@@relaxed '.self::scopeReleaseSearchQuery($searchTerm, $preparedSearch, '@searchname');
-
-            $query = (new Search($this->manticoreSearch))
-                ->setTable($this->getReleasesIndex())
-                ->search($searchExpr)
-                ->option('ranker', 'sph04')
-                ->stripBadUtf8(true)
-                ->limit(min($limit, 10000));
-
-            // Add category filter if provided
-            if (! empty($validCategoryIds)) {
-                if (count($validCategoryIds) === 1) {
-                    $query->filter('categories_id', '=', (int) $validCategoryIds[0]); // @phpstan-ignore offsetAccess.notFound
-                } else {
-                    $query->filter('categories_id', 'in', array_map('intval', $validCategoryIds));
-                }
-            }
-
-            $results = $query->get();
-
-            $resultIds = [];
-            foreach ($results as $doc) {
-                $resultIds[] = $doc->getId();
-            }
-
-            if (! empty($resultIds)) {
-                Cache::put($cacheKey, $resultIds, now()->addMinutes($this->config['cache_minutes'] ?? 5));
-            }
-
-            return $resultIds; // @phpstan-ignore return.type
-        } catch (\Throwable $e) {
-            Log::error('ManticoreSearch searchReleasesWithCategoryFilter error: '.$e->getMessage(), [
-                'searchTerm' => $searchTerm,
-                'categoryIds' => $categoryIds,
-            ]);
-        }
-
-        return [];
     }
 
     /**
@@ -3067,7 +2363,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
     }
 
-    public function getSecondaryIndexName(SecondarySearchIndex $index): string
+    private function getSecondaryIndexName(SecondarySearchIndex $index): string
     {
         $configured = $this->config['indexes'][$index->value] ?? null;
         if (is_string($configured) && $configured !== '') {
@@ -3101,29 +2397,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
             ]);
         } catch (\Throwable $e) {
             Log::error('ManticoreSearch insertSecondary error: '.$e->getMessage(), [
-                'secondary' => $index->value,
-                'id' => $id,
-            ]);
-        }
-    }
-
-    public function updateSecondary(SecondarySearchIndex $index, int $id): void
-    {
-        if ($id <= 0) {
-            return;
-        }
-
-        try {
-            match ($index) {
-                SecondarySearchIndex::Music => $this->insertSecondary($index, $id, SecondaryIndexDocuments::music(MusicInfo::query()->findOrFail($id))),
-                SecondarySearchIndex::Books => $this->insertSecondary($index, $id, SecondaryIndexDocuments::book(BookInfo::query()->findOrFail($id))),
-                SecondarySearchIndex::Games => $this->insertSecondary($index, $id, SecondaryIndexDocuments::games(GamesInfo::query()->findOrFail($id))),
-                SecondarySearchIndex::Console => $this->insertSecondary($index, $id, SecondaryIndexDocuments::console(ConsoleInfo::query()->findOrFail($id))),
-                SecondarySearchIndex::Steam => $this->insertSecondary($index, $id, SecondaryIndexDocuments::steam(SteamApp::query()->findOrFail($id))),
-                SecondarySearchIndex::Anime => null,
-            };
-        } catch (\Throwable $e) {
-            Log::warning('ManticoreSearch updateSecondary skipped: '.$e->getMessage(), [
                 'secondary' => $index->value,
                 'id' => $id,
             ]);

@@ -291,7 +291,7 @@ release-level cleanup: `deletedReleasesByGroup()`, `deleteReleases()`
 5. **Delete the collections/binaries/parts** for the release
    (`CollectionCleanupService`) — the staging data has served its purpose.
 
-From this point the release is live: it is searchable (Manticore/Elastic
+From this point the release is live: it is searchable (Manticore
 indexes are populated from `releases`), appears in the web UI and API, and
 the API serves the stored `.nzb.gz` when a user grabs it. Post-processing
 panes continue to enrich it (proper names, movie/TV/game/music metadata,

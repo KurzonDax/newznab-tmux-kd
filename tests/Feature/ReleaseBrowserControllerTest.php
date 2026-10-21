@@ -393,7 +393,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $driver = Mockery::mock(SearchDriverInterface::class);
         $driver->shouldReceive('isFuzzyEnabled')->andReturn(false);
         $driver->shouldReceive('isSuggestEnabled')->andReturn(false);
-        $driver->shouldReceive('isAutocompleteEnabled')->andReturn(false);
         $driver->shouldReceive('searchReleasesFiltered')->andReturn(['ids' => array_values($ids), 'total' => 4, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         app(SearchService::class)->extend('chip-test', static fn () => $driver);
         $this->actingAs($this->browserUser());
@@ -457,7 +456,6 @@ final class ReleaseBrowserControllerTest extends TestCase
         $driver = Mockery::mock(SearchDriverInterface::class);
         $driver->shouldReceive('isFuzzyEnabled')->andReturn(false);
         $driver->shouldReceive('isSuggestEnabled')->andReturn(true);
-        $driver->shouldReceive('isAutocompleteEnabled')->andReturn(false);
         $driver->shouldReceive('suggest')->with('Requested title', null)->once()->andReturn([['suggest' => 'Corrected title', 'docs' => 7]]);
         $driver->shouldReceive('searchReleasesFiltered')->once()->andReturn(['ids' => [], 'total' => 0, 'fuzzy' => false, 'available' => true, 'has_more' => false]);
         app(SearchService::class)->extend('browser-test', static fn () => $driver);

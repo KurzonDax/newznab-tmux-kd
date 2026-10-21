@@ -11,7 +11,7 @@ use App\Observers\ReleaseObserver;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Re-sync releases_rt / ES release documents after query-builder or raw SQL updates
+ * Re-sync releases_rt release documents after query-builder or raw SQL updates
  * that bypass Eloquent {@see ReleaseObserver} events.
  */
 final class ReleaseSearchIndexSync
@@ -81,6 +81,6 @@ final class ReleaseSearchIndexSync
             self::forIds($releases->pluck('id'));
 
             return true;
-        }, 'releases.id');
+        }, 'releases.id', 'id');
     }
 }

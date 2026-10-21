@@ -76,13 +76,6 @@ final class ManticoreIndexRegistry
                 'actors' => ['type' => 'text'], 'director' => ['type' => 'text'],
                 'rating' => ['type' => 'text'], 'plot' => ['type' => 'text'],
             ]],
-            'tvshows' => ['settings' => $settings, 'columns' => [
-                'title' => ['type' => 'text'], 'tvdb' => ['type' => 'integer'],
-                'trakt' => ['type' => 'integer'], 'tvmaze' => ['type' => 'integer'],
-                'tvrage' => ['type' => 'integer'], 'imdb' => ['type' => 'string'],
-                'tmdb' => ['type' => 'integer'], 'started' => ['type' => 'text'],
-                'type' => ['type' => 'integer'],
-            ]],
             ...self::secondaryDefinitions($settings),
         ];
     }
@@ -93,8 +86,6 @@ final class ManticoreIndexRegistry
         $fields = match ($logical) {
             'releases' => ['searchname' => 12, 'plainsearchname' => 10, 'name' => 8, 'filename' => 5, 'fromname' => 1, 'movie_title' => 8, 'show_title' => 8, 'album_title' => 8, 'artist' => 8, 'music_tracks' => 5, 'console_title' => 8, 'game_title' => 8, 'book_title' => 8, 'anime_titles' => 8],
             'predb' => ['title' => 12, 'filename' => 5],
-            'movies' => ['title' => 12, 'director' => 5, 'actors' => 3, 'genre' => 2, 'plot' => 1],
-            'tvshows' => ['title' => 12],
             'music' => ['title' => 12, 'artist' => 9],
             'books' => ['title' => 12, 'author' => 9],
             'console' => ['title' => 12],
@@ -112,7 +103,7 @@ final class ManticoreIndexRegistry
         return match ($logical) {
             'releases' => ['searchname', 'name'],
             'predb' => ['title', 'filename'],
-            'movies', 'tvshows', 'music', 'books', 'games', 'console', 'anime' => ['title'],
+            'movies', 'music', 'books', 'games', 'console', 'anime' => ['title'],
             'steam' => ['name'],
             default => [],
         };

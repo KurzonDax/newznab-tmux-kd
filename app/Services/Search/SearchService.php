@@ -8,7 +8,6 @@ use App\Enums\SecondarySearchIndex;
 use App\Services\Releases\ReleaseDerivedFacts;
 use App\Services\Search\Contracts\SearchDriverInterface;
 use App\Services\Search\Contracts\SearchServiceInterface;
-use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\Drivers\ManticoreSearchDriver;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\DTO\SearchPage;
@@ -18,9 +17,8 @@ use Illuminate\Support\Manager;
 /**
  * Search Service Manager - handles driver resolution for search functionality.
  *
- * This service manager provides a unified interface for full-text search operations,
- * supporting multiple backends (ManticoreSearch, Elasticsearch) that can be configured
- * via the SEARCH_DRIVER environment variable.
+ * This service manager provides a unified interface for full-text search operations.
+ * ManticoreSearch is the only backend; SEARCH_DRIVER selects it by name.
  */
 class SearchService extends Manager implements SearchServiceInterface
 {
@@ -40,16 +38,6 @@ class SearchService extends Manager implements SearchServiceInterface
         $config = $this->config->get('search.drivers.manticore', []);
 
         return new ManticoreSearchDriver($config);
-    }
-
-    /**
-     * Create the Elasticsearch driver instance.
-     */
-    protected function createElasticsearchDriver(): SearchDriverInterface
-    {
-        $config = $this->config->get('search.drivers.elasticsearch', []);
-
-        return new ElasticSearchDriver($config);
     }
 
     /**
@@ -80,25 +68,7 @@ class SearchService extends Manager implements SearchServiceInterface
         return $this->driver()->getDriverName();
     }
 
-    /**
-     * Escape a search string using the current driver's escape method.
-     */
-    public function escapeString(string $string): string
-    {
-        $driverClass = get_class($this->driver());
-
-        return $driverClass::escapeString($string);
-    }
-
     // Implement SearchServiceInterface methods by delegating to the current driver
-
-    /**
-     * Check if autocomplete is enabled.
-     */
-    public function isAutocompleteEnabled(): bool
-    {
-        return $this->driver()->isAutocompleteEnabled();
-    }
 
     /**
      * Check if suggest is enabled.
@@ -117,29 +87,11 @@ class SearchService extends Manager implements SearchServiceInterface
     }
 
     /**
-     * Get fuzzy search configuration.
-     *
-     * @return array<string, mixed>
-     */
-    public function getFuzzyConfig(): array
-    {
-        return $this->driver()->getFuzzyConfig();
-    }
-
-    /**
      * Get the releases index name.
      */
     public function getReleasesIndex(): string
     {
         return $this->driver()->getReleasesIndex();
-    }
-
-    /**
-     * Get the predb index name.
-     */
-    public function getPredbIndex(): string
-    {
-        return $this->driver()->getPredbIndex();
     }
 
     /**
@@ -229,17 +181,6 @@ class SearchService extends Manager implements SearchServiceInterface
     }
 
     /**
-     * Perform fuzzy search on releases index.
-     *
-     * @param  array<string, mixed>  $phrases
-     * @return array<string, mixed>
-     */
-    public function fuzzySearchReleases(array|string $phrases, int $limit = 1000): array
-    {
-        return $this->driver()->fuzzySearchReleases($phrases, $limit);
-    }
-
-    /**
      * Search the predb index.
      *
      * @param  array<string, mixed>  $searchTerm
@@ -248,14 +189,6 @@ class SearchService extends Manager implements SearchServiceInterface
     public function searchPredb(array|string $searchTerm): array
     {
         return $this->driver()->searchPredb($searchTerm);
-    }
-
-    /**
-     * Get autocomplete suggestions for a search query.
-     */
-    public function autocomplete(string $query, ?string $index = null): array
-    {
-        return $this->driver()->autocomplete($query, $index);
     }
 
     /**
@@ -307,32 +240,6 @@ class SearchService extends Manager implements SearchServiceInterface
     }
 
     /**
-     * Delete a predb record from the index.
-     *
-     * @param  int  $id  Predb ID
-     */
-    public function deletePreDb(int $id): void
-    {
-        $this->driver()->deletePreDb($id);
-    }
-
-    /**
-     * Get the movies index name.
-     */
-    public function getMoviesIndex(): string
-    {
-        return $this->driver()->getMoviesIndex();
-    }
-
-    /**
-     * Get the TV shows index name.
-     */
-    public function getTvShowsIndex(): string
-    {
-        return $this->driver()->getTvShowsIndex();
-    }
-
-    /**
      * Insert a movie into the movies search index.
      *
      * @param  array<string, mixed>  $parameters
@@ -340,14 +247,6 @@ class SearchService extends Manager implements SearchServiceInterface
     public function insertMovie(array $parameters): void
     {
         $this->driver()->insertMovie($parameters);
-    }
-
-    /**
-     * Update a movie in the search index.
-     */
-    public function updateMovie(int $movieId): void
-    {
-        $this->driver()->updateMovie($movieId);
     }
 
     /**
@@ -369,107 +268,10 @@ class SearchService extends Manager implements SearchServiceInterface
         return $this->driver()->bulkInsertMovies($movies);
     }
 
-    /**
-     * Search the movies index.
-     *
-     * @param  array<string, mixed>  $searchTerm
-     * @return array<string, mixed>
-     */
-    public function searchMovies(array|string $searchTerm, int $limit = 1000): array
-    {
-        return $this->driver()->searchMovies($searchTerm, $limit);
-    }
-
-    /**
-     * Search movies by external ID (IMDB, TMDB, Trakt).
-     *
-     * @return array<string, mixed>
-     */
-    public function searchMovieByExternalId(string $field, int|string $value): ?array
-    {
-        return $this->driver()->searchMovieByExternalId($field, $value);
-    }
-
-    /**
-     * @param  array<string, mixed>  $externalIds
-     * @return array<string, mixed>|null
-     */
-    public function searchMovieByExternalIds(array $externalIds): ?array
-    {
-        return $this->driver()->searchMovieByExternalIds($externalIds);
-    }
-
     /** {@inheritdoc} */
     public function searchEntityFields(string $index, array $fields, string $key, int $limit = 500, int $afterId = 0): array
     {
         return $this->driver()->searchEntityFields($index, $fields, $key, $limit, $afterId);
-    }
-
-    /**
-     * Insert a TV show into the tvshows search index.
-     *
-     * @param  array<string, mixed>  $parameters
-     */
-    public function insertTvShow(array $parameters): void
-    {
-        $this->driver()->insertTvShow($parameters);
-    }
-
-    /**
-     * Update a TV show in the search index.
-     */
-    public function updateTvShow(int $videoId): void
-    {
-        $this->driver()->updateTvShow($videoId);
-    }
-
-    /**
-     * Delete a TV show from the search index.
-     */
-    public function deleteTvShow(int $id): void
-    {
-        $this->driver()->deleteTvShow($id);
-    }
-
-    /**
-     * Bulk insert multiple TV shows into the index.
-     *
-     * @param  array<string, mixed>  $tvShows  Array of TV show data arrays
-     * @return array<string, mixed> Results with 'success' and 'errors' counts
-     */
-    public function bulkInsertTvShows(array $tvShows): array
-    {
-        return $this->driver()->bulkInsertTvShows($tvShows);
-    }
-
-    /**
-     * Search the TV shows index.
-     *
-     * @param  array<string, mixed>  $searchTerm
-     * @return array<string, mixed>
-     */
-    public function searchTvShows(array|string $searchTerm, int $limit = 1000): array
-    {
-        return $this->driver()->searchTvShows($searchTerm, $limit);
-    }
-
-    /**
-     * Search TV shows by external ID (TVDB, Trakt, TVMaze, TVRage, IMDB, TMDB).
-     *
-     * @return array<string, mixed>
-     */
-    public function searchTvShowByExternalId(string $field, int|string $value): ?array
-    {
-        return $this->driver()->searchTvShowByExternalId($field, $value);
-    }
-
-    /**
-     * @param  array<string, mixed>  $externalIds
-     * @return array<string, mixed>|null
-     */
-    public function searchTvShowByExternalIds(array $externalIds): ?array
-    {
-        return $this->driver()->searchTvShowByExternalIds($externalIds);
     }
 
     /**
@@ -482,39 +284,6 @@ class SearchService extends Manager implements SearchServiceInterface
     public function searchReleasesByExternalId(array $externalIds, int $limit = 1000): array
     {
         return $this->driver()->searchReleasesByExternalId($externalIds, $limit);
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $externalIdSets
-     * @return array<string, mixed>
-     */
-    public function searchReleasesByMultipleExternalIds(array $externalIdSets, int $limit = 1000): array
-    {
-        return $this->driver()->searchReleasesByMultipleExternalIds($externalIdSets, $limit);
-    }
-
-    /**
-     * Search releases by category ID using the search index.
-     * This provides a fast way to get release IDs for a specific category without hitting the database.
-     *
-     * @param  array<string, mixed>  $categoryIds
-     * @return array<string, mixed>
-     */
-    public function searchReleasesByCategory(array $categoryIds, int $limit = 1000): array
-    {
-        return $this->driver()->searchReleasesByCategory($categoryIds, $limit);
-    }
-
-    /**
-     * Combined search: text search with category filtering.
-     * First searches by text, then filters by category IDs using the search index.
-     *
-     * @param  array<string, mixed>  $categoryIds
-     * @return array<string, mixed>
-     */
-    public function searchReleasesWithCategoryFilter(string $searchTerm, array $categoryIds = [], int $limit = 1000): array
-    {
-        return $this->driver()->searchReleasesWithCategoryFilter($searchTerm, $categoryIds, $limit);
     }
 
     /**
@@ -548,11 +317,6 @@ class SearchService extends Manager implements SearchServiceInterface
     public function insertSecondary(SecondarySearchIndex $index, int $id, array $document): void
     {
         $this->driver()->insertSecondary($index, $id, $document);
-    }
-
-    public function updateSecondary(SecondarySearchIndex $index, int $id): void
-    {
-        $this->driver()->updateSecondary($index, $id);
     }
 
     public function deleteSecondary(SecondarySearchIndex $index, int $id): void

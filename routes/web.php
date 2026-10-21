@@ -159,7 +159,7 @@ Route::post('passkeys/authenticate', PasskeyLoginController::class)->middleware(
 Route::get('2fa/verify', [PasswordSecurityController::class, 'getVerify2fa'])->middleware('throttle:6,1')->name('2fa.verify');
 Route::post('2fa/verify', [PasswordSecurityController::class, 'verify2fa'])->middleware('throttle:6,1')->name('2fa.post');
 
-// Search autocomplete and suggest API routes (no auth required for better UX)
+// Search suggest API route (no auth required for better UX)
 Route::get('api/search/suggest', [SearchSuggestController::class, 'suggest'])->name('api.search.suggest');
 
 Route::get('contact-us', [ContactUsController::class, 'showContactForm'])->name('contact-us');

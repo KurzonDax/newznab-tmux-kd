@@ -20,9 +20,4 @@ interface SearchDriverInterface extends SearchServiceInterface
      * Check if the search service is available.
      */
     public function isAvailable(): bool;
-
-    /**
-     * Escape a search string for the specific driver.
-     */
-    public static function escapeString(string $string): string;
 }

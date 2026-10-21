@@ -44,15 +44,10 @@ class NameWriteOwnershipGuardTest extends TestCase
         'app/Services/Releases/ReleaseBrowseService.php' => [2, 'search queries'],
         'app/Services/Releases/ReleaseSearchService.php' => [11, 'search queries'],
         'app/Services/Releases/WebSearchIndex.php' => [1, 'a search query'],
-        'app/Services/Search/Drivers/ElasticSearchDriver.php' => [5, 'search queries'],
         'app/Services/Search/Drivers/ManticoreSearchDriver.php' => [6, 'search queries'],
         'app/Services/Search/Support/ManticoreIndexRegistry.php' => [2, 'index schema'],
         'app/Console/Commands/DeleteReleases.php' => [1, 'a search query'],
-        'app/Console/Commands/NntmuxCreateESIndexes.php' => [1, 'index schema'],
-        'app/Console/Commands/NntmuxOffsetPopulate.php' => [1, 'index schema'],
-        'app/Console/Commands/NntmuxResetDb.php' => [1, 'index schema'],
         'app/Console/Commands/UpdateReleasesIndexSchema.php' => [2, 'index schema and documents'],
-        'app/Console/Commands/UpdateReleasesIndexSchemaES.php' => [1, 'index schema'],
     ];
 
     public function test_only_the_name_writer_writes_a_releases_name_columns(): void

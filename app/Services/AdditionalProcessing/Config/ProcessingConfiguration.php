@@ -175,7 +175,7 @@ final readonly class ProcessingConfiguration
         $this->tmpUnrarPath = config('nntmux.tmp_unrar_path');
         $this->debugMode = (bool) config('app.debug');
         $this->searchDriver = config('search.default', 'manticore');
-        $this->searchEnabled = in_array($this->searchDriver, ['manticore', 'elasticsearch']);
+        $this->searchEnabled = $this->searchDriver === 'manticore';
         $this->renamePar2 = (bool) config('nntmux.rename_par2');
         $this->releaseProcessingTimeout = (int) (Settings::settingValue('releaseprocessingtimeout') ?: 120);
         $this->maxPpTimeoutCount = (int) (Settings::settingValue('maxpptimeoutcount') ?: 3);

@@ -62,7 +62,6 @@ use App\Services\Releases\ReleaseRowDataLoader;
 use App\Services\Releases\ReleaseSearchService;
 use App\Services\Releases\TitleMetadataLoader;
 use App\Services\Search\Contracts\SearchServiceInterface;
-use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\Drivers\ManticoreSearchDriver;
 use App\Support\Auth\AuthenticatesUsers;
 use App\Support\Auth\ThrottlesLogins;
@@ -666,7 +665,6 @@ final class DeadCodeCleanupTest extends TestCase
             ReleaseBrowseService::class => ['getBrowseRange', 'getShowsRange', 'searchByIndexWithCategories', 'getReleasesByExternalId', 'getBrowseOrdering', 'getPosterIdentityReleases', 'getShowsCount', 'uSQL', 'getPagerCount'],
             ReleaseManagementService::class => ['getEarliestUsenetPostDate', 'getForExport', 'getLatestUsenetPostDate', 'getReleasedGroupsForSelect'],
             ReleaseSearchService::class => ['buildSearchPageIdsSql', 'getReleasesCountForWhere'],
-            ElasticSearchDriver::class => ['getClusterHealth', 'getIndexStats', 'indexSearchApi', 'indexSearchTMA'],
             ManticoreSearchDriver::class => ['deleteReleaseByGuid'],
             LoginController::class => ['checkPasswordBreachAndRedirect'],
             InvitationController::class => ['cleanup'],
@@ -683,7 +681,6 @@ final class DeadCodeCleanupTest extends TestCase
         }
         foreach ([
             Settings::class => ['ERR_BADFFMPEGPATH', 'ERR_BADLAMEPATH', 'ERR_BADMEDIAINFOPATH', 'ERR_BADNZBPATH', 'ERR_BADTMPUNRARPATH', 'ERR_BADUNRARPATH', 'ERR_DEEPNOUNRAR', 'ERR_SABCOMPLETEPATH'],
-            ElasticSearchDriver::class => ['DEFAULT_TIMEOUT', 'DEFAULT_CONNECT_TIMEOUT'],
         ] as $class => $constants) {
             foreach ($constants as $constant) {
                 $this->assertFalse((new \ReflectionClass($class))->hasConstant($constant), $class.'::'.$constant);
@@ -758,6 +755,7 @@ final class DeadCodeCleanupTest extends TestCase
             [SearchSuggestController::class, 'autocomplete'], [SearchSuggestController::class, 'searchAssist'], [InvitationController::class, 'stats'],
             [AdminPageController::class, 'getCurrentMetrics'], [AdminPageController::class, 'getHistoricalMetrics'],
             [AdminPageController::class, 'getUserActivityMinutes'], [AdminPageController::class, 'getRecentActivity'],
+            [SearchServiceInterface::class, 'autocomplete'],
         ] as [$class, $method]) {
             $this->assertFalse(method_exists($class, $method), $class.'::'.$method);
         }
@@ -766,7 +764,7 @@ final class DeadCodeCleanupTest extends TestCase
             [ProfileController::class, 'updateTheme'], [User::class, 'updatePassResetGuid'], [PasswordSecurityController::class, 'verify2fa'],
             [PasswordSecurityController::class, 'disable2fa'], [Invitation::class, 'createInvitation'], [InvitationService::class, 'sendInvitationEmail'],
             [ReleaseReportController::class, 'store'], [ReleaseReport::class, 'hasUserReported'], [SearchSuggestController::class, 'suggest'],
-            [SearchServiceInterface::class, 'autocomplete'], [AdminPageController::class, 'getDashboardData'], [AdminCommentsController::class, 'destroy'],
+            [AdminPageController::class, 'getDashboardData'], [AdminCommentsController::class, 'destroy'],
         ] as [$class, $method]) {
             $this->assertTrue(method_exists($class, $method), $class.'::'.$method);
         }

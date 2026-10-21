@@ -1483,7 +1483,7 @@ class ReleaseSearchService
     }
 
     /**
-     * Perform index search using Elasticsearch or Manticore, with MySQL fallback
+     * Perform index search using Manticore, with MySQL fallback
      *
      * @param  array<string, mixed>  $searchArr
      * @return array<string, mixed>

@@ -16,7 +16,7 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 - Tmux engine for thread, database, and performance monitoring
 - Image and video sample support
 - Modern frontend stack: Vite, Tailwind CSS, Alpine.js, Livewire
-- Full-text search via Elasticsearch or ManticoreSearch
+- Full-text search via ManticoreSearch
 - Dockerized development via Laravel Sail
 - RESTful API compatible with newznab standard
 
@@ -27,7 +27,7 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 - [Configuration](#configuration)
 - [Operations Guides](#operations-guides)
 - [Database Setup](#database-setup)
-- [Search Engines](#search-engines)
+- [Search Engine](#search-engine)
 - [Console Commands](#console-commands)
 - [IRC Pre Channels](#irc-pre-channels)
 - [TV & Movie Processing](#tv--movie-processing)
@@ -142,13 +142,10 @@ GIANTBOMB_API_KEY=your_giantbomb_key
 # to AcoustID, a third-party service (lookup only; the audio itself is never sent).
 ACOUSTID_CLIENT_KEY=
 
-# Search Engine (choose one)
-SEARCH_ENGINE=manticore      # Options: manticore, elasticsearch
-MANTICORE_HOST=127.0.0.1
-MANTICORE_PORT=9308
-# Or for Elasticsearch:
-# ELASTICSEARCH_HOST=127.0.0.1
-# ELASTICSEARCH_PORT=9200
+# Search Engine
+SEARCH_DRIVER=manticore
+MANTICORESEARCH_HOST=127.0.0.1
+MANTICORESEARCH_PORT=9308
 
 # IRC Pre Scraping (optional)
 SCRAPE_IRC_SERVER=irc.synirc.net
@@ -219,11 +216,11 @@ For proper Unicode support (emojis, special characters):
 php artisan nntmux:convert-collation utf8mb4_unicode_ci
 ```
 
-## Search Engines
+## Search Engine
 
-NNTmux supports two full-text search engines:
+NNTmux uses ManticoreSearch for full-text search.
 
-### ManticoreSearch (Recommended)
+### ManticoreSearch
 
 ```bash
 # Install ManticoreSearch
@@ -233,29 +230,13 @@ sudo apt update
 sudo apt install manticore
 
 # Configure in .env
-SEARCH_ENGINE=manticore
-MANTICORE_HOST=127.0.0.1
-MANTICORE_PORT=9308
+SEARCH_DRIVER=manticore
+MANTICORESEARCH_HOST=127.0.0.1
+MANTICORESEARCH_PORT=9308
 
 # Build indexes
-php artisan nntmux:index-manticore
-```
-
-### Elasticsearch
-
-```bash
-# Install Elasticsearch
-wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
-echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee /etc/apt/sources.list.d/elastic-8.x.list
-sudo apt update && sudo apt install elasticsearch
-
-# Configure in .env
-SEARCH_ENGINE=elasticsearch
-ELASTICSEARCH_HOST=127.0.0.1
-ELASTICSEARCH_PORT=9200
-
-# Build indexes
-php artisan nntmux:index-elasticsearch
+php artisan manticore:create-indexes
+php artisan nntmux:populate --manticore --releases
 ```
 
 ## Console Commands

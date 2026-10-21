@@ -4,7 +4,7 @@ The release index answers `/search` matching, filtering, sorting, counting and p
 
 Entity-field prefixes resolve through the entity index to keys on release-link attributes (`imdbid` for movies, including releases without `movieinfo_id`). A prefix registration specifies its index, field, relational fallback and link attribute, so new fields and roots need no release-query changes. Empty or unavailable entity indexes retain ADR 0008's SQL metadata fallback. SQL release matching is used only when the release index is unavailable and `nntmux.mysql_search_fallback` is explicitly enabled.
 
-Exact matching precedes fuzzy retrieval; fuzzy runs only when the exact total is zero and there are no exclusions. Displayed totals remain exact even beyond the reachable result window. Pagination stops at the configured `search.drivers.manticore.max_matches` window (10,000 for Elasticsearch) and tells users to narrow their search. An unavailable index shows no result count.
+Exact matching precedes fuzzy retrieval; fuzzy runs only when the exact total is zero and there are no exclusions. Displayed totals remain exact even beyond the reachable result window. Pagination stops at the configured `search.drivers.manticore.max_matches` window and tells users to narrow their search. An unavailable index shows no result count.
 
 Linked-title changes after linking deliberately leave release documents stale until a release re-sync, `nntmux:search-repair`, or populate. Link changes trigger re-sync. Schema changes require a release-index rebuild and repopulation; deployment commands belong in the PR's operations notes. API, RSS, movie browse, toolbar and covers-page searches are unchanged.
 
