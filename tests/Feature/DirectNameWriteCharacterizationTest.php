@@ -20,6 +20,7 @@ use App\Services\MusicIdentity\Rename\MusicRenameProjection;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\Nzb\NzbService;
@@ -409,16 +410,18 @@ class DirectNameWriteCharacterizationTest extends TestCase
     /** Whether the call renamed the release, as the update service reports it. */
     private function renames(callable $call): bool
     {
-        $this->updates->reset();
-        $call($this->updates);
-
-        return $this->updates->matched;
+        return $call($this->updates)->renamed;
     }
 
     /** Whether updateRelease() accepted the candidate from the call site's (type, method) labels. */
     private function rename(object $release, string $title, string $type, string $method, int $preId = 0): bool
     {
-        return $this->renames(static fn (ReleaseUpdateService $updates) => $updates->updateRelease($release, $title, $method, true, $type, true, false, $preId));
+        $source = match ($type.$method) {
+            'PAR2, preDB: Match' => NameSource::Par2PreDbMatch,
+            'Filenames, fileCheck: Scene release with group' => NameSource::FileName,
+        };
+
+        return $this->renames(static fn (ReleaseUpdateService $updates) => $updates->updateRelease($release, $title, $method, true, $source, true, false, $preId));
     }
 
     private function snapshot(int $id): object

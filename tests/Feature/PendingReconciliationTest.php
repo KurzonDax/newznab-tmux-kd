@@ -17,6 +17,7 @@ use App\Services\CollectionReconciliation\PendingReconciler;
 use App\Services\CollectionReconciliation\PostingEvidence;
 use App\Services\CollectionReconciliation\PostingNzb;
 use App\Services\CollectionReconciliation\PostingPublication;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NNTP\Contracts\BoundedProviderClient;
 use App\Services\NNTP\DTO\BoundedArticleResponse;
@@ -485,7 +486,7 @@ class PendingReconciliationTest extends TestCase
         $this->assertSame('associated', $service->reconcile($id, 1));
         $release = Release::query()->first();
         $updater = app(ReleaseUpdateService::class);
-        $updater->updateRelease($release, 'Single.Movie.2026.1080p', 'PAR2', true, 'PAR2, ', true, false);
+        $updater->updateRelease($release, 'Single.Movie.2026.1080p', 'PAR2', true, NameSource::Par2File, true, false);
         $this->assertSame('Course.Set', $release->fresh()->searchname);
         $this->assertSame(0, (int) $release->fresh()->is_trusted_name);
     }
@@ -767,7 +768,7 @@ class PendingReconciliationTest extends TestCase
         $title = 'Some.Movie.2024.1080p.BluRay.x264-GROUP';
         // Recategorization after a rename is not under test and needs tables this schema lacks.
         Event::fake([ReleaseNameFixed::class]);
-        app(ReleaseUpdateService::class)->updateRelease(Release::query()->findOrFail($releaseId), $title, 'Filenames', true, 'Filenames, ', true, false);
+        app(ReleaseUpdateService::class)->updateRelease(Release::query()->findOrFail($releaseId), $title, 'Filenames', true, NameSource::FileName, true, false);
         $renamed = Release::query()->findOrFail($releaseId);
         $this->assertSame($title, $renamed->searchname);
         $this->assertSame(1, (int) $renamed->isrenamed);

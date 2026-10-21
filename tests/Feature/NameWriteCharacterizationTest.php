@@ -10,6 +10,7 @@ use App\Models\Release;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use App\Services\ObfuscationRecovery\RecoveryNameScope;
@@ -111,6 +112,38 @@ class NameWriteCharacterizationTest extends TestCase
         'file descriptive title' => [false, false, 'Filenames', ['proc_files'], true],
         'RarInfo descriptive title' => [false, false, 'Filenames', ['proc_files'], true],
         'MediaInfo descriptive title' => [false, false, 'Mediainfo', ['proc_media_movie'], true],
+    ];
+
+    /** The name source each call site passes. */
+    private const array SOURCES = [
+        'NFO extractor' => NameSource::NfoExtract,
+        'NFO PreDB match' => NameSource::NfoPreDbMatch,
+        'NFO pattern checker' => NameSource::NfoPattern,
+        'SRRDB archive CRC' => NameSource::SrrdbArchiveCrc,
+        'UID election' => NameSource::UidElection,
+        'SRR extension' => NameSource::SrrFile,
+        'PreDB filename match' => NameSource::FilePreDbFilenameMatch,
+        'CRC32 donor' => NameSource::Crc32Donor,
+        'PAR2 hash donor' => NameSource::Par2HashDonor,
+        'file name' => NameSource::FileName,
+        'file name NZBSPLIT wrapper' => NameSource::FileNzbSplitWrapper,
+        'PreDB full text' => NameSource::PreDbFullText,
+        'XXX SDPORN' => NameSource::XxxFile,
+        'MediaInfo movie name' => NameSource::MediaMovieName,
+        'PAR2 PreDB match' => NameSource::Par2PreDbMatch,
+        'PAR2 file name' => NameSource::Par2File,
+        'PAR2 NZBSPLIT wrapper' => NameSource::Par2NzbSplitWrapper,
+        'PreDB file match' => NameSource::PreDbFileMatch,
+        'NZB contents NZBSPLIT wrapper' => NameSource::FileNzbSplitWrapper,
+        'RarInfo file name' => NameSource::FileRarInfoName,
+        'RarInfo PreDB' => NameSource::FileRarInfoPreDb,
+        'original subject repair' => NameSource::FileOriginalSubject,
+        'original subject repair with PreDB' => NameSource::FileOriginalSubjectPreDb,
+        'size mismatch' => NameSource::SizeMismatch,
+        'Release Inform API' => NameSource::FileReleaseInform,
+        'file descriptive title' => NameSource::FileDescriptiveTitle,
+        'RarInfo descriptive title' => NameSource::FileDescriptiveTitle,
+        'MediaInfo descriptive title' => NameSource::MediaDescriptiveTitle,
     ];
 
     /** Descriptive-title call sites rename from these candidates; the others from PLAUSIBLE. */
@@ -352,10 +385,10 @@ class NameWriteCharacterizationTest extends TestCase
     }
 
     /**
-     * Today the flag a rename sets is never cleared by checkName(), so a later release's
-     * PAR2 file-name check reports a rename that did not happen (decision on #1120).
+     * checkName() reports only its own call: a later release's PAR2 file-name check no longer
+     * reports an earlier release's rename, and its miss sets proc_par2 (decision on #1120).
      */
-    public function test_check_name_reports_an_earlier_releases_rename(): void
+    public function test_check_name_reports_only_its_own_call(): void
     {
         $renamed = $this->linkedRelease(1);
         $unnamed = $this->linkedRelease(2);
@@ -363,10 +396,10 @@ class NameWriteCharacterizationTest extends TestCase
 
         $this->assertTrue($naming->checkName((object) [...$this->releaseRow($renamed), 'releases_id' => $renamed,
             'textstring' => self::PLAUSIBLE.'.mkv'], true, 'PAR2, ', true, false));
-        $this->assertTrue($naming->checkName((object) [...$this->releaseRow($unnamed), 'releases_id' => $unnamed,
+        $this->assertFalse($naming->checkName((object) [...$this->releaseRow($unnamed), 'releases_id' => $unnamed,
             'textstring' => 'zzzz'], true, 'PAR2, ', true, false));
 
-        $this->assertSame(0, (int) $this->releaseRow($unnamed)['proc_par2']);
+        $this->assertSame(1, (int) $this->releaseRow($unnamed)['proc_par2']);
         $this->assertSame('a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6', $this->releaseRow($unnamed)['searchname']);
     }
 
@@ -406,10 +439,8 @@ class NameWriteCharacterizationTest extends TestCase
         if ($type === 'SRRDB, ') {
             $release->srrdb_imdbid = self::SRRDB_IMDB;
         }
-        $this->updates->reset();
-        $this->updates->updateRelease($release, $candidate, $method, $write, $type, $nameStatus, $show, $preId, $descriptive, $evidence);
 
-        return $this->updates->matched;
+        return $this->updates->updateRelease($release, $candidate, $method, $write, self::SOURCES[$site], $nameStatus, $show, $preId, $descriptive, $evidence)->renamed;
     }
 
     /** Whether the call site accepts an implausible title, judged on a fresh release and service. */

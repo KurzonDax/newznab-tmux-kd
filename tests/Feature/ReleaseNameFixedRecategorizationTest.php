@@ -25,6 +25,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\Categorization\MediaInfoRefinementService;
 use App\Services\NameFixing\DowngradedNameRestorer;
 use App\Services\NameFixing\FileNameCleaner;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NNTP\DTO\ArticleDownloadResult;
 use App\Services\NNTP\NNTPService;
@@ -132,7 +133,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $name = 'Brickleberry - Obamascare (S03E01)';
 
         app(ReleaseUpdateService::class)->updateRelease(
-            $release->fresh(), $name, 'MediaInfo: Movie Name', true, 'Mediainfo, ', true, false,
+            $release->fresh(), $name, 'MediaInfo: Movie Name', true, NameSource::MediaMovieName, true, false,
         );
 
         $release->refresh();
@@ -191,7 +192,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Show.Name.S03E05.720p.HDTV.x264-GROUP',
             'preDB: Match',
             true,
-            'NFO, ',
+            NameSource::NfoPreDbMatch,
             true,
             false,
         );
@@ -231,7 +232,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             $name,
             'fileCheck: Descriptive title',
             true,
-            'Filenames, ',
+            NameSource::FileDescriptiveTitle,
             true,
             false,
             descriptiveTitleCandidate: true,
@@ -274,7 +275,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'XXX.Release.2026.1080p-GROUP',
             'fileCheck: XXX SDPORN',
             true,
-            'XXX filenames, ',
+            NameSource::XxxFile,
             true,
             false,
         );
@@ -314,7 +315,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Movie.Name.2026.1080p-GROUP',
             'MediaInfo: Movie Name',
             true,
-            'Mediainfo, ',
+            NameSource::MediaMovieName,
             true,
             false,
         );
@@ -358,7 +359,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Show.Name.S03E05.720p.HDTV.x264-GROUP',
             'preDB: Match',
             true,
-            'NFO, ',
+            NameSource::NfoPreDbMatch,
             true,
             false,
         );
@@ -406,7 +407,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             $newName,
             'Raw file: Flat scene release',
             true,
-            'Filenames, ',
+            NameSource::FileName,
             true,
             false,
         );
@@ -449,7 +450,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
             'preDB: Match',
             true,
-            'NFO, ',
+            NameSource::NfoPreDbMatch,
             true,
             false,
         );
@@ -489,7 +490,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
             'preDB: Match',
             true,
-            'NFO, ',
+            NameSource::NfoPreDbMatch,
             true,
             false,
         );
@@ -534,7 +535,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             $newName,
             'Raw file: Flat scene release',
             true,
-            'Filenames, ',
+            NameSource::FileName,
             true,
             false,
         );
@@ -580,7 +581,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             $newName,
             'NZBSPLIT wrapper',
             true,
-            'Filenames, ',
+            NameSource::FileNzbSplitWrapper,
             true,
             false,
         );
@@ -625,7 +626,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Southern Charm S11E12 Even Further South 720p AMZN WEB-DL DDP2 0 H 264-NTb',
             'RarInfo FileName Match',
             true,
-            'Filenames, ',
+            NameSource::FileRarInfoName,
             true,
             false,
         );
@@ -654,7 +655,8 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             DB::table('release_files')->insert(['releases_id' => $release->id, 'name' => $name, 'size' => $fileSize]);
         }
 
-        app(ReleaseUpdateService::class)->updateRelease($release->fresh(), $candidate, $method, true, 'Filenames, ', true, false);
+        $source = $method === 'RarInfo FileName Match' ? NameSource::FileRarInfoName : NameSource::FileName;
+        app(ReleaseUpdateService::class)->updateRelease($release->fresh(), $candidate, $method, true, $source, true, false);
 
         $release->refresh();
         $this->assertSame($expected, $release->searchname);
@@ -1050,7 +1052,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'SupergirlPerv.avi',
             'fileCheck: Descriptive title',
             true,
-            'Filenames, ',
+            NameSource::FileDescriptiveTitle,
             true,
             false,
             descriptiveTitleCandidate: true,
@@ -1093,7 +1095,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Behind The Scenes Featurette.mp4',
             'fileCheck: Descriptive title',
             true,
-            'Filenames, ',
+            NameSource::FileDescriptiveTitle,
             true,
             false,
             descriptiveTitleCandidate: true,
@@ -1131,7 +1133,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Visible.Release.2026.1080p.mkv',
             'fileCheck: Descriptive title',
             true,
-            'Filenames, ',
+            NameSource::FileDescriptiveTitle,
             true,
             false,
             descriptiveTitleCandidate: true,
@@ -1170,7 +1172,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Visible.Release.2026.1080p',
             'RarInfo FileName Match',
             true,
-            'Filenames, ',
+            NameSource::FileRarInfoName,
             true,
             false,
             preId: 0,
@@ -1209,7 +1211,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'Visible.Show.1080p.mkv',
             'fileCheck: Descriptive title',
             true,
-            'Filenames, ',
+            NameSource::FileDescriptiveTitle,
             true,
             false,
             descriptiveTitleCandidate: true,
@@ -1248,7 +1250,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'grp-vr.2026.1080p',
             'RarInfo FileName Match',
             true,
-            'Filenames, ',
+            NameSource::FileRarInfoName,
             true,
             false,
             preId: 0,
@@ -1695,7 +1697,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'An.Invented.Evening.With.Nobody.In.Particular',
             'preDB: Match',
             $write,
-            'NFO, ',
+            NameSource::NfoPreDbMatch,
             true,
             true,
         );

@@ -6,6 +6,8 @@ namespace Tests\Unit\Services\NameFixing;
 
 use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
 use PHPUnit\Framework\TestCase;
@@ -41,11 +43,10 @@ class TestableFilenamePrecedenceService extends NameFixingService
         $this->fileExtractor = new FileNameExtractor;
     }
 
-    protected function preDbFileCheck(object $release, bool $echo, string $type, bool $nameStatus, bool $show): bool
+    protected function preDbFileCheck(object $release, bool $echo, bool $nameStatus, bool $show): bool
     {
         assert($this->updateService instanceof RecordingFilenamePrecedenceUpdater);
         $this->updateService->attempts[] = 'predb';
-        $this->updateService->matched = true;
 
         return true;
     }
@@ -56,10 +57,7 @@ class RecordingFilenamePrecedenceUpdater extends ReleaseUpdateService
     /** @var list<string> */
     public array $attempts = [];
 
-    public function __construct()
-    {
-        $this->matched = false;
-    }
+    public function __construct() {}
 
     /**
      * @return array<string, mixed>|null
@@ -74,15 +72,16 @@ class RecordingFilenamePrecedenceUpdater extends ReleaseUpdateService
         string $name,
         string $method,
         bool $echo,
-        string $type,
+        NameSource $source,
         bool $nameStatus,
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
-    ): void {
+    ): NameUpdateResult {
         $this->attempts[] = 'generic';
-        $this->matched = true;
+
+        return NameUpdateResult::renamed($name);
     }
 
     public function updateSingleColumn(string $column, int $status, int $id): void {}

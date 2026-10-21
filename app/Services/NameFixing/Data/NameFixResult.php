@@ -44,6 +44,22 @@ final class NameFixResult extends Data
         );
     }
 
+    /** A name unwrapped from an NZBSPLIT wrapper, which the file sources trust as a donor. */
+    public static function fromNzbSplitWrapper(string $newName, string $checkerName): self
+    {
+        return new self(
+            newName: $newName,
+            method: 'NZBSPLIT wrapper',
+            checkerName: $checkerName,
+            metadata: ['nzbsplit_wrapper' => true],
+        );
+    }
+
+    public function unwrapsNzbSplit(): bool
+    {
+        return ($this->metadata['nzbsplit_wrapper'] ?? false) === true;
+    }
+
     /**
      * Get a formatted method string for logging.
      */

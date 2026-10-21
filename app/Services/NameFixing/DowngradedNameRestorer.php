@@ -73,19 +73,18 @@ final readonly class DowngradedNameRestorer
             }
 
             $preDbId = (int) (Predb::query()->where('title', $candidate)->value('id') ?? 0);
-            $this->releaseUpdateService->reset();
-            $this->releaseUpdateService->updateRelease(
+            $result = $this->releaseUpdateService->updateRelease(
                 $release,
                 $candidate,
                 $preDbId > 0 ? 'preDB: Restored original subject' : 'Original subject repair',
                 true,
-                'Filenames, ',
+                $preDbId > 0 ? NameSource::FileOriginalSubjectPreDb : NameSource::FileOriginalSubject,
                 true,
                 false,
                 $preDbId,
             );
 
-            if (! $this->releaseUpdateService->matched) {
+            if (! $result->renamed) {
                 $skipped++;
 
                 continue;

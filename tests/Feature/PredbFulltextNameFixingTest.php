@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Facades\Search;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\ReleaseUpdateService;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Builder;
@@ -40,7 +41,7 @@ class PredbFulltextNameFixingTest extends TestCase
             ]);
 
         $updates = $this->createMock(ReleaseUpdateService::class);
-        $updates->expects($this->once())->method('attachPredbId')->with(42, 7);
+        $updates->expects($this->once())->method('attachPredbId')->with(42, 7)->willReturn(NameUpdateResult::renamed('x'));
         $service = new NameFixingService(
             updateService: $updates,
             queries: new NameFixingQueryService($database)

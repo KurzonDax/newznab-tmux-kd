@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\NameFixing;
 
-use InvalidArgumentException;
-
 /**
  * Every source a release name can come from, one case per evidence kind. A case declares what
  * its rename stores and how far its evidence is trusted; nothing else decides those. A candidate
@@ -220,54 +218,6 @@ enum NameSource: string
     public static function missColumnForType(string $type): ?string
     {
         return self::firstOfType($type)?->missColumn();
-    }
-
-    /**
-     * The source of a rename passed as the legacy (type, method) labels.
-     *
-     * @throws InvalidArgumentException for a pair no call site passes
-     */
-    public static function fromLabels(string $type, string $method): self
-    {
-        return match ($type) {
-            'NFO, ' => match (true) {
-                $method === 'preDB: Match' => self::NfoPreDbMatch,
-                str_starts_with($method, 'nfoCheck: ') => self::NfoExtract,
-                default => self::NfoPattern,
-            },
-            'PAR2, ' => match ($method) {
-                'preDB: Match' => self::Par2PreDbMatch,
-                'fileCheck: NZBSPLIT wrapper' => self::Par2NzbSplitWrapper,
-                default => self::Par2File,
-            },
-            'Filenames, ' => match ($method) {
-                'PreDb: Filename match', 'preDB: Match' => self::FilePreDbFilenameMatch,
-                'fileCheck: NZBSPLIT wrapper', 'NZBSPLIT wrapper' => self::FileNzbSplitWrapper,
-                'fileCheck: Descriptive title', 'RarInfo: Descriptive title' => self::FileDescriptiveTitle,
-                'RarInfo FileName Match' => self::FileRarInfoName,
-                'RarInfo PreDB Match' => self::FileRarInfoPreDb,
-                'Original subject repair' => self::FileOriginalSubject,
-                'preDB: Restored original subject' => self::FileOriginalSubjectPreDb,
-                'Release Inform API' => self::FileReleaseInform,
-                default => self::FileName,
-            },
-            'XXX filenames, ' => self::XxxFile,
-            'Mediainfo, ' => $method === ReleaseUpdateService::DESCRIPTIVE_MEDIA_TITLE_METHOD ? self::MediaDescriptiveTitle : self::MediaMovieName,
-            'SRR, ' => self::SrrFile,
-            'CRC32, ' => self::Crc32Donor,
-            'PAR2 hash, ' => self::Par2HashDonor,
-            'UID, ' => self::UidElection,
-            'SRRDB, ' => $method === 'Verified archive CRC match' ? self::SrrdbAttach : self::SrrdbArchiveCrc,
-            'PreDB FT Exact, ' => self::PreDbFullText,
-            'PreDB file match, ' => self::PreDbFileMatch,
-            'PreDB exact, ' => self::PreDbExactAttach,
-            '' => self::SizeMismatch,
-            'Recovery inventory, ' => self::RecoveryInventory,
-            'Audio tags, ' => self::AudioTags,
-            'MusicBrainz, ' => self::MusicBrainz,
-            'Book title, ' => self::BookTitle,
-            default => throw new InvalidArgumentException("Unregistered name source type [{$type}]."),
-        };
     }
 
     private static function firstOfType(string $type): ?self

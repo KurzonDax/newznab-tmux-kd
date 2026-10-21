@@ -11,6 +11,8 @@ use App\Services\AdditionalProcessing\ReleaseFileManager;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NfoService;
 use App\Services\Nzb\NzbService;
@@ -44,10 +46,11 @@ class AdditionalProcessingNzbSplitRenameTest extends TestCase
                 $expected,
                 'NZBSPLIT wrapper',
                 true,
-                'Filenames, ',
+                NameSource::FileNzbSplitWrapper,
                 true,
                 true
-            );
+            )
+            ->willReturn(NameUpdateResult::renamed($expected));
 
         $manager = $this->makeReleaseFileManager($updateService);
 

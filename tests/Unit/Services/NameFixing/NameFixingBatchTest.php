@@ -11,6 +11,8 @@ use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingQueryService;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NameSource;
+use App\Services\NameFixing\NameUpdateResult;
 use App\Services\NameFixing\PredbMatchSelector;
 use App\Services\NameFixing\ReleaseUpdateService;
 use App\Services\NameFixing\Srrdb\SrrdbLookupService;
@@ -387,7 +389,7 @@ class NameFixingBatchTest extends TestCase
         });
 
         $updateService = $this->createPartialMock(ReleaseUpdateService::class, ['updateRelease', 'updateSingleColumn']);
-        $updateService->expects($this->once())->method('updateRelease');
+        $updateService->expects($this->once())->method('updateRelease')->willReturn(NameUpdateResult::declined());
         $updateService->expects($this->once())
             ->method('updateSingleColumn')
             ->with('proc_media_movie', NameFixingService::PROC_MEDIA_MOVIE_DONE, 90);
@@ -411,7 +413,7 @@ class NameFixingBatchTest extends TestCase
         [$updates, $renames, $flags] = $this->recordingUpdater();
 
         $this->assertSame(['checked' => 1, 'fixed' => 1], $this->serviceWith($database, $updates)->processStandardBatch('a', 100, false));
-        $this->assertSame([['Visible Feature (2026)', 'Filenames, ', 'fileCheck: Descriptive title']], $renames->getArrayCopy());
+        $this->assertSame([['Visible Feature (2026)', NameSource::FileDescriptiveTitle]], $renames->getArrayCopy());
         $this->assertSame([['proc_media_movie', NameFixingService::PROC_MEDIA_MOVIE_DONE, 110]], $flags->getArrayCopy());
     }
 
@@ -470,15 +472,15 @@ class NameFixingBatchTest extends TestCase
     }
 
     /**
-     * @return array{ReleaseUpdateService, \ArrayObject<int, list<string>>, \ArrayObject<int, array{string, int, int}>}
+     * @return array{ReleaseUpdateService, \ArrayObject<int, array{string, NameSource}>, \ArrayObject<int, array{string, int, int}>}
      */
     private function recordingUpdater(): array
     {
         $renames = new \ArrayObject;
         $flags = new \ArrayObject;
         $updates = $this->stubUpdateService(['performDatabaseUpdate', 'updateSingleColumn']);
-        $updates->method('performDatabaseUpdate')->willReturnCallback(static function (object $release, string $title, string $type, string $method) use ($renames): void {
-            $renames[] = [$title, $type, $method];
+        $updates->method('performDatabaseUpdate')->willReturnCallback(static function (object $release, string $title, NameSource $source) use ($renames): void {
+            $renames[] = [$title, $source];
         });
         $updates->method('updateSingleColumn')->willReturnCallback(static function (string $column, int $value, int $id) use ($flags): void {
             $flags[] = [$column, $value, $id];

@@ -103,19 +103,11 @@ class ReleaseUpdateService
     private ?NamePolicy $namePolicy = null;
 
     /**
-     * The release ID we are trying to rename.
+     * The releases this instance renamed: each is renamed once per instance.
+     *
+     * @var array<int, true>
      */
-    protected int $relid = 0;
-
-    /**
-     * Has the current release found a new name?
-     */
-    public bool $matched = false;
-
-    /**
-     * Was the check completed?
-     */
-    public bool $done = false;
+    private array $renamedReleaseIds = [];
 
     /**
      * How many releases have got a new name?
@@ -146,7 +138,7 @@ class ReleaseUpdateService
      * @param  string  $name  The new name
      * @param  string  $method  The method that found the name
      * @param  bool  $echo  Whether to actually update the database
-     * @param  string  $type  The type string for logging
+     * @param  NameSource  $source  The source and evidence kind of the name
      * @param  bool  $nameStatus  Whether to update status columns
      * @param  bool  $show  Whether to show output
      * @param  int|null  $preId  PreDB ID if matched
@@ -159,13 +151,13 @@ class ReleaseUpdateService
         string $name,
         string $method,
         bool $echo,
-        string $type,
+        NameSource $source,
         bool $nameStatus,
         bool $show,
         ?int $preId = 0,
         bool $descriptiveTitleCandidate = false,
         ?RecoveryNameEvidence $recoveryEvidence = null,
-    ): void {
+    ): NameUpdateResult {
         $preId = $preId ?? 0;
         if (is_array($release)) {
             $release = (object) $release;
@@ -179,10 +171,10 @@ class ReleaseUpdateService
         $candidate = new NameCandidate(
             $releaseId,
             $name,
-            NameSource::fromLabels($type, $method),
+            $source,
             $method,
             $preId,
-            $type === 'SRRDB, ' && isset($release->srrdb_imdbid) ? (string) $release->srrdb_imdbid : null,
+            $source === NameSource::SrrdbArchiveCrc && isset($release->srrdb_imdbid) ? (string) $release->srrdb_imdbid : null,
             descriptiveTitle: $descriptiveTitleCandidate,
             recoveryEvidence: $recoveryEvidence,
         );
@@ -191,21 +183,15 @@ class ReleaseUpdateService
             $release,
             $candidate,
             ! $echo || (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence),
-            $this->relid === $release->releases_id,
+            isset($this->renamedReleaseIds[$releaseId]),
             static fn (): array => self::storedFileSizes($releaseId),
         );
         if (! $decision->accepted()) {
-            if ($decision->rejection === NameRejection::RecoveryRefused) {
-                $this->matched = false;
-            }
-            $this->done = true;
-
-            return;
+            return NameUpdateResult::declined($decision->rejection);
         }
 
         $newTitle = $decision->title;
-        $this->matched = true;
-        $this->relid = $releaseId;
+        $this->renamedReleaseIds[$releaseId] = true;
 
         $this->fixed++;
 
@@ -213,8 +199,7 @@ class ReleaseUpdateService
             $this->performDatabaseUpdate(
                 $release,
                 $newTitle,
-                $type,
-                $method,
+                $source,
                 $nameStatus,
                 $preId,
                 $candidate->imdbId,
@@ -234,9 +219,10 @@ class ReleaseUpdateService
                     releaseId: $releaseId,
                 );
 
-            $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
+            $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $source->type(), $method);
         }
-        $this->done = true;
+
+        return NameUpdateResult::renamed($newTitle);
     }
 
     /** Built on first use: test doubles skip the constructor and set the cleaner themselves. */
@@ -314,8 +300,7 @@ class ReleaseUpdateService
     protected function performDatabaseUpdate(
         object $release,
         string $newTitle,
-        string $type,
-        string $method,
+        NameSource $source,
         bool $nameStatus,
         int $preId,
         ?string $imdbId,
@@ -325,7 +310,6 @@ class ReleaseUpdateService
         bool $preserveMusicInfo = false,
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
-        $source = NameSource::fromLabels($type, $method);
         $trustedDonorName = NamePolicy::trust($source, $preId)[1] === TrustedDonor::Trusted;
         $nameSource = $source->storedName();
         DB::transaction(function () use ($source, $release, $releaseId, $newTitle, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
@@ -443,36 +427,37 @@ class ReleaseUpdateService
         if (! (new RecoveryIdentityPolicy)->allowsDescriptiveCandidate((int) $release->id, $candidate, $evidence)) {
             return false;
         }
-        $this->performDatabaseUpdate($release, $candidate, 'Recovery inventory, ', 'Consistent protected inventory', true,
+        $this->performDatabaseUpdate($release, $candidate, NameSource::RecoveryInventory, true,
             0, null, Category::TV_OTHER, recoveryEvidence: $evidence);
 
         return true;
     }
 
-    public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): void
+    /** Gives a release whose name equals a PreDB title that PreDB entry, and trusts the name. */
+    public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): NameUpdateResult
     {
         if ($releaseId === 0 || $predbId === 0 || (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-            return;
+            return NameUpdateResult::declined(NameRejection::RecoveryRefused);
         }
 
         $release = Release::query()->find($releaseId);
         if ($release === null) {
-            return;
+            return NameUpdateResult::declined();
         }
 
+        $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
         $this->performDatabaseUpdate(
             $release,
-            $this->namePolicy()->preserveEvidence($release, (string) $release->searchname),
-            'PreDB exact, ',
-            'Exact title match',
+            $title,
+            NameSource::PreDbExactAttach,
             true,
             $predbId,
             null,
             recoveryEvidence: $recoveryEvidence,
         );
-        $this->relid = $releaseId;
-        $this->matched = true;
-        $this->done = true;
+        $this->renamedReleaseIds[$releaseId] = true;
+
+        return NameUpdateResult::renamed($title);
     }
 
     public function renameFromAudioTags(int $releaseId, string $newTitle, int $categoryId): ?string
@@ -495,8 +480,7 @@ class ReleaseUpdateService
         $this->performDatabaseUpdate(
             $release,
             $newTitle,
-            self::AUDIO_TAGS_TYPE,
-            'Embedded media tags',
+            NameSource::AudioTags,
             true,
             0,
             null,
@@ -531,8 +515,7 @@ class ReleaseUpdateService
         $this->performDatabaseUpdate(
             $release,
             $newTitle,
-            self::MUSICBRAINZ_TYPE,
-            'Accepted MusicBrainz album',
+            NameSource::MusicBrainz,
             true,
             0,
             null,
@@ -602,8 +585,7 @@ class ReleaseUpdateService
         $this->performDatabaseUpdate(
             $release,
             $this->namePolicy()->preserveEvidence($release, $newTitle),
-            'Book title, ',
-            'Parsed book metadata',
+            NameSource::BookTitle,
             true,
             0,
             null,
@@ -611,33 +593,34 @@ class ReleaseUpdateService
         );
     }
 
-    public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): void
+    /** Gives a release a verified SRRDB match's PreDB entry and IMDb id, and trusts its name. */
+    public function attachSrrdbMatch(int $releaseId, int $predbId, ?string $imdbId): NameUpdateResult
     {
         if ($releaseId === 0 || $predbId === 0) {
-            return;
+            return NameUpdateResult::declined();
         }
 
         if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
-            return;
+            return NameUpdateResult::declined(NameRejection::RecoveryRefused);
         }
 
         $release = Release::query()->find($releaseId);
         if ($release === null) {
-            return;
+            return NameUpdateResult::declined();
         }
 
+        $title = $this->namePolicy()->preserveEvidence($release, (string) $release->searchname);
         $this->performDatabaseUpdate(
             $release,
-            $this->namePolicy()->preserveEvidence($release, (string) $release->searchname),
-            'SRRDB, ',
-            'Verified archive CRC match',
+            $title,
+            NameSource::SrrdbAttach,
             true,
             $predbId,
             $imdbId,
         );
-        $this->relid = $releaseId;
-        $this->matched = true;
-        $this->done = true;
+        $this->renamedReleaseIds[$releaseId] = true;
+
+        return NameUpdateResult::renamed($title);
     }
 
     /**
@@ -685,14 +668,6 @@ class ReleaseUpdateService
     }
 
     /**
-     * Reset status variables for new processing.
-     */
-    public function reset(): void
-    {
-        $this->done = $this->matched = false;
-    }
-
-    /**
      * Increment the checked counter.
      */
     public function incrementChecked(): void
@@ -703,15 +678,13 @@ class ReleaseUpdateService
     /**
      * Get the current statistics.
      *
-     * @return array<string, mixed>
+     * @return array{fixed: int, checked: int}
      */
     public function getStats(): array
     {
         return [
             'fixed' => $this->fixed,
             'checked' => $this->checked,
-            'matched' => $this->matched,
-            'done' => $this->done,
         ];
     }
 }
