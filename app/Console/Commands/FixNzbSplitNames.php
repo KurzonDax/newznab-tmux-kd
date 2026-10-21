@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Facades\Search;
 use App\Models\Release;
 use App\Services\Categorization\CategorizationService;
+use App\Services\NameFixing\NameCandidate;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\NzbSplitUnwrapper;
-use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\NameFixing\ReleaseNameWriter;
 use Illuminate\Console\Command;
 
 class FixNzbSplitNames extends Command
@@ -19,7 +20,7 @@ class FixNzbSplitNames extends Command
 
     protected $description = 'Fix NZBSPLIT-wrapped release names for unrenamed releases by default and recategorize the affected releases.';
 
-    public function handle(CategorizationService $categorizationService, NzbSplitUnwrapper $nzbSplitUnwrapper): int
+    public function handle(CategorizationService $categorizationService, NzbSplitUnwrapper $nzbSplitUnwrapper, ReleaseNameWriter $writer): int
     {
         $includeRenamed = (bool) $this->option('include-renamed');
 
@@ -48,12 +49,11 @@ class FixNzbSplitNames extends Command
         }
 
         $dryRun = (bool) $this->option('dry-run');
-        $previewPolicy = new PreviewGenerationPolicy;
         $updated = 0;
         $bar = $this->output->createProgressBar($count);
         $bar->start();
 
-        $query->chunkById(250, function ($releases) use ($categorizationService, $nzbSplitUnwrapper, $previewPolicy, $dryRun, &$updated, $bar): void {
+        $query->chunkById(250, function ($releases) use ($categorizationService, $nzbSplitUnwrapper, $writer, $dryRun, &$updated, $bar): void {
             foreach ($releases as $release) {
                 $bar->advance();
 
@@ -64,16 +64,15 @@ class FixNzbSplitNames extends Command
                     continue;
                 }
 
-                $category = $categorizationService->determineCategory(
-                    $release->groups_id,
-                    $newTitle,
-                    (string) ($release->fromname ?? ''),
-                    releaseId: (int) $release->id,
-                );
-
-                $newCategoryId = (int) ($category['categories_id'] ?? $release->categories_id);
-
                 if ($dryRun) {
+                    $category = $categorizationService->determineCategory(
+                        $release->groups_id,
+                        $newTitle,
+                        (string) ($release->fromname ?? ''),
+                        releaseId: (int) $release->id,
+                    );
+                    $newCategoryId = (int) ($category['categories_id'] ?? $release->categories_id);
+
                     $this->newLine();
                     $this->line(sprintf(
                         '[dry-run] #%d %s -> %s (%d -> %d)',
@@ -87,26 +86,16 @@ class FixNzbSplitNames extends Command
                     continue;
                 }
 
-                Release::query()
-                    ->where('id', $release->id)
-                    ->update([
-                        'name' => $newTitle,
-                        ...Release::searchNameValues($newTitle),
-                        'categories_id' => $newCategoryId,
-                        'isrenamed' => 1,
-                        'iscategorized' => 1,
-                        'videos_id' => 0,
-                        'tv_episodes_id' => 0,
-                        'imdbid' => null,
-                        'musicinfo_id' => null,
-                        'consoleinfo_id' => null,
-                        'gamesinfo_id' => 0,
-                        'bookinfo_id' => 0,
-                        'anidbid' => null,
-                    ]);
+                // The rename event files the release: the listener recategorizes and refines it.
+                $outcome = $writer->rename($release, new NameCandidate((int) $release->id, $newTitle, NameSource::NzbSplitRepair, 'NZBSPLIT wrapper'));
+                if (! $outcome->written) {
+                    $this->newLine();
+                    $this->warn(sprintf('#%d not renamed: %s', $release->id, $outcome->refusal->value ?? $outcome->decision->rejection->value ?? 'declined'));
 
-                $previewPolicy->restoreOwedPreviews([(int) $release->id]);
-                Search::updateRelease((int) $release->id);
+                    continue;
+                }
+
+                Release::query()->whereKey($release->id)->update(['name' => $newTitle]);
                 $updated++;
             }
         });

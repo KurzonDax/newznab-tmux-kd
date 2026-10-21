@@ -207,7 +207,8 @@ class DirectNameWriteCharacterizationTest extends TestCase
         Event::assertNotDispatched(ReleaseNameFixed::class);
     }
 
-    public function test_requeue_failed_books_normalizes_an_obfuscated_book_name_in_place(): void
+    /** Decision 3 (#1120): the repair renames through the name writer, as `Book subject repair`. */
+    public function test_requeue_failed_books_renames_an_obfuscated_book_name_through_the_writer(): void
     {
         Search::shouldReceive('updateRelease')->once()->with(1);
         $id = $this->linkedRelease(1, ['name' => 'N:/NZB [2/5] - "History of War - Issue 158, 2026.rar"',
@@ -220,19 +221,20 @@ class DirectNameWriteCharacterizationTest extends TestCase
 
         $row = $this->releaseRow($id);
         $this->assertSame(Release::searchNameValues('History of War - Issue 158, 2026'), array_intersect_key($row, Release::searchNameValues('x')));
-        $this->assertSame(['PAR2', 1, 9, 1, Category::BOOKS_EBOOK], [$row['name_source'], (int) $row['is_trusted_name'],
+        $this->assertSame(['Book subject repair', 1, 9, 1, Category::BOOKS_EBOOK], [$row['name_source'], (int) $row['is_trusted_name'],
             (int) $row['predb_id'], (int) $row['isrenamed'], (int) $row['categories_id']]);
-        $this->assertSame($this->links(['bookinfo_id' => null]), $this->linksOf($id));
-        Event::assertNotDispatched(ReleaseNameFixed::class);
+        $this->assertSame($this->links(self::CLEARED), $this->linksOf($id));
+        $this->assertEvent($id, 'N:/NZB [2/5] - "History of War - Issue 158, 2026.rar"', 'History of War - Issue 158, 2026', Category::BOOKS_EBOOK, Category::BOOKS_EBOOK);
     }
 
-    public function test_fix_nzbsplit_unwraps_the_name_and_categorizes_it_inline(): void
+    /** Decision 3 (#1120): the repair renames through the name writer, as `NZBSPLIT repair`; the rename listener files it. */
+    public function test_fix_nzbsplit_unwraps_the_name_through_the_writer(): void
     {
         Search::shouldReceive('updateRelease')->once()->with(1);
         $wrapped = 'WinterOlympics2026__NZBSPLIT__0456f274737cea074abd86a89144cc7b__NZBSPLIT__Winter_Olympic_Games_Milano_Cortina_2026_Closing_Ceremony_1080p25_WEB-DL_(MultiAudio).7z.065" yEnc(1';
         $id = $this->linkedRelease(1, ['name' => $wrapped, 'searchname' => $wrapped, 'name_source' => 'PAR2', 'is_trusted_name' => 1, 'predb_id' => 9]);
         $categorization = Mockery::mock(CategorizationService::class);
-        $categorization->shouldReceive('determineCategory')->once()->andReturn(['categories_id' => Category::TV_HD]);
+        $categorization->shouldNotReceive('determineCategory');
         $this->app->instance(CategorizationService::class, $categorization);
 
         $this->artisan('releases:fix-nzbsplit')
@@ -244,10 +246,10 @@ class DirectNameWriteCharacterizationTest extends TestCase
         $this->assertStringNotContainsString('NZBSPLIT', $unwrapped);
         $this->assertSame($unwrapped, $row['name']);
         $this->assertSame(Release::searchNameValues($unwrapped), array_intersect_key($row, Release::searchNameValues('x')));
-        $this->assertSame(['PAR2', 1, 9, 1, 1, Category::TV_HD], [$row['name_source'], (int) $row['is_trusted_name'],
+        $this->assertSame(['NZBSPLIT repair', 1, 9, 1, 1, Category::OTHER_HASHED], [$row['name_source'], (int) $row['is_trusted_name'],
             (int) $row['predb_id'], (int) $row['isrenamed'], (int) $row['iscategorized'], (int) $row['categories_id']]);
-        $this->assertSame($this->links([...self::CLEARED, 'movieinfo_id' => 43, 'bookinfo_id' => 0]), $this->linksOf($id));
-        Event::assertNotDispatched(ReleaseNameFixed::class);
+        $this->assertSame($this->links(self::CLEARED), $this->linksOf($id));
+        $this->assertEvent($id, $wrapped, $unwrapped, Category::OTHER_HASHED, null);
     }
 
     /** @return iterable<string, array{array<string, mixed>, bool}> */

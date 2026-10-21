@@ -44,6 +44,12 @@ enum NameSource: string
     case MusicBrainz = 'musicbrainz';
     case BookTitle = 'book_title';
 
+    /** releases:fix-nzbsplit unwrapping an NZBSPLIT-wrapped name. */
+    case NzbSplitRepair = 'nzbsplit_repair';
+
+    /** books:requeue-failed normalizing an obfuscated book subject. */
+    case BookSubjectRepair = 'book_subject_repair';
+
     /** The source label the CLI prints before the method, and the stored name source's origin. */
     public function type(): string
     {
@@ -68,6 +74,8 @@ enum NameSource: string
             self::AudioTags => 'Audio tags, ',
             self::MusicBrainz => 'MusicBrainz, ',
             self::BookTitle => 'Book title, ',
+            self::NzbSplitRepair => 'NZBSPLIT repair, ',
+            self::BookSubjectRepair => 'Book subject repair, ',
         };
     }
 
@@ -95,6 +103,8 @@ enum NameSource: string
             self::AudioTags => 'Audio tags',
             self::MusicBrainz => 'MusicBrainz',
             self::BookTitle => 'Book title',
+            self::NzbSplitRepair => 'NZBSPLIT repair',
+            self::BookSubjectRepair => 'Book subject repair',
         };
     }
 
@@ -121,7 +131,7 @@ enum NameSource: string
             self::UidElection => [...$renamed, 'proc_uid' => 1],
             self::SrrdbArchiveCrc, self::SrrdbAttach => [...$renamed, 'proc_srrdb' => 1],
             self::AudioTags, self::MusicBrainz => [...$renamed, 'proc_pp' => 1],
-            self::PreDbFullText, self::PreDbExactAttach, self::BookTitle => $renamed,
+            self::PreDbFullText, self::PreDbExactAttach, self::BookTitle, self::NzbSplitRepair, self::BookSubjectRepair => $renamed,
             self::PreDbFileMatch, self::SizeMismatch => [],
         };
     }
@@ -142,7 +152,8 @@ enum NameSource: string
             self::Par2HashDonor => 'proc_hash16k',
             self::UidElection => 'proc_uid',
             self::SrrdbArchiveCrc, self::SrrdbAttach, self::PreDbFullText, self::PreDbFileMatch, self::PreDbExactAttach,
-            self::SizeMismatch, self::RecoveryInventory, self::AudioTags, self::MusicBrainz, self::BookTitle => null,
+            self::SizeMismatch, self::RecoveryInventory, self::AudioTags, self::MusicBrainz, self::BookTitle,
+            self::NzbSplitRepair, self::BookSubjectRepair => null,
         };
     }
 
@@ -169,6 +180,8 @@ enum NameSource: string
             self::FileName, self::FileDescriptiveTitle, self::FileOriginalSubject, self::FileReleaseInform, self::XxxFile,
             self::MediaMovieName, self::MediaDescriptiveTitle, self::SizeMismatch, self::RecoveryInventory,
             self::BookTitle => TrustedDonor::Untrusted,
+            // The repairs leave the name's trust and PreDB id as they were.
+            self::NzbSplitRepair, self::BookSubjectRepair => TrustedDonor::Keep,
         };
     }
 
@@ -180,7 +193,7 @@ enum NameSource: string
 
     /**
      * The checks a candidate from this source must pass. Tag, MusicBrainz, book-title, recovery
-     * inventory and attached PreDB/SRRDB names are written as their writers built them.
+     * inventory, attached PreDB/SRRDB and repaired names are written as their writers built them.
      *
      * @return list<NameGuard>
      */
@@ -188,7 +201,7 @@ enum NameSource: string
     {
         return match ($this) {
             self::SrrdbAttach, self::PreDbExactAttach, self::RecoveryInventory, self::AudioTags, self::MusicBrainz,
-            self::BookTitle => [],
+            self::BookTitle, self::NzbSplitRepair, self::BookSubjectRepair => [],
             default => NameGuard::all(),
         };
     }
