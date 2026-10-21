@@ -170,6 +170,9 @@ class NzbCreationReliabilityTest extends TestCase
         (require database_path('migrations/2026_09_08_121907_create_collection_reconciliation_tables.php'))->up();
         DB::statement('ALTER TABLE releases ADD COLUMN is_trusted_name INTEGER DEFAULT 0');
         DB::statement('ALTER TABLE releases ADD COLUMN isrenamed INTEGER DEFAULT 0');
+        // The posting label is written with its normalized and display forms (#1120, decision 4).
+        DB::statement('ALTER TABLE releases ADD COLUMN searchname_normalized TEXT');
+        DB::statement('ALTER TABLE releases ADD COLUMN display_name TEXT');
         DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'fixture.empty']);
         $this->insertRelease(1, 'a', claimedAt: now()->subSeconds(301));
         $files = [new PostingFile('1', '1', '[1/1] - "Fixture.part01.rar" yEnc',

@@ -65,7 +65,7 @@ final class MediaInfoRefinementService
      * it is, without a decision, or when the decision leaves the forced root. The category is
      * checked first, so an ineligible one costs no query.
      */
-    public function evaluate(int $releaseId, int $categoryId, int|string $groupId): ?MediaInfoRefinementDecision
+    public function evaluate(int $releaseId, int $categoryId, int|string|null $groupId): ?MediaInfoRefinementDecision
     {
         if (! in_array($categoryId, self::eligibleCategoryIds(), true)) {
             return null;
