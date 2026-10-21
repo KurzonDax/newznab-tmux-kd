@@ -106,7 +106,6 @@ at the bottom of `.env` so the app resolves container names:
 DB_HOST=mariadb
 REDIS_HOST=redis
 MANTICORESEARCH_HOST=manticore
-ELASTICSEARCH_HOST=elasticsearch
 MAIL_HOST=mailpit
 MAIL_PORT=1025
 ```
@@ -118,10 +117,8 @@ Set `COMPOSE_PROFILES` in `.env` to match your `SEARCH_DRIVER`:
 | `SEARCH_DRIVER` | `COMPOSE_PROFILES` |
 |------------------|--------------------|
 | `manticore`      | `manticore`        |
-| `elasticsearch`  | `elasticsearch`    |
 
-Only the selected search service container will start. The other remains
-dormant and consumes no resources.
+The search service container starts only when its profile is selected.
 
 ### ManticoreSearch Image Updates
 
@@ -276,7 +273,6 @@ Sail creates a Docker network called `sail` with these default port mappings:
 | Redis          | 6379           | `FORWARD_REDIS_PORT` (6379)              |
 | Manticore SQL  | 9306           | 9306                                     |
 | Manticore HTTP | 9308           | 9308                                     |
-| Elasticsearch  | 9200           | 9200                                     |
 | Mailpit SMTP   | 1025           | `FORWARD_MAILPIT_PORT` (1025)            |
 | Mailpit Web    | 8025           | `FORWARD_MAILPIT_DASHBOARD_PORT` (8025)  |
 

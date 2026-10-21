@@ -58,7 +58,6 @@ final class SearchControllerTest extends TestCase
         $search->shouldReceive('searchEntityFields')->andReturn(['ids' => [], 'keys' => [], 'available' => false, 'has_more' => false])->byDefault();
         $search->shouldReceive('isFuzzyEnabled')->andReturn(false)->byDefault();
         $search->shouldReceive('isSuggestEnabled')->andReturn(false)->byDefault();
-        $search->shouldReceive('isAutocompleteEnabled')->andReturn(false)->byDefault();
         $this->app->instance(SearchServiceInterface::class, $search);
     }
 

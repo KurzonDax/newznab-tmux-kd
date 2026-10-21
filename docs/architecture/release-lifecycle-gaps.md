@@ -335,7 +335,7 @@ The sync uses the same after-commit path as other raw release writers, so Mantic
 `search_index_failures` for `nntmux:search-repair`.
 
 `nntmux:search-maintain` now walks a bounded, persistent id cursor across the database and active
-Manticore or Elasticsearch index. It repairs missing or mismatched documents and removes orphan
+Manticore index. It repairs missing or mismatched documents and removes orphan
 documents, then wraps after reaching the end. This scheduled safety net covers crash windows and
 historic bypass writes without requiring a one-off repopulation.
 

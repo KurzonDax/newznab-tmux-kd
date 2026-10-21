@@ -14,7 +14,7 @@ This upgrade rebuilds every configured Manticore table. Do not reuse data files 
 1. Pull and start `manticoresearch/manticore:28.4.4`.
 2. Confirm HTTP connectivity and optional username/password or bearer-token authentication with `php artisan manticore:inspect`.
 3. Run `php artisan manticore:create-indexes --drop`.
-4. Run `php artisan nntmux:populate --manticore --all` (or explicitly populate every enabled releases, PreDB, movie, TV, and secondary metadata table).
+4. Run `php artisan nntmux:populate --manticore --all` (or explicitly populate every enabled releases, PreDB, movie, and secondary metadata table).
 5. Run `php artisan manticore:inspect`, index reconciliation, and representative searches from `tests/Fixtures/Search/manticore-relevance-v1.json`.
 6. Resume queue workers and run `php artisan tmux:start` only after all tables report compatible.
 

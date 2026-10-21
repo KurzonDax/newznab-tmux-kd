@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Facades\Elasticsearch;
-use App\Services\Search\Support\ElasticsearchResponseHelper;
 use App\Services\Search\Support\ManticoreClientFactory;
-use Elastic\Elasticsearch\Client as ElasticsearchClient;
 use Exception;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
@@ -22,11 +19,9 @@ class NntmuxCheckIndex extends Command
      */
     protected $signature = 'nntmux:check-index
                                        {--manticore : Check ManticoreSearch}
-                                       {--elastic : Check ElasticSearch}
                                        {--releases : Check the releases index}
                                        {--predb : Check the predb index}
                                        {--movies : Check the movies index}
-                                       {--tvshows : Check the TV shows index}
                                        {--music : Check the music index}
                                        {--books : Check the books index}
                                        {--games : Check the games index}
@@ -50,7 +45,7 @@ class NntmuxCheckIndex extends Command
         $index = $this->getSelectedIndex();
 
         if (! $engine || ! $index) {
-            $this->error('You must specify both an engine (--manticore or --elastic) and an index option (e.g. --releases, --predb, --movies, --music, ...).');
+            $this->error('You must specify both an engine (--manticore) and an index option (e.g. --releases, --predb, --movies, --music, ...).');
 
             return Command::FAILURE;
         }
@@ -58,67 +53,13 @@ class NntmuxCheckIndex extends Command
         $this->info("Checking {$engine} {$index} index...");
 
         try {
-            if ($engine === 'elastic') {
-                $this->checkElasticIndex($index);
-            } else {
-                $this->checkManticoreIndex($index);
-            }
+            $this->checkManticoreIndex($index);
 
             return Command::SUCCESS;
         } catch (Exception $e) {
             $this->error("Error checking index: {$e->getMessage()}");
 
             return Command::FAILURE;
-        }
-    }
-
-    /**
-     * Check ElasticSearch index
-     */
-    private function checkElasticIndex(string $index): void
-    {
-        $index = $this->elasticIndexName($index);
-
-        try {
-            // Check if index exists
-            /** @var ElasticsearchClient $client */
-            $client = app('elasticsearch');
-            $exists = ElasticsearchResponseHelper::boolResponse($client, fn (ElasticsearchClient $elasticClient) => $elasticClient->indices()->exists(['index' => $index]));
-
-            if (! $exists) {
-                $this->error("ElasticSearch index '{$index}' does not exist.");
-
-                return;
-            }
-
-            $this->info("ElasticSearch index '{$index}' exists.");
-
-            // Get index stats
-            $stats = Elasticsearch::indices()->stats(['index' => $index]);
-            $docCount = $stats['indices'][$index]['total']['docs']['count'] ?? 0;
-            $storeSize = $stats['indices'][$index]['total']['store']['size_in_bytes'] ?? 0;
-
-            $this->info('Document count: '.number_format($docCount));
-            $this->info('Index size: '.$this->formatBytes($storeSize));
-
-            // Get a sample document
-            if ($docCount > 0) {
-                $sample = Elasticsearch::search([
-                    'index' => $index,
-                    'size' => 1,
-                    'body' => [
-                        'query' => ['match_all' => (object) []],
-                    ],
-                ]);
-
-                if (isset($sample['hits']['hits'][0])) {
-                    $this->info('Sample document:');
-                    $this->info(json_encode($sample['hits']['hits'][0]['_source'], JSON_PRETTY_PRINT));
-                }
-            }
-
-        } catch (Exception $e) {
-            $this->error("Error checking ElasticSearch index: {$e->getMessage()}");
         }
     }
 
@@ -132,7 +73,6 @@ class NntmuxCheckIndex extends Command
                 'releases' => 'releases_rt',
                 'predb' => 'predb_rt',
                 'movies' => 'movies_rt',
-                'tvshows' => 'tvshows_rt',
                 'music' => 'music_rt',
                 'books' => 'books_rt',
                 'games' => 'games_rt',
@@ -271,26 +211,11 @@ class NntmuxCheckIndex extends Command
     }
 
     /**
-     * Format bytes to human readable format
-     */
-    private function formatBytes(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $bytes = max($bytes, 0);
-        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-        $pow = min($pow, count($units) - 1);
-
-        $bytes /= pow(1024, $pow);
-
-        return round($bytes, 2).' '.$units[$pow];
-    }
-
-    /**
      * Get selected engine
      */
     private function getSelectedEngine(): ?string
     {
-        return $this->option('manticore') ? 'manticore' : ($this->option('elastic') ? 'elastic' : null);
+        return $this->option('manticore') ? 'manticore' : null;
     }
 
     /**
@@ -299,7 +224,7 @@ class NntmuxCheckIndex extends Command
     private function getSelectedIndex(): ?string
     {
         $options = [
-            'releases', 'predb', 'movies', 'tvshows', 'music', 'books', 'games', 'console', 'steam', 'anime',
+            'releases', 'predb', 'movies', 'music', 'books', 'games', 'console', 'steam', 'anime',
         ];
         foreach ($options as $opt) {
             if ($this->option($opt)) {
@@ -308,15 +233,5 @@ class NntmuxCheckIndex extends Command
         }
 
         return null;
-    }
-
-    /**
-     * Resolve ElasticSearch index name for logical keys.
-     */
-    private function elasticIndexName(string $index): string
-    {
-        $configured = config('search.drivers.elasticsearch.indexes.'.$index);
-
-        return is_string($configured) && $configured !== '' ? $configured : $index;
     }
 }

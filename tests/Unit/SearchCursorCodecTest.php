@@ -30,7 +30,7 @@ final class SearchCursorCodecTest extends TestCase
                 return strrev((string) $payload);
             }
         });
-        $cursor = new SearchCursor([1710000000, 42], 250, 'query-hash', 'elasticsearch', '7', time() + 60);
+        $cursor = new SearchCursor([1710000000, 42], 250, 'query-hash', 'manticore', '7', time() + 60);
 
         $decoded = $codec->decode($codec->encode($cursor));
 
@@ -42,14 +42,14 @@ final class SearchCursorCodecTest extends TestCase
     public function it_round_trips_an_opaque_signed_cursor(): void
     {
         $codec = new SearchCursorCodec(new Encrypter(random_bytes(32), 'AES-256-CBC'));
-        $cursor = new SearchCursor([1710000000, 42], 250, 'query-hash', 'elasticsearch', '7', time() + 60);
+        $cursor = new SearchCursor([1710000000, 42], 250, 'query-hash', 'manticore', '7', time() + 60);
 
         $decoded = $codec->decode($codec->encode($cursor));
 
         $this->assertSame($cursor->sortValues, $decoded->sortValues);
         $this->assertSame(250, $decoded->total);
         $this->assertSame('query-hash', $decoded->queryHash);
-        $this->assertSame('elasticsearch', $decoded->driver);
+        $this->assertSame('manticore', $decoded->driver);
         $this->assertSame('7', $decoded->indexGeneration);
     }
 

@@ -68,7 +68,7 @@ in every migration PR; tests build tables with `Tests\Support\ProductionTables::
    because MariaDB turns `EXISTS` into a semi-join over every release (`app/Services/Releases/TvShowWall.php:180-200`).
 8. **Similar releases** is `ReleaseSearchService::searchSimilar()` (`app/Services/Releases/ReleaseSearchService.php:1386-1413`),
    called from `app/Http/Controllers/DetailsController.php:69` with the user's excluded categories. `search()` (`:52-150`)
-   goes through `ReleaseSearchQuery` to the Manticore or Elasticsearch driver, with a MySQL fallback. The search index carries
+   goes through `ReleaseSearchQuery` to the Manticore driver, with a MySQL fallback. The search index carries
    `movieinfo_id` on every release (`app/Support/ReleaseSearchIndexDocument.php:24,114`).
 9. **Indexes the app names.** `TvReleaseList` forces `ix_releases_band_posted`, `ix_releases_band_added` and
    `ix_releases_band_count` by name (`app/Services/Releases/TvReleaseList.php:32,55`): those names stay. No code names
@@ -343,7 +343,7 @@ amount.
 |---|---|
 | **Similar films** (`SPEC.md` 6.6: candidates share a genre or a person; 2 × shared genres + 3 × shared people − \|year gap\| / 10, no year term when either year is empty; top 6) with **the viewer's visibility** as a per-candidate probe: Heat, Inception, The Conjuring, Sully, Mass Jathara, Fist of the North Star | 33.7, 17.2, 14.5, 19.9, 25.5, 15.3 ms |
 | **TV Similar shows**, the same rule on `video_genres` / `video_people` with the premiere year, visibility per candidate (most genres, Breaking Bad, Doctor Who, The West Wing) | 36.8, 29.1, 32.4, 20.7 ms |
-| **Similar releases** without the same film (`SPEC.md` 5C.5): today's search (fact 8) with the film left out in every path: a `movieinfo_id` filter in the Manticore and Elasticsearch queries, and `(r.movieinfo_id IS NULL OR r.movieinfo_id <> ?)` in the MySQL fallback; a release without a film filters nothing | 2 ms on the production Manticore index (read-only, 2026-09-27) |
+| **Similar releases** without the same film (`SPEC.md` 5C.5): today's search (fact 8) with the film left out in every path: a `movieinfo_id` filter in the Manticore query, and `(r.movieinfo_id IS NULL OR r.movieinfo_id <> ?)` in the MySQL fallback; a release without a film filters nothing | 2 ms on the production Manticore index (read-only, 2026-09-27) |
 
 ### 4.6 TV releases list (the approved changes)
 
@@ -410,7 +410,7 @@ Downtime is not a concern, so the migrations fill what they add. **No command.**
 6. The fill migrations are idempotent on a fixture and give the same rows as the write paths for the same data; the split rule
    keeps "Robert Downey, Jr." as one person.
 7. The wall lists a film only when the viewer may see one of its releases; Similar films and Similar shows skip a candidate
-   the viewer may not see; Similar releases never lists the film's own releases, in the Manticore, Elasticsearch and MySQL
+   the viewer may not see; Similar releases never lists the film's own releases, in the Manticore and MySQL
    paths.
 8. The API capabilities response lists the same genres as before the redesign (no type 2000 or 5000 rows).
 9. `NntmuxResetDb`'s list names every table in 3.3.

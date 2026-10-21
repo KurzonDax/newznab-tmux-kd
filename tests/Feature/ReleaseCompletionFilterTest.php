@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Services\Search\Drivers\ElasticSearchDriver;
 use App\Services\Search\DTO\ReleaseSearchQuery;
 use App\Services\Search\Support\ManticoreIndexRegistry;
 use App\Support\ReleaseSearchIndexDocument;
@@ -26,20 +25,6 @@ final class ReleaseCompletionFilterTest extends TestCase
         $this->assertSame(0, ReleaseSearchQuery::fromCriteria([], 100)->criteria()['min_completion']);
     }
 
-    public function test_elasticsearch_filters_on_the_completion_attribute(): void
-    {
-        $driver = app(ElasticSearchDriver::class);
-        $build = new \ReflectionMethod($driver, 'buildElasticsearchReleaseFilters');
-
-        $filters = $build->invoke($driver, ['min_completion' => 80]);
-        $this->assertContains(['range' => ['completion' => ['gte' => 80]]], $filters);
-
-        $unfiltered = $build->invoke($driver, ['min_completion' => 0]);
-        foreach ($unfiltered as $clause) {
-            $this->assertArrayNotHasKey('completion', $clause['range'] ?? []);
-        }
-    }
-
     public function test_the_release_index_carries_completion(): void
     {
         $columns = ManticoreIndexRegistry::definitions()['releases']['columns'];
@@ -48,10 +33,6 @@ final class ReleaseCompletionFilterTest extends TestCase
         $this->assertContains('completion', ReleaseSearchIndexDocument::fields());
         $this->assertSame(99.7, ReleaseSearchIndexDocument::normalize(['completion' => 99.7])['completion']);
         $this->assertSame(0.0, ReleaseSearchIndexDocument::normalize([])['completion']);
-
-        $mapping = file_get_contents(app_path('Console/Commands/NntmuxCreateESIndexes.php'));
-        $this->assertIsString($mapping);
-        $this->assertStringContainsString("'completion' => ['type' => 'float']", $mapping);
     }
 
     public function test_the_index_projection_and_sync_keep_completion_current(): void

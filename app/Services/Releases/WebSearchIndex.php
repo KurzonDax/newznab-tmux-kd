@@ -20,7 +20,7 @@ final class WebSearchIndex
 
     /**
      * One page of a search from the index, at the generic lists' page size and in the list's sort,
-     * never past the last page the index can reach (`max_matches`; 10,000 results on Elasticsearch).
+     * never past the last page the index can reach (`max_matches`).
      *
      * @param  array<string, list<int|string>>  $entityFilters
      * @return array<string, mixed>
@@ -81,7 +81,7 @@ final class WebSearchIndex
         } elseif ($state->threshold() !== null) {
             $criteria['min_completion'] = $state->threshold();
         }
-        $maximum = config('search.default') === 'elasticsearch' ? 10000 : max(1, (int) config('search.drivers.manticore.max_matches', 10000));
+        $maximum = max(1, (int) config('search.drivers.manticore.max_matches', 10000));
         $per = ReleaseListFilters::PER_PAGE;
         $page = min($state->page, (int) ceil($maximum / $per));
         $offset = ($page - 1) * $per;
