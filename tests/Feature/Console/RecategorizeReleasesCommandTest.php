@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class RecategorizeReleasesCommandTest extends TestCase
@@ -70,6 +71,9 @@ class RecategorizeReleasesCommandTest extends TestCase
             $table->unsignedInteger('groups_id');
             $table->primary(['releases_id', 'groups_id']);
         });
+        // A pipeline category in an Other bucket is refined from the stored MediaInfo.
+        ProductionTables::fromAuthority()->create('video_data', ['releases_id', 'containerformat', 'videoformat', 'videocodec', 'videowidth', 'videoheight', 'videoduration']);
+        ProductionTables::fromAuthority()->create('audio_data', ['id', 'releases_id', 'audioid', 'audioformat']);
 
         DB::table('settings')->insert([
             ['name' => 'categorizeforeign', 'value' => '0'],

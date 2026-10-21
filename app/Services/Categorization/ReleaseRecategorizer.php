@@ -17,17 +17,25 @@ class ReleaseRecategorizer
 
     private ?CategoryChange $categoryChange = null;
 
-    /** The category the pipeline files the release under today. */
+    private ?MediaInfoRefinementService $refinement = null;
+
+    /**
+     * The category the pipeline files the release under today, refined from its stored MediaInfo
+     * as a rename would be, so a recategorize run does not undo a refinement.
+     */
     public function categoryFor(Release $release): int
     {
-        $this->categorization ??= new CategorizationService;
+        $this->categorization ??= app(CategorizationService::class);
+        $this->refinement ??= new MediaInfoRefinementService;
 
-        return (int) $this->categorization->determineCategory(
+        $categoryId = (int) $this->categorization->determineCategory(
             $release->groups_id,
             $release->searchname,
             $release->fromname,
             releaseId: (int) $release->id,
         )['categories_id'];
+
+        return $this->refinement->evaluate((int) $release->id, $categoryId, $release->groups_id)->categoryId ?? $categoryId;
     }
 
     /**

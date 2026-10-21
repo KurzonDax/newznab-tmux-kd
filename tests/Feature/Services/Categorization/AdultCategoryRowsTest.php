@@ -26,7 +26,7 @@ class AdultCategoryRowsTest extends TestCase
         parent::setUp();
 
         $tables = ProductionTables::fromAuthority();
-        foreach (['settings', 'usenet_groups', 'root_categories', 'categories', 'releases', 'releases_groups'] as $table) {
+        foreach (['settings', 'usenet_groups', 'root_categories', 'categories', 'releases', 'releases_groups', 'video_data', 'audio_data'] as $table) {
             $tables->create($table);
         }
 

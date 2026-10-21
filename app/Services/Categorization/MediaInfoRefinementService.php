@@ -59,28 +59,40 @@ final class MediaInfoRefinementService
         return new MediaInfoRefinementDecision(Category::MUSIC_OTHER, 'audio_other');
     }
 
-    public function refine(int $releaseId, bool $dryRun = false): ?MediaInfoRefinementDecision
+    /**
+     * The refinement the release's stored MediaInfo gives a release filed under the category:
+     * null outside an eligible category, for a release its recovery or bundle identity keeps as
+     * it is, without a decision, or when the decision leaves the forced root. The category is
+     * checked first, so an ineligible one costs no query.
+     */
+    public function evaluate(int $releaseId, int $categoryId, int|string $groupId): ?MediaInfoRefinementDecision
     {
-        if ((! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
+        if (! in_array($categoryId, self::eligibleCategoryIds(), true)) {
             return null;
         }
-        $release = Release::query()->find($releaseId, ['id', 'categories_id', 'groups_id']);
-        if ($release === null || ! in_array((int) $release->categories_id, self::eligibleCategoryIds(), true)) {
+        if ((! (new RecoveryIdentityPolicy)->allowsSingleItemMetadata($releaseId) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
             return null;
         }
 
         $video = VideoData::query()->where('releases_id', $releaseId)->first()?->toArray();
         $audio = AudioData::query()->where('releases_id', $releaseId)->orderBy('audioid')->first()?->toArray();
-        $decision = $this->decisionFor((int) $release->categories_id, $video, $audio);
+        $decision = $this->decisionFor($categoryId, $video, $audio);
 
-        if ($decision !== null && ! $this->respectsForcedRootCategory(
-            (int) $release->groups_id,
-            $releaseId,
-            $decision->categoryId,
-        )) {
+        if ($decision !== null && ! $this->respectsForcedRootCategory((int) $groupId, $releaseId, $decision->categoryId)) {
             return null;
         }
 
+        return $decision;
+    }
+
+    public function refine(int $releaseId, bool $dryRun = false): ?MediaInfoRefinementDecision
+    {
+        $release = Release::query()->find($releaseId, ['id', 'categories_id', 'groups_id']);
+        if ($release === null) {
+            return null;
+        }
+
+        $decision = $this->evaluate($releaseId, (int) $release->categories_id, $release->groups_id);
         if ($decision === null || $decision->categoryId === (int) $release->categories_id || $dryRun) {
             return $decision;
         }
