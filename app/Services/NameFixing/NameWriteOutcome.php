@@ -12,4 +12,10 @@ final readonly class NameWriteOutcome
         public bool $written = false,
         public ?NameWriteRefusal $refusal = null,
     ) {}
+
+    /** Why the rename was not written, for an operator. */
+    public function reason(): string
+    {
+        return $this->refusal->value ?? $this->decision->rejection->value ?? 'declined';
+    }
 }

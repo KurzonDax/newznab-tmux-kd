@@ -26,16 +26,14 @@ class NameSourceTest extends TestCase
     }
 
     #[DataProvider('sources')]
-    public function test_sources_sharing_a_type_share_its_status_and_miss_columns(NameSource $source): void
+    public function test_sources_sharing_a_type_share_its_miss_column(NameSource $source): void
     {
-        $this->assertSame(NameSource::statusColumnsForType($source->type()), $source->statusColumns());
         $this->assertSame(NameSource::missColumnForType($source->type()), $source->missColumn());
     }
 
-    public function test_a_type_no_source_has_writes_no_status(): void
+    public function test_a_type_no_source_has_marks_no_miss(): void
     {
-        $this->assertSame([], NameSource::statusColumnsForType('sorter, '));
-        $this->assertSame([], NameSource::statusColumnsForType('file matched source: '));
         $this->assertNull(NameSource::missColumnForType('sorter, '));
+        $this->assertNull(NameSource::missColumnForType('file matched source: '));
     }
 }

@@ -66,6 +66,24 @@ class NameRepairCommandsTest extends TestCase
         Event::assertDispatched(ReleaseNameFixed::class, static fn (ReleaseNameFixed $event): bool => $event->releaseId === $id && $event->categoryOverride === null);
     }
 
+    public function test_fix_nzbsplit_writes_the_unwrapped_name_before_the_release_is_re_indexed(): void
+    {
+        Event::fake([ReleaseNameFixed::class]);
+        $id = $this->linkedRelease(1, ['name' => self::WRAPPED, 'searchname' => self::WRAPPED]);
+        $indexedNames = [];
+        $search = Mockery::mock();
+        $search->shouldReceive('updateRelease')->andReturnUsing(function (int $releaseId) use (&$indexedNames): bool {
+            $indexedNames[] = $this->releaseRow($releaseId)['name'];
+
+            return true;
+        });
+        Search::swap($search);
+
+        $this->artisan('releases:fix-nzbsplit')->assertSuccessful();
+
+        $this->assertSame([self::UNWRAPPED], $indexedNames);
+    }
+
     public function test_fix_nzbsplit_files_the_renamed_release_through_the_rename_listener(): void
     {
         $categorization = Mockery::mock(CategorizationService::class);

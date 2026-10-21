@@ -217,16 +217,6 @@ enum NameSource: string
         return $this === self::FileDescriptiveTitle;
     }
 
-    /**
-     * The status columns of the sources a rename type label belongs to.
-     *
-     * @return array<string, int>
-     */
-    public static function statusColumnsForType(string $type): array
-    {
-        return self::firstOfType($type)?->statusColumns() ?? [];
-    }
-
     /** The processing column of the sources a rename type label belongs to. */
     public static function missColumnForType(string $type): ?string
     {

@@ -118,7 +118,7 @@ class RequeueFailedBooks extends Command
                 $written = $outcome->written;
                 if (! $written) {
                     $this->newLine();
-                    $this->warn(sprintf('#%d not renamed: %s', (int) $release->id, $outcome->refusal->value ?? $outcome->decision->rejection->value ?? 'declined'));
+                    $this->warn(sprintf('#%d not renamed: %s', (int) $release->id, $outcome->reason()));
                 }
             }
             if (! $written && $shouldRequeue) {

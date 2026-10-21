@@ -30,9 +30,6 @@ class ReleaseUpdateService
     /** The rename type of a name built from a release's own audio tags. */
     public const AUDIO_TAGS_TYPE = 'Audio tags, ';
 
-    /** The rename type of the canonical name of an accepted MusicBrainz album (issue #309). */
-    public const MUSICBRAINZ_TYPE = 'MusicBrainz, ';
-
     /**
      * @var list<string>
      */
@@ -325,7 +322,10 @@ class ReleaseUpdateService
     /** Gives a release whose name equals a PreDB title that PreDB entry, and trusts the name. */
     public function attachPredbId(int $releaseId, int $predbId, ?RecoveryNameEvidence $recoveryEvidence = null): NameUpdateResult
     {
-        if ($releaseId === 0 || $predbId === 0 || (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
+        if ($releaseId === 0 || $predbId === 0) {
+            return NameUpdateResult::declined();
+        }
+        if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId)) {
             return NameUpdateResult::declined(NameRejection::RecoveryRefused);
         }
 

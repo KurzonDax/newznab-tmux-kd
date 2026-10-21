@@ -87,15 +87,15 @@ class FixNzbSplitNames extends Command
                 }
 
                 // The rename event files the release: the listener recategorizes and refines it.
-                $outcome = $writer->rename($release, new NameCandidate((int) $release->id, $newTitle, NameSource::NzbSplitRepair, 'NZBSPLIT wrapper'));
+                $outcome = $writer->rename($release, new NameCandidate((int) $release->id, $newTitle, NameSource::NzbSplitRepair, 'NZBSPLIT wrapper'),
+                    alsoWrite: ['name' => $newTitle]);
                 if (! $outcome->written) {
                     $this->newLine();
-                    $this->warn(sprintf('#%d not renamed: %s', $release->id, $outcome->refusal->value ?? $outcome->decision->rejection->value ?? 'declined'));
+                    $this->warn(sprintf('#%d not renamed: %s', $release->id, $outcome->reason()));
 
                     continue;
                 }
 
-                Release::query()->whereKey($release->id)->update(['name' => $newTitle]);
                 $updated++;
             }
         });

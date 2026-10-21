@@ -52,6 +52,7 @@ class ReleaseNameWriter
      * @param  object  $release  the release as the caller read it
      * @param  bool  $nameStatus  whether the source's status columns are written
      * @param  ?Closure(): array<string, int>  $storedFiles
+     * @param  array<string, mixed>  $alsoWrite  other columns of the caller's, written with the rename
      */
     public function rename(
         object $release,
@@ -61,13 +62,14 @@ class ReleaseNameWriter
         bool $recoveryAllowed = true,
         bool $alreadyRenamed = false,
         ?Closure $storedFiles = null,
+        array $alsoWrite = [],
     ): NameWriteOutcome {
         $decision = $this->policy->decide($release, $candidate, $recoveryAllowed, $alreadyRenamed, $storedFiles);
         if (! $decision->accepted() || ! $write) {
             return new NameWriteOutcome($decision);
         }
 
-        $refusal = $this->persist($release, $candidate, $decision, $nameStatus);
+        $refusal = $this->persist($release, $candidate, $decision, $nameStatus, $alsoWrite);
 
         return new NameWriteOutcome($decision, $refusal === null, $refusal);
     }
@@ -133,11 +135,13 @@ class ReleaseNameWriter
     /**
      * Write an accepted rename: the name, its trust and source, the status columns and the
      * cleared links, re-checking the release's identity under its row lock.
+     *
+     * @param  array<string, mixed>  $alsoWrite
      */
-    protected function persist(object $release, NameCandidate $candidate, NameDecision $decision, bool $nameStatus): ?NameWriteRefusal
+    protected function persist(object $release, NameCandidate $candidate, NameDecision $decision, bool $nameStatus, array $alsoWrite = []): ?NameWriteRefusal
     {
         $releaseId = (int) ($release->releases_id ?? $release->id);
-        $refusal = DB::transaction(function () use ($release, $releaseId, $candidate, $decision, $nameStatus): ?NameWriteRefusal {
+        $refusal = DB::transaction(function () use ($release, $releaseId, $candidate, $decision, $nameStatus, $alsoWrite): ?NameWriteRefusal {
             $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
             if (! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $candidate->recoveryEvidence)) {
                 return NameWriteRefusal::RecoveryIdentity;
@@ -151,7 +155,7 @@ class ReleaseNameWriter
             }
             $candidate->recoveryEvidence?->assertNamingAllowed();
 
-            Release::query()->where('id', $releaseId)->update($this->renameColumns($candidate, $decision, $nameStatus, $categoryId));
+            Release::query()->where('id', $releaseId)->update([...$alsoWrite, ...$this->renameColumns($candidate, $decision, $nameStatus, $categoryId)]);
 
             event(new ReleaseNameFixed(
                 $releaseId,
@@ -186,19 +190,10 @@ class ReleaseNameWriter
             unset($columns['is_trusted_name'], $columns['predb_id']);
         }
 
-        if (! $nameStatus) {
-            $columns['iscategorized'] = 1;
-            if ($categoryId !== null) {
-                $columns['categories_id'] = $categoryId;
-            }
-
-            return $columns;
-        }
-
         if ($categoryId !== null) {
             $columns['categories_id'] = $categoryId;
         }
 
-        return [...$columns, ...$candidate->source->statusColumns()];
+        return $nameStatus ? [...$columns, ...$candidate->source->statusColumns()] : [...$columns, 'iscategorized' => 1];
     }
 }

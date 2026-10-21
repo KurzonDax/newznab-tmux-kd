@@ -13,7 +13,8 @@ repository glossary for the Trusted donor definition.
   `proc_*` column on a miss, whether it skips plausibility, its `trustedDonor`
   value (`Trusted`, `Untrusted` or `Keep`) and the guards that apply. Call
   sites pass their case; method labels are only CLI echo text. A candidate
-  carrying a PreDB id is trusted whatever its case (`NamePolicy::trust()`).
+  carrying a PreDB id is trusted whatever its case, except a descriptive
+  container title, which stays untrusted (`NamePolicy::trust()`).
 - `NamePolicy::decide()` judges a `NameCandidate` without queries: the
   caller passes the recovery verdict and a loader for the stored files.
 - `ReleaseNameWriter` is the only writer of an existing release's name, trust,
