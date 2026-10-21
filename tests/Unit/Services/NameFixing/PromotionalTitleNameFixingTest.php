@@ -10,8 +10,11 @@ use App\Services\NameFixing\Extractors\FileNameExtractor;
 use App\Services\NameFixing\FileNameCleaner;
 use App\Services\NameFixing\FilePrioritizer;
 use App\Services\NameFixing\NameFixingService;
+use App\Services\NameFixing\NamePolicy;
+use App\Services\NameFixing\NameSource;
 use App\Services\NameFixing\PredbMatchSelector;
 use App\Services\NameFixing\ReleaseUpdateService;
+use App\Services\NameFixing\TrustedDonor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\TestCase;
@@ -110,11 +113,8 @@ class PromotionalTitleNameFixingTest extends TestCase
 
     public function test_an_uncorroborated_media_title_does_not_make_a_trusted_donor(): void
     {
-        $policy = (new ReflectionClass(ReleaseUpdateService::class))->getMethod('sourceTrustPolicy');
-        $updater = $this->updater();
-
-        $this->assertFalse($policy->invoke($updater, 'Mediainfo, ', 'MediaInfo: Movie Name', 0)['trusted_donor']);
-        $this->assertTrue($policy->invoke($updater, 'Mediainfo, ', 'MediaInfo: Movie Name', 77)['trusted_donor']);
+        $this->assertSame(TrustedDonor::Untrusted, NamePolicy::trust(NameSource::MediaMovieName, 0)[1]);
+        $this->assertSame(TrustedDonor::Trusted, NamePolicy::trust(NameSource::MediaMovieName, 77)[1]);
     }
 
     public function test_a_promotional_video_filename_is_not_a_descriptive_title(): void

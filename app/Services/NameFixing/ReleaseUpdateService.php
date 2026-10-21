@@ -9,14 +9,12 @@ use App\Models\Category;
 use App\Models\Release;
 use App\Models\ReleaseFile;
 use App\Models\UsenetGroup;
-use App\Services\AdditionalProcessing\PostedFileClassifier;
 use App\Services\AdditionalProcessing\ReleaseSearchSyncCoordinator;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\Categorization\CategorizationService;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryNameEvidence;
-use App\Services\ReleaseCleaningService;
 use App\Services\Releases\ForcedRootPolicy;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -38,11 +36,6 @@ class ReleaseUpdateService
 
     /** The rename type of the canonical name of an accepted MusicBrainz album (issue #309). */
     public const MUSICBRAINZ_TYPE = 'MusicBrainz, ';
-
-    /**
-     * Methods that offer a descriptive video filename from stored files or an archive listing.
-     */
-    private const DESCRIPTIVE_FILENAME_METHODS = ['fileCheck: Descriptive title', 'RarInfo: Descriptive title'];
 
     /**
      * @var list<string>
@@ -106,6 +99,8 @@ class ReleaseUpdateService
     protected bool $echoOutput;
 
     private readonly ReleaseSearchSyncCoordinator $searchSyncCoordinator;
+
+    private ?NamePolicy $namePolicy = null;
 
     /**
      * The release ID we are trying to rename.
@@ -175,249 +170,96 @@ class ReleaseUpdateService
         if (is_array($release)) {
             $release = (object) $release;
         }
-        $imdbId = $type === 'SRRDB, ' && isset($release->srrdb_imdbid)
-            ? (string) $release->srrdb_imdbid
-            : null;
 
         // If $release does not have a releases_id, we should add it.
         if (! isset($release->releases_id)) {
             $release->releases_id = $release->id;
         }
+        $releaseId = (int) $release->releases_id;
+        $candidate = new NameCandidate(
+            $releaseId,
+            $name,
+            NameSource::fromLabels($type, $method),
+            $method,
+            $preId,
+            $type === 'SRRDB, ' && isset($release->srrdb_imdbid) ? (string) $release->srrdb_imdbid : null,
+            descriptiveTitle: $descriptiveTitleCandidate,
+            recoveryEvidence: $recoveryEvidence,
+        );
 
-        if ($echo && ! (new RecoveryIdentityPolicy)->allowsParent((int) $release->releases_id, $recoveryEvidence)) {
-            $this->matched = false;
+        $decision = $this->namePolicy()->decide(
+            $release,
+            $candidate,
+            ! $echo || (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence),
+            $this->relid === $release->releases_id,
+            static fn (): array => self::storedFileSizes($releaseId),
+        );
+        if (! $decision->accepted()) {
+            if ($decision->rejection === NameRejection::RecoveryRefused) {
+                $this->matched = false;
+            }
             $this->done = true;
 
             return;
         }
-        if ($this->relid !== $release->releases_id) {
-            // Download-site advertising is never a name, whatever source or PreDB id presents it.
-            if ($this->fileNameCleaner->isPromotionalTitle($name)) {
-                $this->done = true;
 
-                return;
-            }
+        $newTitle = $decision->title;
+        $this->matched = true;
+        $this->relid = $releaseId;
 
-            $descriptiveMediaTitle = $method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD;
-            if ($descriptiveMediaTitle
-                && (! $descriptiveTitleCandidate
-                    || ! $this->fileNameCleaner->isDescriptiveContainerTitle($name)
-                    || $this->fileNameCleaner->isReadableReleaseTitle((string) $release->searchname)
-                    || $this->fileNameCleaner->isDescriptiveContainerTitle((string) $release->searchname))) {
-                $this->done = true;
+        $this->fixed++;
 
-                return;
-            }
-
-            $newTitle = $this->finalizeCandidate($release, $name, $type, $descriptiveMediaTitle);
-            if ($this->fileNameCleaner->isPromotionalTitle($newTitle)) {
-                $this->done = true;
-
-                return;
-            }
-
-            $categoryId = (int) ($release->categories_id ?? $release->categoryid ?? 0);
-            $replacesXxxPostingLabel = $descriptiveTitleCandidate
-                && $this->replacesXxxPostingLabel($release, $name, $method, $type, $categoryId);
-
-            // An episode's title is not the name of a release that holds more than that episode.
-            if (! $replacesXxxPostingLabel && $this->namesOneEpisodeOfLargerRelease($release, $newTitle)) {
-                $this->done = true;
-
-                return;
-            }
-
-            // Determine if the source is trusted enough to bypass plausibility checks
-            $sourceTrust = $this->sourceTrustPolicy($type, $method, $preId);
-            $trustedSource = $sourceTrust['bypass_plausibility'];
-            $currentNameObfuscated = $this->fileNameCleaner->currentNameLooksObfuscated(
-                (string) $release->searchname,
-                $categoryId,
-                isset($release->matchedBy)
-                    ? (string) $release->matchedBy
-                    : (isset($release->matched_by) ? (string) $release->matched_by : null),
+        if ($echo === true) {
+            $this->performDatabaseUpdate(
+                $release,
+                $newTitle,
+                $type,
+                $method,
+                $nameStatus,
+                $preId,
+                $candidate->imdbId,
+                recoveryEvidence: $recoveryEvidence,
             );
-            $acceptedDescriptiveTitle = $replacesXxxPostingLabel
-                || ($descriptiveTitleCandidate
-                    && ($descriptiveMediaTitle || $this->fileNameCleaner->isDescriptiveTitle($name))
-                    && $currentNameObfuscated);
+        }
 
-            if (! $trustedSource
-                && ! $acceptedDescriptiveTitle
-                && ! $this->fileNameCleaner->isPlausibleReleaseTitle($newTitle)) {
-                // Skip low-quality rename candidates for untrusted sources
-                $this->done = true;
+        if ($this->echoOutput && $show) {
+            // A written rename was categorized by the rename listener inside
+            // the update; show what it stored rather than categorizing again.
+            $determinedCategory = $echo === true
+                ? ['categories_id' => Release::query()->whereKey($releaseId)->value('categories_id') ?? $release->categories_id]
+                : $this->category->determineCategory(
+                    $release->groups_id,
+                    $newTitle,
+                    ! empty($release->fromname) ? $release->fromname : '',
+                    releaseId: $releaseId,
+                );
 
-                return;
-            }
-
-            if (! $trustedSource
-                && ! $acceptedDescriptiveTitle
-                && ! $currentNameObfuscated
-                && $this->fileNameCleaner->isLessInformativeThan($newTitle, (string) $release->searchname)) {
-                $this->done = true;
-
-                return;
-            }
-
-            if (strtolower($newTitle) !== strtolower($release->searchname)) {
-                $this->matched = true;
-                $this->relid = (int) $release->releases_id;
-
-                $this->fixed++;
-
-                if ($echo === true) {
-                    $this->performDatabaseUpdate(
-                        $release,
-                        $newTitle,
-                        $type,
-                        $method,
-                        $nameStatus,
-                        $preId,
-                        $imdbId,
-                        recoveryEvidence: $recoveryEvidence,
-                    );
-                }
-
-                if ($this->echoOutput && $show) {
-                    // A written rename was categorized by the rename listener inside
-                    // the update; show what it stored rather than categorizing again.
-                    $determinedCategory = $echo === true
-                        ? ['categories_id' => Release::query()->whereKey((int) $release->releases_id)->value('categories_id') ?? $release->categories_id]
-                        : $this->category->determineCategory(
-                            $release->groups_id,
-                            $newTitle,
-                            ! empty($release->fromname) ? $release->fromname : '',
-                            releaseId: (int) $release->releases_id,
-                        );
-
-                    $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
-                }
-            }
+            $this->echoReleaseInfo($release, $newTitle, $determinedCategory, $type, $method);
         }
         $this->done = true;
     }
 
-    /**
-     * Under XXX, a descriptive video filename may replace an opaque posting label. The release
-     * may hold several videos, so neither the episode guard nor a size share applies to it.
-     */
-    private function replacesXxxPostingLabel(object $release, string $name, string $method, string $type, int $categoryId): bool
+    /** Built on first use: test doubles skip the constructor and set the cleaner themselves. */
+    private function namePolicy(): NamePolicy
     {
-        return $type === 'Filenames, '
-            && in_array($method, self::DESCRIPTIVE_FILENAME_METHODS, true)
-            && Category::rootCategoryFor($categoryId) === Category::XXX_ROOT
-            && $this->fileNameCleaner->isDescriptiveTitle($name)
-            && $this->fileNameCleaner->isUnresolvedPostingLabel((string) $release->searchname);
+        return $this->namePolicy ??= new NamePolicy($this->fileNameCleaner);
     }
 
-    private const string EPISODE_TOKEN_REGEX = '/(?<![A-Za-z0-9])S(\d{1,4})[._ -]?E(\d{1,4})(?!\d)/i';
-
     /**
-     * An episode title stands for a whole release only when the release is that one episode:
-     * no known inner file names another episode, and the episode's own video is not the
-     * smaller part of the release. Without such evidence the candidate is judged as before.
+     * The release's stored file names and sizes, for the episode guard.
+     *
+     * @return array<string, int>
      */
-    private function namesOneEpisodeOfLargerRelease(object $release, string $title): bool
+    private static function storedFileSizes(int $releaseId): array
     {
-        $episode = $this->soleEpisode($title);
-        if ($episode === null) {
-            return false;
-        }
-
         $sizes = [];
         if (Schema::hasTable('release_files')) {
-            foreach (ReleaseFile::query()->where('releases_id', (int) $release->releases_id)->get() as $file) {
+            foreach (ReleaseFile::query()->where('releases_id', $releaseId)->get() as $file) {
                 $sizes[(string) $file->name] = (int) ($file->size ?? 0);
             }
         }
-        // Files the archive inspector has listed but not yet stored.
-        foreach ($release->knownFiles ?? [] as $file) {
-            $sizes[(string) $file['name']] = (int) ($file['size'] ?? 0);
-        }
 
-        $episodeSize = 0;
-        foreach ($sizes as $fileName => $size) {
-            $fileName = (string) $fileName;
-            if (! ArchiveNamingPath::eligible($fileName)
-                || ! preg_match_all(self::EPISODE_TOKEN_REGEX, $fileName, $named, PREG_SET_ORDER)) {
-                continue;
-            }
-            $episodes = array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named);
-            if (! in_array($episode, $episodes, true)) {
-                return true;
-            }
-            if (preg_match('/'.PostedFileClassifier::VIDEO_FILE_REGEX.'$/i', $fileName)
-                && ! preg_match('~(?:^|[\\\\/._ -])sample(?:[\\\\/._ -]|$)~i', $fileName)) {
-                $episodeSize += $size;
-            }
-        }
-
-        return $episodeSize > 0 && $episodeSize * 2 < (int) ($release->relsize ?? $release->size ?? 0);
-    }
-
-    /** The one episode a title names, or null when it names none, several, or a range. */
-    private function soleEpisode(string $title): ?string
-    {
-        if (! preg_match_all(self::EPISODE_TOKEN_REGEX, $title, $named, PREG_SET_ORDER)
-            || preg_match('/(?<![A-Za-z0-9])S\d{1,4}[._ -]?E\d{1,4}(?:[._ -]?E\d|\s?-\s?E?\d{1,3}(?![\dpi])|\s?[&+])/i', $title)) {
-            return null;
-        }
-        $episodes = array_unique(array_map(static fn (array $hit): string => (int) $hit[1].'x'.(int) $hit[2], $named));
-
-        return count($episodes) === 1 ? $episodes[0] : null;
-    }
-
-    private function finalizeCandidate(
-        object $release,
-        string $name,
-        string $type,
-        bool $descriptiveMediaTitle,
-    ): string {
-        $cleanedName = $descriptiveMediaTitle ? trim($name) : (new ReleaseCleaningService)->fixerCleaner($name);
-        $normalizedName = $this->fileNameCleaner->normalizeCandidateTitle($cleanedName);
-        $candidate = $descriptiveMediaTitle
-            ? $cleanedName
-            : $this->fileNameCleaner->formatSearchName($cleanedName, $normalizedName);
-
-        if ($type === 'PAR2, ') {
-            $candidate = ucwords($candidate);
-            if (preg_match('/(.+?)\.[a-z0-9]{2,3}(PAR2)?$/i', $name, $hit)) {
-                $candidate = $hit[1];
-            }
-        }
-
-        if (! $descriptiveMediaTitle) {
-            $pathParts = explode('\\', $candidate);
-            $candidate = preg_replace(['/^[=_.:\s-]+/', '/[=_.:\s-]+$/'], '', $pathParts[0]) ?? $pathParts[0];
-        }
-
-        return $this->finalizeEvidencePreservation($release, substr($candidate, 0, 299));
-    }
-
-    private function finalizeEvidencePreservation(object $release, string $candidate): string
-    {
-        return $this->fileNameCleaner->preserveEvidenceTokens(
-            $candidate,
-            (string) $release->searchname,
-            (string) ($release->name ?? ''),
-        );
-    }
-
-    /**
-     * Classify the evidence once for plausibility and donor-trust decisions.
-     *
-     * @return array{bypass_plausibility: bool, trusted_donor: bool}
-     */
-    protected function sourceTrustPolicy(string $type, string $method, int $preId): array
-    {
-        $source = NameSource::fromLabels($type, $method);
-        $preDbTrusted = $preId > 0 && $source->trustsPreDbId();
-
-        return [
-            'bypass_plausibility' => $preDbTrusted || $source->skipsPlausibility(),
-            'trusted_donor' => $preDbTrusted || $source->trustedDonor() === TrustedDonor::Trusted,
-        ];
+        return $sizes;
     }
 
     /**
@@ -483,8 +325,8 @@ class ReleaseUpdateService
         bool $preserveMusicInfo = false,
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
-        $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
         $source = NameSource::fromLabels($type, $method);
+        $trustedDonorName = NamePolicy::trust($source, $preId)[1] === TrustedDonor::Trusted;
         $nameSource = $source->storedName();
         DB::transaction(function () use ($source, $release, $releaseId, $newTitle, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
             $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
@@ -620,7 +462,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
+            $this->namePolicy()->preserveEvidence($release, (string) $release->searchname),
             'PreDB exact, ',
             'Exact title match',
             true,
@@ -648,7 +490,7 @@ class ReleaseUpdateService
             return null;
         }
 
-        $newTitle = $this->finalizeEvidencePreservation($release, $newTitle);
+        $newTitle = $this->namePolicy()->preserveEvidence($release, $newTitle);
 
         $this->performDatabaseUpdate(
             $release,
@@ -759,7 +601,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            $this->finalizeEvidencePreservation($release, $newTitle),
+            $this->namePolicy()->preserveEvidence($release, $newTitle),
             'Book title, ',
             'Parsed book metadata',
             true,
@@ -786,7 +628,7 @@ class ReleaseUpdateService
 
         $this->performDatabaseUpdate(
             $release,
-            $this->finalizeEvidencePreservation($release, (string) $release->searchname),
+            $this->namePolicy()->preserveEvidence($release, (string) $release->searchname),
             'SRRDB, ',
             'Verified archive CRC match',
             true,
