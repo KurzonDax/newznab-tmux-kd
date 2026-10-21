@@ -1803,34 +1803,9 @@ class NameFixingService
      */
     protected function updateProcessingFlags(string $type, int $releaseId): void
     {
-        switch ($type) {
-            case 'NFO, ':
-                $this->updateService->updateSingleColumn('proc_nfo', self::PROC_NFO_DONE, $releaseId);
-                break;
-            case 'Filenames, ':
-                $this->updateService->updateSingleColumn('proc_files', self::PROC_FILES_DONE, $releaseId);
-                break;
-            case 'XXX filenames, ':
-                $this->updateService->updateSingleColumn('proc_xxx', self::PROC_XXX_DONE, $releaseId);
-                break;
-            case 'PAR2, ':
-                $this->updateService->updateSingleColumn('proc_par2', self::PROC_PAR2_DONE, $releaseId);
-                break;
-            case 'PAR2 hash, ':
-                $this->updateService->updateSingleColumn('proc_hash16k', self::PROC_HASH16K_DONE, $releaseId);
-                break;
-            case 'SRR, ':
-                $this->updateService->updateSingleColumn('proc_srr', self::PROC_SRR_DONE, $releaseId);
-                break;
-            case 'UID, ':
-                $this->updateService->updateSingleColumn('proc_uid', self::PROC_UID_DONE, $releaseId);
-                break;
-            case 'Mediainfo, ':
-                $this->updateService->updateSingleColumn('proc_media_movie', self::PROC_MEDIA_MOVIE_DONE, $releaseId);
-                break;
-            case 'CRC32, ':
-                $this->updateService->updateSingleColumn('proc_crc32', self::PROC_CRC_DONE, $releaseId);
-                break;
+        $column = NameSource::missColumnForType($type);
+        if ($column !== null) {
+            $this->updateService->updateSingleColumn($column, 1, $releaseId);
         }
     }
 

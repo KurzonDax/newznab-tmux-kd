@@ -82,7 +82,7 @@ class ReleaseRenameMetadataEligibilityTest extends TestCase
             $updateService->updateRelease(
                 $release,
                 'Renamed.Metadata.Candidate.'.$releaseId,
-                'nfoCheck: Title Match',
+                'preDB: Match',
                 true,
                 'NFO, ',
                 true,

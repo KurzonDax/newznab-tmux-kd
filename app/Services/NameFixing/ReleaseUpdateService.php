@@ -47,34 +47,6 @@ class ReleaseUpdateService
     /**
      * @var list<string>
      */
-    private const PLAUSIBILITY_TRUSTED_TYPES = [
-        'UID, ',
-        'PAR2 hash, ',
-        'CRC32, ',
-        'SRRDB, ',
-        'SRR, ',
-    ];
-
-    /**
-     * @var list<string>
-     */
-    private const DONOR_TRUSTED_TYPES = [
-        'NFO, ',
-        'PAR2, ',
-        'UID, ',
-        'PAR2 hash, ',
-        'SRR, ',
-        'CRC32, ',
-        'SRRDB, ',
-        'PreDB FT Exact, ',
-        'PreDB file match, ',
-        self::AUDIO_TAGS_TYPE,
-        self::MUSICBRAINZ_TYPE,
-    ];
-
-    /**
-     * @var list<string>
-     */
     private const SINGLE_UPDATE_COLUMNS = [
         'proc_nfo',
         'proc_files',
@@ -439,27 +411,12 @@ class ReleaseUpdateService
      */
     protected function sourceTrustPolicy(string $type, string $method, int $preId): array
     {
-        if ($method === self::DESCRIPTIVE_MEDIA_TITLE_METHOD) {
-            return ['bypass_plausibility' => false, 'trusted_donor' => false];
-        }
-
-        $normalizedMethod = strtolower($method);
-        $sharedTrustedMethod = str_contains($normalizedMethod, 'title match')
-            || str_contains($normalizedMethod, 'file matched source')
-            || str_contains($normalizedMethod, 'predb');
-        $preDbType = str_starts_with($type, 'PreDB') || str_starts_with($type, 'PreDb');
+        $source = NameSource::fromLabels($type, $method);
+        $preDbTrusted = $preId > 0 && $source->trustsPreDbId();
 
         return [
-            'bypass_plausibility' => $preId > 0
-                || $preDbType
-                || in_array($type, self::PLAUSIBILITY_TRUSTED_TYPES, true)
-                || $sharedTrustedMethod,
-            'trusted_donor' => $preId > 0
-                || in_array($type, self::DONOR_TRUSTED_TYPES, true)
-                || $sharedTrustedMethod
-                || str_contains($normalizedMethod, 'nzbsplit wrapper')
-                || str_contains($normalizedMethod, 'rarinfo filename match')
-                || str_contains($normalizedMethod, 'rarinfo predb match'),
+            'bypass_plausibility' => $preDbTrusted || $source->skipsPlausibility(),
+            'trusted_donor' => $preDbTrusted || $source->trustedDonor() === TrustedDonor::Trusted,
         ];
     }
 
@@ -527,8 +484,9 @@ class ReleaseUpdateService
     ): void {
         $releaseId = (int) ($release->releases_id ?? $release->id);
         $trustedDonorName = $this->sourceTrustPolicy($type, $method, $preId)['trusted_donor'];
-        $nameSource = self::nameSource($type);
-        DB::transaction(function () use ($release, $releaseId, $newTitle, $type, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
+        $source = NameSource::fromLabels($type, $method);
+        $nameSource = $source->storedName();
+        DB::transaction(function () use ($source, $release, $releaseId, $newTitle, $nameStatus, $preId, $trustedDonorName, $nameSource, $imdbId, $categoryOverride, $preserveBookInfo, $preserveMusicInfo, $recoveryEvidence): void {
             $current = Release::query()->where('id', $releaseId)->lockForUpdate()->first();
             if ((! (new RecoveryIdentityPolicy)->allowsParent($releaseId, $recoveryEvidence) || ! BundleIdentity::allowsSingleTitle($releaseId))) {
                 return;
@@ -538,7 +496,7 @@ class ReleaseUpdateService
             }
             $recoveryEvidence?->assertNamingAllowed();
             if ($nameStatus === true) {
-                $status = $this->getStatusColumnsForType($type);
+                $status = $source->statusColumns();
 
                 $updateColumns = [
                     'videos_id' => 0,
@@ -622,34 +580,6 @@ class ReleaseUpdateService
         $source = trim(rtrim($type, ' ,:'));
 
         return $source === '' ? null : substr($source, 0, 64);
-    }
-
-    /**
-     * Get the status columns to update for a given type.
-     *
-     * @return array<string, mixed>
-     */
-    protected function getStatusColumnsForType(string $type): array
-    {
-        return match ($type) {
-            'NFO, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_nfo' => 1],
-            'Recovery inventory, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
-            'PAR2, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_par2' => 1],
-            'Filenames, ', 'file matched source: ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_files' => 1],
-            'XXX filenames, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_xxx' => 1],
-            'PreDB FT Exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'PreDB exact, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            self::AUDIO_TAGS_TYPE, self::MUSICBRAINZ_TYPE => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_pp' => 1],
-            'Book title, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'sorter, ' => ['isrenamed' => 1, 'iscategorized' => 1],
-            'UID, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_uid' => 1],
-            'Mediainfo, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_media_movie' => 1],
-            'PAR2 hash, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_hash16k' => 1],
-            'SRR, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srr' => 1],
-            'CRC32, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_crc32' => 1],
-            'SRRDB, ' => ['isrenamed' => 1, 'iscategorized' => 1, 'proc_srrdb' => 1],
-            default => [],
-        };
     }
 
     /**

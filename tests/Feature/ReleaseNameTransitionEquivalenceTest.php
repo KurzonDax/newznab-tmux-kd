@@ -208,7 +208,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         $live->updateRelease(
             Release::query()->findOrFail(10),
             $candidate,
-            'file matched source: title match',
+            'PreDb: Filename match',
             true,
             'Filenames, ',
             true,
@@ -229,7 +229,7 @@ class ReleaseNameTransitionEquivalenceTest extends TestCase
         $dryRun->updateRelease(
             Release::query()->findOrFail(10),
             $candidate,
-            'file matched source: title match',
+            'PreDb: Filename match',
             false,
             'Filenames, ',
             true,

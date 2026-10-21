@@ -189,7 +189,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $service->updateRelease(
             $release->fresh(),
             'Show.Name.S03E05.720p.HDTV.x264-GROUP',
-            'nfoCheck: Title Match',
+            'preDB: Match',
             true,
             'NFO, ',
             true,
@@ -356,7 +356,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         app(ReleaseUpdateService::class)->updateRelease(
             $release->fresh(),
             'Show.Name.S03E05.720p.HDTV.x264-GROUP',
-            'nfoCheck: Title Match',
+            'preDB: Match',
             true,
             'NFO, ',
             true,
@@ -447,7 +447,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         app(ReleaseUpdateService::class)->updateRelease(
             $release->fresh(),
             'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
-            'nfoCheck: Title Match',
+            'preDB: Match',
             true,
             'NFO, ',
             true,
@@ -487,7 +487,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         app(ReleaseUpdateService::class)->updateRelease(
             $release->fresh(),
             'True Evil: The Making Of A Nazi S01E02 Werner von Braun',
-            'nfoCheck: Title Match',
+            'preDB: Match',
             true,
             'NFO, ',
             true,
@@ -1693,7 +1693,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
         $service->updateRelease(
             $release->fresh(),
             'An.Invented.Evening.With.Nobody.In.Particular',
-            'nfoCheck: Title Match',
+            'preDB: Match',
             $write,
             'NFO, ',
             true,
