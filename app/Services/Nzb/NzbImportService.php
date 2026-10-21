@@ -379,9 +379,6 @@ class NzbImportService
     }
 
     /**
-     * Remember the existing release the current file matched, and keep it when asked to.
-     */
-    /**
      * @param  list<string>  $incomingMessageIds
      */
     private function addIncomingPasswordToDuplicate(Release $existing, array $incomingMessageIds): void
@@ -457,6 +454,9 @@ class NzbImportService
         ]);
     }
 
+    /**
+     * Remember the existing release the current file matched, and keep it when asked to.
+     */
     private function recordDuplicate(Release $existing): void
     {
         $this->duplicateReleaseId = (int) $existing->id;

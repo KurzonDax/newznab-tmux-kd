@@ -66,7 +66,7 @@ class NzbContentParserTest extends TestCase
      */
     private function parseStoredNzb(string $headMeta): array
     {
-        $path = tempnam(sys_get_temp_dir(), 'nzb-password-').'.nzb.gz';
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.uniqid('nzb-password-', true).'.nzb.gz';
         file_put_contents($path, gzencode(
             '<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'
             .'<head>'.$headMeta.'</head>'

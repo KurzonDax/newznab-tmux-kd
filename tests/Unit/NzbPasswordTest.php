@@ -29,6 +29,7 @@ class NzbPasswordTest extends TestCase
                 'first',
             ],
             'other metas only' => ['<head><meta type="category">TV</meta></head>', null],
+            'self-closing meta before the tag' => ['<head><meta type="category"/><meta type="password">secret</meta></head>', 'secret'],
             'no head' => ['<nzb>'.$file.'</nzb>', null],
             'empty tag' => ['<head><meta type="password"></meta></head>', null],
             'tag after the first file' => [
@@ -79,7 +80,7 @@ class NzbPasswordTest extends TestCase
     {
         $password = 'a<b&"c$1\\';
 
-        foreach ([self::nzb(), self::nzb('<head></head>')] as $nzb) {
+        foreach ([self::nzb(), self::nzb('<head></head>'), self::nzb('<head/>')] as $nzb) {
             $xml = NzbPassword::withPassword($nzb, $password);
 
             $this->assertSame($password, NzbPassword::fromXml($xml));

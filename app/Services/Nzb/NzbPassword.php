@@ -23,7 +23,7 @@ final class NzbPassword
         $fileStart = stripos($xml, '<file');
         $head = $fileStart === false ? $xml : substr($xml, 0, $fileStart);
 
-        if (preg_match_all('/<meta\b([^>]*)>(.*?)<\/meta\s*>/is', $head, $metas, PREG_SET_ORDER) < 1) {
+        if (preg_match_all('/<meta\b([^>]*)(?<!\/)>(.*?)<\/meta\s*>/is', $head, $metas, PREG_SET_ORDER) < 1) {
             return null;
         }
 

@@ -629,13 +629,6 @@ class NzbImportSegmentHashDedupeTest extends TestCase
     }
 
     /**
-     * Import a partial anchor, store its NZB, and link it to a PreDB row titled with its cleaned
-     * name, so a later copy of the same post resolves to that PreDB ID on import. The anchor
-     * stands in for a partial release formed from headers: not imported, at its measured completion.
-     *
-     * @return array{0: int, 1: string} The anchor's id and guid.
-     */
-    /**
      * @return array<string, array{string, bool}>
      */
     public static function fileNamePasswords(): array
@@ -833,6 +826,13 @@ class NzbImportSegmentHashDedupeTest extends TestCase
         return $results[0];
     }
 
+    /**
+     * Import a partial anchor, store its NZB, and link it to a PreDB row titled with its cleaned
+     * name, so a later copy of the same post resolves to that PreDB ID on import. The anchor
+     * stands in for a partial release formed from headers: not imported, at its measured completion.
+     *
+     * @return array{0: int, 1: string} The anchor's id and guid.
+     */
     private function importPredbAnchor(string $title, int $presentSegments): array
     {
         $partial = $this->predbRepostNzb($title, 'old', $presentSegments);
