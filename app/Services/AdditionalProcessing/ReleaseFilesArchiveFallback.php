@@ -233,6 +233,7 @@ class ReleaseFilesArchiveFallback
                 $result['data'],
                 $filenames,
                 $context->tmpPath,
+                $context->nzbPassword,
             );
 
             foreach ($candidates as $candidate) {
@@ -268,6 +269,7 @@ class ReleaseFilesArchiveFallback
             $compressedData,
             $filenames,
             $context->tmpPath,
+            $context->nzbPassword,
         );
 
         foreach ($candidates as $candidate) {
@@ -306,9 +308,13 @@ class ReleaseFilesArchiveFallback
      * @param  list<string>  $filenames
      * @return array<string, string>
      */
-    private function extractCandidateFiles(string $archiveData, array $filenames, string $tmpPath): array
-    {
-        return $this->archiveService->extractSpecificFiles($archiveData, $filenames, $tmpPath);
+    private function extractCandidateFiles(
+        string $archiveData,
+        array $filenames,
+        string $tmpPath,
+        ?string $password,
+    ): array {
+        return $this->archiveService->extractSpecificFiles($archiveData, $filenames, $tmpPath, $password);
     }
 
     /**

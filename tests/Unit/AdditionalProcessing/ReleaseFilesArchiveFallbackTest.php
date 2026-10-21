@@ -65,7 +65,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         $archive = Mockery::mock(ArchiveExtractionService::class);
         $archive->shouldReceive('extractSpecificFiles')
             ->once()
-            ->with('ARCHIVE', ['cover.webp'], Mockery::type('string'))
+            ->with('ARCHIVE', ['cover.webp'], Mockery::type('string'), null)
             ->andReturn(['cover.webp' => 'WEBP-DATA']);
 
         $media = Mockery::mock(MediaExtractionService::class);
@@ -101,7 +101,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         $archive = Mockery::mock(ArchiveExtractionService::class);
         $archive->shouldReceive('extractSpecificFiles')
             ->once()
-            ->with('ARCHIVE', ['release.nfo'], Mockery::type('string'))
+            ->with('ARCHIVE', ['release.nfo'], Mockery::type('string'), 'secret')
             ->andReturn(['release.nfo' => 'NFO DATA']);
 
         $download = Mockery::mock(UsenetDownloadService::class);
@@ -134,6 +134,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         );
 
         $context = $this->makeContext(12);
+        $context->nzbPassword = 'secret';
         $context->releaseGroupName = 'alt.binaries.test';
         $context->releaseHasNoNFO = true;
         $context->nzbContents = [['title' => 'archive.part01.rar', 'segments' => ['<1>', '<2>']]];
@@ -157,7 +158,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         $archive->shouldReceive('isNfoFile')->once()->with('release.nfo')->andReturn(true);
         $archive->shouldReceive('extractSpecificFiles')
             ->once()
-            ->with('ARCHIVE', ['release.nfo'], Mockery::type('string'))
+            ->with('ARCHIVE', ['release.nfo'], Mockery::type('string'), 'secret')
             ->andReturn(['release.nfo' => 'NFO DATA']);
 
         $download = Mockery::mock(UsenetDownloadService::class);
@@ -186,6 +187,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         );
 
         $context = $this->makeContext();
+        $context->nzbPassword = 'secret';
         $context->releaseHasNoNFO = true;
         $this->assertTrue($context->rememberDownloadedArchive('release.part01.rar', 'ARCHIVE', $files));
 
@@ -208,7 +210,7 @@ class ReleaseFilesArchiveFallbackTest extends TestCase
         $archive->shouldNotReceive('extractSpecificFile');
         $archive->shouldReceive('extractSpecificFiles')
             ->once()
-            ->with('ARCHIVE', ['first.nfo', 'second.nfo'], Mockery::type('string'))
+            ->with('ARCHIVE', ['first.nfo', 'second.nfo'], Mockery::type('string'), null)
             ->andReturn([
                 'first.nfo' => '',
                 'second.nfo' => 'NFO DATA',

@@ -42,6 +42,52 @@ class NzbContentParserTest extends TestCase
         $this->assertStringContainsString('not found', strtolower((string) $result['error']));
     }
 
+    public function test_it_returns_no_password_on_the_missing_nzb_error_return(): void
+    {
+        $nzb = $this->createStub(NzbService::class);
+        $nzb->method('nzbPath')->willReturn(false);
+        $nzb->method('hasReadableNzbStorage')->willReturn(true);
+
+        $result = (new NzbContentParser($nzb, $this->createStub(NzbParserService::class)))
+            ->parseNzb('guid-1');
+
+        $this->assertArrayHasKey('password', $result);
+        $this->assertNull($result['password']);
+    }
+
+    public function test_it_returns_the_password_the_stored_nzb_header_carries(): void
+    {
+        $this->assertSame('secret', $this->parseStoredNzb('<meta type="password">secret</meta>')['password']);
+        $this->assertNull($this->parseStoredNzb('<meta type="category">Movies</meta>')['password']);
+    }
+
+    /**
+     * @return array{contents: array<string, mixed>, error: string|null, failure: mixed, password: string|null}
+     */
+    private function parseStoredNzb(string $headMeta): array
+    {
+        $path = tempnam(sys_get_temp_dir(), 'nzb-password-').'.nzb.gz';
+        file_put_contents($path, gzencode(
+            '<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'
+            .'<head>'.$headMeta.'</head>'
+            .'<file poster="p" date="1" subject="Movie.part01.rar (1/1)"><groups><group>a.b</group></groups>'
+            .'<segments><segment bytes="1" number="1">id@x</segment></segments></file></nzb>'
+        ));
+
+        try {
+            $nzb = $this->createStub(NzbService::class);
+            $nzb->method('nzbPath')->willReturn($path);
+            $nzbParser = $this->createStub(NzbParserService::class);
+            $nzbParser->method('parseNzbFileList')->willReturn([
+                ['title' => 'Movie.part01.rar (1/1)', 'segments' => ['id@x']],
+            ]);
+
+            return (new NzbContentParser($nzb, $nzbParser))->parseNzb('guid-1');
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function test_it_selects_configured_segments_from_a_bare_main_video_for_media_info(): void
     {
         $parser = $this->makeParser();
