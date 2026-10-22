@@ -597,10 +597,11 @@ class PostProcessRunner extends BaseRunner
         }
 
         // Canonical renames and album covers for current accepted albums still without a rename
-        // record or a lookup outcome, after the bucket workers finish, so they run even when no
-        // release awaits identification.
+        // record or a lookup outcome, then the decision model's shadow check of matcher decisions,
+        // after the bucket workers finish, so they run even when no release awaits identification.
         $identityWorker->catchUpRenames();
         $identityWorker->catchUpCovers();
+        $identityWorker->catchUpAlbumChecks();
     }
 
     public function processConsoles(): void

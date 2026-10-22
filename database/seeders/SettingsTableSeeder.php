@@ -722,6 +722,10 @@ class SettingsTableSeeder extends Seeder
                 'value' => '0.70',
             ],
             [
+                'name' => 'decision_model_music_album_mode',
+                'value' => 'off',
+            ],
+            [
                 'name' => 'amazonsleep',
                 'value' => '1000',
             ],
