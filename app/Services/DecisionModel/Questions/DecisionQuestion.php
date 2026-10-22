@@ -12,7 +12,7 @@ interface DecisionQuestion
     /**
      * The question as the service's request body carries it.
      *
-     * @return array{type: string, instructions: string, criteria?: array<array-key, string>}
+     * @return array{type: string, instructions: string, criteria?: array<array-key, string|null>}
      */
     public function toArray(): array;
 }

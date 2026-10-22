@@ -18,6 +18,7 @@ use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\CoverArt\CoverArtPacer;
+use App\Services\MusicIdentity\DecisionModel\MusicAlbumCheck;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateHypothesis;
 use App\Services\MusicIdentity\DTO\CandidateIdentifiers;
@@ -653,6 +654,56 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     }
 
     #[Test]
+    public function the_music_pass_runs_the_album_check_after_the_cover_catch_up_and_survives_its_failure(): void
+    {
+        Http::fake(['https://caa.test/release-group/*' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $evidence = $this->evidence($release);
+        $this->acceptedGroup($release, $evidence, '11111111-1111-4111-8111-111111111111', 'music-identity-v1');
+        $check = new class extends MusicAlbumCheck
+        {
+            /** @var list<array{int, int}> stored covers and rename records seen at each call */
+            public array $seen = [];
+
+            public bool $fails = false;
+
+            public function __construct() {}
+
+            public function catchUp(): int
+            {
+                $this->seen[] = [DB::table('music_cover_art_lookups')->count(), DB::table('release_music_renames')->count()];
+                if ($this->fails) {
+                    throw new \RuntimeException('invented album check failure');
+                }
+
+                return 3;
+            }
+        };
+        $this->app->instance(ResolveReleaseMusicIdentity::class, $this->worker(new EmptyCandidateGenerator, albumChecks: $check));
+        $runner = new class extends PostProcessRunner
+        {
+            protected function runStreamingCommands(array $commands, int $maxProcesses, string $desc, ?callable $onComplete = null): void {}
+
+            protected function headerNone(): void {}
+        };
+        $this->assertSame([], app(ResolveReleaseMusicIdentity::class)->eligibleBuckets(), 'no release awaits identification');
+
+        $runner->processMusic();
+
+        $this->assertSame([[1, 1]], $check->seen, 'the cover and the rename record were there before the check ran');
+        $this->assertSame(3, app(ResolveReleaseMusicIdentity::class)->catchUpAlbumChecks());
+
+        $check->fails = true;
+        $runner->processMusic();
+        $this->assertCount(3, $check->seen);
+        Log::shouldHaveReceived('warning')->with('Music album check catch-up failed.', \Mockery::on(static fn (array $context): bool => ($context['exception'] ?? null) instanceof \RuntimeException))->once();
+
+        DB::table('settings')->where('name', 'music_identity_enabled')->update(['value' => '0']);
+        $this->assertSame(0, $this->worker(new EmptyCandidateGenerator, albumChecks: $check)->catchUpAlbumChecks());
+        $this->assertCount(3, $check->seen, 'an inactive music identity never reaches the check');
+    }
+
+    #[Test]
     public function the_compatibility_processor_delegates_to_the_evidence_worker_not_music_service(): void
     {
         $source = file_get_contents(app_path('Services/MusicProcessor.php'));
@@ -721,6 +772,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         CandidateGenerator $candidateGenerator,
         ?AcousticFingerprintCandidates $fingerprintCandidates = null,
         ?ReleaseNameAlbumCandidates $releaseNameAlbums = null,
+        ?MusicAlbumCheck $albumChecks = null,
     ): ResolveReleaseMusicIdentity {
         $retryPolicy = new MusicIdentityRetryPolicy;
 
@@ -740,6 +792,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             decisions: new IdentificationDecisionStore,
             covers: new AlbumCoverFetcher(new CoverArtPacer),
             renames: app(MusicRenameProjection::class),
+            albumChecks: $albumChecks ?? app(MusicAlbumCheck::class),
         );
     }
 

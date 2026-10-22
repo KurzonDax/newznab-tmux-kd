@@ -24,7 +24,7 @@ final class DecisionModelSection implements SettingsSectionProvider
         return new SettingSection(
             id: 'decision-model',
             title: 'Decision Model',
-            description: 'A second opinion from the self-hosted decision model on releases the categorizers were unsure of.',
+            description: 'A second opinion from the self-hosted decision model. Each card says what the model is asked and how far its answer reaches.',
             icon: 'fas fa-scale-balanced',
             stage: PipelineStage::Enrich,
             cards: [
@@ -63,6 +63,25 @@ final class DecisionModelSection implements SettingsSectionProvider
                             rules: ['required', 'numeric', 'between:0,1'],
                             icon: 'fas fa-gauge',
                             placeholder: '0.70',
+                        ),
+                    ],
+                ),
+                new SettingCard(
+                    id: 'music-album-check',
+                    title: 'Music album check',
+                    description: 'For releases the music matcher has looked up, the model is asked which of the matcher\'s candidate albums the release is, or none of them, judging from the release name and its file names. Up to 50 releases are checked per music pass, newest first, including releases matched before this check existed. Nothing is sent while the model is disabled in the environment.',
+                    icon: 'fas fa-compact-disc',
+                    settings: [
+                        new SettingDefinition(
+                            key: 'decision_model_music_album_mode',
+                            label: 'Mode',
+                            help: 'Shadow asks the model and records its answer in the decision log without changing the album, the name or anything else.',
+                            type: SettingType::Enum,
+                            options: [
+                                'off' => 'Off — the model is not asked',
+                                'shadow' => 'Shadow — ask and log, change nothing',
+                            ],
+                            icon: 'fas fa-toggle-on',
                         ),
                     ],
                 ),

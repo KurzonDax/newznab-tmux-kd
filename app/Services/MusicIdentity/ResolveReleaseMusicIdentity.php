@@ -9,6 +9,7 @@ use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
+use App\Services\MusicIdentity\DecisionModel\MusicAlbumCheck;
 use App\Services\MusicIdentity\DTO\DecisionReason;
 use App\Services\MusicIdentity\DTO\IdentificationDecision;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
@@ -37,6 +38,7 @@ final readonly class ResolveReleaseMusicIdentity
         private IdentificationDecisionStore $decisions,
         private AlbumCoverFetcher $covers,
         private MusicRenameProjection $renames,
+        private MusicAlbumCheck $albumChecks,
     ) {}
 
     /** @return list<object{id: string}> */
@@ -116,6 +118,25 @@ final readonly class ResolveReleaseMusicIdentity
             return $this->renames->catchUp();
         } catch (\Throwable $exception) {
             Log::warning('Music rename catch-up failed.', ['exception' => $exception]);
+
+            return 0;
+        }
+    }
+
+    /**
+     * Once per `mus` pass, after renames and covers: the decision model's shadow check of current
+     * matcher decisions not yet logged under the current criteria, at most a batch per pass (#1140).
+     */
+    public function catchUpAlbumChecks(): int
+    {
+        if (! $this->configuration->active()) {
+            return 0;
+        }
+
+        try {
+            return $this->albumChecks->catchUp();
+        } catch (\Throwable $exception) {
+            Log::warning('Music album check catch-up failed.', ['exception' => $exception]);
 
             return 0;
         }

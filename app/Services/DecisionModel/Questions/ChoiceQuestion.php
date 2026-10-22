@@ -11,7 +11,8 @@ namespace App\Services\DecisionModel\Questions;
 final readonly class ChoiceQuestion implements DecisionQuestion
 {
     /**
-     * @param  array<string, string>  $criteria  Option key => what that option means.
+     * @param  array<array-key, string|null>  $criteria  Option key => what that option means; null when the key says it all (e.g. "none").
+     *                                                   Keys such as "1" are integers to PHP, hence array-key.
      */
     public function __construct(
         public string $instructions,
