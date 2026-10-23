@@ -24,6 +24,8 @@ class ImdbScraper
 
     protected Client $client;
 
+    protected Client $searchClient;
+
     protected bool $lastRequestWasBlocked = false;
 
     private bool $lastSearchAvailable = false;
@@ -38,8 +40,9 @@ class ImdbScraper
     protected ?string $lastFailureReason = null;
 
     /**
-     * Requests go through the provider gateway as `imdb`, where a WAF challenge is no answer
-     * and counts against its breaker. An injected client's handler is used as the transport.
+     * Title pages and the HTML search go through the provider gateway as `imdb`, the suggestion
+     * search as `imdb_search`, each with its own breaker. A WAF challenge is no answer and counts
+     * against the breaker. An injected client's handler is used as the transport by both.
      */
     public function __construct(?Client $client = null)
     {
@@ -55,9 +58,12 @@ class ImdbScraper
                 'Pragma' => 'no-cache',
             ],
         ];
-        $this->client = app(ProviderGateway::class)->guzzle('imdb', $options, $client, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
+        $classify = fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
             ? ProviderOutcome::Unavailable
-            : null);
+            : null;
+        $gateway = app(ProviderGateway::class);
+        $this->client = $gateway->guzzle('imdb', $options, $client, classify: $classify);
+        $this->searchClient = $gateway->guzzle('imdb_search', $options, $client, classify: $classify);
     }
 
     /**
@@ -196,7 +202,7 @@ class ImdbScraper
         $url = 'https://v2.sg.media-imdb.com/suggestion/'.urlencode($prefix).'/'.urlencode($slug).'.json';
 
         try {
-            $res = $this->client->get($url, [
+            $res = $this->searchClient->get($url, [
                 'headers' => [
                     'Accept' => 'application/json,text/plain,*/*',
                     'Origin' => 'https://www.imdb.com',
