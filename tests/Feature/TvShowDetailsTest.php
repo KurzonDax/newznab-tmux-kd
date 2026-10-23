@@ -66,7 +66,8 @@ final class TvShowDetailsTest extends TestCase
         $this->assertSame(['Children', 'Drama', 'Fantasy', 'Sci-Fi'], $this->genreTitles(1));
         $this->assertSame(['Bryan', 'Aaron'], $this->castNames(1));
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), 'append_to_response=content_ratings%2Caggregate_credits'));
-        Sleep::assertSleptTimes(1);
+        // A single request has nothing to be spaced from.
+        Sleep::assertNeverSlept();
     }
 
     public function test_a_refresh_within_24_hours_does_not_fetch_and_one_after_does(): void
@@ -143,7 +144,8 @@ final class TvShowDetailsTest extends TestCase
 
         $this->assertSame(['find/81189', 'find/tt0903747', 'tv/1396'], $this->sentPaths());
         $this->assertSame('en', DB::table('tv_info')->where('videos_id', 1)->value('original_language'));
-        Sleep::assertSleptTimes(3);
+        // The provider gateway spaces each request a second after the one before it.
+        Sleep::assertSleptTimes(2);
     }
 
     public function test_nothing_is_read_or_written_without_an_api_key(): void

@@ -276,8 +276,6 @@ class TmdbProvider extends AbstractTvProvider
 
         $response = $this->tmdbClient->searchTv($name);
 
-        sleep(1);
-
         if ($response !== null && ! empty($response['results']) && is_array($response['results'])) {
             $return = $this->matchShowInfo($response['results'], $name, $releaseYear);
         }
@@ -434,7 +432,6 @@ class TmdbProvider extends AbstractTvProvider
                 }
 
                 $seriesData = $this->tmdbClient->getTvSeason((int) $siteId, $seasonNumber);
-                sleep(1);
 
                 if ($seriesData === null) {
                     continue;
@@ -464,8 +461,6 @@ class TmdbProvider extends AbstractTvProvider
             // Legacy behavior: just use the provided site ID
             $response = $this->tmdbClient->getTvEpisode((int) $siteId, (int) $series, (int) $episode);
         }
-
-        sleep(1);
 
         // Handle Single Episode Lookups
         if ($response !== null && is_array($response) && $this->checkRequiredAttr($response, 'tmdbE')) {

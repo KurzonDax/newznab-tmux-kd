@@ -8,6 +8,7 @@ use App\Models\Settings;
 use App\Services\CollectionReconciliation\BundleIdentity;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
+use App\Services\ProviderGateway\ProviderGateway;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
 use App\Services\TvProcessing\Pipes\LocalDbPipe;
 use App\Services\TvProcessing\Pipes\ParseInfoPipe;
@@ -26,6 +27,9 @@ use Illuminate\Support\Collection;
  */
 class TvProcessingPipeline
 {
+    /** The provider gateway entries the TV lookup asks. */
+    private const array LOOKUP_PROVIDERS = ['tvdb', 'tvmaze', 'tmdb', 'trakt'];
+
     /**
      * @var Collection<AbstractTvProviderPipe>
      */
@@ -91,13 +95,18 @@ class TvProcessingPipeline
             $pipe->setEchoOutput($this->echoOutput);
         }
 
+        $gateway = app(ProviderGateway::class);
+        $unavailableBefore = $gateway->unavailableCount(...self::LOOKUP_PROVIDERS);
+
         /** @var TvProcessingPassable $result */
         $result = RecoveryCatalog::run($context->releaseId, fn (): TvProcessingPassable => app(Pipeline::class)
             ->send($passable)
             ->through($this->pipes->values()->all())
             ->thenReturn());
 
-        if (! $result->result->isMatched()) {
+        // A provider that could not be asked has not said there is no match: the release
+        // stays pending for a later pass instead of being settled as unmatched.
+        if (! $result->result->isMatched() && $gateway->unavailableCount(...self::LOOKUP_PROVIDERS) === $unavailableBefore) {
             app(TvEpisodeRevisitService::class)->settleFinalFailure(
                 $context->releaseId,
                 ambiguous: $result->isAmbiguous(),

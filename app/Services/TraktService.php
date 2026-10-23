@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Http\Client\Response;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ProviderResult;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -36,42 +35,14 @@ class TraktService
 
     protected const SEARCH_TYPES = ['movie', 'show', 'episode', 'person', 'list'];
 
-    /** Minimum seconds between requests to avoid rate limiting (Trakt/Cloudflare). */
-    protected const THROTTLE_SECONDS = 1;
-
-    /** Default backoff (seconds) when rate limited (429). */
-    protected const RATE_LIMIT_BACKOFF_SECONDS = 60;
-
     protected string $clientId;
 
     protected int $timeout;
-
-    protected int $retryTimes;
-
-    protected int $retryDelay;
 
     public function __construct(?string $clientId = null)
     {
         $this->clientId = trim($clientId ?? (string) config('nntmux_api.trakttv_api_key', ''));
         $this->timeout = (int) config('nntmux_api.trakttv_timeout', 30);
-        $this->retryTimes = (int) config('nntmux_api.trakttv_retry_times', 3);
-        $this->retryDelay = (int) config('nntmux_api.trakttv_retry_delay', 100);
-    }
-
-    /**
-     * Throttle requests: ensure minimum delay since last Trakt API call (global across workers).
-     */
-    protected function throttle(): void
-    {
-        $key = 'trakt_last_request_at';
-        $last = Cache::get($key);
-        if ($last !== null) {
-            $elapsed = microtime(true) - (float) $last;
-            if ($elapsed < self::THROTTLE_SECONDS) {
-                usleep((int) ((self::THROTTLE_SECONDS - $elapsed) * 1_000_000));
-            }
-        }
-        Cache::put($key, microtime(true), 10);
     }
 
     /**
@@ -99,116 +70,86 @@ class TraktService
 
     /**
      * Make a GET request to the Trakt API.
-     * Throttles requests, retries on transient failures, and on 429 (rate limit) backs off then retries once.
      *
      * @param  string  $endpoint  The API endpoint
      * @param  array<string, mixed>  $params  Query parameters
-     * @param  bool  $isRetryAfterRateLimit  Internal: true when this is the single retry after a 429
      * @return array<string, mixed>|null Response data or null on failure
      */
-    protected function get(string $endpoint, array $params = [], bool $isRetryAfterRateLimit = false): ?array
+    protected function get(string $endpoint, array $params = []): ?array
+    {
+        $result = $this->request($endpoint, $params);
+
+        return is_array($result->value) ? $result->value : null;
+    }
+
+    /**
+     * A GET request to the Trakt API through the provider gateway, which spaces requests a
+     * second apart across workers, retries transient failures and honours Retry-After.
+     * An empty list is NotFound and keeps its value.
+     *
+     * @param  array<string, mixed>  $params
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    public function request(string $endpoint, array $params = []): ProviderResult
     {
         if (! $this->isConfigured()) {
             Log::debug('Trakt API key is not configured');
 
-            return null;
+            return ProviderResult::unavailable();
         }
 
-        $this->throttle();
-
-        $url = self::BASE_URL.'/'.ltrim($endpoint, '/');
+        $gateway = app(ProviderGateway::class);
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->retry($this->retryTimes, $this->retryDelay, function (\Throwable $exception, PendingRequest $request, ?string $key = null) {
-                    // Don't retry on 404 - resource doesn't exist
-                    if ($exception instanceof RequestException) {
-                        $status = $exception->response->status();
-                        if ($status === 404) {
-                            return false;
-                        }
-                        // Don't retry 429 with short delay - we handle it below with backoff
-                        if ($status === 429) {
-                            return false;
-                        }
-                    }
-
-                    return true;
-                }, throw: false)
+            $response = $gateway->http('trakt')
+                ->timeout($this->timeout)
                 ->withHeaders($this->getHeaders())
-                ->get($url, $params);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                // Check for API error responses
-                if (isset($data['status']) && $data['status'] === 'failure') {
-                    Log::debug('Trakt API returned failure status', [
-                        'endpoint' => $endpoint,
-                    ]);
-
-                    return null;
-                }
-
-                return $data;
-            }
-
-            // Handle 429 (rate limit / Cloudflare 1015): back off then retry once
-            if ($response->status() === 429 && ! $isRetryAfterRateLimit) {
-                $backoff = $this->getRateLimitBackoff($response);
-                Log::warning('Trakt API rate limited (429), backing off then retrying once', [
-                    'endpoint' => $endpoint,
-                    'backoff_seconds' => $backoff,
-                ]);
-                sleep($backoff);
-
-                return $this->get($endpoint, $params, true);
-            }
-
-            // Handle 404 - normal (resource not found)
-            if ($response->status() === 404) {
-                Log::debug('Trakt: Resource not found', ['endpoint' => $endpoint]);
-
-                return null;
-            }
-
-            Log::warning('Trakt API request failed', [
-                'endpoint' => $endpoint,
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            return null;
+                ->get(self::BASE_URL.'/'.ltrim($endpoint, '/'), $params);
         } catch (\Throwable $e) {
-            // Check if this is a 404 wrapped in an exception
-            if ($e instanceof RequestException && $e->response->status() === 404) {
-                Log::debug('Trakt: Resource not found', ['endpoint' => $endpoint]);
-
-                return null;
-            }
-
             Log::warning('Trakt API request exception', [
                 'endpoint' => $endpoint,
                 'message' => $e->getMessage(),
             ]);
 
-            return null;
-        }
-    }
-
-    /**
-     * Get backoff seconds from 429 response (Retry-After header or default).
-     */
-    protected function getRateLimitBackoff(Response $response): int
-    {
-        $retryAfter = $response->header('Retry-After');
-        if ($retryAfter !== null && is_numeric($retryAfter)) {
-            $seconds = (int) $retryAfter;
-
-            return min(max($seconds, 1), 300);
+            return ProviderResult::unavailable($e);
         }
 
-        return self::RATE_LIMIT_BACKOFF_SECONDS;
+        if ($response->successful()) {
+            $data = $response->json();
+
+            // Check for API error responses
+            if (isset($data['status']) && $data['status'] === 'failure') {
+                Log::debug('Trakt API returned failure status', [
+                    'endpoint' => $endpoint,
+                ]);
+                $gateway->report('trakt', ProviderOutcome::NotFound);
+
+                return ProviderResult::notFound();
+            }
+
+            if (! is_array($data) || $data === []) {
+                $gateway->report('trakt', ProviderOutcome::NotFound);
+
+                return new ProviderResult(ProviderOutcome::NotFound, is_array($data) ? $data : null);
+            }
+
+            return ProviderResult::found($data);
+        }
+
+        // Handle 404 - normal (resource not found)
+        if ($response->status() === 404) {
+            Log::debug('Trakt: Resource not found', ['endpoint' => $endpoint]);
+
+            return ProviderResult::notFound();
+        }
+
+        Log::warning($response->status() === 429 ? 'Trakt API rate limited (429)' : 'Trakt API request failed', [
+            'endpoint' => $endpoint,
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
+        return new ProviderResult($gateway->lastOutcome('trakt') ?? ProviderOutcome::Unavailable);
     }
 
     /**

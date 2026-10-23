@@ -316,8 +316,6 @@ class TraktProvider extends AbstractTvProvider
             $response = $this->client->getEpisodeSummary($siteId, $series, $episode);
         }
 
-        sleep(1);
-
         if (\is_array($response)) {
             if ($this->checkRequiredAttr($response, 'traktE')) {
                 $return = $this->formatEpisodeInfo($response);
@@ -382,8 +380,6 @@ class TraktProvider extends AbstractTvProvider
         $name = $this->stripReleaseYear($name);
 
         $response = (array) $this->client->searchShows($name);
-
-        sleep(1);
 
         $shows = array_values(array_filter(
             $response,

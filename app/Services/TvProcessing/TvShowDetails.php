@@ -12,7 +12,6 @@ use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\TmdbClient;
 use App\Support\ChildRows;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Sleep;
 
 /**
  * Keeps a show's TMDB details (language, status, US rating, premiere, network, genres and
@@ -105,7 +104,6 @@ final class TvShowDetails
         }
 
         $show = $this->tmdb->getTvShow($tmdbId, ['content_ratings', 'aggregate_credits']);
-        Sleep::sleep(1);
         if ($show === null) {
             return;
         }
@@ -137,7 +135,6 @@ final class TvShowDetails
     private function findTmdbId(string $externalId, string $source): ?int
     {
         $show = $this->tmdb->findTvByExternalId($externalId, $source);
-        Sleep::sleep(1);
         $id = (int) ($show['id'] ?? 0);
 
         return $id > 0 ? $id : null;
