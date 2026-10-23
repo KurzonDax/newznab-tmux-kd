@@ -106,9 +106,10 @@ return [
             'budget' => ['max' => 4, 'window_seconds' => 60, 'key' => 'igdb_api_rate_limit'],
         ],
         'anilist' => [
-            // Fifteen a minute, the most the old per-process window let through.
+            // Fifteen a minute, the most the old per-process window let through. A 429 is
+            // retried only after a Retry-After of 30 s or less; any other pauses AniList 15 minutes.
             'pace' => ['min_interval_ms' => 4_000, 'scope' => 'process', 'hold_on_429_seconds' => 900],
-            'retry' => ['attempts' => 2, 'transport' => false, 'server_errors' => false],
+            'retry' => ['attempts' => 2, 'transport' => false, 'server_errors' => false, 'default_retry_after_seconds' => 900],
             'breaker' => ['scope' => 'process', 'escalate' => false],
         ],
         'isbndb' => [

@@ -7,6 +7,7 @@ namespace Tests\Unit\Services;
 use App\Exceptions\BookProviderException;
 use App\Services\BookService;
 use App\Services\IsbnDbService;
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
@@ -139,7 +140,7 @@ class IsbnDbServiceTest extends TestCase
             $this->assertSame(120, $exception->retryAfterSeconds);
         }
 
-        $this->assertTrue(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+        $this->assertTrue(app(ProviderGateway::class)->isOpen('isbndb'), 'the breaker that replaced the cooldown is open');
     }
 
     public function test_malformed_success_response_throws_provider_exception(): void
@@ -190,7 +191,7 @@ class IsbnDbServiceTest extends TestCase
             $this->assertNull($exception->retryAfterSeconds);
         }
 
-        $this->assertFalse(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+        $this->assertFalse(app(ProviderGateway::class)->isOpen('isbndb'), 'the breaker that replaced the cooldown is closed');
     }
 
     public function test_not_found_response_throws_without_transient_cooldown(): void
@@ -211,7 +212,7 @@ class IsbnDbServiceTest extends TestCase
             $this->assertNull($exception->retryAfterSeconds);
         }
 
-        $this->assertFalse(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+        $this->assertFalse(app(ProviderGateway::class)->isOpen('isbndb'), 'the breaker that replaced the cooldown is closed');
     }
 
     public function test_server_failure_applies_default_cooldown(): void
@@ -232,7 +233,7 @@ class IsbnDbServiceTest extends TestCase
             $this->assertSame(300, $exception->retryAfterSeconds);
         }
 
-        $this->assertTrue(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+        $this->assertTrue(app(ProviderGateway::class)->isOpen('isbndb'), 'the breaker that replaced the cooldown is open');
     }
 
     public function test_network_failure_applies_default_cooldown(): void
@@ -254,7 +255,7 @@ class IsbnDbServiceTest extends TestCase
             $this->assertSame(300, $exception->retryAfterSeconds);
         }
 
-        $this->assertTrue(Cache::has(IsbnDbService::COOLDOWN_CACHE_KEY));
+        $this->assertTrue(app(ProviderGateway::class)->isOpen('isbndb'), 'the breaker that replaced the cooldown is open');
     }
 
     public function test_find_by_isbn_reads_book_payload(): void

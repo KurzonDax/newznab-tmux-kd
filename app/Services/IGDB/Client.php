@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\IGDB;
 
 use App\Services\IGDB\Exceptions\IgdbHttpException;
+use App\Services\ProviderGateway\ProviderGateway;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -29,7 +30,9 @@ class Client
             }
         }
 
-        $response = Http::baseUrl(rtrim((string) config('igdb.base_url', 'https://api.igdb.com/v4'), '/'))
+        // Through the provider gateway, which allows IGDB four requests a minute across workers.
+        $response = app(ProviderGateway::class)->http('igdb')
+            ->baseUrl(rtrim((string) config('igdb.base_url', 'https://api.igdb.com/v4'), '/'))
             ->withHeaders([
                 'Accept' => 'application/json',
                 'Client-ID' => $this->getClientId(),

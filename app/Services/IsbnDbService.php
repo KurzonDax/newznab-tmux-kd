@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\BookProviderException;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
 use App\Support\BookIsbn;
 use Carbon\Carbon;
 use GuzzleHttp\Client;
@@ -14,10 +16,13 @@ use Illuminate\Support\Facades\Log;
 use JsonException;
 use Psr\Http\Message\ResponseInterface;
 
+/**
+ * ISBNdb through the provider gateway. Its breaker, the cooldown it had before, opens after one
+ * failed request (a 429 or 5xx, a transport error, or a 200 whose body is not usable) for five
+ * minutes, and holds off a Retry-After for its full length.
+ */
 class IsbnDbService
 {
-    public const COOLDOWN_CACHE_KEY = 'isbndb_provider_cooldown';
-
     protected const API_URL = 'https://api2.isbndb.com';
 
     protected Client $client;
@@ -30,7 +35,7 @@ class IsbnDbService
     {
         $this->apiKey = trim($apiKey ?? (string) config('nntmux_api.isbndb_api_key', ''));
 
-        $this->client = $client ?? new Client([
+        $this->client = app(ProviderGateway::class)->guzzle('isbndb', [
             'base_uri' => self::API_URL,
             'timeout' => 15,
             'connect_timeout' => 10,
@@ -39,7 +44,7 @@ class IsbnDbService
                 'Accept' => 'application/json',
                 'User-Agent' => 'NNTmux/1.0',
             ],
-        ]);
+        ], $client);
     }
 
     public function isConfigured(): bool
@@ -68,7 +73,7 @@ class IsbnDbService
             return [];
         }
 
-        if (Cache::has(self::COOLDOWN_CACHE_KEY)) {
+        if (app(ProviderGateway::class)->isOpen('isbndb')) {
             throw new BookProviderException('isbndb', 'ISBNdb is temporarily cooling down after a failed request.');
         }
 
@@ -93,7 +98,7 @@ class IsbnDbService
 
         $books = $response['data'] ?? null;
         if (! is_array($books)) {
-            Cache::put(self::COOLDOWN_CACHE_KEY, true, now()->addMinutes(5));
+            app(ProviderGateway::class)->report('isbndb', ProviderOutcome::Unavailable);
 
             throw new BookProviderException('isbndb', 'ISBNdb search response did not contain a data array.', 200, 300);
         }
@@ -125,7 +130,7 @@ class IsbnDbService
             return null;
         }
 
-        if (Cache::has(self::COOLDOWN_CACHE_KEY)) {
+        if (app(ProviderGateway::class)->isOpen('isbndb')) {
             throw new BookProviderException('isbndb', 'ISBNdb is temporarily cooling down after a failed request.');
         }
 
@@ -138,7 +143,7 @@ class IsbnDbService
         $response = $this->request('/book/'.rawurlencode($isbn));
         $bookRaw = $response['book'] ?? null;
         if (! is_array($bookRaw) || $bookRaw === []) {
-            Cache::put(self::COOLDOWN_CACHE_KEY, true, now()->addMinutes(5));
+            app(ProviderGateway::class)->report('isbndb', ProviderOutcome::Unavailable);
 
             throw new BookProviderException('isbndb', 'ISBNdb ISBN response did not contain a book object.', 200, 300);
         }
@@ -175,7 +180,6 @@ class IsbnDbService
                 $retryAfter = $this->retryAfterSeconds($response);
                 if ($statusCode === 429 || $statusCode >= 500) {
                     $retryAfter ??= 300;
-                    Cache::put(self::COOLDOWN_CACHE_KEY, true, now()->addSeconds($retryAfter));
                 }
 
                 throw new BookProviderException(
@@ -196,7 +200,7 @@ class IsbnDbService
         } catch (BookProviderException $exception) {
             throw $exception;
         } catch (JsonException $exception) {
-            Cache::put(self::COOLDOWN_CACHE_KEY, true, now()->addMinutes(5));
+            app(ProviderGateway::class)->report('isbndb', ProviderOutcome::Unavailable);
 
             throw new BookProviderException(
                 'isbndb',
@@ -206,8 +210,6 @@ class IsbnDbService
                 $exception,
             );
         } catch (GuzzleException $e) {
-            Cache::put(self::COOLDOWN_CACHE_KEY, true, now()->addMinutes(5));
-
             throw new BookProviderException(
                 'isbndb',
                 'ISBNdb API request error: '.$e->getMessage(),

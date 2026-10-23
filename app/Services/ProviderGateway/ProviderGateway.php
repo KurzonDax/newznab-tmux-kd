@@ -100,12 +100,17 @@ final class ProviderGateway
      * A Guzzle client whose every request goes through the gateway and the recovery ledger.
      *
      * @param  array<string, mixed>  $options  Guzzle client options; any `handler` is replaced.
-     * @param  callable|null  $handler  The transport (a MockHandler in tests); defaults to the one set by {@see useHandler()}, then Guzzle's.
+     * @param  callable|Client|null  $handler  The transport (a MockHandler in tests), or a client whose handler to use;
+     *                                         defaults to the one set by {@see useHandler()}, then Guzzle's.
      * @param  (Closure(ResponseInterface): ?ProviderOutcome)|null  $classify
      */
-    public function guzzle(string $provider, array $options = [], ?callable $handler = null, ?object $owner = null, ?Closure $classify = null): Client
+    public function guzzle(string $provider, array $options = [], callable|Client|null $handler = null, ?object $owner = null, ?Closure $classify = null): Client
     {
         $this->policies->for($provider);
+        if ($handler instanceof Client) {
+            $handler = $handler->getConfig('handler');
+            $handler = is_callable($handler) ? $handler : null;
+        }
         $stack = HandlerStack::create($handler ?? $this->handlers[$provider] ?? null);
         $stack->push($this->middleware($provider, $owner, null, $classify, laravel: false), 'provider_gateway');
 

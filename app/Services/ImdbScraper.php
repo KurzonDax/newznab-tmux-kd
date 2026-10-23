@@ -72,13 +72,11 @@ class ImdbScraper
                 'Pragma' => 'no-cache',
             ],
         ];
-        $handler = $client?->getConfig('handler');
-        $handler = is_callable($handler) ? $handler : null;
         $gateway = app(ProviderGateway::class);
-        $this->client = $gateway->guzzle('imdb', $options, $handler, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
+        $this->client = $gateway->guzzle('imdb', $options, $client, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
             ? ProviderOutcome::Unavailable
             : null);
-        $this->imdbApiDevClient = $gateway->guzzle('imdbapi_dev', $options, $handler);
+        $this->imdbApiDevClient = $gateway->guzzle('imdbapi_dev', $options, $client);
     }
 
     /**

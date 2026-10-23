@@ -7,10 +7,12 @@ namespace App\Services;
 use App\Enums\ImageAssetProfile;
 use App\Models\AnidbInfo;
 use App\Models\AnidbTitle;
-use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ShortCircuitConnectException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\GuzzleException;
+use Illuminate\Support\Carbon;
 
 class PopulateAniListService
 {
@@ -18,11 +20,6 @@ class PopulateAniListService
      * AniList GraphQL API endpoint
      */
     private const API_URL = 'https://graphql.anilist.co';
-
-    /**
-     * Rate limit: 20 requests per minute (conservative limit to avoid hitting AniList's 90/min limit)
-     */
-    private const RATE_LIMIT_PER_MINUTE = 20;
 
     /**
      * Whether to echo message output.
@@ -42,21 +39,6 @@ class PopulateAniListService
     private ReleaseImageService $imageService;
 
     /**
-     * Rate limiting: track requests and timestamps
-     *
-     * @var array<string, mixed>
-     */
-    private array $rateLimitQueue = [];
-
-    /**
-     * Track when we received a 429 error and need to pause.
-     * Format: ['timestamp' => int, 'paused_until' => int]
-     *
-     * @var array<string, mixed>
-     */
-    private static ?array $rateLimitPause = null;
-
-    /**
      * @throws \Exception
      */
     public function __construct(?ReleaseImageService $imageService = null)
@@ -66,7 +48,9 @@ class PopulateAniListService
         // Use storage_path directly to match CoverController expectations
         $this->imgSavePath = storage_path('covers/anime/');
         $this->imageService = $imageService ?? new ReleaseImageService;
-        $this->client = RecoveryCatalog::client([
+        // Requests go through the provider gateway, which spaces them fifteen a minute in this
+        // process and pauses AniList for fifteen minutes after a 429 it does not retry.
+        $this->client = app(ProviderGateway::class)->guzzle('anilist', [
             'base_uri' => self::API_URL,
             'timeout' => 30,
             'headers' => [
@@ -294,38 +278,15 @@ class PopulateAniListService
     }
 
     /**
-     * Make a GraphQL request to AniList API with rate limiting.
-     *
+     * Make a GraphQL request to AniList API.
      *
      * @param  array<string, mixed>  $variables
      * @return array<string, mixed>|false
      *
-     * @throws \Exception
+     * @throws \Exception while AniList is paused after a 429
      */
     private function makeGraphQLRequest(string $query, array $variables = [])
     {
-        // Check if we're paused due to 429 error
-        if (self::$rateLimitPause !== null) {
-            $now = time();
-            $pausedUntil = self::$rateLimitPause['paused_until'];
-
-            if ($now < $pausedUntil) {
-                $remainingSeconds = $pausedUntil - $now;
-                if ($this->echooutput) {
-                    cli()->warning("API calls paused due to 429 error. Resuming in {$remainingSeconds} seconds...");
-                }
-
-                // Throw exception to stop processing
-                throw new \Exception('AniList API rate limit exceeded (429). Paused until '.date('Y-m-d H:i:s', $pausedUntil));
-            } else {
-                // Pause period expired, clear it
-                self::$rateLimitPause = null;
-            }
-        }
-
-        // Enforce rate limiting
-        $this->enforceRateLimit();
-
         try {
             $response = $this->client->post('', [
                 'json' => [
@@ -337,36 +298,11 @@ class PopulateAniListService
             $statusCode = $response->getStatusCode();
             $body = json_decode($response->getBody()->getContents(), true);
 
-            // Handle 429 Too Many Requests - pause for 15 minutes
             if ($statusCode === 429) {
-                $pauseUntil = time() + (15 * 60); // 15 minutes from now
-                self::$rateLimitPause = [
-                    'timestamp' => time(),
-                    'paused_until' => $pauseUntil,
-                ];
-
-                if ($this->echooutput) {
-                    cli()->error('AniList API returned 429 (Too Many Requests). Pausing all API calls for 15 minutes.');
-                }
+                $this->reportPause();
 
                 return false;
             }
-
-            // Track rate limit from headers
-            $remaining = (int) ($response->getHeader('X-RateLimit-Remaining')[0] ?? self::RATE_LIMIT_PER_MINUTE);
-            $resetAt = (int) ($response->getHeader('X-RateLimit-Reset')[0] ?? time() + 60);
-
-            // Record this request
-            $this->rateLimitQueue[] = [
-                'timestamp' => time(),
-                'remaining' => $remaining,
-                'resetAt' => $resetAt,
-            ];
-
-            // Clean old entries (older than 1 minute)
-            $this->rateLimitQueue = array_filter($this->rateLimitQueue, function ($entry) {
-                return $entry['timestamp'] > (time() - 60);
-            });
 
             if ($statusCode === 200 && isset($body['data'])) {
                 return $body;
@@ -382,20 +318,25 @@ class PopulateAniListService
 
             return false;
         } catch (ClientException $e) {
-            // Check if this is a 429 error from Guzzle
-            $statusCode = $e->getResponse()->getStatusCode();
-            if ($statusCode === 429) {
-                $pauseUntil = time() + (15 * 60); // 15 minutes from now
-                self::$rateLimitPause = [
-                    'timestamp' => time(),
-                    'paused_until' => $pauseUntil,
-                ];
+            if ($e->getResponse()->getStatusCode() === 429) {
+                $this->reportPause();
 
+                throw $this->pausedException();
+            }
+
+            if ($this->echooutput) {
+                cli()->error('AniList API Request Failed: '.$e->getMessage());
+            }
+
+            return false;
+        } catch (ShortCircuitConnectException $e) {
+            if (app(ProviderGateway::class)->heldUntil('anilist') !== null) {
                 if ($this->echooutput) {
-                    cli()->error('AniList API returned 429 (Too Many Requests). Pausing all API calls for 15 minutes.');
+                    cli()->warning('API calls paused due to 429 error. Resuming in '.(int) ceil(now()->diffInSeconds($this->pausedUntil())).' seconds...');
                 }
 
-                throw new \Exception('AniList API rate limit exceeded (429). Paused until '.date('Y-m-d H:i:s', $pauseUntil));
+                // Throw exception to stop processing
+                throw $this->pausedException();
             }
 
             if ($this->echooutput) {
@@ -412,35 +353,21 @@ class PopulateAniListService
         }
     }
 
-    /**
-     * Enforce rate limiting: 90 requests per minute.
-     *
-     * @throws \Exception
-     */
-    private function enforceRateLimit(): void
+    private function reportPause(): void
     {
-        // Count requests in the last minute
-        $recentRequests = array_filter($this->rateLimitQueue, function ($entry) {
-            return $entry['timestamp'] > (time() - 60);
-        });
-
-        $requestCount = count($recentRequests);
-
-        // If we're approaching the limit, wait
-        if ($requestCount >= (self::RATE_LIMIT_PER_MINUTE - 5)) {
-            // Wait until the oldest request is more than 1 minute old
-            if (! empty($this->rateLimitQueue)) {
-                $oldestRequest = min(array_column($this->rateLimitQueue, 'timestamp'));
-                $waitTime = 60 - (time() - $oldestRequest) + 1;
-
-                if ($waitTime > 0 && $waitTime <= 60) {
-                    if ($this->echooutput) {
-                        cli()->warning("Rate limit approaching. Waiting {$waitTime} seconds...");
-                    }
-                    sleep($waitTime);
-                }
-            }
+        if ($this->echooutput) {
+            cli()->error('AniList API returned 429 (Too Many Requests). Pausing all API calls for 15 minutes.');
         }
+    }
+
+    private function pausedUntil(): Carbon
+    {
+        return app(ProviderGateway::class)->heldUntil('anilist') ?? now();
+    }
+
+    private function pausedException(): \Exception
+    {
+        return new \Exception('AniList API rate limit exceeded (429). Paused until '.$this->pausedUntil()->format('Y-m-d H:i:s'));
     }
 
     /**

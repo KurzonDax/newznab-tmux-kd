@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\ProviderGateway\ProviderGateway;
 use Carbon\Carbon;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -33,7 +34,7 @@ class ItunesService
 
     public function __construct()
     {
-        $this->client = new Client([
+        $this->client = app(ProviderGateway::class)->guzzle('itunes', [
             'timeout' => 15,
             'connect_timeout' => 10,
             'http_errors' => false,
