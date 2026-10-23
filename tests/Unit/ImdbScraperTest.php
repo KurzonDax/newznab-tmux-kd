@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Services\ImdbScraper;
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\Cache;
 
 class ImdbScraperTest extends ImdbScraperTestCase
 {
@@ -144,6 +146,8 @@ class ImdbScraperTest extends ImdbScraperTestCase
         $this->assertSame('waf_block', $scraper->getLastFailureReason());
         $this->assertSame('fallback_min_interval_active', $scraper->getLastFallbackFailureReason());
         $this->assertNull($scraper->getLastFetchSource());
+        $this->assertSame(1, app(ProviderGateway::class)->counters('imdbapi_dev')['pacer_skips'], 'the gateway skipped the second fallback');
+        $this->assertFalse(Cache::has('imdb_scrape_id_2345678'), 'a skipped fallback is no answer and is not cached');
     }
 
     public function test_fetch_by_id_skips_imdbapi_dev_when_cooldown_is_active_after_rate_limit(): void
@@ -163,6 +167,8 @@ class ImdbScraperTest extends ImdbScraperTestCase
         $this->assertFalse($first);
         $this->assertSame('waf_block', $scraper->getLastFailureReason());
         $this->assertSame('fallback_rate_limited', $scraper->getLastFallbackFailureReason());
+
+        $this->assertTrue(app(ProviderGateway::class)->isOpen('imdbapi_dev'), 'the rate limit opened the fallback breaker');
 
         $second = $scraper->fetchById('2345678');
         $this->assertFalse($second);

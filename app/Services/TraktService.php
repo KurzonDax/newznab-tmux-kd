@@ -90,7 +90,7 @@ class TraktService
      * @param  array<string, mixed>  $params
      * @return ProviderResult<array<string, mixed>|null>
      */
-    public function request(string $endpoint, array $params = []): ProviderResult
+    protected function request(string $endpoint, array $params = []): ProviderResult
     {
         if (! $this->isConfigured()) {
             Log::debug('Trakt API key is not configured');

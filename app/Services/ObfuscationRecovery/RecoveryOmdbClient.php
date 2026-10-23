@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\ObfuscationRecovery;
 
 use aharen\OMDbAPI;
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Client;
 
 final class RecoveryOmdbClient extends OMDbAPI
@@ -15,6 +16,6 @@ final class RecoveryOmdbClient extends OMDbAPI
     public function __construct(string $apiKey)
     {
         parent::__construct($apiKey);
-        $this->client = RecoveryCatalog::client(['base_uri' => $this->host]);
+        $this->client = app(ProviderGateway::class)->guzzle('omdb', ['base_uri' => $this->host]);
     }
 }
