@@ -5,34 +5,25 @@ declare(strict_types=1);
 namespace App\Services\MusicIdentity\Gateways;
 
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
-use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ShortCircuitReason;
 
+/**
+ * Spaces a request to the public musicbrainz.org in step with every lookup: a delegate to the
+ * provider gateway's shared `musicbrainz` pacer for requests made outside it (the status probe).
+ */
 final class MusicBrainzRequestPacer
 {
+    public function __construct(private readonly ProviderGateway $gateway) {}
+
     public function pace(string $endpoint): void
     {
         if (! $this->isPublicEndpoint($endpoint)) {
             return;
         }
 
-        $minimumMicroseconds = max(
-            1_000,
-            (int) config('music-identity.musicbrainz.public_min_interval_milliseconds', 1_000),
-        ) * 1_000;
-
-        try {
-            Cache::lock('musicbrainz:public-request-pacing', 5)->block(5, function () use ($minimumMicroseconds): void {
-                $lastRequestAt = (float) Cache::get('musicbrainz:public-last-request-at', 0.0);
-                $remaining = $minimumMicroseconds - (int) ((microtime(true) - $lastRequestAt) * 1_000_000);
-                if ($remaining > 0) {
-                    usleep($remaining);
-                }
-
-                Cache::put('musicbrainz:public-last-request-at', microtime(true), 60);
-            });
-        } catch (LockTimeoutException $exception) {
-            throw new MusicBrainzGatewayException('Timed out waiting for the MusicBrainz public rate limiter.', previous: $exception);
+        if ($this->gateway->pace('musicbrainz', 'musicbrainz.org') instanceof ShortCircuitReason) {
+            throw new MusicBrainzGatewayException('Timed out waiting for the MusicBrainz public rate limiter.');
         }
     }
 

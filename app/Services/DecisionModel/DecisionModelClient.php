@@ -6,10 +6,10 @@ namespace App\Services\DecisionModel;
 
 use App\Services\DecisionModel\Exceptions\DecisionModelUnavailable;
 use App\Services\DecisionModel\Questions\DecisionQuestion;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ShortCircuit;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Sleep;
 
 /**
  * Client for the self-hosted decision model's System One endpoint: a state
@@ -18,22 +18,16 @@ use Illuminate\Support\Sleep;
  * It knows nothing about what is being decided. A use case builds the state
  * and the questions and reads the answers; see {@see DecisionUseCase}.
  *
- * The breaker counts consecutive failed tries (429, 5xx, connection errors) and
- * lives on the instance, so the container's shared instance stops a whole
- * process calling a service that is down; it stays open until the process
- * ends. The service runs one request at a time and queues the rest, so nothing
- * here sends requests side by side.
+ * Requests go through the provider gateway, which retries 429, 5xx and connection
+ * errors with doubling backoff. Its breaker for this client counts consecutive
+ * failed tries and belongs to the instance, so the container's shared instance
+ * stops a whole process calling a service that is down; it stays open until the
+ * process ends. The service runs one request at a time and queues the rest, so
+ * nothing here sends requests side by side.
  */
 final class DecisionModelClient
 {
     private const string ENDPOINT = 'v1/systemone';
-
-    /** First retry delay; each later retry waits twice as long. */
-    private const int BACKOFF_MILLISECONDS = 250;
-
-    private int $consecutiveFailures = 0;
-
-    private bool $circuitOpen = false;
 
     /**
      * Whether a request could be sent at all: the client is enabled and has an
@@ -61,7 +55,7 @@ final class DecisionModelClient
             throw new DecisionModelUnavailable('disabled');
         }
 
-        if ($this->circuitOpen) {
+        if (app(ProviderGateway::class)->isOpen('decision_model', $this)) {
             throw new DecisionModelUnavailable('circuit_open');
         }
 
@@ -97,42 +91,24 @@ final class DecisionModelClient
      */
     private function send(array $payload): mixed
     {
-        $attempts = max(1, (int) config('decision-model.retry_attempts', 3));
-
-        for ($attempt = 1; ; $attempt++) {
-            try {
-                $response = $this->http()->post(self::ENDPOINT, $payload);
-            } catch (ConnectionException) {
-                $response = null;
-            }
-
-            if ($response?->successful()) {
-                $this->consecutiveFailures = 0;
-
-                return $response->json();
-            }
-
-            $reason = $response === null ? 'connection_failed' : 'http_'.$response->status();
-
-            // A request the service rejected outright (a bad key, a bad body) says
-            // nothing about whether it is up: it is neither retried nor counted.
-            if ($response !== null && $response->status() !== 429 && ! $response->serverError()) {
-                throw new DecisionModelUnavailable($reason);
-            }
-
-            $this->recordFailure();
-
-            if ($this->circuitOpen || $attempt >= $attempts) {
-                throw new DecisionModelUnavailable($reason);
-            }
-
-            Sleep::usleep(self::BACKOFF_MILLISECONDS * (2 ** ($attempt - 1)) * 1000);
+        try {
+            $response = $this->http()->post(self::ENDPOINT, $payload);
+        } catch (ConnectionException $exception) {
+            throw new DecisionModelUnavailable($exception instanceof ShortCircuit ? 'circuit_open' : 'connection_failed');
         }
+
+        if (! $response->successful()) {
+            // A rejected request (a bad key, a bad body) was neither retried nor counted.
+            throw new DecisionModelUnavailable('http_'.$response->status());
+        }
+
+        return $response->json();
     }
 
     private function http(): PendingRequest
     {
-        $request = Http::baseUrl($this->baseUrl())
+        $request = app(ProviderGateway::class)->http('decision_model', owner: $this)
+            ->baseUrl($this->baseUrl())
             ->acceptJson()
             ->asJson()
             ->timeout(max(1, (int) config('decision-model.timeout_seconds', 30)));
@@ -145,12 +121,5 @@ final class DecisionModelClient
     private function baseUrl(): string
     {
         return rtrim(trim((string) config('decision-model.base_url', '')), '/');
-    }
-
-    private function recordFailure(): void
-    {
-        $this->consecutiveFailures++;
-        $threshold = max(1, (int) config('decision-model.circuit_breaker_failures', 3));
-        $this->circuitOpen = $this->consecutiveFailures >= $threshold;
     }
 }

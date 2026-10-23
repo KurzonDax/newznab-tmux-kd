@@ -5,31 +5,29 @@ declare(strict_types=1);
 namespace App\Services\NameFixing\Srrdb;
 
 use App\Services\NameFixing\DonorMatchSelector;
+use App\Services\ProviderGateway\ProviderGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 
+/**
+ * SRRDB requests go through the provider gateway: spaced in this process at
+ * `nntmux_srrdb.requests_per_second` (at most one a second), retried with doubling backoff,
+ * and stopped for the life of this instance by a breaker counting failed attempts. The
+ * request budget caps one cycle's requests, retries included.
+ */
 final class SrrdbLookupService
 {
     private readonly SrrdbRequestBudget $budget;
 
     private readonly DonorMatchSelector $sizeMatcher;
 
-    private int $consecutiveFailures = 0;
-
-    private bool $circuitOpen = false;
-
     public function __construct(
         ?SrrdbRequestBudget $budget = null,
         ?DonorMatchSelector $sizeMatcher = null,
     ) {
-        $configuredRate = (float) config('nntmux_srrdb.requests_per_second', 1);
-        $this->budget = $budget ?? new SrrdbRequestBudget(
-            (int) config('nntmux_srrdb.max_requests_per_cycle', 25),
-            $configuredRate <= 0 ? 0 : min(1, $configuredRate),
-        );
+        $this->budget = $budget ?? new SrrdbRequestBudget((int) config('nntmux_srrdb.max_requests_per_cycle', 25), 0);
         $this->sizeMatcher = $sizeMatcher ?? new DonorMatchSelector;
     }
 
@@ -117,72 +115,29 @@ final class SrrdbLookupService
     /** @return array<string, mixed>|null */
     private function requestJson(string $path): ?array
     {
-        if ($this->circuitOpen) {
+        try {
+            $response = $this->http()->get($path);
+        } catch (ConnectionException) {
             return null;
         }
 
-        $attempts = max(1, (int) config('nntmux_srrdb.retry_attempts', 3));
-        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
-            if (! $this->budget->acquire()) {
-                return null;
-            }
-
-            try {
-                $response = $this->http()->get($path);
-            } catch (ConnectionException) {
-                $this->recordFailure();
-                if ($this->circuitOpen || $attempt === $attempts) {
-                    return null;
-                }
-
-                $this->backoff($attempt);
-
-                continue;
-            }
-
-            if ($response->successful()) {
-                $this->consecutiveFailures = 0;
-                $json = $response->json();
-
-                return is_array($json) ? $json : null;
-            }
-
-            if (! in_array($response->status(), [408, 425, 429], true) && ! $response->serverError()) {
-                return null;
-            }
-
-            $this->recordFailure();
-            if ($this->circuitOpen || $attempt === $attempts) {
-                return null;
-            }
-
-            $this->backoff($attempt);
+        if (! $response->successful()) {
+            return null;
         }
 
-        return null;
+        $json = $response->json();
+
+        return is_array($json) ? $json : null;
     }
 
     private function http(): PendingRequest
     {
-        return Http::baseUrl(rtrim((string) config('nntmux_srrdb.base_url'), '/'))
+        return app(ProviderGateway::class)
+            ->http('srrdb', owner: $this, budget: fn (): bool => $this->budget->acquire())
+            ->baseUrl(rtrim((string) config('nntmux_srrdb.base_url'), '/'))
             ->acceptJson()
             ->withUserAgent((string) config('nntmux_srrdb.user_agent'))
             ->timeout((int) config('nntmux_srrdb.timeout_seconds', 10));
-    }
-
-    private function recordFailure(): void
-    {
-        $this->consecutiveFailures++;
-        $threshold = max(1, (int) config('nntmux_srrdb.circuit_breaker_failures', 3));
-        $this->circuitOpen = $this->consecutiveFailures >= $threshold;
-    }
-
-    private function backoff(int $attempt): void
-    {
-        $base = max(0, (int) config('nntmux_srrdb.backoff_milliseconds', 250));
-        if ($base > 0) {
-            usleep($base * (2 ** ($attempt - 1)) * 1000);
-        }
     }
 
     /** @param array<string, mixed> $details */

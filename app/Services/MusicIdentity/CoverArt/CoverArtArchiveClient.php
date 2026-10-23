@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\MusicIdentity\CoverArt;
 
-use Illuminate\Support\Facades\Http;
+use App\Services\ProviderGateway\ProviderGateway;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -21,7 +21,8 @@ final class CoverArtArchiveClient
             .'/'.$kind->value.'/'.rawurlencode($musicBrainzId).'/front-500';
 
         try {
-            $response = Http::accept('image/*')
+            $response = app(ProviderGateway::class)->http('coverart')
+                ->accept('image/*')
                 ->withUserAgent($this->userAgent())
                 ->connectTimeout(max(0.1, (float) config('music-identity.cover_art.connect_timeout_seconds', 5)))
                 ->timeout(max(0.1, (float) config('music-identity.cover_art.timeout_seconds', 15)))

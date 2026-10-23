@@ -218,6 +218,8 @@ final class HttpAcoustIdFingerprintMatcherTest extends TestCase
         }
         Http::assertSentCount(3);
 
+        // The three failed tries opened AcoustID's breaker for 60 s; once it has passed, the lookup is asked again.
+        $this->travel(60)->seconds();
         $this->assertSame([], $this->matcher()->lookup($this->lookupQuery()), 'the failure was not cached');
         Http::assertSentCount(4);
     }
@@ -299,6 +301,10 @@ final class HttpAcoustIdFingerprintMatcherTest extends TestCase
         ]);
 
         foreach ([1, 2] as $attempt) {
+            if ($attempt === 2) {
+                // The three unreadable replies opened AcoustID's breaker for 60 s.
+                $this->travel(60)->seconds();
+            }
             try {
                 $this->matcher()->lookup($this->lookupQuery());
                 $this->fail('An unreadable response must throw on attempt '.$attempt.'.');

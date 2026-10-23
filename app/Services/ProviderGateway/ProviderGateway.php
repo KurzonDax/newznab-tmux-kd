@@ -248,12 +248,13 @@ final class ProviderGateway
     /**
      * Waits for the provider's next request slot outside a request (a delegate's own pacing).
      *
+     * @param  string|null  $host  The host the request goes to, for a provider that paces only some hosts.
      * @return int|ShortCircuitReason the milliseconds waited, or why no request may be sent
      */
-    public function pace(string $provider): int|ShortCircuitReason
+    public function pace(string $provider, ?string $host = null): int|ShortCircuitReason
     {
         $policy = $this->policies->for($provider);
-        $waited = $this->pacer->pace($policy, null);
+        $waited = $this->pacer->pace($policy, $host);
         $this->countPacing($provider, $waited);
 
         return $waited;
