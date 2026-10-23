@@ -6,9 +6,13 @@ Primary sources:
 
 - `routes/api.php`
 - `app/Http/Controllers/Api/ApiV2Controller.php`
-- `app/Transformers/ApiTransformer.php`
-- `app/Transformers/DetailsTransformer.php`
-- `app/Transformers/CategoryTransformer.php`
+- `app/Services/Api/V2/ApiV2Presenter.php` (search envelope and details response)
+- `app/Data/Api/ReleaseData.php` (one search result)
+- `app/Data/Api/DetailsData.php` (the details object)
+- `app/Data/Api/CategoryData.php` (capabilities categories)
+- `app/Services/Api/ApiCapabilitiesService.php` (capabilities payload)
+- `app/Services/Api/ApiQueryParameters.php` (`cat`, `group`, `limit`, `offset` parsing)
+- `app/Http/Middleware/ThrottleApiRequestsByToken.php` (`apiRateLimit`)
 
 ## Base URL
 
@@ -21,6 +25,8 @@ https://<host>/api/v2
 - `GET /capabilities` is public.
 - All other v2 routes require `api_token`.
 - Route-level middleware uses token-aware throttling (`apiRateLimit`) and accepts `api_token` or the legacy `apikey` alias when that middleware is reused.
+- The per-user limit is the user's `rate_limit` (60 requests per minute when unset). Throttled responses carry `X-RateLimit-Limit` and `X-RateLimit-Remaining`; a request over the limit gets HTTP `429` with `{"error": "Request limit reached", "retry_after": <seconds>}` and a `Retry-After` header.
+- The daily API request quota is the user's role `apirequests`; a user over it gets HTTP `429` `Request limit reached` from the controller.
 - `POST /nzbadd` is intentionally exempt from route-level rate limiting and API request quotas, and uploads are not recorded as API usage. Authentication and posting privileges still apply.
 - Controller-level auth errors return a JSON error envelope:
 
@@ -47,12 +53,13 @@ Common auth/rate-limit statuses:
 | `id` | string | `""` | Search text/fallback identifier on search endpoints. |
 | `limit` | int | `100` | Max rows in page. |
 | `offset` | int | `0` | Zero-based pagination offset. |
-| `cat` | csv string | `-1` | Category filter; `TV_WEBDL` auto-add can apply when `TV_HD` is requested. |
-| `group` | string | `-1` | Usenet group filter (where supported). |
+| `cat` | csv string | `-1` | Category filter; `TV_WEBDL` (5010) is added when `TV_HD` (5040) is requested and the `catwebdl` setting is `0`. |
+| `group` | string | `-1` | Usenet group filter (`/search`, `/audio`, `/books`). |
 | `maxage` | int | `-1` | Max post age in days. Invalid values return JSON `400`. |
 | `minsize` | int | `0` | Min release size in bytes. |
 | `maxsize` | int | - | Accepted for compatibility; currently not enforced in query layer. |
 | `sort` | string | `posted_desc` | `cat|name|size|files|stats|posted` + `_asc|_desc`. |
+| `cursor` | string | - | Cursor pagination on the search endpoints. Send `cursor=` (empty) for the first page, then the returned `pagination.next_cursor`. Cannot be combined with a nonzero `offset`; an invalid, expired (15 minutes by default) or mismatched cursor returns JSON `400`. |
 
 Sorting examples:
 
@@ -105,6 +112,18 @@ Returns:
 - `groups`
 - `genres`
 
+Field shapes:
+
+- `server`: `title`, `strapline`, `email`, `url`
+- `limits`: `max` and `default` (both `100`)
+- `registration`: `available` and `open` (`yes` or `no`)
+- `searching`: one entry per search type (`search`, `tv-search`, `movie-search`, `audio-search`, `book-search`, `anime-search`) with `available` and `supportedParams`
+- `categories`: `id`, `name` and `subcategories` (a map of sub-category ID to title)
+- `groups`: active groups with `name`, `description`, `lastupdate`
+- `genres`: enabled genres outside Movies and TV with `id`, `name`, `categoryid`
+
+The response is cacheable (`Cache-Control: public, max-age=300`) and carries an `ETag`.
+
 ## 2) Search
 
 - `GET /search`
@@ -125,6 +144,8 @@ Identifiers:
 
 - `vid`, `tvdbid`, `traktid`, `rid`, `tvmazeid`, `imdbid`, `tmdbid`
 
+At least one of `id` or an identifier is required; otherwise JSON `400`.
+
 Optional filters:
 
 - `season`, `ep`, `cat`, `maxage`, `minsize`, `sort`, `offset`, `limit`
@@ -142,6 +163,8 @@ Identifiers:
 
 - `imdbid`, `tmdbid`, `traktid`
 
+At least one of `id`, a valid `imdbid`, `tmdbid` or `traktid` is required; otherwise JSON `400`.
+
 Optional filters:
 
 - `id`, `cat`, `maxage`, `minsize`, `sort`, `offset`, `limit`
@@ -151,18 +174,20 @@ Optional filters:
 - `GET /audio`
 - Auth: required
 
-Required:
+Optional:
 
-- `id` (query string)
+- `id` (query string). When omitted, the endpoint browses Audio (category `3000`, or `cat` when given). An empty `id=` returns JSON `400`.
+- `group`, `cat`, `maxage`, `minsize`, `sort`, `offset`, `limit`
 
 ## 6) Book Search
 
 - `GET /books`
 - Auth: required
 
-Required:
+Optional:
 
-- `id` (query string)
+- `id` (query string). When omitted, the endpoint browses Books (category `7000`, or `cat` when given). An empty `id=` returns JSON `400`.
+- `group`, `cat`, `maxage`, `minsize`, `sort`, `offset`, `limit`
 
 ## 7) Anime Search
 
@@ -171,20 +196,26 @@ Required:
 
 Selectors:
 
-- `id` and/or `anidbid` and/or `anilistid`
+- `id` and/or `anidbid` and/or `anilistid`; at least one is required, otherwise JSON `400`.
+
+Optional filters:
+
+- `cat`, `maxage`, `sort`, `offset`, `limit`
 
 ## 8) Get NZB
 
 - `GET /getnzb`
 - Auth: required
-- Valid GUID redirects to `/getnzb?r=<api_token>&id=<guid>[&del=1]`
-- Not found returns HTTP `404` JSON.
+- Requires `id` (GUID); optional `del=1` removes the release from the user's cart.
+- A valid GUID returns the NZB file itself (`application/x-nzb`, with `X-DNZB-*` headers) from the same download handler as the web `/getnzb` route. Download-limit and missing-file errors from that handler use the XML error body (`501`, `300`).
+- Not found returns HTTP `404` JSON: `{"data": "No such item (the guid you provided has no release in our database)"}`.
 
 ## 9) Details
 
 - `GET /details`
 - Auth: required
 - Requires `id` (GUID)
+- Unknown GUID returns HTTP `404` JSON `{"error": "No such item"}`.
 
 ## 10) Add NZB
 
@@ -200,6 +231,8 @@ Fields:
 | `nzb` | yes | Valid `.nzb` file staged for deferred import. |
 | `nfo` | no | `.nfo` file with any safe basename, maximum 65,535 bytes. |
 | `cat` | no | Echoed as response metadata; it does not affect import categorization. |
+
+A user without posting privileges gets HTTP `403`; a missing `nzb` file gets HTTP `400`; a rejected upload (unsafe filename, invalid NZB, empty or oversized NFO, name clash, write failure) returns `{"error": "..."}` with HTTP `400`, `409` or `500`.
 
 When `nfo` is supplied, its basename does not need to match the NZB basename.
 The request is atomic: both files are validated before staging in an isolated
@@ -263,9 +296,32 @@ to `null`.
 }
 ```
 
+When the request carries `cursor`, the envelope also has
+`"pagination": {"next_cursor": "<cursor or null>", "has_more": true|false}`.
+
+Each `results` item (`ReleaseData`):
+
+| Field | Notes |
+|---|---|
+| `title` | Release search name. |
+| `details` | `<site>/details/<guid>` |
+| `url` | `<site>/getnzb?id=<guid>.nzb&r=<api_token>` |
+| `category`, `category_name` | Category ID and display name. |
+| `added`, `usenetdate` | RSS-format dates (added to the index, posted to Usenet). |
+| `size`, `files` | Bytes and part count. |
+| `grabs`, `comments` | `null` when zero. |
+| `password` | Release password status. |
+| `imdbid`, `tmdbid`, `traktid` | Movie and TV releases only; `null` when zero. |
+| `episode_title`, `season`, `episode`, `tvairdate`, `tvdbid`, `tvrageid`, `tvmazeid` | TV releases only; IDs are `null` when zero. |
+
 ### Details Object (`/details`)
 
 Returns a single release object (not envelope). Download field name is `link` (not `url`).
+
+`DetailsData` carries the same base fields as a search result, except that `link`
+replaces `url` and `grabs` and `comments` are returned as stored. Movie releases
+add `imdbid`; TV releases add `imdbid`, `tmdbid`, `traktid`, `tvairdate`,
+`tvdbid`, `tvrageid` and `tvmazeid`.
 
 ## Error Response Conventions
 
@@ -275,6 +331,8 @@ Returns a single release object (not envelope). Download field name is `link` (n
 - Invalid `maxage`: JSON `400`
 - Invalid `sort`: JSON `400`
 - Missing required endpoint parameter (`id`, etc.): JSON `400`
+- Invalid cursor, or `cursor` with a nonzero `offset`: JSON `400`
+- Over the rate limit or the daily request quota: JSON `429`
 - Missing GUID in `/getnzb`: JSON `404`
 
 ## Unsupported in v2

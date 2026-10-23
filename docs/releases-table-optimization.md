@@ -1,8 +1,10 @@
 # Releases table optimization runbook
 
+This procedure belongs to the releases table refactor for issue #82, merged as `cb0cfd856` on 2026-08-16 (PR #85). Keep it for an install whose database has not yet run that migration. Every command, option, environment key and path below still exists on master; the production figures below are as measured at that commit. On an install that is further behind, `php artisan migrate` also applies every later pending migration in the same run.
+
 The `2026_08_13_001652_normalize_and_optimize_releases_table` migration rebuilds the `releases` table with `ALGORITHM=COPY`. It permanently removes legacy columns after moving sparse NZB password and creation-failure state into dedicated tables. Its `down()` method restores the old columns empty, so a verified database backup is the rollback plan.
 
-Production currently has about 167,508 releases and a 336 MB table. The rebuild is expected to take under one minute there, but schedule a maintenance window and do not extrapolate that estimate to larger installations.
+At that commit, production had about 167,508 releases and a 336 MB table. The rebuild was expected to take under one minute there, but schedule a maintenance window and do not extrapolate that estimate to larger installations.
 
 ## Procedure
 

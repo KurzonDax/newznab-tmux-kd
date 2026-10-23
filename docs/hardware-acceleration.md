@@ -79,4 +79,4 @@ NNTMUX_CLIP_HWACCEL_DEVICE=/dev/dri/renderD128
 
 After changing cached production configuration, rebuild the configuration cache and restart the postprocessing engine so workers receive the new values.
 
-An unknown backend id is ignored and logged at debug level. If an enabled backend cannot initialize its device, its driver refuses the encode, the process throws, or it produces no output, NNTmux logs the hardware failure and immediately retries the Clip with `libx264`. A hardware configuration problem therefore does not discard an otherwise decodable Clip.
+An unknown backend id is ignored and logged at debug level. If an enabled backend cannot initialize its device, its driver refuses the encode, the process throws, or it produces no output or output that does not probe as playable, NNTmux logs the hardware failure at debug level and immediately retries the Clip with `libx264`. A hardware configuration problem therefore does not discard an otherwise decodable Clip.

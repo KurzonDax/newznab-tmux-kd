@@ -136,7 +136,7 @@ Performance acceptance workflow at the intended revision. Its dropdown comes
 from the explicit supported acceptance suites. Start MariaDB through the isolated
 adapter if using the focused verifier directly for a database test.
 
-Full admission comparison, catalogue-memory, million-row ingestion, retained-index,
+Full admission comparison, admission throughput, million-row ingestion, retained-index,
 naming-scale and frontier-scale tests remain
 manual; there is no automatic performance schedule. Daily maintenance retains
 fresh-runtime serial PHP plus the bounded suite inventory. Master pushes warm

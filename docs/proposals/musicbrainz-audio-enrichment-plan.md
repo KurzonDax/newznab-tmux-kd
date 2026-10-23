@@ -542,7 +542,7 @@ Create a dedicated configuration file for endpoints, request budgets, timeouts, 
 
 ### MusicBrainz mirror
 
-Use `http://10.1.8.50:5000/ws/2/` as the configured primary gateway. The read-only probe verified lookup, browse, exact and fuzzy indexed search, disc-ID lookup, and ISRC lookup. Do not hardcode the address; add a documented `.env.example` key through configuration when implemented.
+Use `http://<musicbrainz-mirror-host>:5000/ws/2/` as the configured primary gateway. The read-only probe verified lookup, browse, exact and fuzzy indexed search, disc-ID lookup, and ISRC lookup. Do not hardcode the address; add a documented `.env.example` key through configuration when implemented.
 
 The mirror home page reported its last replication packet on 2026-08-19, four days behind this research date. Database replication and the search index are separate operational concerns. Record/monitor both:
 
@@ -715,7 +715,7 @@ None of these gates requires changing the architecture. They determine policy an
 
 This dossier covers the identification and enrichment capabilities exposed by the MusicBrainz Web Service, the Cover Art Archive, AcoustID, and Chromaprint. It is deliberately independent of this repository's current audio pipeline so that its facts and constraints can be used as design inputs elsewhere.
 
-Only first-party documentation, source repositories, specifications, and live services were used. The private MusicBrainz mirror at `http://10.1.8.50:5000` was inspected with read-only `GET` and `HEAD` requests. The production host at `10.1.1.35` was not accessed, and no remote state was changed.
+Only first-party documentation, source repositories, specifications, and live services were used. The private MusicBrainz mirror at `http://<musicbrainz-mirror-host>:5000` was inspected with read-only `GET` and `HEAD` requests. The production host at `<production-host>` was not accessed, and no remote state was changed.
 
 ## Executive findings
 
@@ -724,7 +724,7 @@ Only first-party documentation, source repositories, specifications, and live se
 3. MusicBrainz's Lucene search, including fuzzy terms and duration buckets, is useful for candidate generation. It is not an identity oracle: search scores are relevance scores, and the local mirror returned many materially different recordings with the same score. A safe design must verify a candidate against independent evidence and require a meaningful lead over the runner-up. [MusicBrainz search](https://musicbrainz.org/doc/MusicBrainz_API/Search), [Solr standard query parser](https://solr.apache.org/guide/solr/latest/query-guide/standard-query-parser.html)
 4. AcoustID plus Chromaprint adds a strong, filename-independent signal for identifying a near-identical full recording. It normally maps to a MusicBrainz **recording**, not to one exact release edition. Album membership must still be inferred by combining several identified recordings with MusicBrainz release track lists. AcoustID explicitly describes the public service as a full-file service that cannot identify short snippets or noisy phone recordings. [AcoustID Web Service](https://acoustid.org/webservice), [AcoustID FAQ](https://acoustid.org/faq), [Chromaprint](https://github.com/acoustid/chromaprint)
 5. The existing 30-second preview concept should not be assumed suitable for public AcoustID lookup. `fpcalc` defaults to analyzing the first 120 seconds while reporting the whole source duration, and AcoustID requires the duration of the whole file. A full file, or a beginning-anchored decode long enough to match documented client behavior while retaining the full duration, needs validation against a representative corpus. Arbitrary middle excerpts are not a documented public-service mode. [fpcalc source](https://github.com/acoustid/chromaprint/blob/master/src/cmd/fpcalc.cpp), [pyacoustid client](https://github.com/beetbox/pyacoustid/blob/master/acoustid.py), [AcoustID Web Service](https://acoustid.org/webservice)
-6. The private mirror is functional for lookup, browse, indexed search, fuzzy search, and disc-ID/ISRC resolution. On the research date its home page reported that the last replication packet was received on 2026-08-19, four days behind the research date. Database replication and search-index freshness are separate operational concerns in the official mirror deployment. [Private mirror](http://10.1.8.50:5000/), [musicbrainz-docker](https://github.com/metabrainz/musicbrainz-docker)
+6. The private mirror is functional for lookup, browse, indexed search, fuzzy search, and disc-ID/ISRC resolution. On the research date its home page reported that the last replication packet was received on 2026-08-19, four days behind the research date. Database replication and search-index freshness are separate operational concerns in the official mirror deployment. Private mirror (`http://<musicbrainz-mirror-host>:5000/`), [musicbrainz-docker](https://github.com/metabrainz/musicbrainz-docker)
 
 ## 1. MusicBrainz identity model
 
@@ -956,8 +956,8 @@ The following are empirical observations from read-only probes on 2026-08-23, no
 
 ### 8.1 Availability and freshness
 
-- `GET http://10.1.8.50:5000/` and `HEAD` returned successfully and identified the service as a MusicBrainz mirror.
-- The home page reported `Last replication packet received at 2026-08-19T00:25:41Z`, about four days behind the research date. [Private mirror](http://10.1.8.50:5000/)
+- `GET http://<musicbrainz-mirror-host>:5000/` and `HEAD` returned successfully and identified the service as a MusicBrainz mirror.
+- The home page reported `Last replication packet received at 2026-08-19T00:25:41Z`, about four days behind the research date. Private mirror (`http://<musicbrainz-mirror-host>:5000/`)
 - Indexed search, lookup, fuzzy Lucene search, disc-ID lookup, and ISRC lookup all returned data.
 - A `HEAD` request against one `/ws/2` search returned `400` even though `GET` for the same search worked. The integration should use documented `GET` operations for Web Service data and reserve `HEAD` for services that explicitly support it.
 

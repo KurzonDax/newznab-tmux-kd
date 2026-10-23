@@ -1,7 +1,7 @@
                                     newznab Usenet Searching Web API
 
                                                 v2.0-NNTmux
-                                             2026-04-14
+                                             2026-10-23
 
 Authors:
 ensi     ensisoft@gmail.com
@@ -49,7 +49,10 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 2. Functions
 
    Endpoint:
-   GET /api/v1/api
+   GET or POST /api/v1/api
+
+   Every function except caps requires apikey. A request without t returns
+   error 200; an unknown t returns error 202.
 
    Optional aliases are supported for several t-values:
    c/caps, s/search, tv/tvsearch, m/movie, b/book, d/details, g/get,
@@ -106,9 +109,9 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    Example: sort=size_desc
 
    Sorting request examples:
-   - /api?v=1&t=search&apikey=xxxx&q=ubuntu&sort=posted_desc
-   - /api?v=1&t=search&apikey=xxxx&q=ubuntu&sort=name_asc
-   - /api?v=1&t=search&apikey=xxxx&q=ubuntu&sort=size_desc&limit=50&offset=0
+   - /api/v1/api?t=search&apikey=xxxx&q=ubuntu&sort=posted_desc
+   - /api/v1/api?t=search&apikey=xxxx&q=ubuntu&sort=name_asc
+   - /api/v1/api?t=search&apikey=xxxx&q=ubuntu&sort=size_desc&limit=50&offset=0
 
    XML sorting response snippet (size_desc):
    <item>
@@ -121,9 +124,14 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    </item>
    (larger size appears first because sort=size_desc)
 
+   Without q, search browses the newest releases (filtered by cat, group,
+   maxage and minsize).
+
    Response additions:
    - newznab:response offset/total
    - newznab:apilimits apicurrent/apimax/grabcurrent/grabmax/apioldesttime/graboldesttime
+     (apioldesttime and graboldesttime only when the user has requests or grabs
+     in the last day)
 
 2.3 TV-SEARCH
 
@@ -138,8 +146,9 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Notes:
    - season YYYY + ep MM/DD is treated as daily date-style query.
+   - Without q or an identifier, tvsearch browses the TV categories (or cat).
    - Example:
-     /api?v=1&t=tvsearch&apikey=xxxx&q=last+week+tonight&season=2025&ep=11/10&sort=posted_desc
+     /api/v1/api?t=tvsearch&apikey=xxxx&q=last+week+tonight&season=2025&ep=11/10&sort=posted_desc
 
 2.4 MOVIE-SEARCH
 
@@ -151,8 +160,12 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    q, imdbid, tmdbid, traktid, genre
    cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
 
+   Notes:
+   - Without q or an identifier, movie browses the Movies categories (or cat).
+   - Search results (not browse results) carry a coverurl attribute.
+
    Example:
-   /api?v=1&t=movie&apikey=xxxx&imdbid=tt0816692&sort=size_desc
+   /api/v1/api?t=movie&apikey=xxxx&imdbid=tt0816692&sort=size_desc
 
 2.5 MUSIC-SEARCH
 
@@ -165,6 +178,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    album, artist, label, track, year, genre
    group, cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
 
+   Without q, music browses Audio (3000, or cat). An empty q= returns error 201.
+
 2.6 BOOK-SEARCH
 
    Parameters:
@@ -176,6 +191,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    title, author
    group, cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
 
+   Without q, book browses Books (7000, or cat). An empty q= returns error 201.
+
 2.7 ANIME-SEARCH (NNTmux extension)
 
    Parameters:
@@ -185,6 +202,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    Optional:
    q, anidbid, anilistid
    cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+
+   At least one of q, anidbid or anilistid is required; otherwise error 200.
 
 2.8 DETAILS
 
@@ -207,6 +226,11 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    Optional:
    raw=1 or o=file
 
+   Behavior:
+   Without o=file the NFO text is returned as HTML (line breaks as <br />).
+   o=file returns it as an application/octet-stream attachment named after
+   the release. A release without an NFO, or an unknown guid, returns error 300.
+
 2.10 GET
 
    Parameters:
@@ -218,7 +242,10 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    del=1
 
    Behavior:
-   Redirects to /getnzb?r=<apikey>&id=<guid>[&del=1]
+   Returns the NZB file itself (Content-Type application/x-nzb, with
+   X-DNZB-* headers) from the same download handler as /getnzb; del=1 also
+   removes the release from the user's cart. An unknown guid returns error 300;
+   a user over the download limit gets error 501.
 
 2.11 NZB-ADD
 
@@ -242,6 +269,11 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    need to match the NZB basename. Run nntmux:import-nzbs first and then
    nntmux:import-nfos for the same folder to link the NFO to the new release.
    Duplicate or failed NZB imports do not link their NFO files.
+
+   Requires posting privileges (error 102 otherwise). On success it returns
+   HTTP 200 with
+   <success id="0" guid="" categoryid="<cat>" name="<upload basename>" />
+   The cat value is echoed only; it does not affect import categorization.
 
    Error handling:
    Uses XML error codes from section 6.
@@ -276,15 +308,20 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    9000-99999  Reserved
    100000-     Custom
 
+   NNTmux files its Other categories under root 1 (1 Other, 10 Other/Misc,
+   20 Other/Hashed) rather than in the 8000 range.
+
    Important category IDs (union of upstream + NNTmux):
    7900 Category Not Determined
    8000 Other, 8010 Other/Misc
    1035 Console/Switch
-   1090 Console/XBox One
-   1100 Console/PS4
+   1090 Console/XBox One (upstream ID; NNTmux uses 1140)
+   1100 Console/PS4 (upstream ID; NNTmux uses 1180)
    1110 Console/3DS (NNTmux)
    1120 Console/PS Vita (NNTmux)
    1130 Console/WiiU (NNTmux)
+   1140 Console/Xbox One (NNTmux)
+   1180 Console/PS4 (NNTmux)
    1999 Console/Other (NNTmux)
    2045 Movies/UHD
    2060 Movies/BluRay (NNTmux)
@@ -300,7 +337,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    5999 TV/OTHER (NNTmux)
    6041 XXX/HD Clips (NNTmux)
    6042 XXX/SD Clips (NNTmux)
-   6999 XXX/Packs (NNTmux)
+   6050 XXX/Packs (NNTmux)
+   6999 XXX/Other (NNTmux)
    7040 Books/Technical (NNTmux)
    7060 Books/Foreign (NNTmux)
    7999 Books/Other (NNTmux)
@@ -314,6 +352,12 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    NNTmux extensions:
    prematch, videos_id, tv_episodes_id, tvdbid, traktid, tvmazeid, imdbid,
    tmdbid, title, firstaired, anidbid.
+
+   Also returned by NNTmux for TV releases: season, episode, tvairdate,
+   tvrageid, rageid.
+
+   NNTmux always returns category and size (plus coverurl on movie-search
+   results); every other attribute is returned only with extended=1.
 
 6. Error Codes
 
@@ -355,6 +399,13 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    910 API disabled
 
 7. Changelog
+
+   2026-10-23
+     - Corrected the example URLs to the /api/v1/api endpoint.
+     - GET returns the NZB itself rather than a redirect.
+     - Documented browse behaviour, required anime parameters, getnfo output,
+       the nzbadd success response, the extended-only attributes and the
+       NNTmux Xbox One, PS4, XXX/Packs and Other category IDs.
 
    2026-04-14
      - Merged upstream newznab specification updates into NNTmux spec.

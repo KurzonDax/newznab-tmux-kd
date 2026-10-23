@@ -1,7 +1,9 @@
 # NNTP providers
 
-NNTmux talks to one or more Usenet backbones. Providers are declared as numbered env groups
-and assembled into `config('nntmux_nntp.providers')`:
+NNTmux talks to one or more Usenet backbones. (The external metadata services, such as TMDB
+or MusicBrainz, are a separate thing: see [the provider gateway](provider-gateway.md).)
+Providers are declared as numbered env groups and assembled into
+`config('nntmux_nntp.providers')`:
 
 ```
 NNTP_PROVIDER_{n}_NAME         short label, REQUIRED and unique
@@ -14,6 +16,10 @@ NNTP_PROVIDER_{n}_CONNECTIONS  advisory only -- nothing enforces it
 NNTP_PROVIDER_{n}_TIMEOUT      socket timeout, seconds
 NNTP_PROVIDER_{n}_ENABLED      excluded from every operation when false
 ```
+
+Positions 1 to 10 are read (`config/nntmux_nntp.php`). Unset keys default to port 119, no
+SSL, 1 connection, a 120-second timeout and enabled. Header compression is one global flag,
+`NNTP_COMPRESSED_HEADERS` (default `false`), for every provider that scans headers.
 
 Roles come from **position**, not from flags.
 
@@ -28,8 +34,8 @@ provider they came from, and a repeated part is ignored rather than counted twic
 Article *numbers* are per-server, so each provider keeps its own positions:
 
 - **Provider 1** owns `usenet_groups.first_record`/`last_record`, backfill, part repair
-  (`missed_parts`) and obfuscation-recovery capture, exactly as before. `groups:update` writes
-  its server positions to `short_groups`.
+  (`missed_parts`) and [obfuscated-recovery](indexing-pipeline.md#obfuscated-recovery)
+  capture. `groups:update` writes its server positions to `short_groups`.
 - **Each secondary provider** (enabled, position 2 and after) scans forward only, with its own
   position per group in `usenet_group_provider_cursors`. `groups:update --provider=NAME` records
   its server positions there and finds a starting article for any group it has no position for,
@@ -110,6 +116,39 @@ hint. Nothing enforces it, deliberately — the numbers are an operator-chosen s
 be a *shared account budget* across backbones (two backbones under one provider can share a
 single 100-connection allowance), which no per-process counter can police. A provider refuses
 excess connections server-side and the breaker treats that refusal as an ordinary failure.
+
+## Connecting
+
+A connection is attempted up to `nntpretries` times, counting the first (Usenet Ingest →
+News server connection; seeded at 10, and a missing row or anything below 1 means one
+attempt). Failed attempts back off from 250 milliseconds, doubling up to 5 seconds; an
+authentication rejection is not retried (`app/Services/NNTP/NNTPService.php`). For SSL/TLS
+connections, certificate verification follows the `SSL_*` keys described in
+[Configuration](../configuration.md#ssl-for-outbound-connections).
+
+## Download traffic
+
+Every byte read from a provider socket is counted per provider, per day in the application
+timezone, in `nntp_provider_traffic` (`app/Services/NNTP/NntpTrafficMeter.php`; written at most
+once a minute). The Usenet provider downloads section of Admin → Site Stats
+(`/admin/site-stats`) shows each configured provider's downloads for today, the last 7 full
+days and the last 30 full days.
+
+## Listing coverage canary
+
+A provider can keep accepting connections while its XOVER listing leaves out a share of every
+post. Once every provider's headers are merged, that gap no longer shows up as incomplete
+releases, so the scheduler runs `ProviderListingCanary` hourly at minute 7
+(`routes/console.php`). While provider 1 and at least one secondary provider are enabled, it
+samples up to five busy groups and measures, in both directions between provider 1 and each
+secondary, how much of one provider's listing the other also lists. Results go to
+`nntp_listing_coverage` and are kept 30 days.
+
+The `nntp-headers` status probe runs four checks and reports the first failure, each as Major:
+fresh releases stalled (two full hours under 10 new releases), a provider's scanning stopped
+(no group advanced for 60 minutes), a provider's listing short (median coverage under 80%
+across at least two groups of the newest run), and no canary verdict within 3 hours
+(`app/Services/StatusProbes/NntpHeaderHealthProbe.php`).
 
 ## Checking a deployment
 

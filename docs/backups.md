@@ -14,7 +14,8 @@ Open **Admin → Database Backups**, then configure:
 - whether Full backups include Working tables;
 - whether to pause tmux while dumping;
 - an optional absolute `mariadb-dump` or `mysqldump` path;
-- an optional off-site destination and retention count.
+- an optional off-site destination and retention count;
+- whether to copy to the off-site destination after each successful backup (**Copy after each backup**).
 
 Enable backups only after the destination is mounted and writable. Laravel's scheduler must already be invoked every minute in the normal way (`php artisan schedule:run`); NNTmux registers `backup:tick` with overlap protection.
 
@@ -60,7 +61,7 @@ Before a run, NNTmux checks that free space is at least twice the size of the mo
 
 ## Off-site copies
 
-`backup:offsite` uses `rsync`, verifies the copied checksum, and publishes the manifest last. Existing valid files are skipped, while incomplete or corrupt destinations are recopied. Automatic copies run only after tmux has been restored and a local backup has succeeded.
+`backup:offsite` uses `rsync`, verifies the copied checksum, and publishes the manifest last. A destination file is skipped when its size matches the source manifest and its manifest is identical to the source's (it is not re-hashed); a missing, wrong-sized or unmanifested file is recopied. Automatic copies run only when **Copy after each backup** is enabled and an off-site destination is set, after tmux has been restored and a local backup has succeeded.
 
 By default the destination must be on a different mounted filesystem. For a genuine second local disk that reports the same device ID, use the explicit bypass:
 

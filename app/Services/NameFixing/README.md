@@ -30,13 +30,18 @@ repository glossary for the Trusted donor definition.
 
 ## Standard sweep
 
-`NameFixingQueryService::standardSweepPredicate()` is the single definition of
-what the unwindowed standard sweep admits, and both
-`standardCandidateBatch()` (the worker's GUID-partitioned page) and
-`standardCandidateCount()` (tmux's Fix Names wake-up gate) are built from it.
+`NameFixingQueryService::standardCandidateSources()` is the single definition
+of what the unwindowed standard sweep admits. `standardCandidateBatch()` (the
+worker's GUID-partitioned page), `standardCandidateCount()` (the tmux monitor's
+Fix Names backlog figure) and `hasStandardCandidates()` (its Fix Names wake-up
+gate) are all built from it. The count and the gate also include pending PAR2
+sidecar work (`Par2Sidecar\SidecarWork`), which `processStandardBatch()` resumes
+before it reads its page.
 
-Admission is per-source readiness only: unrenamed, no PreDB identity, and at
-least one evidence source both ready and unconsumed. There is no category
+Admission is per-source readiness only: unrenamed, no PreDB identity, not held
+by an obfuscation-recovery publication that is still initializing or awaiting
+enrichment (`RecoveryReleaseGate`), and at least one evidence source both ready
+and unconsumed. There is no category
 restriction and no cross-source gate -- a pending or terminally failed NFO
 lookup and an unsettled `passwordstatus` must not hide another source's
 evidence. The NFO term requires `nfostatus = 1`, PAR2 requires `nzbstatus = 1`,
@@ -72,8 +77,10 @@ default tolerance.
 The `srrdb_lookups` table caches confirmed and negative outcomes by CRC with
 timestamps and separate TTLs. `proc_srrdb=1` means processed; `2` means an
 ambiguous or unverifiable search result. Network failures leave the value at
-zero for a later cycle. Requests have a cycle cap, courtesy rate limit,
-timeouts, exponential retry backoff, and a cycle-local circuit breaker.
+zero for a later cycle. Requests go through the provider gateway's `srrdb`
+provider and have a cycle cap (retries included), courtesy rate limit,
+timeouts, doubling retry backoff, and a circuit breaker that lasts for the life
+of the lookup service instance.
 
 Enable with `SRRDB_ENABLED=true`. The remaining `SRRDB_*` settings in
 `.env.example` control the endpoint, user agent, request budget, retry policy,

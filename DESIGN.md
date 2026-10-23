@@ -180,7 +180,7 @@ Every token has a light value and a `-dark` twin.
 
 ### Chips
 
-`--chip-<kind>-bg` / `--chip-<kind>-fg` (with `-dark` twins) are tinted grounds with coloured text, each pair at least 4.5:1: `media`, `nfo`, `preview`, `sample`, the completion bands `completion-ok` / `-mid` / `-low`, the solid resolution chips `res-4k` / `res-1080` / `res-720` / `res-sd`, and the media-info section and value hues `mi-*`. Values come from the approved TV prototype (`docs/proposals/tv-redesign/prototype/reference/tokens.json`). They are status colours in the sense below: literal and reserved, never the accent.
+`--chip-<kind>-bg` / `--chip-<kind>-fg` (with `-dark` twins) are tinted grounds with coloured text, each pair at least 4.5:1: `media`, `nfo`, `preview`, `sample`, `clip`, `reported`, `response`, `imported`, the completion bands `completion-ok` / `-mid` / `-low`, the solid resolution chips `res-4k` / `res-1080` / `res-720` / `res-sd`, and the media-info section and value hues `mi-*`. The TV kinds come from the approved TV prototype (`docs/proposals/tv-redesign/prototype/reference/tokens.json`); `clip` comes from the Adult redesign, `reported` and `response` from the generic release lists, and `imported` from issue #1049, as the comments beside each token in `app.css` record. They are status colours in the sense below: literal and reserved, never the accent.
 
 ### Semantic status
 
@@ -192,7 +192,7 @@ Green, red, yellow/orange and cyan are **literal and reserved**: success, danger
 
 **The Chip Is a Readout Rule.** Chips report state; they are not decoration and not navigation-by-another-name. A chip that does not tell the reader something they would otherwise have to open the release to learn does not belong on the row.
 
-**The Drag to Reorder Rule.** Any list the user can reorder is reordered by drag and drop: a grip on each item, a lifted ghost, live reflow, and the drop saves. The grip carries the keyboard path: Space grabs, arrow keys move the item and announce "<item> · position N of M", Space drops, Escape restores. Up / down arrow buttons are never a reorder control. The home page's Shelves dialog is the reference; the admin content list also reorders by drag.
+**The Drag to Reorder Rule.** Any list the user can reorder is reordered by drag and drop: a grip on each item, a lifted ghost, live reflow, and the drop saves. The grip carries the keyboard path: Space grabs, arrow keys move the item and announce "<item> · position N of M", Space drops, Escape restores. Up / down arrow buttons are never a reorder control. The home page's Shelves dialog is the reference; the admin content list also reorders by drag. `scripts/check-design-system.sh` rejects "Move … up" / "Move … down" labels and arrow-only buttons in files that mark a reorderable list (`:106`).
 
 ## Typography
 
@@ -218,7 +218,6 @@ The public shell is a sticky header bar and a footer on the page ground around t
 - **Breakpoints** are Tailwind v4 defaults — `sm` 40rem, `md` 48rem, `lg` 64rem, `xl` 80rem, `2xl` 96rem. The project overrides none of them.
 - **Spacing** is the Tailwind default scale. `gap-2`/`gap-3`/`gap-4` carry most intra-component rhythm; page headers use `px-6 py-6`.
 - **Responsive pattern**: stack to a column on small screens, and promote to a row at `sm`. `x-page-header` is the reference implementation — `flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between`.
-- **Dropdown panels** size to content within a viewport guard: `width: max-content`, `min-width: 14rem`, `max-width: calc(100vw - 2rem)`.
 
 ## Elevation & Depth
 
@@ -263,7 +262,7 @@ The public scale, applied via `.public-ui`:
 
 - **Standard** (`.ui-control`): 42px tall, 14px inline padding, 8px radius, 14px text.
 - **Small** (`.ui-control-sm`): 30px tall, 10px inline padding, 12px text.
-- **Icon-only** (`.ui-control-icon`): 36px square, 30px when also small.
+- **Icon-only** (`.ui-control-icon`): 36px wide with no padding, at the height of the size it is paired with.
 
 Selects drop the native arrow and carry an inlined Font Awesome chevron. `@tailwindcss/forms` supplies the base reset. Admin keeps its own component sizes and is not on this scale.
 
@@ -271,9 +270,9 @@ Selects drop the native arrow and carry an inlined Font Awesome chevron. `@tailw
 
 ### Chips (`x-chip`) and badges (`x-badge`)
 
-Chips carry eight tones — `neutral`, `origin`, `entity`, `primary`, `success`, `warning`, `danger`, `info` — and render as `span`, `a` or `button` depending on whether they inform, navigate or act. They consume surface variables directly (`bg-(--surface-panel-alt)`), so they follow the theme.
+Chips carry eight general tones — `neutral`, `origin`, `entity`, `primary`, `success`, `warning`, `danger`, `info` — plus the release-row kinds built on the chip tokens (`media`, `nfo`, `preview`, `sample`, `clip`, `reported`, `response`, `password`, `imported`, `completion-ok` / `-mid` / `-low`), and render as `span`, `a` or `button` depending on whether they inform, navigate or act. They consume surface variables directly (`bg-(--surface-panel-alt)`), so they follow the theme.
 
-Badges are the pill form: five tones, three sizes, always `rounded-full`.
+Badges are the pill form: five tones (`default`, `info`, `success`, `danger`, `warning`), one size (`text-xs`, `px-2.5 py-0.5`), always `rounded-full`.
 
 The domain vocabulary these express — Completion chip, Preview chip, Discard versus Hide — is defined in `GLOSSARY.md`. Match those meanings; do not coin new chip semantics in a view.
 
@@ -304,7 +303,7 @@ The rules below fall into two groups that behave very differently when the desig
 
 That is the point of them. Because views say `primary-600` and `--surface-card` rather than a hex value, the whole vocabulary can be replaced by editing `resources/css/app.css` — which is exactly how the blue schemes became coral. Hardcoded values would make the same replacement a repository-wide search with no way to prove it was complete.
 
-**Enforcement scope**: `resources/views`, `resources/forum/blade-tailwind/views`, `resources/js` and `resources/css/app.css`. Email views, error pages, unused forum presets and admin templates are excluded by the script itself. Prototype HTML under `docs/` is not scanned at all — explore freely there.
+**Enforcement scope**: `resources/views`, `resources/forum/blade-tailwind/views`, `resources/js` and `resources/css/app.css`. Email views, error pages and unused forum presets are excluded by the script itself; admin templates are excluded from the public rules (hardcoded surfaces, `indigo-*`/`purple-*`, FA4 names, JavaScript `blue-*`) and stay under every other check. Prototype HTML under `docs/` is not scanned at all — explore freely there.
 
 ### Enforced: hygiene and platform constraints
 
@@ -331,4 +330,4 @@ Everything else in this document is description, not law. No check inspects it, 
 
 Accent **text** set in `text-primary-600` (`#e5462c`) is about 3.9:1 on white, below 4.5:1; `primary-700` (`#c8331a`) passes. Many views still use `primary-600` for links and active tabs from the blue era. Moving them is a view-by-view change and belongs to its own issue.
 
-`prefers-reduced-motion` appears nowhere in `resources/` as of 2026-09-20, while `csp-safe.css` ships transitions and `fadeIn`/`pulse` keyframes. This record documents the system as built; closing that gap is a change to CSS and belongs to its own issue.
+`prefers-reduced-motion` appears only in `resources/css/tv.css` (for the TV screens' own transitions) as of 2026-10-23, while `csp-safe.css` ships transitions and `fadeIn`/`pulse` keyframes with no reduced-motion rule. This record documents the system as built; closing that gap is a change to CSS and belongs to its own issue.

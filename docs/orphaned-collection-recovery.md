@@ -12,8 +12,9 @@ The password-title class still requires its previous title match, category/text 
 
 ## Caller policy
 
-- `removeCrap` (including All), `removeByCriteria`, processing retention/password/completion cleanup, `NntmuxRemoveBadReleases`, and `NntmuxResetTruncate` retain the shared protected boundary. The criteria command is not a manual override. Reset/truncate still resets groups and CBP, but pending releases are retained for token-owned creation failure disposal.
-- Explicit admin/manual deletion and `CleanNZB` retain their existing override behavior. `CleanNZB` is an operator storage-reconciliation command; do not run it against an unavailable NZB mount.
+- `removeCrap` (`releases:remove-crap`, including All), `removeByCriteria`, processing retention/password/completion cleanup, `NntmuxRemoveBadReleases` (`nntmux:remove-bad`), and `NntmuxResetTruncate` (`nntmux:reset-truncate`) retain the shared protected boundary. `removeByCriteria` currently has no caller. Reset/truncate still resets groups and CBP, but pending releases are retained for token-owned creation failure disposal.
+- `nntmux:delete-releases` does not go through `removeByCriteria` or the protected boundary: it deletes the matching release rows and their dependent rows directly and removes them from the search index. Treat it as a manual override.
+- Explicit admin/manual deletion and `CleanNZB` (`nntmux:nzbclean`) retain their existing override behavior. `CleanNZB` is an operator storage-reconciliation command; do not run it against an unavailable NZB mount.
 - Token-owned deterministic NZB failure disposal and exhausted retries retain their separate pending-release/CBP disposal. A losing token deletes nothing.
 
 The existing daily rotating application log receives `release_deleted` only after a committed deletion, with ID/GUID, reason, lifecycle status, timestamp and bounded evidence (inventory count/digest for PAR2). `release_cleanup_selection` and `release_cleanup_batch` report protected/deferred counts and reason counts separately. Calls inside an enclosing transaction defer because its read snapshot may predate the evidence locks; normal sweeps run their own transactions. Dry runs have `dry_run=true` and never emit `release_deleted`. Owned creation failures retain their `nzb_creation` channel and are logged after commit.
@@ -24,7 +25,7 @@ The existing daily rotating application log receives `release_deleted` only afte
 2. Report a bounded page without database/search/cache/provider mutations:
 
    ```bash
-   scripts/agent-sail artisan releases:recover-orphaned-collections --limit=100 --manifest-out=/absolute/new/report.json
+   php artisan releases:recover-orphaned-collections --limit=100 --manifest-out=/absolute/new/report.json
    ```
 
    Use `--after-id=<last collection ID>` for the next page. Existing manifest files are never overwritten. Review IDs/hashes, old parent IDs, counts/bytes, payload evidence, quiet state, duplicate candidates and rejection reasons. Historical cause is always reported as unknown.
@@ -32,7 +33,7 @@ The existing daily rotating application log receives `release_deleted` only afte
 4. Pause ingest, formation, NZB creation, repair and cleanup workers before application. Apply a small reviewed trial manifest first:
 
    ```bash
-   scripts/agent-sail artisan releases:recover-orphaned-collections --apply --manifest=/absolute/reviewed/report.json
+   php artisan releases:recover-orphaned-collections --apply --manifest=/absolute/reviewed/report.json
    ```
 
    Apply accepts at most 100 entries and a 2 MiB manifest. Each entry locks/rechecks the absent parent, collection, group and bounded CBP inventory. Changed fingerprints, live parents, duplicate conflicts, missing parts/payload, unknown filenames, active frontiers and nonterminal states require replanning. Collection snapshots are limited to 10,000 binaries and 100,000 parts per entry; exceeding either is a review/defer outcome.

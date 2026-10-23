@@ -20,13 +20,16 @@ only after an exact zero-result response.
 ## Maintenance rebuild
 
 Search schema changes require a maintenance window. Before rebuilding, enable
-`nntmux.mysql_search_fallback` if bounded database fallback is desired while indexes
-are empty.
+`nntmux.mysql_search_fallback` (set `MYSQL_SEARCH_FALLBACK=true` in `.env` and rebuild
+the configuration cache) if bounded database fallback is desired while indexes are empty.
 
 1. Run `php artisan tmux:stop` and pause queue workers that update search indexes.
 2. Recreate Manticore indexes with `php artisan manticore:create-indexes --drop`.
 3. Repopulate enabled indexes with `php artisan nntmux:populate --manticore --all`.
-4. Compare source and index document counts and run representative filtered searches.
+4. Compare source and index document counts (`php artisan nntmux:check-index --manticore`
+   with the index flags reports each index's document count;
+   `php artisan nntmux:search-reconcile --dry-run --all` lists releases missing from the
+   index) and run representative filtered searches.
 5. Increment `SEARCH_INDEX_GENERATION` to invalidate outstanding API v2 cursors.
 6. Restart queue workers and run `php artisan tmux:start`.
 

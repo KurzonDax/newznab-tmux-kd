@@ -1,24 +1,26 @@
-<p align="center">
-    <a href="https://packagist.org/packages/nntmux/newznab-tmux"><img src="https://poser.pugx.org/nntmux/newznab-tmux/v/stable.svg" alt="Latest Stable Version"></a>
-    <a href="https://packagist.org/packages/nntmux/newznab-tmux"><img src="https://poser.pugx.org/nntmux/newznab-tmux/license.svg" alt="License"></a>
-    <a href="https://www.patreon.com/bePatron?u=6160908"><img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="Become a Patron!" height="20"></a>
-</p>
-
 # NNTmux
 
-NNTmux is a modern Usenet indexer built on Laravel, designed for high performance and scalability. It automatically scans Usenet, collects headers, and organizes them into searchable releases. The project is actively maintained and features multi-threaded processing, advanced search, and a web-based front-end with API access.
+NNTmux is a Usenet indexer built on Laravel. It scans Usenet, collects headers,
+forms them into releases, enriches them with metadata, and serves them through a
+web front end, a newznab-compatible API and RSS feeds.
 
-This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [nZEDb](https://github.com/nZEDb/nZEDb), with significant improvements:
+This repository, [KurzonDax/newznab-tmux-kd](https://github.com/KurzonDax/newznab-tmux-kd),
+is a fork of [NNTmux](https://github.com/NNTmux/newznab-tmux). NNTmux itself is a
+fork of [newznab plus](https://github.com/anth0/nnplus) and
+[nZEDb](https://github.com/nZEDb/nZEDb).
 
-- Multi-threaded processing (header retrieval, release creation, post-processing)
-- Advanced search (name, subject, category, post-date)
-- Intelligent local caching of metadata (TMDB, TVDB, TVMaze, Trakt, IMDB)
-- Tmux engine for thread, database, and performance monitoring
-- Image and video sample support
-- Modern frontend stack: Vite, Tailwind CSS, Alpine.js, Livewire
-- Full-text search via ManticoreSearch
-- Dockerized development via Laravel Sail
-- RESTful API compatible with newznab standard
+- Multi-process header collection, release formation and post-processing, run
+  from a tmux session
+- Search by name, subject, category and post date
+- Local caching of metadata: TV (TVDB, TVMaze, TMDB, Trakt), movies (TMDB, IMDb,
+  Trakt, OMDb, Fanart.tv), music (MusicBrainz, AcoustID), books (Google Books,
+  ISBNdb, Open Library), games (IGDB, Steam) and anime (AniList)
+- Image, audio and video previews
+- Frontend: Blade, Alpine.js and Tailwind CSS, built with Vite; the forum preset
+  includes Vue, and Laravel Pulse uses Livewire
+- Full-text search with ManticoreSearch
+- Docker development environment based on Laravel Sail
+- newznab-compatible XML API, a JSON API (v2) and RSS feeds
 
 ## Table of Contents
 
@@ -40,13 +42,21 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 ## Prerequisites
 
 - System administration experience; Linux is required for processing workers.
-- PHP 8.4+ with extensions: curl, json, pdo_mysql, openssl, mbstring, xml, zip, gd, intl, pcntl, posix, ffi. Worker CLI PHP must permit `FFI::cdef()` (`ffi.enable=preload` or `true`) and expose Linux `/proc`; workers use the kernel subreaper facility to terminate and reap owned descendants before replacing timed-out work.
-- MariaDB 10.6+ or MySQL 8+ (PostgreSQL not supported)
+- PHP 8.4+ (`composer.json` requires `^8.4`; the Docker image uses PHP 8.5) with
+  the extensions Composer checks, including curl, ffi, gd, intl, mbstring,
+  pcntl, pdo_mysql, posix, sockets and xmlwriter. The default `.env.example` also
+  needs the redis and imagick extensions. Worker CLI PHP must permit
+  `FFI::cdef()` (`ffi.enable=preload` or `true`) and expose Linux `/proc`;
+  workers use the kernel subreaper facility to terminate and reap owned
+  descendants before replacing timed-out work.
+- MariaDB (the Compose templates pin `mariadb:12.3`; PostgreSQL is not supported)
+- Redis
+- ManticoreSearch (the Compose templates pin `manticoresearch/manticore:28.4.4`)
 - Composer 2.x
-- Node.js 18+ and npm for frontend assets
+- Node.js 24 and npm for frontend assets (the Docker image uses Node 24)
 - nginx or Apache web server
-- Optional: tmux (for multi-threaded processing)
-- Optional: unrar, 7zip, ffmpeg, mediainfo, wavpack (for post-processing)
+- tmux, to run the processing engine
+- Optional: unrar, unzip, ffmpeg, mediainfo, wavpack (for post-processing)
 - `wavpack` is required for previews of 32-bit float WavPack releases; on Ubuntu/Debian, install it with `sudo apt install wavpack` (provides `wvunpack`)
 
 ### Recommended Hardware
@@ -59,12 +69,16 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
 
 ## Installation
 
+- **Docker:** follow [DOCKER.md](DOCKER.md).
+- **Native Ubuntu install:** follow [docs/installation.md](docs/installation.md),
+  which also covers the scheduler, Horizon and upgrades.
+
 ### Quick Start
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/NNTmux/newznab-tmux.git
-   cd newznab-tmux
+   git clone https://github.com/KurzonDax/newznab-tmux-kd.git
+   cd newznab-tmux-kd
    ```
 
 2. Install PHP dependencies:
@@ -72,71 +86,80 @@ This project is a fork of [newznab plus](https://github.com/anth0/nnplus) and [n
    composer install --no-dev --optimize-autoloader
    ```
 
-3. Copy and configure environment:
+3. Copy the environment file and configure it (see [Configuration](#configuration)):
    ```bash
    cp .env.example .env
-   php artisan key:generate
    ```
 
-4. Configure your `.env` file (see [Configuration](#configuration))
-
-5. Run database migrations:
+4. Install NNTmux. **For a new installation only:** `nntmux:install` runs
+   `migrate:fresh --seed`, which drops every table in the database. It then
+   creates the admin account from `ADMIN_USER`, `ADMIN_PASS` and `ADMIN_EMAIL`
+   and generates `APP_KEY`.
    ```bash
-   php artisan migrate
+   php artisan nntmux:install
    ```
 
-6. Install frontend assets:
+5. Create the search tables and build frontend assets:
    ```bash
-   npm install
+   php artisan manticore:create-indexes
+   npm ci
    npm run build
    ```
 
-7. Set permissions:
-   ```bash
-   chmod -R 775 storage bootstrap/cache
-   chown -R www-data:www-data storage bootstrap/cache
-   ```
-
-For detailed installation instructions, see the [Ubuntu Install Guide](https://github.com/NNTmux/newznab-tmux/wiki/Ubuntu-Install-guide).
+6. Make `storage`, `bootstrap/cache` and the NZB, cover and temporary paths from
+   `.env` writable by the web server and workers, add the scheduler cron entry,
+   and start processing with `php artisan tmux:start`. See
+   [docs/installation.md](docs/installation.md) for each step.
 
 ## Configuration
 
 ### Essential .env Settings
+
+Key names and defaults below are those in `.env.example`.
 
 ```env
 # Application
 APP_NAME=NNTmux
 APP_ENV=production
 APP_DEBUG=false
-APP_URL=https://your-domain.com
+APP_URL=
 
 # Database
-DB_CONNECTION=mysql
+DB_CONNECTION=mariadb
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_DATABASE=nntmux
-DB_USERNAME=nntmux
-DB_PASSWORD=your_secure_password
+DB_USERNAME=
+DB_PASSWORD=
+
+# Admin account created by nntmux:install
+ADMIN_USER=
+ADMIN_PASS=
+ADMIN_EMAIL=
 
 # Usenet providers (numbered groups; provider 1 is the primary and serves all headers).
 # Add NNTP_PROVIDER_2_* for a second backbone -- article fetches fail over to it per article.
+# For TLS, typically PORT=563 and SSL=true.
 NNTP_PROVIDER_1_NAME=primary
-NNTP_PROVIDER_1_HOST=news.your-provider.com
-NNTP_PROVIDER_1_PORT=563
-NNTP_PROVIDER_1_SSL=true
-NNTP_PROVIDER_1_USERNAME=your_username
-NNTP_PROVIDER_1_PASSWORD=your_password
-NNTP_PROVIDER_1_CONNECTIONS=20
+NNTP_PROVIDER_1_HOST=
+NNTP_PROVIDER_1_PORT=119
+NNTP_PROVIDER_1_SSL=false
+NNTP_PROVIDER_1_USERNAME=
+NNTP_PROVIDER_1_PASSWORD=
+NNTP_PROVIDER_1_CONNECTIONS=1
 
-# API Keys (obtain from respective services)
-TMDB_API_KEY=your_tmdb_key
-TVDB_API_KEY=your_tvdb_key
-TVMAZE_API_KEY=              # Optional, no key required for basic usage
-TRAKT_CLIENT_ID=your_trakt_client_id
-TRAKT_CLIENT_SECRET=your_trakt_secret
-OMDB_API_KEY=your_omdb_key
-FANART_API_KEY=your_fanart_key
-GIANTBOMB_API_KEY=your_giantbomb_key
+# Metadata API keys (obtain from the respective services)
+OMDB_APIKEY=
+TRAKTTV_APIKEY=
+FANARTTV_APIKEY=
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
+GOOGLE_BOOKS_API_KEY=
+ISBNDB_API_KEY=
+# Leave empty to keep MusicBrainz resolution dormant. Public musicbrainz.org endpoints
+# require a maintainer email or URL in MUSICBRAINZ_USER_AGENT_CONTACT.
+MUSICBRAINZ_ENDPOINT_URL=
+MUSICBRAINZ_USER_AGENT_CONTACT=
 # Optional: AcoustID fingerprint lookups for music that MusicBrainz matching leaves
 # unresolved. When set, each derived Chromaprint fingerprint and its duration are sent
 # to AcoustID, a third-party service (lookup only; the audio itself is never sent).
@@ -144,45 +167,65 @@ ACOUSTID_CLIENT_KEY=
 
 # Search Engine
 SEARCH_DRIVER=manticore
-MANTICORESEARCH_HOST=127.0.0.1
+MANTICORESEARCH_HOST=localhost
 MANTICORESEARCH_PORT=9308
 
-# IRC Pre Scraping (optional)
-SCRAPE_IRC_SERVER=irc.synirc.net
-SCRAPE_IRC_PORT=6697
-SCRAPE_IRC_TLS=true
-SCRAPE_IRC_USERNAME=YourUniqueNick
+# IRC Pre Scraping (optional; set these before running irc:scrape)
+SCRAPE_IRC_SERVER=
+SCRAPE_IRC_PORT=
+SCRAPE_IRC_TLS=
+SCRAPE_IRC_USERNAME=
 ```
+
+`.env.example` ships default keys in `TMDB_APIKEY` and `TVDB_APIKEY`; replace
+them with your own. IGDB game lookups use the Twitch application credentials.
+The NNTP provider keys are described in
+[docs/architecture/nntp-providers.md](docs/architecture/nntp-providers.md).
+Most other behaviour is set in the admin settings pages; see
+[docs/configuration.md](docs/configuration.md).
 
 ### Queue Configuration
 
-NNTmux uses Laravel's queue system for background processing:
+`.env.example` sets `QUEUE_CONNECTION=sync`, which runs queued jobs (mail, API
+usage records) inline. To run them in the background, switch to Redis and run
+Laravel Horizon, listing every queue the application uses in `HORIZON_QUEUES`;
+see [docs/installation.md](docs/installation.md#7-scheduler-and-queue-workers).
+The Docker image already runs Horizon under Supervisor.
 
 ```env
-QUEUE_CONNECTION=redis
+QUEUE_CONNECTION=sync
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 ```
 
-For high-volume processing, consider using [Laravel Horizon](https://github.com/NNTmux/newznab-tmux/wiki/Laravel-Horizon).
-
 ## Operations Guides
 
+- [Native installation and upgrades](docs/installation.md)
+- [Configuration and admin settings](docs/configuration.md)
 - [Hardware-accelerated clip encoding](docs/hardware-acceleration.md)
 - [Backups](docs/backups.md)
 - [ManticoreSearch upgrades](docs/manticore-28-upgrade.md)
+- [ManticoreSearch Ubuntu package recovery](docs/manticore-ubuntu-package.md)
+- [Search performance](docs/search-performance.md)
 - [Release-table optimization](docs/releases-table-optimization.md)
+- [Orphaned collection recovery](docs/orphaned-collection-recovery.md)
+- [Native Node 24 production upgrade](docs/node24-native-upgrade.md)
+
+Architecture: [indexing pipeline](docs/architecture/indexing-pipeline.md),
+[NNTP providers](docs/architecture/nntp-providers.md),
+[provider gateway](docs/architecture/provider-gateway.md),
+[decision model](docs/architecture/decision-model.md).
 
 ## Database Setup
 
 ### Initial Setup
 
-```bash
-# Run migrations
-php artisan migrate
+`php artisan nntmux:install` creates the schema and seeds the initial data
+(categories, groups, settings) on an empty database. On an existing
+installation, apply new migrations with:
 
-# Seed initial data (categories, groups, etc.)
-php artisan db:seed
+```bash
+php artisan migrate
 ```
 
 ### Database Tuning
@@ -209,12 +252,8 @@ wget https://raw.githubusercontent.com/major/MySQLTuner-perl/master/mysqltuner.p
 perl mysqltuner.pl
 ```
 
-### Collation Migration
-
-For proper Unicode support (emojis, special characters):
-```bash
-php artisan nntmux:convert-collation utf8mb4_unicode_ci
-```
+Create the database with `CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+(see [docs/installation.md](docs/installation.md#2-create-the-database)).
 
 ## Search Engine
 
@@ -231,7 +270,7 @@ sudo apt install manticore
 
 # Configure in .env
 SEARCH_DRIVER=manticore
-MANTICORESEARCH_HOST=127.0.0.1
+MANTICORESEARCH_HOST=localhost
 MANTICORESEARCH_PORT=9308
 
 # Build indexes
@@ -239,46 +278,52 @@ php artisan manticore:create-indexes
 php artisan nntmux:populate --manticore --releases
 ```
 
+`php artisan manticore:inspect` reports the server version and whether the table
+schemas match the application. The scheduler runs `nntmux:search-repair` and
+`nntmux:search-maintain` to keep the index in step with the database; see
+[docs/search-performance.md](docs/search-performance.md).
+
 ## Console Commands
 
 NNTmux provides numerous Artisan commands for management and maintenance.
+`php artisan list` shows them all, and `php artisan help <command>` shows a
+command's options.
 
 ### Release Processing
 
 ```bash
-# Start the tmux processing engine
+# Start, attach to and stop the tmux processing engine
 php artisan tmux:start
-
-# Stop tmux processing
+php artisan tmux:attach
 php artisan tmux:stop
 
-# Process releases manually
-php artisan nntmux:process-releases
+# Form releases for one group (by ID) or all groups
+php artisan releases:process
 
-# Update release names
-php artisan nntmux:update-releases
+# Run additional post-processing for one release by GUID (or --id=)
+php artisan releases:additional <guid>
+
+# Reset post-processing for all releases, or one category with --category=
+php artisan nntmux:resetpp
 ```
 
 ### TV & Movie Processing
 
 ```bash
-# Reprocess unmatched TV releases
-php artisan nntmux:reprocess-tv
+# Reprocess TV releases not matched to any show
+php artisan tv:reprocess-unmatched --limit=1000
 
-# Refresh TV episodes for a specific show
-php artisan tv:refresh-episodes --video-id=12345
+# Reprocess TV releases matched to a show but not to an episode
+php artisan tv:reprocess-missing-episodes --video-id=12345
 
-# Refresh all shows with missing seasons
-php artisan tv:refresh-episodes --missing-seasons
+# Rematch one TV release by GUID
+php artisan tv:reprocess <guid> --reset
 
-# Search by title and refresh
-php artisan tv:refresh-episodes --title="Show Name"
+# Reset post-processing for every release of one show
+php artisan nntmux:reset-tv-show <videos_id> --dry-run
 
-# Delete existing and re-fetch from specific provider
-php artisan tv:refresh-episodes --video-id=12345 --provider=tmdb --delete-existing
-
-# Dry run to preview changes
-php artisan tv:refresh-episodes --missing-seasons --dry-run
+# Fetch or refresh one movie by IMDb ID
+php artisan nntmux:fetch-movie <imdbid>
 ```
 
 ### Database Maintenance
@@ -287,11 +332,15 @@ php artisan tv:refresh-episodes --missing-seasons --dry-run
 # Optimize tables
 php artisan nntmux:optimize-tables
 
-# Clean old releases
-php artisan nntmux:cleanup --days=365
+# Delete releases matching criteria (preview first with --dry-run)
+php artisan nntmux:delete-releases --hours-old=8760 --dry-run
 
-# Purge Laravel Pulse data (if using Pulse)
-php artisan pulse:purge
+# Run or list database backups
+php artisan backup:run full
+php artisan backup:list
+
+# Delete all Laravel Pulse data
+php artisan pulse:clear
 
 # Clear application caches
 php artisan cache:clear
@@ -302,65 +351,54 @@ php artisan route:clear
 
 ### User Management
 
-```bash
-# Create admin user
-php artisan nntmux:create-admin
-
-# Reset user password
-php artisan nntmux:reset-password --email=user@example.com
-```
+`nntmux:install` creates the first admin account. Manage users afterwards under
+**Admin → Users** (`/admin/user-list`); users reset their own passwords from the
+forgotten-password page (`/forgottenpassword`).
 
 ## IRC Pre Channels
 
-NNTmux can scrape IRC pre channels for early release information.
-
-### Active IRC Networks
-
-| Network | Server | Ports | SSL |
-|---------|--------|-------|-----|
-| SynIRC | irc.synirc.net | 6667, 6697, 7001 | Yes |
-| p2p-net | irc.p2p-net.eu | 6697, 7000 | Yes |
-| lillesky | irc.lillesky.org | 6667, 7000 | Yes |
-| Abjects | irc.abjects.net | 6667, 6697 | Yes |
+NNTmux can scrape IRC pre channels for early release information with
+`php artisan irc:scrape`.
 
 ### Configuration
 
 ```env
-SCRAPE_IRC_SERVER=irc.synirc.net
-SCRAPE_IRC_PORT=6697
-SCRAPE_IRC_TLS=true
-SCRAPE_IRC_USERNAME=YourUniqueNickname
-SCRAPE_IRC_REALNAME=Your Name
-SCRAPE_IRC_CHANNELS=#PreNNTmux,#nZEDbPRE
+SCRAPE_IRC_SERVER=
+SCRAPE_IRC_PORT=
+SCRAPE_IRC_TLS=
+SCRAPE_IRC_USERNAME=
+SCRAPE_IRC_PASSWORD=
 ```
 
-### PreDB API Alternatives
-
-Instead of or in addition to IRC, you can use PreDB APIs:
-
-- **predb.ovh** - Public API with RSS feeds: `https://predb.ovh/api/v1/`
-- **predb.net** - Comprehensive API: `https://predb.net/api-documentation/`
-- **predb.me** - Public PreDB with search
-- **predb.live** - NFO database included
+Set the server, port and TLS flag before running the scraper: `.env.example`
+leaves them empty, and an empty value is used as is. The defaults in
+`config/irc_settings.php` (`irc.synirc.net`, port 6667, no TLS) apply only when
+a key is absent from `.env`. `SCRAPE_IRC_USERNAME` is used as the nickname, real
+name and ident; `SCRAPE_IRC_PASSWORD` is only needed for a bouncer such as ZNC.
+The channel list (by default `#PreNNTmux`) and the category, title and source
+filters are set in `config/irc_settings.php`.
 
 ## TV & Movie Processing
 
 NNTmux fetches metadata from multiple sources with fallback support.
 
-### Provider Priority
+### Provider Order
 
-1. **TMDB** (The Movie Database) - Primary for movies and TV
-2. **TVDB** (TheTVDB) - Fallback for TV shows
-3. **TVMaze** - Additional TV metadata
-4. **Trakt** - User ratings and additional data
-5. **OMDB/IMDB** - Movie ratings and legacy data
+- **TV:** the local database first, then TVDB, TVMaze, TMDB and Trakt, in that
+  order (`app/Services/TvProcessing/Pipes/`).
+- **Movies:** TMDB, IMDb, Trakt and OMDb, with artwork from Fanart.tv.
+
+External lookups go through the provider gateway, which paces requests and
+stops calling a provider that is failing; see
+[docs/architecture/provider-gateway.md](docs/architecture/provider-gateway.md).
 
 ### Episode Matching
 
 The TV processing pipeline automatically:
 - Matches releases to shows by name
 - Downloads episode information for matched shows
-- Detects and fetches missing seasons when processing new releases
+- Revisits recently matched shows for new episodes (`TV_EPISODE_REVISIT_WINDOW_DAYS`,
+  `TV_EPISODE_REVISIT_INTERVAL_HOURS`)
 
 If episodes aren't matching properly:
 
@@ -369,8 +407,8 @@ If episodes aren't matching properly:
 php artisan tinker
 >>> DB::table('videos')->where('title', 'like', '%Show Name%')->get(['id', 'title', 'tmdb']);
 
-# Refresh episodes for that show
-php artisan tv:refresh-episodes --video-id=<ID>
+# Reprocess that show's releases that have no episode match
+php artisan tv:reprocess-missing-episodes --video-id=<ID>
 ```
 
 ## API
@@ -379,36 +417,43 @@ NNTmux provides a newznab-compatible API for integration with download clients a
 
 ### Endpoints
 
+The newznab-compatible XML API is served at `/api/v1/api`:
+
 ```
-GET /api?t=caps           # Server capabilities
-GET /api?t=search&q=      # Search releases
-GET /api?t=tvsearch       # TV search
-GET /api?t=movie          # Movie search
-GET /api?t=music          # Music search
-GET /api?t=book           # Book search
-GET /api?t=details&id=    # Release details
-GET /api?t=getnzb&id=     # Download NZB
+GET /api/v1/api?t=caps            # Server capabilities
+GET /api/v1/api?t=search&q=       # Search releases
+GET /api/v1/api?t=tvsearch        # TV search
+GET /api/v1/api?t=movie           # Movie search
+GET /api/v1/api?t=music           # Music search
+GET /api/v1/api?t=book            # Book search
+GET /api/v1/api?t=details&id=     # Release details
+GET /api/v1/api?t=get&id=         # Download NZB
 ```
+
+The JSON API is served under `/api/v2/`, and RSS feeds under `/rss/`. See
+[docs/newznab_api_specification.txt](docs/newznab_api_specification.txt) and
+[docs/nntmux_api_v2.md](docs/nntmux_api_v2.md).
 
 ### API Keys
 
-Users obtain API keys from their profile page. Configure per-user rate limits in the admin panel.
-
-For detailed API documentation, see the [NNTmux API v2 Wiki](https://github.com/NNTmux/newznab-tmux/wiki/NNTmux-API-version-2).
+Users find their API key on their account's API page. Request rate limits are set
+per role in the admin panel.
 
 ## Docker & Development
 
 ### Laravel Sail (Docker)
 
+[DOCKER.md](DOCKER.md) describes the Docker environment and its `make` targets.
+
 ```bash
 # Start containers
-./vendor/bin/sail up -d
+make up
 
 # Run artisan commands
-./vendor/bin/sail artisan migrate
+make artisan cmd="migrate"
 
 # Stop containers
-./vendor/bin/sail down
+make down
 ```
 
 ### Frontend Development
@@ -424,14 +469,17 @@ npm run dev
 npm run build
 ```
 
+In a served Docker checkout, build with `make npm-build` instead (see
+[DOCKER.md](DOCKER.md)).
+
 ### Code Style
 
 ```bash
 # PHP formatting (Laravel Pint)
 ./vendor/bin/pint
 
-# JavaScript/Vue linting
-npm run lint
+# CSS/JS/Vue formatting (Prettier)
+npm run format
 ```
 
 ### Agent Skills
@@ -472,8 +520,8 @@ skill paths; resolve reported conflicts manually and rerun it.
 # Check for errors in logs
 tail -f storage/logs/laravel.log
 
-# Verify NNTP connection
-php artisan nntmux:test-nntp
+# Check the tmux session and its monitor pane
+php artisan tmux:health-check
 
 # Check group status
 php artisan tinker
@@ -482,55 +530,49 @@ php artisan tinker
 
 **TV/Movie not matching:**
 ```bash
-# Reprocess specific release
-php artisan nntmux:reprocess-release --id=12345
+# Rematch one TV release
+php artisan tv:reprocess <guid> --reset --debug
 
-# Check API keys
-php artisan nntmux:test-apis
+# Rerun additional post-processing for one release
+php artisan releases:additional <guid> --reset
 ```
+
+API keys are read from `.env`; after changing one, run `php artisan config:clear`
+(or `config:cache` if you cache configuration).
 
 **High disk usage from Laravel Pulse:**
 ```bash
 # Check Pulse table sizes
 mysql -e "SELECT table_name, ROUND(data_length/1024/1024, 2) as 'Size (MB)' FROM information_schema.tables WHERE table_schema='nntmux' AND table_name LIKE 'pulse%';"
 
-# Purge old data
-php artisan pulse:purge
+# Delete all Pulse data
+php artisan pulse:clear
 ```
 
-**Permission issues:**
-```bash
-# Fix ownership
-sudo chown -R www-data:www-data storage bootstrap/cache
-
-# Fix permissions
-sudo chmod -R 775 storage bootstrap/cache
-```
+**Permission issues:** see the permission steps in
+[docs/installation.md](docs/installation.md#5-permissions); in Docker, run
+`make fix-permissions` (see [DOCKER.md](DOCKER.md)).
 
 ### Logs
 
-- **Application logs:** `storage/logs/laravel.log`
-- **Tmux logs:** `misc/update/tmux/logs/`
+- **Application logs:** `storage/logs/` (`laravel.log` by default, plus per-channel files)
+- **Tmux pane logs:** `storage/logs/tmux/`, written only when the `write_logs`
+  setting is 1. Neither the seeder nor any admin page sets it, so pane logging is
+  off on a standard install; pane output is visible in the session
+  (`php artisan tmux:attach`).
 - **nginx logs:** `/var/log/nginx/`
 - **PHP-FPM logs:** `/var/log/php-fpm/`
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Make your changes
-4. Run tests: `php artisan test`
-5. Submit a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md). Every change reaches `master` through a
+pull request; application changes start from an agreed GitHub issue.
 
 ## Support
 
-- **Discord:** [Join our server](https://discord.gg/GjgGSzkrjh)
-- **GitHub Issues:** [Report bugs](https://github.com/NNTmux/newznab-tmux/issues)
-- **Wiki:** [Documentation](https://github.com/NNTmux/newznab-tmux/wiki)
+- **GitHub Issues:** [Report bugs](https://github.com/KurzonDax/newznab-tmux-kd/issues)
+- **Upstream NNTmux:** [NNTmux/newznab-tmux](https://github.com/NNTmux/newznab-tmux), whose
+  wiki and Discord describe the upstream project rather than this fork
 
 ## License
 
