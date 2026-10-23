@@ -56,6 +56,9 @@ final class ProviderGateway
     /** @var array<string, ProviderOutcome> The last HTTP leg per provider, until a caller reports its real outcome. */
     private array $unreportedLegs = [];
 
+    /** @var array<string, bool> Whether that last HTTP leg was a breaker's trial. */
+    private array $unreportedTrials = [];
+
     /** @var array<string, int> */
     private array $unavailableCalls = [];
 
@@ -204,7 +207,8 @@ final class ProviderGateway
     {
         $policy = $this->policies->for($provider);
         $leg = $this->unreportedLegs[$provider] ?? null;
-        unset($this->unreportedLegs[$provider]);
+        $trial = $this->unreportedTrials[$provider] ?? false;
+        unset($this->unreportedLegs[$provider], $this->unreportedTrials[$provider]);
         if ($leg === $outcome) {
             return;
         }
@@ -216,7 +220,8 @@ final class ProviderGateway
         $this->lastOutcomes[$provider] = $outcome;
         if ($outcome === ProviderOutcome::Unavailable) {
             $this->unavailableCalls[$provider] = ($this->unavailableCalls[$provider] ?? 0) + 1;
-            $this->breaker->record($policy, $owner, answered: false);
+            // A trial whose answer turns out unusable is a failed trial after all.
+            $this->breaker->record($policy, $owner, answered: false, trial: $trial);
         }
     }
 
@@ -364,7 +369,8 @@ final class ProviderGateway
         $this->countStatus($call->provider, $status);
         $byCaller = $call->classify !== null ? ($call->classify)($response) : null;
         $outcome = $byCaller ?? $this->classify($policy, $status);
-        $this->breaker->record($policy, $call->owner, $outcome->answered(), $permit !== null && $permit->trial);
+        $trial = $permit !== null && $permit->trial;
+        $this->breaker->record($policy, $call->owner, $outcome->answered(), $trial);
 
         if ($outcome === ProviderOutcome::Unavailable) {
             $retryAfter = $this->retryAfterMilliseconds($response, $policy);
@@ -383,7 +389,7 @@ final class ProviderGateway
             }
         }
 
-        $this->settle($call, $outcome);
+        $this->settle($call, $outcome, $trial);
 
         return $response;
     }
@@ -568,10 +574,11 @@ final class ProviderGateway
     }
 
     /** Records how a call ended; a caller may still {@see report()} the real outcome of an HTTP leg. */
-    private function settle(GatewayCall $call, ProviderOutcome $outcome): void
+    private function settle(GatewayCall $call, ProviderOutcome $outcome, bool $trial = false): void
     {
         $this->lastOutcomes[$call->provider] = $outcome;
         $this->unreportedLegs[$call->provider] = $outcome;
+        $this->unreportedTrials[$call->provider] = $trial;
         $this->countOutcome($call->provider, $outcome, 1);
         if ($outcome === ProviderOutcome::Unavailable) {
             $this->unavailableCalls[$call->provider] = ($this->unavailableCalls[$call->provider] ?? 0) + 1;

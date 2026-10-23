@@ -10,16 +10,15 @@ use App\Services\ProviderGateway\ProviderOutcome;
 use App\Services\TmdbClient;
 use App\Services\TvProcessing\Providers\TvMazeProvider;
 use DariusIII\TVMaze\TVMaze;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
 use Mockery;
 use PHPUnit\Framework\Attributes\Test;
 use RuntimeException;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 /**
@@ -35,11 +34,8 @@ final class ProviderGatewayLedgerTest extends TestCase
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
-        Schema::create('usenet_groups', fn (Blueprint $table) => $table->increments('id'));
-        Schema::create('releases', function (Blueprint $table): void {
-            $table->increments('id');
-            $table->string('guid')->unique();
-        });
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id']);
+        ProductionTables::fromAuthority()->create('releases', ['id', 'guid']);
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();

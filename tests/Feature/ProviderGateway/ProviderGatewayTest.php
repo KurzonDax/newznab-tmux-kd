@@ -207,6 +207,21 @@ final class ProviderGatewayTest extends TestCase
     }
 
     #[Test]
+    public function a_trial_whose_answer_is_reported_unusable_doubles_the_open_time(): void
+    {
+        config(['provider-gateway.providers.fixture.retry.attempts' => 1]);
+        $this->openFixtureBreaker();
+        $this->travel(60)->seconds();
+        $this->responder = static fn (Request $request) => Http::response('<html>not the json asked for</html>');
+
+        $this->gateway()->http('fixture')->get(self::URL);
+        $this->assertFalse($this->gateway()->isOpen('fixture'), 'the 200 closed it');
+        $this->gateway()->report('fixture', ProviderOutcome::Unavailable);
+
+        $this->assertSame(120, $this->secondsUntilClosed());
+    }
+
+    #[Test]
     public function a_rejection_is_neither_retried_nor_counted_by_the_breaker(): void
     {
         $this->responder = static fn () => Http::response('bad key', 401);

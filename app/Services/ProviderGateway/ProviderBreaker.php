@@ -112,6 +112,8 @@ final class ProviderBreaker
         if ($answered) {
             Cache::forget($this->key($policy, 'failures'));
             if ($trial) {
+                // Kept briefly in case the caller reports the trial's answer unusable after all.
+                Cache::put($this->key($policy, 'closed_step'), (int) Cache::get($this->key($policy, 'step'), 0), self::TRIAL_SECONDS);
                 $this->close($policy);
             }
 
@@ -119,7 +121,7 @@ final class ProviderBreaker
         }
 
         if ($trial) {
-            $step = (int) Cache::get($this->key($policy, 'step'), 0) + 1;
+            $step = (int) (Cache::get($this->key($policy, 'step')) ?? Cache::get($this->key($policy, 'closed_step'), 0)) + 1;
             Cache::forget($this->key($policy, 'trial'));
             $this->open($policy, $step);
 
