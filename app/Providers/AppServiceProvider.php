@@ -50,6 +50,7 @@ use App\Services\MusicIdentity\ReleaseNameAlbumCandidates;
 use App\Services\NNTP\NntpProviderPool;
 use App\Services\NNTP\NntpTrafficMeter;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ProviderGateway\ProviderGateway;
 use App\Support\ReleaseRepairingContext;
 use App\Support\Settings\SettingsRegistry;
 use App\Support\SiteViewSettings;
@@ -128,6 +129,9 @@ class AppServiceProvider extends ServiceProvider
         // The settings hub builds its whole tree from the registry on every render and every
         // save; one instance per request keeps that to a single build.
         $this->app->singleton(SettingsRegistry::class);
+        // One gateway per process: its process-scoped pacers and breakers, last outcomes and
+        // instance-scoped breakers live on it.
+        $this->app->singleton(ProviderGateway::class);
         $this->app->bind(MusicBrainzGateway::class, HttpMusicBrainzGateway::class);
         $this->app->bind(AcousticFingerprintMatcher::class, HttpAcoustIdFingerprintMatcher::class);
         $this->app->bind(CandidateGenerator::class, MusicCandidateGenerator::class);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
@@ -53,6 +54,10 @@ final class RecoveryCatalog
     public static function middleware(): callable
     {
         return static fn (callable $handler): callable => static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
+            if (isset($options[ProviderGateway::OPTION])) {
+                // The gateway records each of its attempts itself.
+                return $handler($request, $options);
+            }
             $id = self::begin($request->getUri()->getHost(), 'http');
             try {
                 return $handler($request, $options)->then(
@@ -136,7 +141,8 @@ final class RecoveryCatalog
         }, 1);
     }
 
-    private static function begin(string $provider, string $kind): ?int
+    /** Opens a ledger row for a request inside {@see run()}; null outside one. */
+    public static function begin(string $provider, string $kind): ?int
     {
         if (self::$publication === null) {
             return null;
@@ -148,7 +154,7 @@ final class RecoveryCatalog
         ]);
     }
 
-    private static function finish(?int $id, string $outcome, ?int $status = null, ?int $bytes = null): void
+    public static function finish(?int $id, string $outcome, ?int $status = null, ?int $bytes = null): void
     {
         if ($id === null) {
             return;
