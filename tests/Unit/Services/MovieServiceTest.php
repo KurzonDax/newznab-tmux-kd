@@ -38,7 +38,7 @@ class MovieServiceTest extends ImdbScraperTestCase
         $scraper = $this->mock(ImdbScraper::class);
         $scraper->shouldReceive('fetchById')->andReturnFalse()->byDefault();
         $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
 
         Schema::dropIfExists('movieinfo');
         Schema::create('movieinfo', function (Blueprint $table): void {
@@ -157,7 +157,7 @@ class MovieServiceTest extends ImdbScraperTestCase
         $scraper = $this->mock(ImdbScraper::class);
         $scraper->shouldReceive('fetchById')->with('0137523')->times(4)->andReturnFalse();
         $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull();
         Release::query()->insert(['id' => 1, 'categories_id' => Category::MOVIE_HD, 'imdbid' => '0137523']);
         $service = new MovieService;
         foreach (range(1, 4) as $attempt) {

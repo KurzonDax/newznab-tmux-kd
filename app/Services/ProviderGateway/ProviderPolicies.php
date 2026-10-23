@@ -84,10 +84,6 @@ final class ProviderPolicies
                 'attempts' => (int) config('nntmux_api.fanarttv_retry_times', 3),
                 'backoff_ms' => (int) config('nntmux_api.fanarttv_retry_delay', 100),
             ]],
-            'imdbapi_dev' => [
-                'pace' => ['min_interval_ms' => max(0, (int) config('nntmux_api.imdbapi_dev_min_interval_seconds', 15)) * 1_000],
-                'breaker' => ['open_seconds' => max(0, (int) config('nntmux_api.imdbapi_dev_cooldown_seconds', 300))],
-            ],
             'musicbrainz' => [
                 'pace' => ['min_interval_ms' => max(1_000, (int) config('music-identity.musicbrainz.public_min_interval_milliseconds', 1_000))],
                 'retry' => [

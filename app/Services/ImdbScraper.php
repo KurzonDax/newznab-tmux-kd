@@ -7,8 +7,6 @@ namespace App\Services;
 use App\Services\ProviderGateway\ProviderGateway;
 use App\Services\ProviderGateway\ProviderOutcome;
 use App\Services\ProviderGateway\ProviderResult;
-use App\Services\ProviderGateway\ShortCircuit;
-use App\Services\ProviderGateway\ShortCircuitReason;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -24,17 +22,7 @@ class ImdbScraper
     /** Failure reasons of the title page that mean IMDb gave no answer. */
     private const array UNAVAILABLE_REASONS = ['waf_block', 'html_unavailable', 'html_exception'];
 
-    /** Failure reasons of the imdbapi.dev fallback that mean it gave no answer. */
-    private const array FALLBACK_UNAVAILABLE_REASONS = [
-        'fallback_disabled', 'fallback_rate_limited', 'fallback_unavailable', 'fallback_exception',
-        'fallback_min_interval_active', 'fallback_cooldown_active',
-    ];
-
     protected Client $client;
-
-    protected Client $imdbApiDevClient;
-
-    protected string $imdbApiDevBaseUrl;
 
     protected bool $lastRequestWasBlocked = false;
 
@@ -49,17 +37,12 @@ class ImdbScraper
 
     protected ?string $lastFailureReason = null;
 
-    protected ?string $lastFallbackFailureReason = null;
-
     /**
-     * Requests go through the provider gateway: `imdb` for IMDb itself, where a WAF challenge
-     * is no answer and counts against its breaker, and `imdbapi_dev` for the fallback, spaced by
-     * `imdbapi_dev_min_interval_seconds` (a request too soon is skipped) and closed by its
-     * breaker after a failure. An injected client's handler is used as the transport.
+     * Requests go through the provider gateway as `imdb`, where a WAF challenge is no answer
+     * and counts against its breaker. An injected client's handler is used as the transport.
      */
     public function __construct(?Client $client = null)
     {
-        $this->imdbApiDevBaseUrl = rtrim((string) config('nntmux_api.imdbapi_dev_base_url', 'https://api.imdbapi.dev'), '/');
         $options = [
             'timeout' => 10,
             'connect_timeout' => 10,
@@ -72,21 +55,18 @@ class ImdbScraper
                 'Pragma' => 'no-cache',
             ],
         ];
-        $gateway = app(ProviderGateway::class);
-        $this->client = $gateway->guzzle('imdb', $options, $client, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
+        $this->client = app(ProviderGateway::class)->guzzle('imdb', $options, $client, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
             ? ProviderOutcome::Unavailable
             : null);
-        $this->imdbApiDevClient = $gateway->guzzle('imdbapi_dev', $options, $client);
     }
 
     /**
-     * Whether a title fetch that found nothing got no answer at all, so it must not be
-     * remembered as a miss: IMDb gave none, and neither did the fallback.
+     * Whether a title fetch that found nothing got no answer at all from IMDb, so it must not
+     * be remembered as a miss.
      */
-    public static function failureIsUnavailable(?string $failureReason, ?string $fallbackFailureReason): bool
+    public static function failureIsUnavailable(?string $failureReason): bool
     {
-        return in_array($failureReason, self::UNAVAILABLE_REASONS, true)
-            && ($fallbackFailureReason === null || in_array($fallbackFailureReason, self::FALLBACK_UNAVAILABLE_REASONS, true));
+        return in_array($failureReason, self::UNAVAILABLE_REASONS, true);
     }
 
     public function wasBlockedByWaf(): bool
@@ -104,11 +84,6 @@ class ImdbScraper
         return $this->lastFailureReason;
     }
 
-    public function getLastFallbackFailureReason(): ?string
-    {
-        return $this->lastFallbackFailureReason;
-    }
-
     /**
      * Fetch a movie by IMDB numeric ID.
      *
@@ -120,7 +95,6 @@ class ImdbScraper
         $this->lastRequestWasBlocked = false;
         $this->lastFetchSource = null;
         $this->lastFailureReason = null;
-        $this->lastFallbackFailureReason = null;
 
         $id = preg_replace('/[^0-9]/', '', $id) ?? '';
         if ($id === '' || strlen($id) < 5 || strlen($id) > 8) {
@@ -185,16 +159,7 @@ class ImdbScraper
             }
         }
 
-        $fallbackData = $this->fetchFromImdbApiDev($id);
-        if ($fallbackData !== false) {
-            $this->lastFetchSource = 'imdbapi_dev';
-            $this->lastFailureReason = null;
-            $this->lastFallbackFailureReason = null;
-
-            return ProviderResult::found($fallbackData);
-        }
-
-        return self::failureIsUnavailable($this->lastFailureReason, $this->lastFallbackFailureReason)
+        return self::failureIsUnavailable($this->lastFailureReason)
             ? ProviderResult::unavailable()
             : ProviderResult::notFound();
     }
@@ -323,102 +288,6 @@ class ImdbScraper
                 ]), 0, 10);
             }
         }
-
-        return [
-            'imdbid' => $id,
-            'title' => $title,
-            'year' => $year,
-            'plot' => $plot,
-            'rating' => $rating,
-            'cover' => $cover,
-            'genre' => $genres,
-            'director' => $directors,
-            'actors' => $actors,
-            'language' => $language,
-            'type' => $type,
-        ];
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function fetchFromImdbApiDev(string $id): array|false
-    {
-        if (! (bool) config('nntmux_api.imdbapi_dev_enabled', true) || $this->imdbApiDevBaseUrl === '') {
-            $this->lastFallbackFailureReason = 'fallback_disabled';
-
-            return false;
-        }
-
-        try {
-            $response = $this->imdbApiDevClient->get($this->imdbApiDevBaseUrl.'/titles/tt'.$id, [
-                'headers' => [
-                    'Accept' => 'application/json',
-                ],
-            ]);
-
-            if ($response->getStatusCode() === 429) {
-                $this->lastFallbackFailureReason = 'fallback_rate_limited';
-
-                return false;
-            }
-
-            if ($response->getStatusCode() !== 200) {
-                $this->lastFallbackFailureReason = $response->getStatusCode() >= 500 ? 'fallback_unavailable' : 'fallback_http_failure';
-
-                return false;
-            }
-
-            $payload = json_decode((string) $response->getBody(), true);
-            if (! is_array($payload)) {
-                $this->lastFallbackFailureReason = 'fallback_invalid_json';
-
-                return false;
-            }
-
-            $mapped = $this->mapImdbApiDevTitle($payload, $id);
-            if ($mapped === false) {
-                $this->lastFallbackFailureReason = 'fallback_invalid_payload';
-
-                return false;
-            }
-
-            return $mapped;
-        } catch (ShortCircuit $skipped) {
-            // Asked too soon after the last fallback, or its breaker is open after a failure.
-            $this->lastFallbackFailureReason = $skipped->reason() === ShortCircuitReason::PacerSkip
-                ? 'fallback_min_interval_active'
-                : 'fallback_cooldown_active';
-
-            return false;
-        } catch (\Throwable $e) {
-            Log::debug('imdbapi.dev fetch error tt'.$id.': '.$e->getMessage());
-            $this->lastFallbackFailureReason = 'fallback_exception';
-
-            return false;
-        }
-    }
-
-    /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    private function mapImdbApiDevTitle(array $payload, string $id): array|false
-    {
-        $title = trim((string) ($payload['primaryTitle'] ?? $payload['title'] ?? ''));
-        if ($title === '') {
-            return false;
-        }
-
-        $year = trim((string) ($payload['startYear'] ?? $payload['year'] ?? ''));
-        $plot = trim((string) ($payload['plot'] ?? $payload['description'] ?? ''));
-        $rating = trim((string) ($payload['rating']['aggregateRating'] ?? $payload['rating'] ?? ''));
-        $cover = $this->normalizeImageUrl($payload['primaryImage'] ?? $payload['image'] ?? '');
-        $genres = $this->normalizeStringList($payload['genres'] ?? []);
-        $directors = $this->extractApiDevPeople($payload['directors'] ?? []);
-        $actors = array_slice($this->extractApiDevPeople($payload['stars'] ?? $payload['cast'] ?? []), 0, 10);
-        $language = $this->extractApiDevLanguages($payload['spokenLanguages'] ?? []);
-        $type = $this->normalizeApiDevType((string) ($payload['type'] ?? 'movie'));
 
         return [
             'imdbid' => $id,
@@ -703,28 +572,6 @@ class ImdbScraper
         return array_values(array_unique($people));
     }
 
-    /**
-     * @return array<int, string>
-     */
-    private function extractApiDevPeople(mixed $value): array
-    {
-        $people = [];
-
-        foreach ($this->normalizeValueList($value) as $item) {
-            if (is_array($item)) {
-                $name = trim((string) ($item['displayName'] ?? $item['name'] ?? ''));
-            } else {
-                $name = trim((string) $item);
-            }
-
-            if ($name !== '') {
-                $people[] = $name;
-            }
-        }
-
-        return array_values(array_unique($people));
-    }
-
     private function extractLanguage(array $jsonLd, HtmlDomParser|false $dom): string
     {
         $languages = $this->normalizeStringList($jsonLd['inLanguage'] ?? []);
@@ -747,39 +594,12 @@ class ImdbScraper
         return implode(', ', array_values(array_unique($languages)));
     }
 
-    private function extractApiDevLanguages(mixed $value): string
-    {
-        $languages = [];
-
-        foreach ($this->normalizeValueList($value) as $item) {
-            if (is_array($item)) {
-                $language = trim((string) ($item['name'] ?? $item['displayName'] ?? ''));
-            } else {
-                $language = trim((string) $item);
-            }
-
-            if ($language !== '') {
-                $languages[] = $language;
-            }
-        }
-
-        return implode(', ', array_values(array_unique($languages)));
-    }
-
     private function extractType(array $jsonLd): string
     {
         $type = strtolower((string) ($jsonLd['@type'] ?? 'movie'));
 
         return match ($type) {
             'tvseries', 'tvminiseries', 'tvepisode', 'tvmovie' => 'tv',
-            default => 'movie',
-        };
-    }
-
-    private function normalizeApiDevType(string $type): string
-    {
-        return match (strtolower(trim($type))) {
-            'tvseries', 'tv_series', 'tv mini series', 'tv_mini_series', 'tvminiseries', 'tvspecial', 'tv_special', 'tvmovie', 'tv_movie', 'tvepisode', 'tv_episode' => 'tv',
             default => 'movie',
         };
     }
