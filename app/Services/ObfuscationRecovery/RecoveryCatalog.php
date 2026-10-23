@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Services\ObfuscationRecovery;
 
 use App\Services\ProviderGateway\ProviderGateway;
-use GuzzleHttp\Client;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Cache\Events\CacheHit;
@@ -42,15 +40,6 @@ final class RecoveryCatalog
         }
     }
 
-    /** @param array<string,mixed> $options */
-    public static function client(array $options = []): Client
-    {
-        $stack = HandlerStack::create();
-        $stack->push(self::middleware(), 'recovery_catalog');
-
-        return new Client([...$options, 'handler' => $stack]);
-    }
-
     public static function middleware(): callable
     {
         return static fn (callable $handler): callable => static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
@@ -77,24 +66,6 @@ final class RecoveryCatalog
                 throw $error;
             }
         };
-    }
-
-    /** @template T
-     * @param  callable():T  $operation
-     * @return T
-     */
-    public static function legacy(string $provider, callable $operation): mixed
-    {
-        $id = self::begin($provider, 'legacy_http');
-        try {
-            $result = $operation();
-            self::finish($id, $result === false || $result === null ? 'unavailable' : 'response_received');
-
-            return $result;
-        } catch (Throwable $error) {
-            self::finish($id, 'transport_failure');
-            throw $error;
-        }
     }
 
     public static function cacheHit(CacheHit $event): void
