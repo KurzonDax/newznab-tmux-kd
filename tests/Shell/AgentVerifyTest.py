@@ -160,6 +160,25 @@ if pathlib.Path('mutate').exists(): pathlib.Path('tests/ExampleTest.php').write_
             verifier['final_checks'](argparse.Namespace(mode='final', base='HEAD'))
         self.assertTrue({'build', 'js', 'design'} <= set(calls))
 
+    def test_markdown_below_app_is_documentation_not_a_behavioral_input(self):
+        import argparse
+        import runpy
+        import sys
+        from unittest.mock import patch
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        verifier = runpy.run_path(str(ROOT / 'scripts/agent-verify'))
+        globals = verifier['final_checks'].__globals__
+        readme = 'app/Services/NameFixing/README.md'
+        with patch.dict(globals, changed=lambda base: [readme], files=lambda: [readme],
+                        runtime_identity=lambda: 'fixture', git=lambda *a: '', checked=lambda *a: None,
+                        prune_records=lambda: None, measurements=lambda *a: iter([])), patch('subprocess.run'):
+            verifier['final_checks'](argparse.Namespace(mode='final', base='HEAD'))
+        with patch.dict(globals, changed=lambda base: [readme, 'app/Thing.php'], files=lambda: [readme, 'app/Thing.php'],
+                        runtime_identity=lambda: 'fixture', git=lambda *a: '', checked=lambda *a: None,
+                        prune_records=lambda: None, measurements=lambda *a: iter([])), patch('subprocess.run'):
+            with self.assertRaisesRegex(ValueError, 'focused behavioral measurement'):
+                verifier['final_checks'](argparse.Namespace(mode='final', base='HEAD'))
+
     def test_shared_helper_below_test_requires_unfiltered_measurement(self):
         import runpy
         import sys

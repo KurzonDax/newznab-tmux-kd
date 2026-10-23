@@ -6,26 +6,33 @@
 
 - Docker & **Docker Compose v2.22+** (the Makefile uses `pull --ignore-buildable`)
 - A GitHub (scopeless) token for Composer private packages
-- [Laravel Sail](https://laravel.com/docs/12.x/sail) (included as a dev dependency)
+- [Laravel Sail](https://laravel.com/docs/13.x/sail) (included as a dev dependency)
 
 ## Quick Start
 
 ```bash
-# 1. Copy and configure your environment
+# 1. Copy the Compose template and configure your environment
+cp docker-compose.yml.dev-dist docker-compose.yml
 cp .env.example .env
-# Edit .env — set DB credentials, COMPOSER_AUTH, and uncomment the
-# "Docker service hostnames" block at the bottom.
+# Edit .env — set DB credentials, ADMIN_USER / ADMIN_PASS / ADMIN_EMAIL,
+# COMPOSER_AUTH, and uncomment the "Docker service hostnames" block at the bottom.
 
 # 2. Build and start
 make build
 make up
 
-# 3. Install NNTmux (first run only)
+# 3. Install NNTmux (first run on an empty database only)
 make artisan cmd="nntmux:install"
 
 # 4. Build frontend assets
 make npm-build
 ```
+
+`docker-compose.yml` is gitignored: it is your local copy of the tracked
+`docker-compose.yml.dev-dist` template, so re-copy or merge the template when it
+changes. `nntmux:install` runs `migrate:fresh --seed`, which drops every table,
+then creates the admin account from `ADMIN_USER`, `ADMIN_PASS` and `ADMIN_EMAIL`.
+Never run it against a database you want to keep.
 
 ## Runtime permission contract
 
@@ -122,17 +129,20 @@ The search service container starts only when its profile is selected.
 
 ### ManticoreSearch Image Updates
 
-Both `docker-compose.yml` and `docker-compose.yml.prod-dist` intentionally use
-the unpinned `manticoresearch/manticore` image. This keeps ManticoreSearch on
-the latest published Docker image whenever images are pulled, but it also means
-production can receive ManticoreSearch changes without a repository diff.
+Both Compose templates, `docker-compose.yml.dev-dist` and
+`docker-compose.yml.prod-dist`, pin `manticoresearch/manticore:28.4.4`. A
+ManticoreSearch upgrade is a change to that tag in the templates (and in your
+local `docker-compose.yml` copy); see
+[`docs/manticore-28-upgrade.md`](docs/manticore-28-upgrade.md) for the move to
+28.4.4. `manticore:inspect` reports the running server version and whether the
+table schemas match the application.
 
-Before pulling and restarting production, validate the new image in staging by
+Before moving production to a new tag, validate the new image in staging by
 creating indexes, indexing a small batch, and running representative searches,
 filters, sorting, pagination, deletes, suggestions, fuzzy searches, and any raw
 SQL diagnostics/reconciliation commands.
 
-Manticore Search 27.1.5 is part of the 25.x-27.x release line that introduced
+Manticore Search 28.4.4 follows the 25.x-27.x release line that introduced
 built-in authentication/authorization, sharded tables, conversational search,
 vector-search improvements, and replication layout changes. The app does not
 enable Manticore auth by default, but if auth is enabled on the server set either
@@ -256,25 +266,27 @@ make test filter=ReleaseSearchTest      # run a single test
 
 > **Note:** `make pull` / `update` / `rebuild` use `docker compose pull --ignore-buildable`,
 > which only pulls images for services in the active `COMPOSE_PROFILES` and skips images
-> that are built locally (e.g. `sail-8.5/app`). Requires Docker Compose v2.22+.
+> that are built locally (e.g. `nntmux-dev/php85`). Requires Docker Compose v2.22+.
 
 You can also use `./sail` directly for anything not covered above —
 unknown commands are passed through to `docker compose`.
 
 ## Networking
 
-Sail creates a Docker network called `sail` with these default port mappings:
+The development template puts every service on a Docker network called
+`nntmux` and publishes only these ports to the host:
 
 | Service        | Container Port | Host Port (default)                      |
 |----------------|----------------|------------------------------------------|
 | HTTP (nginx)   | 80             | `APP_PORT` (80)                          |
-| Vite           | 5173           | `VITE_PORT` (5173)                       |
-| MariaDB        | 3306           | `FORWARD_DB_PORT` (3306)                 |
-| Redis          | 6379           | `FORWARD_REDIS_PORT` (6379)              |
-| Manticore SQL  | 9306           | 9306                                     |
-| Manticore HTTP | 9308           | 9308                                     |
 | Mailpit SMTP   | 1025           | `FORWARD_MAILPIT_PORT` (1025)            |
 | Mailpit Web    | 8025           | `FORWARD_MAILPIT_DASHBOARD_PORT` (8025)  |
+
+MariaDB (3306), Redis (6379) and Manticore (9306 SQL, 9308 HTTP) are reachable
+only from other containers, by service name; use `make db` and `make redis-cli`
+for a shell. The production template also publishes MariaDB on
+`FORWARD_DB_PORT` (3306), Redis on `FORWARD_REDIS_PORT` (6379), and Manticore on
+9306 and 9308. Neither template publishes `VITE_PORT`.
 
 If a port is already in use on your host, change the corresponding
 `FORWARD_*` / `APP_PORT` variable in `.env`.
@@ -290,11 +302,15 @@ DB_DATABASE=nntmux
 ```
 
 Import an existing SQL dump or run `make artisan cmd="nntmux:install"` for
-a fresh installation.
+a fresh installation (it drops every table first, so only on an empty database).
 
 ## Backups
 
-Add this optional service to `docker-compose.yml` for automated MariaDB backups:
+NNTmux has its own scheduled database backups (`backup:tick` runs from the
+scheduler every minute and runs whichever scheduled or requested backup is due); see
+[`docs/backups.md`](docs/backups.md). If you also want an independent dump
+outside the application, you can add a third-party service such as this one to
+your local `docker-compose.yml`:
 
 ```yaml
     backup:
@@ -323,8 +339,9 @@ Add this optional service to `docker-compose.yml` for automated MariaDB backups:
 ## Production
 
 For production deployments use `docker-compose.yml.prod-dist` as a starting
-point. It includes separate `webapp`, `worker`, and `scheduler` services
-and uses the root `Dockerfile` (FrankenPHP-based).
+point. It includes separate `webapp`, `worker`, and `scheduler` services,
+builds them from the root `Dockerfile` (FrankenPHP-based), and tags the result
+`pyrowman/nntmux`.
 
 ```bash
 cp docker-compose.yml.prod-dist docker-compose.yml

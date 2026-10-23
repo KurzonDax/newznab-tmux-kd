@@ -64,8 +64,9 @@ NOCAPTCHA_ENABLED=false
 CAPTCHA verification is applied to:
 - **User Registration** (`/register`)
 - **User Login** (`/login`)
-- **Password Reset** (`/password/reset`)
-- **Contact Form** (`/contact`)
+- **Password Reset** request form (`/forgottenpassword` and `/password/reset`)
+- **Contact Form** (`/contact-us`)
+- **Passkey Sign-in** (`/passkeys/authenticate`): a CAPTCHA token is validated when the browser sends one, but a missing token does not block passkey sign-in
 
 ### Switching Between Providers
 
@@ -115,10 +116,11 @@ TURNSTILE_ENABLED=false
 
 ### CAPTCHA Not Showing
 
-1. Check if CAPTCHA is enabled in `.env`
-2. Verify you have both sitekey and secret configured
-3. Clear config cache: `php artisan config:clear`
-4. Check browser console for JavaScript errors
+1. Run `php artisan captcha:status`. It shows the active provider, whether each provider is enabled and has its site key and secret, and whether the selected provider is ready.
+2. Check if CAPTCHA is enabled in `.env`
+3. Verify you have both sitekey and secret configured; a provider without both is treated as disabled
+4. Clear config cache: `php artisan config:clear`
+5. Check browser console for JavaScript errors
 
 ### Validation Failing
 
@@ -128,7 +130,7 @@ TURNSTILE_ENABLED=false
 
 ### Both Providers Enabled Warning
 
-If you see a warning in logs about both providers being enabled, ensure you have:
+The warning is logged when both providers are enabled with a site key and secret. If you see a warning in logs about both providers being enabled, ensure you have:
 - Set `CAPTCHA_PROVIDER` to either `recaptcha` or `turnstile`
 - Disabled the provider you're not using by setting its `ENABLED` flag to `false`
 
@@ -137,9 +139,10 @@ If you see a warning in logs about both providers being enabled, ensure you have
 ### Files Modified
 
 - **Config:** `config/captcha.php` - Main configuration
-- **Service:** `app/Services/TurnstileService.php` - Turnstile API integration
+- **Services:** `app/Services/RecaptchaService.php` and `app/Services/TurnstileService.php` - reCAPTCHA and Turnstile API integration
 - **Helper:** `app/Support/CaptchaHelper.php` - Unified captcha interface
-- **Rule:** `app/Rules/TurnstileRule.php` - Turnstile validation rule
+- **Rules:** `app/Rules/RecaptchaRule.php` and `app/Rules/TurnstileRule.php` - validation rules
+- **Command:** `app/Console/Commands/CaptchaStatus.php` - `php artisan captcha:status`
 - **Views:** Updated to use dynamic captcha provider
 - **Requests:** Updated validation to support both providers
 

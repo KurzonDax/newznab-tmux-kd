@@ -125,7 +125,7 @@ def final_checks(args):
         for filename in ['CiPolicyTest.py', 'AgentVerifyTest.py', 'CiContractsTest.py']:
             checked(filename, ['python3', 'tests/Shell/' + filename], 30, inputs, identity)
     changed_tests = [p for p in php if p.startswith('tests/') and p.endswith('Test.php')]
-    behavioral_inputs = [p for p in paths if p in ['tests/TestCase.php', 'tests/CreatesApplication.php'] or p.startswith(('app/', 'routes/', 'tests/Support/', 'tests/Fixtures/', 'tests/mock_data/'))]
+    behavioral_inputs = [p for p in paths if p in ['tests/TestCase.php', 'tests/CreatesApplication.php'] or (p.startswith(('app/', 'routes/', 'tests/Support/', 'tests/Fixtures/', 'tests/mock_data/')) and not p.endswith('.md'))]
     state = None
     if changed_tests or behavioral_inputs:
         prune_records()

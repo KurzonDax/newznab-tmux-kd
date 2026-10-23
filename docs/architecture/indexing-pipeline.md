@@ -6,7 +6,15 @@ and collections, how complete collections become **releases**, and how a
 `.nzb` file is finally written to disk.
 
 It is intended as the first piece of the architecture documentation. Paths
-below are relative to the repository root.
+below are relative to the repository root. Related documents:
+
+- [NNTP providers](nntp-providers.md): the Usenet backbones, their roles and failover.
+- [Provider gateway](provider-gateway.md): pacing, retries and circuit breakers for the
+  external metadata services that post-processing asks.
+- [Decision model](decision-model.md): the optional self-hosted model that arbitrates
+  categories and checks music album matches.
+- [Configuration](../configuration.md): the admin settings hub, section by section, and the
+  site-level configuration files.
 
 ## Glossary
 
@@ -56,7 +64,7 @@ Everything is driven by long-running artisan commands inside a tmux session.
 | --- | --- | --- |
 | `php artisan tmux:start` | `app/Console/Commands/TmuxStart.php` | Creates the tmux session, builds windows/panes via `TmuxLayoutBuilder`, then launches the monitor script in pane 0.0. |
 | Monitor script | `app/Services/Tmux/Scripts/monitor.php` | Thin wrapper that execs `php artisan tmux:monitor`. |
-| `php artisan tmux:monitor` | `app/Console/Commands/TmuxMonitor.php` | The heartbeat. An infinite loop (default 10 s tick) that collects stats (`TmuxMonitorService`), redraws the monitor pane (`TmuxOutput`), and (re)spawns work in the other panes via `TmuxTaskRunner`. |
+| `php artisan tmux:monitor` | `app/Console/Commands/TmuxMonitor.php` | The heartbeat. An infinite loop (tick `TMUX_MONITOR_DELAY`, default 10 s; the counting queries refresh every `monitor_delay` seconds) that collects stats (`TmuxMonitorService`), redraws the monitor pane (`TmuxOutput`), and (re)spawns work in the other panes via `TmuxTaskRunner`. |
 | `TmuxTaskRunner` | `app/Services/Tmux/TmuxTaskRunner.php` | Builds the shell command for each pane (with `nice`, logging via `tee`, and a `showsleep.php` delay) and respawns the pane with it. |
 | `TmuxPaneManager` / `TmuxSessionManager` | `app/Services/Tmux/` | Low-level wrappers around the `tmux` CLI (`new-window`, `split-window`, `respawn-pane`, …). Panes are tagged with a role via the `@nntmux_role` pane option. |
 
@@ -68,7 +76,12 @@ Built by `TmuxLayoutBuilder` (`app/Services/Tmux/TmuxLayoutBuilder.php`):
 - **Window 1**: Fix names, Remove crap
 - **Window 2**: Post-processing (additional, TV/anime, movies, metadata)
 - **Window 3**: IRC scraper (predb)
-- **Windows 4+**: optional monitoring tools (htop, mytop, redis, …)
+- **Window 4**: Recovery (discovery / publication, downloads), see
+  [Obfuscated recovery](#obfuscated-recovery)
+- **Windows 5+**: optional monitoring tools (htop, mytop, redis, …)
+
+Basic mode (`sequential = 1`) opens the same windows with only Monitor and
+Releases in window 0.
 
 ### What each pane actually runs
 
@@ -81,11 +94,13 @@ are checked first):
 | Binaries | `php artisan multiprocessing:safe binaries` | Download new headers for all active groups. |
 | Backfill | `php artisan multiprocessing:backfill` | Refresh `short_groups`, then give each eligible group one `backfill_qty`-capped child through the `backfillthreads` pool. |
 | Releases | `php artisan multiprocessing:releases` | Turn complete collections into releases + NZBs. |
-| Fix names | `php artisan releases:fix-names <level> --update …` (levels 3–22) | Rename badly-named releases using NFOs, file lists, par2, predb, archive CRCs, etc. |
+| Fix names | `php artisan releases:fix-names <level> --update --category=other --set-status --show` for levels 3, 5, 7, … 19 (plus 21 when `SRRDB_ENABLED`), then `multiprocessing:fixrelnames standard` and `multiprocessing:fixrelnames predbft`, each step bounded by `fix_names_timeout` | Rename badly-named releases using NFOs, file lists, par2, predb, archive CRCs, etc. |
 | Remove crap | `php artisan releases:remove-crap …` | Delete spam/junk releases. |
-| Post additional / TV / movies / metadata | `php artisan multiprocessing:postprocess add\|nfo\|tv\|mov\|ama` | Download samples/NFOs, match to TMDB/TVDB/IGDB/etc. |
-| Post audio previews | `php artisan multiprocessing:postprocess aud` | Fetch the head of a music release, clip a preview, render a spectrogram, persist tags. |
+| Post additional / TV / movies / metadata | `php artisan multiprocessing:postprocess add\|nfo\|tv\|ani\|mov\|ama` | Download samples/NFOs, match to TMDB/TVDB/IGDB/etc. The `ama` pass (books, console, games) ends with the music pass. |
+| Post audio previews | `php artisan multiprocessing:postprocess aud` (metadata pane, after `ama`) | Fetch the head of a music release, clip a preview, render a spectrogram, persist tags. |
 | IRC scraper | `php artisan irc:scrape` | Populate the `predb` table from scene pre channels. |
+| Recovery discovery / publication | `php artisan obfuscation:discover --engine; php artisan obfuscation:publish --engine` | See [Obfuscated recovery](#obfuscated-recovery). |
+| Recovery downloads | `php artisan obfuscation:download --engine` | See [Obfuscated recovery](#obfuscated-recovery). |
 
 The `multiprocessing:*` commands all delegate to `ForkingService`
 (`app/Services/ForkingService.php`), which dispatches to a runner in
@@ -108,7 +123,8 @@ flowchart LR
     FS --> RR[ReleasesRunner]
     BR -->|per group| W1[artisan group:update-headers / articles:get-range]
     BFR -->|per group| W2[artisan backfill:group]
-    RR -->|per group| W3[artisan releases:process groupId]
+    RR -->|per group| W3[artisan releases:process groupId --orchestrated]
+    FS -->|after all groups| W4[artisan releases:finalize]
 ```
 
 `BinariesRunner::safeBinaries()` (`app/Services/Runners/BinariesRunner.php`)
@@ -130,8 +146,9 @@ Per group, `updateGroup()`:
 2. Runs **part repair** first (see below) if enabled.
 3. Computes the wanted article range: from the group's stored `last_record`
    forward to the server's newest article (capped by `maxmssgs` per batch and
-   `max_headers_iteration` per run). New groups start `backfill_target` days
-   back.
+   `max_headers_iteration` per run). A new group starts `newgroupdaystoscan`
+   days back when `newgroupscanmethod` is Days back, otherwise
+   `newgroupmsgstoscan` articles back (Usenet Ingest → New groups).
 4. Calls `scan()` for each batch.
 
 `scan()` does the actual ingestion:
@@ -158,15 +175,21 @@ Per group, `updateGroup()`:
      collection and is attached to it (`getOrCreateCollections`, bulk
      insert-or-lookup by hash). Cross-posted groups from the `Xref:` header
      are recorded in `collection_groups`.
-   - **Binary**: `BinaryHandler` computes an identity hash
-     (`md5(subject + poster)`, lower-cased) so all parts of one file map to
-     one `binaries` row (name, `totalparts`, `filenumber`, `collections_id`).
+   - **Binary**: `BinaryHandler` computes an identity hash within the
+     collection: the md5 of the file number when the subject carries a file
+     counter such as `[03/45]`, otherwise of the lower-cased subject and
+     poster. All parts of one file map to one `binaries` row (name,
+     `totalparts`, `filenumber`, `collections_id`).
    - **Part**: `PartHandler` buffers and bulk-inserts one `parts` row per
      header: `binaries_id`, article `number`, `messageid`, `partnumber`,
      `size`. The message-id is what later goes into the NZB `<segment>`.
 4. **Track failures**: any article number that was requested but not received
    or not inserted is recorded in the `missed_parts` table
    (`MissedPartHandler`).
+5. **Recovery capture**: on provider 1 only, while obfuscated recovery is
+   enabled, each header chunk is also offered to recovery capture (see
+   [Obfuscated recovery](#obfuscated-recovery)). A capture failure is logged
+   and ordinary scanning continues.
 
 ### Part repair — finding the missing pieces
 
@@ -180,11 +203,13 @@ found" over successive runs.
 
 ## 3. Stage two: collections → releases
 
-`multiprocessing:releases` fans out one `releases:process <groupId>` worker
-per group that has collections (`ReleasesRunner`). That command
-(`app/Console/Commands/ProcessReleasesCommand.php`) drives
-**`ReleaseProcessingService`** (`app/Services/ReleaseProcessingService.php`)
-through a fixed sequence. The state machine lives in
+`multiprocessing:releases` fans out one `releases:process <groupId> --orchestrated`
+worker per group that has collections, `releasethreads` at a time
+(`ReleasesRunner`), and then runs `releases:finalize` once
+(`ForkingService`). `releases:process`
+(`app/Console/Commands/ProcessReleasesCommand.php`) calls
+**`ReleaseProcessingService::formReleases()`**
+(`app/Services/ReleaseProcessingService.php`). The state machine lives in
 `collections.filecheck` (`app/Enums/CollectionFileCheckStatus.php`):
 
 | filecheck | Enum case | Meaning |
@@ -197,48 +222,61 @@ through a fixed sequence. The state machine lives in
 | 5 | `Delete` | Marked for deletion. |
 | 15 / 16 | `TempComplete` / `ZeroPart` | Edge cases for stale/zero-part handling. |
 
-The per-group sequence:
+Per group, `formReleases()`:
 
-1. **`processIncompleteCollections()`** — reconciles counts from the ground
-   up: parts are the authority for each binary's `currentparts`/`partsize`
-   (`partcheck = 1` when `currentparts >= totalparts`), and binaries are the
-   authority for the collection's `filesize` and completeness. A collection
-   is promoted to `filecheck = 2` when every expected file is present and
-   complete. After every contributing ingestion frontier has moved
-   `delaytime` hours of posting time beyond the last part, collections are
-   *force-completed* with whatever files they hold (see Collection clocks).
-   A late collection, whose `collectionhash` already has a release, is
-   force-completed 15 minutes after its last stored header instead.
-2. **`processCollectionSizes()`** — promotes `2 → 3` (sizes were already
-   aggregated in step 1).
-3. **`deleteUnwantedCollections()`** — drops sized collections that fail
-   group/site limits (min/max size, min files) or consist only of `.par2`
-   files.
-4. **`createReleases()`** → **`ReleaseCreationService`**
-   (`app/Services/ReleaseCreationService.php`). For each `filecheck = 3`
-   collection:
-   - Clean the subject into a human search name
-     (`ReleaseCleaningService::releaseCleaner`, `release_naming_regexes`).
-   - Try to match a scene **predb** title (`Predb::matchPre`).
-   - **Duplicate check** (`ReleaseDuplicateFinder`) — duplicate collections
-     are deleted instead of inserted.
-   - **Categorize** (`CategorizationService::determineCategory`) from the
-     name/group/poster.
-   - **Measure `completion`** (`CollectionCompletionMeasurer`) — one SQL
-     aggregate over the collection's binaries and parts. It happens here
-     because stage three deletes those rows, and because a release whose NZB
-     write keeps failing must still know how complete it is. `0` is kept as
-     the "never measured" sentinel when the subjects declare no usable
-     totals, or when the declared file count and the per-file totals
-     contradict each other.
-   - Insert the `releases` row (new GUID, `nzbstatus = 0`, the measured
-     `completion`), link the collection (`filecheck = 4`, `releases_id`), and
-     record cross-post groups in `releases_groups`.
-5. **`createNZBs()`** — see next section. Steps 4–5 loop while a full batch
-   (`maxnzbsprocessed`) keeps coming back.
-6. **`deleteCollections()`** — final cleanup of stale/orphaned CBP rows.
+1. Writes one page of NZBs for the group's releases still at `nzbstatus = 0`.
+2. Walks the group's collections in discovered pages, for up to 60 seconds:
+   `Sized` and `CompleteParts` first, then the waiting states through the
+   due-collection lookups described below. Each page runs these steps in
+   batches of eight collections:
+   1. **Late-header merge** (`LateHeaderMerger`) — late headers for an
+      incomplete release fill it instead of being discarded as a duplicate.
+   2. **Reconcile counts** from the ground up: parts are the authority for
+      each binary's `currentparts`/`partsize` (`partcheck = 1` when
+      `currentparts >= totalparts`), and binaries are the authority for the
+      collection's `filesize` and completeness. A collection is promoted to
+      `filecheck = 2` when every expected file is present and complete.
+      After every contributing ingestion frontier has moved `delaytime`
+      hours of posting time beyond the last part, collections are
+      *force-completed* with whatever files they hold (see Collection
+      clocks). A late collection, whose `collectionhash` already has a
+      release, is force-completed 15 minutes after its last stored header
+      instead.
+   3. **`processCollectionSizes()`** — promotes `2 → 3` (sizes were already
+      aggregated in the previous step).
+   4. **`deleteUnwantedCollections()`** — drops sized collections that fail
+      group/site limits (min/max size, min files) or consist only of `.par2`
+      files.
+   5. **Create releases** — `ReleaseCreationService::createSelectedCollections()`
+      (`app/Services/ReleaseCreationService.php`). For each `filecheck = 3`
+      collection:
+      - Clean the subject into a human search name
+        (`ReleaseCleaningService::releaseCleaner`, `release_naming_regexes`).
+      - Try to match a scene **predb** title (`Predb::matchPre`).
+      - **Duplicate check** (`ReleaseDuplicateFinder`) — duplicate collections
+        are deleted instead of inserted.
+      - **Categorize** (`CategorizationService::determineCategory`) from the
+        name/group/poster. When the [decision model](decision-model.md) is
+        on, a weak result can be sent to it for arbitration.
+      - **Measure `completion`** (`CollectionCompletionMeasurer`) — one SQL
+        aggregate over the collection's binaries and parts. It happens here
+        because stage three deletes those rows, and because a release whose
+        NZB write keeps failing must still know how complete it is. `0` is
+        kept as the "never measured" sentinel when the subjects declare no
+        usable totals, or when the declared file count and the per-file
+        totals contradict each other.
+      - Insert the `releases` row (new GUID, `nzbstatus = 0`, the measured
+        `completion`), link the collection (`filecheck = 4`, `releases_id`),
+        and record cross-post groups in `releases_groups`.
+   6. **`createNZBs()`** for the releases just created — see next section.
+3. Runs [collection reconciliation](#collection-reconciliation) for the
+   group (`PendingReconciler`).
+4. Writes another page of pending NZBs, then deletes stuck collections
+   (`collection_timeout`).
 
-The tmux worker runs these steps per discovered page (`formReleases()`).
+Ordinary formation and cleanup leave out collections that collection
+reconciliation or obfuscated recovery owns.
+
 `Sized` and `CompleteParts` collections are walked by ID every run. The
 waiting states (0, 1, 10, 15 and 16) are found by index lookups instead
 (`DueCollectionLookup`), so a run reads the collections that may have become
@@ -263,10 +301,84 @@ pass under way resumes in later runs until it is exhausted. A row every
 lookup misses, such as one an ownership reset returned to `filecheck = 0`
 without a new header, waits at most about an hour longer.
 
-When run for all groups (no `groupId`), the command finishes with
-release-level cleanup: `deletedReleasesByGroup()`, `deleteReleases()`
-(removes releases violating retention/size/completion rules), and
+Without `--orchestrated`, `releases:process` then deletes finished and
+orphaned CBP rows (`deleteCollections()`); run without a `groupId` it also
+does the release-level cleanup that `releases:finalize` does.
+
+`releases:finalize` (`app/Console/Commands/FinalizeReleasesCommand.php`) runs
+once per cycle, after every group: it writes NZBs until a batch comes back
+smaller than `maxnzbsprocessed`, deletes finished and orphaned CBP rows, and
+then does the release-level cleanup: `deletedReleasesByGroup()`,
+`deleteReleases()` (releases over retention, passworded, cross-posted,
+incomplete, in disabled categories or genres, under a category's minimum
+size, or carrying executables, and the Misc retention windows) and
 `categorizeReleases()`.
+
+### Collection reconciliation
+
+One posting can end up as several collections, each holding fewer files
+than the posting declares. Collection reconciliation (`app/Services/CollectionReconciliation/`)
+proves from the posting's own PAR2 index which of those collections belong
+together, and forms one release from them. It always runs when its tables
+exist; there is no on/off setting.
+
+- **Candidates**: quiet collections in states 0, 1, 2, 3, 10, 15 or 16 that
+  declare more than one file but hold fewer binaries than declared
+  (`PendingReconciler`). Neighbours must share group, poster and declared file
+  count and lie within an hour of each other; at most 256 collections and
+  1,024 files are considered, and exactly one base PAR2 file must be present.
+  A cheap pre-screen (`CollectionAdmission`) never opens a provider
+  connection.
+- **Evidence**: through the NNTP pool it fetches the HEAD of each file's
+  first article, every segment of the base PAR2 and of the other PAR2 files,
+  and up to four first-article bodies of data files whose names compete
+  (`PostingEvidence`). Responses are cached in `reconciliation_evidence`.
+- **Publication**: a proven posting is inserted as one release, passes the
+  same formation floors (minimum/maximum size, minimum files), gets
+  `reconciled_postings` and `reconciled_sources` rows, and its NZB is written
+  from the PAR2-proven inventory (`PostingPublication`). A later collection
+  that matches an already published posting is added to it as late files,
+  or deleted as a replayed duplicate (`LatePostingReconciler`).
+- **Ownership**: collections that are admitted, claimed or mid-publication
+  are hidden from ordinary formation and cleanup (`CollectionOwnership`), and
+  new headers reset a claim.
+
+Each `formReleases()` call reconciles at most `candidate_limit` candidates
+and stops admitting work after `cycle_seconds`. Evidence downloads are
+limited by the admin settings Release Formation → Reconciliation →
+`reconciliation_hourly_mib` (default 256 MiB per UTC hour) and
+`reconciliation_daily_mib` (default 2,048 MiB per UTC day), shared by all
+workers. When either allowance is spent, downloads wait and a
+`reconciliation_budget_deferrals` row is written; the attempt is not counted.
+The tmux monitor shows "Reconciliation" usage and deferrals for this hour and
+today. The other limits live in `config/collection-reconciliation.php`:
+
+| Key | Default | Limits |
+| --- | --- | --- |
+| `candidate_limit` (`COLLECTION_RECONCILIATION_CANDIDATE_LIMIT`) | 100 | Candidates plus publication resumes per cycle. |
+| `cycle_seconds` (`COLLECTION_RECONCILIATION_CYCLE_SECONDS`) | 30 | Seconds before no new work is admitted; work in flight finishes. |
+| `head_bytes` / `body_bytes` | 64 KiB / 2 MiB | Largest single HEAD / BODY response. |
+| `request_seconds` | 20 | Timeout for one article fetch. |
+| `decision_bytes` | 16 MiB | Total download for one decision; when spent, the claim stops for good (`decision_budget_exhausted`). |
+| `decision_seconds` | 900 | Deadline for one decision across its retries. |
+| `lease_seconds` | 120 | How long a worker holds a claim. |
+| `retry_seconds` | 60, 300 | Wait after the first and second failure; the third failure ends the claim (`retry_exhausted`). |
+| `cache_seconds` | 7 days | Lifetime of a cached evidence row. |
+| `hour_bytes` / `day_bytes` | 256 MiB / 2 GiB | Used only when the matching admin setting is missing or invalid. |
+
+Expired evidence rows are purged hourly at minute 37 by the scheduled
+`cleanup-reconciliation-evidence` task (`routes/console.php`).
+
+Historical releases that were formed separately can be joined with
+`php artisan releases:reconcile-fragments`. Without `--apply` it only plans
+and prints the plan, writing nothing. Select the source releases with
+`--release=ID` (repeatable) or with `--group`, `--from` and `--to` (a UTC
+posting-date range of at most one hour), cap them with `--max-candidates`
+(2 to 256, default 100), choose the release to keep with `--anchor`, and
+write the plan to a new file with `--report`. `--apply --digest=<digest of
+the reviewed plan>` applies it: the anchor's NZB is backed up beside itself
+as `<path>.before-reconciliation.<digest of that NZB>` and then rewritten
+(`app/Services/CollectionReconciliation/HistoricalReconciliation.php`).
 
 ## 4. Stage three: writing the NZB
 
@@ -290,6 +402,11 @@ release-level cleanup: `deletedReleasesByGroup()`, `deleteReleases()`
 4. Mark the release `nzbstatus = 1` (`NZB_ADDED`).
 5. **Delete the collections/binaries/parts** for the release
    (`CollectionCleanupService`) — the staging data has served its purpose.
+
+A release formed by collection reconciliation (it has a `reconciled_postings`
+row) is handed to `PostingPublication::write()` instead, which writes the NZB
+from the proven file inventory; see
+[Collection reconciliation](#collection-reconciliation).
 
 From this point the release is live: it is searchable (Manticore
 indexes are populated from `releases`), appears in the web UI and API, and
@@ -336,10 +453,45 @@ processed misses. Transient failures remain pending.
 
 `SRRDB_ENABLED=false` is the default. When enabled, the tmux fix-names pane
 adds level 21. Request volume is bounded per cycle and to at most one request
-per second by default; 429/5xx responses use exponential backoff and open a
-cycle-local circuit breaker after repeated failures. This integration only
+per second by default; requests go through the
+[provider gateway](provider-gateway.md), where 408/425/429/5xx responses use
+exponential backoff and repeated failures open a circuit breaker that lasts
+for the rest of the run. This integration only
 performs exact lookups for local candidates; it does not crawl or scrape
 SRRDB.
+
+### PAR2 sidecar releases
+
+Some posters upload the PAR2 repair files of a post as a separate posting,
+which becomes its own release. When that PAR2 set describes the files of a
+release whose own name says nothing, the PAR2 sidecar code
+(`app/Services/Par2Sidecar/`) names the payload release from it and, when
+it can, merges the two.
+
+- **Evidence**: additional processing hashes the first 16 KiB of each
+  unknown payload file's first article (`payload_prefix_hashes`), and PAR2
+  processing records each file descriptor's 16 KiB hash and size
+  (`par2_file_descriptors`, `par2_sidecar_inventories`). No extra download is
+  made for the sidecar match.
+- **Matching** runs in name fixing (`SidecarWork`, from the standard sweep
+  and from `releases:fix-names` PAR2-hash runs), a bounded batch of at most
+  100 targets per run. A target must not be renamed yet (`isrenamed = 0`); a
+  descriptor must match on both 16 KiB hash and size; captures older than 72
+  hours expire.
+- **Effect**: the target is always renamed to the PAR2-described file name.
+  It is also combined with the sidecar when both releases are 100% complete
+  with complete stored NZBs, the PAR2 set is pure and complete, describes
+  only this target and matches its payload, and the admin setting
+  Post-Processing → PAR2 sidecars → `par2_sidecar_absorb` ("Combine matching
+  repair releases", on by default) is on. Combining appends the sidecar's
+  NZB `<file>` entries to the target's NZB, sums `size`, `totalpart` and
+  `declaredfiles`, widens `firstarticle`/`lastarticle`, copies the PAR2
+  hashes, and deletes the sidecar release (reason `par2_sidecar_combined`).
+- **Journal**: each job is a `par2_sidecar_operations` row whose rows are
+  kept, so a release is never processed twice; its stored NZB copies are
+  cleared when the job finishes. Failed steps retry after a minute.
+
+There is no command or environment key for it.
 
 ### Extensionless payload sniffing
 
@@ -367,6 +519,27 @@ the normal additional-processing minimum size remains in force. Runtime is
 proportional to the database candidates scanned because each candidate's
 compressed NZB must be read and parsed once; use category/size bounds and a
 small `--limit` for the first applied run on large installations.
+
+### 7-Zip header inspection
+
+A 7z archive's file list is in a header whose position is given by the
+32-byte start header, usually near the end of the archive. Additional
+processing reads the start header, then the byte ranges that hold the next
+header (and its packed stream when the header is encoded), mapping each range
+to the right volume and article (`app/Services/AdditionalProcessing/SevenZip/`).
+The limits are fixed in `config/archive-inspection.php` (no environment keys):
+
+| Key | Default | Bounds |
+| --- | --- | --- |
+| `seven_zip.max_articles` | 32 | Articles fetched for one release's 7z inspection, failed provider attempts included. |
+| `seven_zip.max_bytes` | 8 MiB | Decoded bytes fetched for that inspection. |
+| `seven_zip.max_seconds` | 20 | Seconds for the inspection, further capped by the release's remaining processing time. |
+| `seven_zip.max_attempts` | 3 | Incomplete inspections a release gets before the result is final. |
+
+An inspection that hits a limit is incomplete: the release keeps
+`passwordstatus = -1`, the attempt is counted in `pp_timeout_count`, and the
+release returns to the post-processing queue. On the last attempt the
+unknown result is final (`ReleaseFileManager`).
 
 ### MP4 moov tail recovery
 
@@ -402,6 +575,94 @@ Add `--apply` to reset only matching bare `.mp4`/`.m4v`/`.mov` releases to the
 normal pending preview/password state. The command also requires an available
 NZB, the normal additional-processing size bounds, and a root category whose
 Preview Generation toggle is enabled.
+
+## Obfuscated recovery
+
+Obfuscated recovery (`app/Services/ObfuscationRecovery/`) is an opt-in,
+independent background release formation path for selected groups. It
+extends release formation to two posting layouts that ordinary formation
+does not handle, chosen per group: **Media files** and **Multi-volume RAR**
+(supported sequential RAR4 sets).
+
+How it works, in outline:
+
+1. **Capture.** During provider 1's header scans (forward, backfill and part
+   repair), headers of posts in a selected group's layouts are stored for
+   recovery as well as being processed normally. Secondary providers are
+   never captured.
+2. **Discovery** (`obfuscation:discover`) plans gap re-fetches and, for each
+   captured post, nominates its PAR2 index article and queues it for
+   download. Once the index is downloaded it reads the PAR2 inventory (real
+   file names and sizes) and matches the captured articles to files.
+3. **Downloads** (`obfuscation:download`) fetch queued articles through the
+   enabled providers in position order: attempt *N* uses provider *N*, and
+   later attempts the last provider. A transport failure (not an absent
+   article) blocks that provider for 60 seconds, and while any enabled
+   provider is blocked, download work is deferred.
+4. **Publication** (`obfuscation:publish`) builds the collection and creates
+   an ordinary release and NZB through `ReleaseCreationService` and
+   `NzbService`. Ordinary formation skips collections recovery owns.
+5. **Naming**: recovered releases are renamed from their PAR2 file names by
+   name fixing, which needs `fix_names` and `lookuppar2` on (Naming &
+   Hygiene).
+
+Recovered releases are listed under Admin → Recovered Releases
+(`/admin/recovered-releases`).
+
+### Turning it on
+
+1. Release Formation → Obfuscated recovery → Enable recovery
+   (`obfuscation_recovery_enabled`, off by default).
+2. On Group Edit or Edit Selected, set each group's obfuscated recovery
+   profile (`usenet_groups.obfuscation_recovery_profile`): Disabled (the
+   default), Media files, Multi-volume RAR or Both. The group must also be
+   active, because capture only happens while it is scanned.
+3. Size the recovery download threads. Each holds at most one provider
+   connection, and ordinary header, backfill and post-processing threads use
+   the same provider account, so leave headroom within its connection limit.
+4. The engine must be running: the panes in tmux window 4 pass `--engine`,
+   which makes every step do nothing while the `running` setting is 0.
+
+Changing the enable flag or a candidate limit resets capture state.
+Disabling keeps existing releases and retained evidence.
+
+| Setting (section → card) | Default | Effect |
+| --- | --- | --- |
+| `obfuscation_recovery_enabled` (Release Formation → Obfuscated recovery) | 0 | Allows new capture and recovery work. |
+| `obfuscation_recovery_threads` (same card) | 2 | Recovery download slots, shared by all selected groups and inspection; clamped to 1–60. |
+| `obfuscation_recovery_media_candidate_mib` (same card) | 20 | Lifetime download ceiling for one Media candidate, failed attempts included. The code caps it at 20. |
+| `obfuscation_recovery_rar_candidate_mib` (same card) | 40 | The same for one RAR candidate. The code caps it at 40. |
+| `obfuscation_recovery_retention_hours` (Release Formation → Retention & cleanup) | 144 | Captured headers are kept this long from first capture, even if work is waiting. |
+| `obfuscation_recovery_enrichment_enabled` (Post-Processing → Recovered-release inspection) | 1 | Allows extra inspection downloads for recovered releases. |
+| `obfuscation_recovery_enrichment_release_mib` (same card) | 4 | Per-release ceiling for those downloads; 0 turns them off. The code caps it at 4. |
+
+The admin form accepts larger values for the three MiB ceilings, but
+`RecoveryConfig` silently caps them at their defaults, so raising them has no
+effect. There are no environment keys; recovery artifacts are stored on the
+`recovery` filesystem disk (`storage/app/private/recovery`).
+
+### Commands
+
+The tmux Recovery window runs `obfuscation:discover --engine` then
+`obfuscation:publish --engine` in one pane and `obfuscation:download --engine`
+in the other, each followed by a 5-second sleep.
+
+| Command | What it does |
+| --- | --- |
+| `obfuscation:discover [--limit=10] [--seconds=60] [--engine]` | One bounded discover slice: housekeeping and retention, planning, preparation claims. The limit is clamped to 1–10 and the seconds to 1–60. |
+| `obfuscation:download [--worker] [--engine]` | Starts one worker process per recovery thread inside a 60-second deadline; `--worker` runs one serial request and prints its result as JSON. |
+| `obfuscation:publish [--limit=10] [--seconds=60] [--engine] [--restore=ID]` | One bounded publish slice. `--restore=ID` restores the exact cached NZB membership of release `ID`. |
+| `obfuscation:reclaim <kind> <id> <token> --confirmed-stopped` | Releases one expired `slot` or `work` lease after you have confirmed its owning worker has stopped (settle the slot before its work). It refuses without `--confirmed-stopped`; `obfuscation:download` names leases that need it. |
+| `obfuscation:recovery-status [--after-group=0] [--after-bundle=0]` | Prints queues, slots, connections, traffic, publication and naming counts, storage, retention runway and per-group detail (100 groups at a time) as JSON. |
+
+The tmux monitor also shows a Recovery block: workers enabled or disabled,
+occupied slots against the limit, and connection opens and bytes observed
+and accounted per second over the last minute.
+
+Retention cleanup runs in every discover and publish slice, even while
+recovery is disabled. Several `obfuscation_recovery_*` tables have no
+automatic delete path yet and are listed as kept in
+`config/nntmux-retention.php` (see [Configuration](../configuration.md#table-retention-registry)).
 
 ## The three regex tables
 
@@ -509,7 +770,11 @@ visibly stalls the head instead of silently skipping articles.
 | Collection identity | `app/Services/Binaries/CollectionHandler.php`, `app/Services/CollectionsCleaningService.php` |
 | Binary/part storage | `app/Services/Binaries/BinaryHandler.php`, `app/Services/Binaries/PartHandler.php` |
 | Part repair | `app/Services/Binaries/MissedPartHandler.php` |
-| Release pipeline | `app/Services/ReleaseProcessingService.php`, `app/Console/Commands/ProcessReleasesCommand.php` |
+| Release pipeline | `app/Services/ReleaseProcessingService.php`, `app/Console/Commands/ProcessReleasesCommand.php`, `app/Console/Commands/FinalizeReleasesCommand.php` |
 | Release creation | `app/Services/ReleaseCreationService.php` |
 | NZB writing | `app/Services/Nzb/NzbService.php` |
 | Collection state machine | `app/Enums/CollectionFileCheckStatus.php` |
+| Collection reconciliation | `app/Services/CollectionReconciliation/`, `config/collection-reconciliation.php` |
+| PAR2 sidecar releases | `app/Services/Par2Sidecar/` |
+| 7-Zip header inspection | `app/Services/AdditionalProcessing/SevenZip/`, `config/archive-inspection.php` |
+| Obfuscated recovery | `app/Services/ObfuscationRecovery/`, `app/Services/ObfuscationRecovery/RecoveryScheduler.php` |

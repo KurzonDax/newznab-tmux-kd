@@ -2,9 +2,11 @@
 
 This project can run ManticoreSearch either through Docker Compose or through a native Ubuntu/Debian package install. Native package installs are managed by `systemd`, so Docker `ulimits` do **not** apply.
 
-## 27.1.5 upgrade: `Too many open files` during binlog replay
+The Compose templates (`docker-compose.yml.dev-dist` and `docker-compose.yml.prod-dist`) pin `manticoresearch/manticore:28.4.4`. To move a package install to 28.4.4, follow the table rebuild in the [28.4.4 upgrade runbook](manticore-28-upgrade.md); the package-specific troubleshooting below applies to any package upgrade.
 
-If installing or configuring ManticoreSearch 27.1.5 fails with output like this:
+## Package upgrade: `Too many open files` during binlog replay
+
+This was first seen when upgrading the package to 27.1.5. If installing or configuring a ManticoreSearch package fails with output like this:
 
 ```text
 Job for manticore.service failed because the control process exited with error code.

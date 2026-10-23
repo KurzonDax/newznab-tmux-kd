@@ -32,9 +32,9 @@ the later one.
 | Document | Records | Status |
 |---|---|---|
 | [`github-actions-ci-optimization-plan.md`](github-actions-ci-optimization-plan.md) | The CI optimization proposal of 2026-09-07 (#495) | Historical; superseded by #644, current policy in [`../agents/ci-policy.md`](../agents/ci-policy.md) |
-| [`musicbrainz-audio-enrichment-plan.md`](musicbrainz-audio-enrichment-plan.md) | The MusicBrainz, AcoustID and Chromaprint audio identification proposal (research of 2026-08-23) | Research record |
+| [`musicbrainz-audio-enrichment-plan.md`](musicbrainz-audio-enrichment-plan.md) | The MusicBrainz, AcoustID and Chromaprint audio identification proposal (research of 2026-08-23) | Built under #307 to #313 |
 | [`predb-enrichment-plan.md`](predb-enrichment-plan.md) | An RFC on PreDB enrichment: dump import, hash matching and predb.net lookups (2026-08-09) | Draft, not scoped |
-| [`upstream-sync-plan.md`](upstream-sync-plan.md) | The plan for merging upstream NNTmux master (August 2026) while preserving fork behaviour | Marked ready for implementation |
+| [`upstream-sync-plan.md`](upstream-sync-plan.md) | The plan for merging upstream NNTmux master (August 2026) while preserving fork behaviour | Done: #39 closed, PRs #40 and #84 merged |
 
 ## Building a prototype on the shared stylesheet
 

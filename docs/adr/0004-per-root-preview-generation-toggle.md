@@ -1,5 +1,9 @@
 # Preview generation is toggleable per root category, with skip state and owed regeneration
 
+## Status
+
+Accepted, with one choice superseded. The central recategorization funnel this record anticipates now exists: since #1120 (PR #1135, merged 2026-10-21) a formed release's category moves go through `App\Services\Categorization\CategoryChange`, which calls `PreviewGenerationPolicy::restoreOwedPreviews()` itself, so a new write site uses `CategoryChange` instead of hand-calling the hook. The per-root toggle, the `-2` sentinel and `releases:requeue-missing-video-previews` still match the code.
+
 Generating a release's preview image and sample video costs ffmpeg CPU, preview disk, and the bandwidth of downloading sample articles whose only purpose is to feed ffmpeg. Until now this work was category-blind: once a release entered additional post-processing, previews were attempted regardless of what the release was. Operators need to turn that work off for whole root categories (e.g. XXX) without touching the rest of the pipeline.
 
 We decided on a per-root toggle, `root_categories.generate_previews` (default on for every root), AND-ed with the site-wide `processthumbnails`/`processvideos` switches — the root toggle can only disable, never enable. It governs the two ffmpeg-generated artifacts (Generated Preview, Generated Sample Video) and the sample-article downloads dedicated to them, and nothing else: password inspection, archive inspection, and Extracted Sample Images proceed unchanged. A release skipped by the toggle records `haspreview = -2` ("skipped by category policy"), a fourth state alongside `-1` pending / `0` attempted-none / `1` exists.

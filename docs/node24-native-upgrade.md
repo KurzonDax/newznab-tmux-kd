@@ -1,5 +1,13 @@
 # Native Node 24 upgrade and asset rollback (#759)
 
+This procedure belongs to the Node 24 toolchain change #757, merged as `bb358efef`
+on 2026-09-20 (PR #760); this document itself merged as `cb1cf5692` the same day
+(PR #761). Keep it for a native install still building assets with an older Node.
+It is historical: the pinned revision `d1482d95a`, the expected before/after versions
+(system Node 20.20.2/npm 10.8.2, Node 24.21.0/npm 11.19.0) and the 119-test count are
+as they were at that revision, not checks against current master. The Docker
+runtime builds with the Node major version set in `docker/8.5/Dockerfile`.
+
 This procedure upgrades the application's **build toolchain** to Node 24.21.0 and
 its bundled npm 11.19.0. It installs an official, versioned Node distribution in
 the deployment account's home and selects it explicitly for builds. It does not

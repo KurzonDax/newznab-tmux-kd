@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted, partly superseded. The movie browse screen this record governed (`MovieBrowseService`, `MovieSearchQuery`) was retired by #838 (PR #858) and #861 (PR #864), both merged 2026-09-28. Today's Movies pages still evaluate Genre, Year and rating filters in SQL (`App\Services\Releases\MovieReleaseList::whereFilms()`), but their film and people search is SQL `LIKE` only (`App\Services\Releases\MovieFilmSearch`) and does not consult the search index first. The movie search table and its SQL fallback remain in use for web-search entity prefixes (ADR 0015), and the rebuild commands below are still valid.
 
 ## Context
 

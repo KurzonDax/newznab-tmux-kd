@@ -16,7 +16,7 @@ _Avoid_: workers, processes (in UI copy and setting names)
 A tmux pane owned by the monitor, running exactly one background task (binaries, backfill, releases, postprocessing, fix-names).
 
 **Backfill pass**:
-One bounded sweep across every eligible group, with at most `backfillthreads` groups active at once and at most `backfill_qty` headers requested from each group. Eligibility ends at either the group's Backfill Days target or the site-wide Safe Backfill Date, according to the configured target type.
+One bounded sweep across every eligible group, with at most `backfillthreads` groups active at once and at most `backfill_qty` headers requested from each group. Eligibility ends at either the group's Backfill Days target or the site-wide Shared stop date (`safebackfilldate`), according to the Stop rule setting (`backfill_days`).
 _Avoid_: Safe mode, All mode — backfill is either Disabled or Enabled.
 
 **Amazon postprocessing**:
@@ -31,7 +31,7 @@ A group's `minsizetoformrelease` / `minfilestoformrelease`: the smallest collect
 _Avoid_: calling a group floor an override of the site setting — it can only raise it, never lower it.
 
 **Backfill Days**:
-A group's `backfill_target`: how many days back the backfill runner aims for on that group. Always at least 1; a group never lacks a target.
+A group's `backfill_target`: how many days back the backfill runner aims for on that group. The column defaults to 1 and Edit Selected accepts only 1 to 7300; the single-group form (which pre-fills 0 for a new group) does not validate the value.
 
 **Web Login Session**:
 An authenticated browsing session on the web frontend, expiring after 12 hours of inactivity. Applies only to browser logins by users and admins — API keys and RSS tokens are a separate concept and are never affected by session policy.
@@ -239,12 +239,12 @@ The explained outcome of resolving one evidence revision under one algorithm ver
 _Avoid_: reading the score as a probability; recording a provider failure as a no-match.
 
 **Shadow mode**:
-Running music resolution and persisting Identification decisions while applying no projection — no rename, no search text, no compatibility row. The default state until thresholds are calibrated against the labeled corpus.
+A decision-model mode (`DecisionMode::Shadow`): the model is asked and its answer recorded in the decision log, while the application's own answer stands — no category, album or name changes. Offered for category arbitration (`decision_model_mode`) and the music album check (`decision_model_music_album_mode`). Music identity resolution itself has no shadow state: an accepted album decision is projected as soon as it is persisted.
 
 **Music identity projection**:
-A reversible, recorded application of an accepted Identification decision to the release: the canonical rename, internal search-index text, or the `musicinfo` compatibility row. Each stores a before/after diff, and a reversal restores a field only while it still holds the projected value, so a later human correction is never overwritten.
+A reversible application of the current accepted Identification decision to the release: the canonical rename (`MusicRenameProjection`) and the internal search-index text (album title, artist and tracks) that the release index builds from that decision. Each rename decision is recorded in `release_music_renames`, as applied with the prior and written values or as declined with its reason; when the decision stops being current, the prior values come back only while the search name and name source still hold the written ones, so a later human correction is never overwritten. No `musicinfo` row is written from a decision.
 _Avoid_: letting the resolver touch a release directly — resolution decides, projections apply.
 
 **Rename gate**:
-The strictest projection gate: a verified-band decision with sufficient runner-up margin, no hard contradiction, no PreDB/Trusted/manual name protection, and the MusicBrainz release artist credit (Various Artists for compilations — never the sampled track's performer). When it passes, the canonical rename is the required projection, not an operator preference; when it fails, keeping the current name is the correct outcome, not a shortfall.
+The strictest projection gate: an accepted album decision scoring at least `music-identity.scoring.minimum_album_score` (92) with a runner-up margin of at least `minimum_runner_up_margin` (5), no hard contradiction, no PreDB/Trusted/manual name protection, and the MusicBrainz release artist credit (Various Artists for compilations — never the sampled track's performer). When it passes, the canonical rename is the required projection, not an operator preference; when it fails, keeping the current name is the correct outcome, not a shortfall.
 _Avoid_: treating renaming as a deployment option; renaming from one track's performer.
