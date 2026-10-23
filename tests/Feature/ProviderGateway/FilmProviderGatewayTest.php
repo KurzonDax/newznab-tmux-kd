@@ -8,10 +8,8 @@ use App\Services\ImdbScraper;
 use App\Services\MovieService;
 use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
-use GuzzleHttp\Psr7\Request as PsrRequest;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -79,40 +77,20 @@ final class FilmProviderGatewayTest extends ImdbScraperTestCase
     }
 
     #[Test]
-    public function an_imdb_waf_challenge_with_no_fallback_answer_is_not_cached_under_either_key(): void
+    public function an_imdb_waf_challenge_is_not_cached_under_either_key(): void
     {
-        $this->useImdbResponses([
-            new Response(202, [], '<script>window.gokuProps={}</script>'),
-            new ConnectException('Could not resolve host: api.imdbapi.dev', new PsrRequest('GET', 'https://api.imdbapi.dev/titles/tt'.self::IMDB_ID)),
-        ]);
-
-        $this->assertFalse((new MovieService)->fetchIMDBProperties(self::IMDB_ID));
-
-        $this->assertFalse(Cache::has('imdb_scrape_id_'.self::IMDB_ID));
-        $this->assertFalse(Cache::has('imdb_movie_'.md5(self::IMDB_ID)));
-    }
-
-    #[Test]
-    public function an_imdb_waf_challenge_whose_fallback_is_skipped_is_not_cached(): void
-    {
-        // The previous fallback was moments ago: this one is skipped, not sent.
-        app(ProviderGateway::class)->pace('imdbapi_dev');
         $this->useImdbResponses([new Response(202, [], '<script>window.gokuProps={}</script>')]);
 
         $this->assertFalse((new MovieService)->fetchIMDBProperties(self::IMDB_ID));
 
         $this->assertFalse(Cache::has('imdb_scrape_id_'.self::IMDB_ID));
         $this->assertFalse(Cache::has('imdb_movie_'.md5(self::IMDB_ID)));
-        $this->assertSame(1, app(ProviderGateway::class)->counters('imdbapi_dev')['pacer_skips']);
     }
 
     #[Test]
     public function an_imdb_not_found_is_kept_six_hours_under_both_keys(): void
     {
-        $this->useImdbResponses([
-            new Response(404, [], 'Not found'),
-            new Response(404, [], '{"code":5,"message":"NOT_FOUND"}'),
-        ]);
+        $this->useImdbResponses([new Response(404, [], 'Not found')]);
 
         $this->assertFalse((new MovieService)->fetchIMDBProperties(self::IMDB_ID));
 
@@ -158,7 +136,7 @@ final class FilmProviderGatewayTest extends ImdbScraperTestCase
         $this->assertFalse(Cache::has('trakt_movie_'.md5(self::IMDB_ID)));
     }
 
-    /** @param list<Response|ConnectException> $responses */
+    /** @param list<Response> $responses */
     private function useImdbResponses(array $responses): void
     {
         $client = new Client(['handler' => HandlerStack::create(new MockHandler($responses)), 'http_errors' => false]);

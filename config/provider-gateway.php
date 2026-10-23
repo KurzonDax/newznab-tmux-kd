@@ -77,10 +77,6 @@ return [
             'pace' => ['min_interval_ms' => 1_000],
         ],
         'imdb' => [],
-        'imdbapi_dev' => [
-            'pace' => ['when_busy' => 'skip'],
-            'breaker' => ['failure_threshold' => 1],
-        ],
         'omdb' => [
             // OMDb answers 401 once the daily quota is spent.
             'unavailable_statuses' => [401],

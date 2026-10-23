@@ -849,7 +849,7 @@ class MovieService
 
     /**
      * IMDb's film for the id, NotFound when IMDb has none or it is not the film named by the
-     * release, Unavailable when neither IMDb nor its fallback answered.
+     * release, Unavailable when IMDb did not answer.
      *
      * @return ProviderResult<array<string, mixed>|null>
      */
@@ -860,25 +860,17 @@ class MovieService
             $scraped = $scraper->fetchById($imdbId);
             if ($scraped === false || empty($scraped['title'])) {
                 $failureReason = $scraper->getLastFailureReason() ?? 'unknown';
-                $fallbackFailureReason = $scraper->getLastFallbackFailureReason();
-                $unavailable = ImdbScraper::failureIsUnavailable($scraper->getLastFailureReason(), $fallbackFailureReason);
+                $unavailable = ImdbScraper::failureIsUnavailable($scraper->getLastFailureReason());
 
                 Log::warning($scraper->wasBlockedByWaf() ? 'IMDb title fetch failed after WAF block.' : 'IMDb metadata fetch failed.', [
                     'imdb_id' => $imdbId,
                     'reason' => $failureReason,
-                    'fallback_reason' => $fallbackFailureReason,
                     'source' => $scraper->getLastFetchSource(),
                     'negative_cache' => $unavailable ? 'none' : '6h',
                 ]);
 
                 if ($this->echooutput) {
-                    $message = 'IMDb fetch failed ['.$failureReason;
-                    if ($fallbackFailureReason !== null) {
-                        $message .= ' -> '.$fallbackFailureReason;
-                    }
-                    $message .= '] for tt'.$imdbId;
-
-                    cli()->warning($message);
+                    cli()->warning('IMDb fetch failed ['.$failureReason.'] for tt'.$imdbId);
                 }
 
                 return $unavailable ? ProviderResult::unavailable() : ProviderResult::notFound();
@@ -897,7 +889,6 @@ class MovieService
             }
             if ($this->echooutput) {
                 $sourceLabel = match ($scraper->getLastFetchSource()) {
-                    'imdbapi_dev' => 'IMDb fallback (imdbapi.dev)',
                     'imdb_html' => 'IMDb scrape',
                     default => 'IMDb',
                 };

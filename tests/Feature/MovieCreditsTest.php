@@ -47,7 +47,7 @@ final class MovieCreditsTest extends ImdbScraperTestCase
         $scraper = $this->mock(ImdbScraper::class);
         $scraper->shouldReceive('fetchById')->andReturnFalse()->byDefault();
         $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
         Http::preventStrayRequests();
         Carbon::setTestNow('2026-09-27 12:00:00');
 

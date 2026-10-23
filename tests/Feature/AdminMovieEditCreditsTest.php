@@ -33,7 +33,7 @@ final class AdminMovieEditCreditsTest extends TestCase
         $scraper = $this->mock(ImdbScraper::class);
         $scraper->shouldReceive('fetchById')->andReturnFalse();
         $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFallbackFailureReason', 'getLastFetchSource')->andReturnNull();
+        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull();
 
         $tables = ProductionTables::fromAuthority();
         foreach (['movieinfo', 'genres', 'people', 'movie_genres', 'movie_people'] as $table) {
