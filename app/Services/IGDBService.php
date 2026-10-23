@@ -7,11 +7,12 @@ namespace App\Services;
 use App\Services\IGDB\Exceptions\IgdbHttpException;
 use App\Services\IGDB\Models\Company;
 use App\Services\IGDB\Models\Game;
+use App\Services\ProviderGateway\ShortCircuitConnectionException;
+use App\Services\ProviderGateway\ShortCircuitReason;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * IGDBService - IGDB (Internet Game Database) API integration.
@@ -27,13 +28,6 @@ use Illuminate\Support\Facades\RateLimiter;
  */
 class IGDBService
 {
-    // Rate limiting constants
-    protected const string RATE_LIMIT_KEY = 'igdb_api_rate_limit';
-
-    protected const int REQUESTS_PER_MINUTE = 4;
-
-    protected const int DECAY_SECONDS = 60;
-
     // Cache TTLs
     protected const int GAME_CACHE_TTL = 86400; // 24 hours
 
@@ -61,6 +55,9 @@ class IGDBService
      * @var array<int, string|null>
      */
     private array $companyNames = [];
+
+    /** Whether a strategy of the current search got no answer, so its miss must not be cached. */
+    private bool $unanswered = false;
 
     protected const array PLATFORM_ALIASES = [
         'x360' => 'xbox 360',
@@ -126,12 +123,13 @@ class IGDBService
             return $cached instanceof Game ? $cached : null;
         }
 
+        $this->unanswered = false;
         $game = $this->searchWithStrategies($title, self::PC_PLATFORM_IDS);
 
         if ($game !== null) {
             Cache::put($cacheKey, $game, self::GAME_CACHE_TTL);
             Log::info('IGDBService: Found match', ['title' => $title, 'matched' => $game->name]); // @phpstan-ignore property.notFound
-        } else {
+        } elseif (! $this->unanswered) {
             Cache::put("igdb_search_failed:{$cacheKey}", true, self::FAILED_LOOKUP_CACHE_TTL);
             Log::debug('IGDBService: No match found', ['title' => $title]);
         }
@@ -169,6 +167,7 @@ class IGDBService
             return $cached;
         }
 
+        $this->unanswered = false;
         $game = $this->searchWithStrategies($title, null, $platformHint);
 
         if ($game instanceof Game) {
@@ -177,7 +176,9 @@ class IGDBService
             return $game;
         }
 
-        Cache::put("igdb_console_search_failed:{$cacheKey}", true, self::FAILED_LOOKUP_CACHE_TTL);
+        if (! $this->unanswered) {
+            Cache::put("igdb_console_search_failed:{$cacheKey}", true, self::FAILED_LOOKUP_CACHE_TTL);
+        }
 
         return null;
     }
@@ -214,6 +215,8 @@ class IGDBService
 
     /**
      * Search IGDB using multiple strategies for better match rates.
+     *
+     * @phpstan-impure It asks IGDB and records whether every strategy got an answer.
      */
     protected function searchWithStrategies(string $title, ?array $platformIds = null, ?string $platformHint = null): ?Game
     {
@@ -264,30 +267,25 @@ class IGDBService
     protected function searchExact(string $title, ?array $platformIds = null, ?string $platformHint = null): ?Game
     {
         try {
-            $results = RateLimiter::attempt(
-                self::RATE_LIMIT_KEY,
-                self::REQUESTS_PER_MINUTE,
-                function () use ($platformIds, $title) {
-                    $query = Game::where('name', $title)
-                        ->with($this->getGameRelations())
-                        ->orderByDesc('aggregated_rating_count')
-                        ->limit(10);
+            $query = Game::where('name', $title)
+                ->with($this->getGameRelations())
+                ->orderByDesc('aggregated_rating_count')
+                ->limit(10);
 
-                    if ($platformIds !== null) {
-                        $query->whereIn('platforms', $platformIds);
-                    }
+            if ($platformIds !== null) {
+                $query->whereIn('platforms', $platformIds);
+            }
 
-                    return $query->get();
-                },
-                self::DECAY_SECONDS
-            );
+            $results = $query->get();
 
-            if ($results === true || empty($results)) {
+            if (empty($results)) {
                 return null;
             }
 
             return $this->findBestMatch($results, $title, $platformHint);
         } catch (\Exception $e) {
+            // Refused by the gateway's budget, or IGDB failed or rejected the query: no answer.
+            $this->unanswered = true;
             Log::warning('IGDBService: Exact search error', ['error' => $e->getMessage()]);
 
             return null;
@@ -300,31 +298,26 @@ class IGDBService
     protected function searchFuzzy(string $title, ?array $platformIds = null, ?string $platformHint = null): ?Game
     {
         try {
-            $results = RateLimiter::attempt(
-                self::RATE_LIMIT_KEY,
-                self::REQUESTS_PER_MINUTE,
-                function () use ($platformIds, $title) {
-                    $query = Game::search($title)
-                        ->where('game_type', 0) // Main game only (not DLC, expansion, etc.)
-                        ->with($this->getGameRelations())
-                        ->orderByDesc('aggregated_rating_count')
-                        ->limit(10);
+            $query = Game::search($title)
+                ->where('game_type', 0) // Main game only (not DLC, expansion, etc.)
+                ->with($this->getGameRelations())
+                ->orderByDesc('aggregated_rating_count')
+                ->limit(10);
 
-                    if ($platformIds !== null) {
-                        $query->whereIn('platforms', $platformIds);
-                    }
+            if ($platformIds !== null) {
+                $query->whereIn('platforms', $platformIds);
+            }
 
-                    return $query->get();
-                },
-                self::DECAY_SECONDS
-            );
+            $results = $query->get();
 
-            if ($results === true || empty($results)) {
+            if (empty($results)) {
                 return null;
             }
 
             return $this->findBestMatch($results, $title, $platformHint);
         } catch (\Exception $e) {
+            // Refused by the gateway's budget, or IGDB failed or rejected the query: no answer.
+            $this->unanswered = true;
             Log::warning('IGDBService: Fuzzy search error', ['error' => $e->getMessage()]);
 
             return null;
@@ -339,15 +332,14 @@ class IGDBService
      */
     public function findGame(int $igdbId): ?Game
     {
-        $result = RateLimiter::attempt(
-            self::RATE_LIMIT_KEY,
-            self::REQUESTS_PER_MINUTE,
-            fn (): mixed => Game::query()->where('id', $igdbId)->with($this->getGameRelations())->fresh()->first(),
-            self::DECAY_SECONDS
-        );
+        try {
+            $result = Game::query()->where('id', $igdbId)->with($this->getGameRelations())->fresh()->first();
+        } catch (ShortCircuitConnectionException $refused) {
+            if ($refused->reason() === ShortCircuitReason::BudgetRefused) {
+                throw new IgdbHttpException('IGDB rate limit reached', 429);
+            }
 
-        if ($result === false) {
-            throw new IgdbHttpException('IGDB rate limit reached', 429);
+            throw $refused;
         }
 
         return $result instanceof Game ? $result : null;

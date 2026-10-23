@@ -14,19 +14,6 @@ use Illuminate\Support\Facades\DB;
 class RefreshAnimeData extends Command
 {
     /**
-     * Conservative rate limit: 20 requests per minute (to stay well below AniList's 90/min limit).
-     * This allows for multiple API calls per release (search + getById).
-     */
-    private const RATE_LIMIT_PER_MINUTE = 20;
-
-    /**
-     * Track API request timestamps for rate limiting.
-     *
-     * @var array<int>
-     */
-    private array $requestTimestamps = [];
-
-    /**
      * The name and signature of the console command.
      *
      * @var string
@@ -171,14 +158,12 @@ class RefreshAnimeData extends Command
                     }
 
                     // Search AniList for this title (with rate limiting)
-                    $this->enforceRateLimit();
                     $searchResults = $populateAniList->searchAnime($cleanTitle, 1);
 
                     if (! $searchResults) {
                         // Try with spaces replaced for broader matching
                         $altTitle = preg_replace('/\s+/', ' ', $cleanTitle);
                         if ($altTitle !== $cleanTitle) {
-                            $this->enforceRateLimit();
                             $searchResults = $populateAniList->searchAnime($altTitle, 1);
                         }
                     }
@@ -226,7 +211,6 @@ class RefreshAnimeData extends Command
 
                     // Fetch full data from AniList and insert/update (with rate limiting)
                     // This will create/update anidb_info entry using anilist_id as anidbid if needed
-                    $this->enforceRateLimit();
                     $populateAniList->populateTable('info', $anilistId);
 
                     // Get the anidbid that was created/updated (it uses anilist_id as anidbid)
@@ -510,65 +494,5 @@ class RefreshAnimeData extends Command
         $title = preg_replace('/\s+/', ' ', $title);
 
         return trim($title);
-    }
-
-    /**
-     * Enforce rate limiting: 35 requests per minute (conservative limit).
-     * Adds delays between API calls to prevent hitting AniList's 90/min limit.
-     */
-    private function enforceRateLimit(): void
-    {
-        $now = time();
-
-        // Clean old timestamps (older than 1 minute)
-        $this->requestTimestamps = array_filter($this->requestTimestamps, function ($timestamp) use ($now) {
-            return ($now - $timestamp) < 60;
-        });
-
-        $requestCount = count($this->requestTimestamps);
-
-        // If we're at or over the limit, wait
-        if ($requestCount >= self::RATE_LIMIT_PER_MINUTE) {
-            // Calculate wait time based on oldest request
-            if (! empty($this->requestTimestamps)) {
-                $oldestRequest = min($this->requestTimestamps);
-                $waitTime = 60 - ($now - $oldestRequest) + 1; // +1 for safety margin
-
-                if ($waitTime > 0 && $waitTime <= 60) {
-                    if ($this->getOutput()->isVerbose()) {
-                        $this->newLine();
-                        $this->warn("Rate limit reached ({$requestCount}/".self::RATE_LIMIT_PER_MINUTE."). Waiting {$waitTime} seconds...");
-                    }
-                    sleep($waitTime);
-
-                    // Clean timestamps again after waiting
-                    $now = time();
-                    $this->requestTimestamps = array_filter($this->requestTimestamps, function ($timestamp) use ($now) {
-                        return ($now - $timestamp) < 60;
-                    });
-                }
-            }
-        }
-
-        // Calculate minimum delay between requests (to maintain 20/min rate)
-        // 60 seconds / 20 requests = 3 seconds per request
-        $minDelay = 60.0 / self::RATE_LIMIT_PER_MINUTE;
-
-        // If we have recent requests, ensure we wait at least the minimum delay
-        if (! empty($this->requestTimestamps)) {
-            $lastRequest = max($this->requestTimestamps);
-            $timeSinceLastRequest = $now - $lastRequest;
-
-            if ($timeSinceLastRequest < $minDelay) {
-                $waitTime = $minDelay - $timeSinceLastRequest;
-                if ($waitTime > 0 && $waitTime < 2) { // Only wait if less than 2 seconds
-                    usleep((int) ($waitTime * 1000000)); // Convert to microseconds
-                    $now = time(); // Update now after waiting
-                }
-            }
-        }
-
-        // Record this request timestamp (after all delays)
-        $this->requestTimestamps[] = $now;
     }
 }

@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Tests\Unit\Services;
 
 use App\Services\PopulateAniListService;
-use GuzzleHttp\Client;
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
-use ReflectionProperty;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Sleep;
 use Tests\TestCase;
 
 class AniListServiceTest extends TestCase
@@ -21,8 +21,14 @@ class AniListServiceTest extends TestCase
         config([
             'nntmux.echocli' => false,
         ]);
+        Carbon::setTestNow('2026-10-23 12:00:00');
+        Sleep::fake(syncWithCarbon: true);
+    }
 
-        $this->resetRateLimitPause();
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     public function test_search_anime_returns_media_results(): void
@@ -116,24 +122,56 @@ class AniListServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
+    public function test_a_429_without_a_short_retry_after_pauses_anilist_for_fifteen_minutes(): void
+    {
+        $transport = new MockHandler([
+            new Response(429),
+            $this->graphqlResponse(['data' => ['Page' => ['media' => []]]]),
+        ]);
+        $service = $this->makeServiceWithHandler($transport);
+
+        try {
+            $service->searchAnime('Steins;Gate');
+            $this->fail('A 429 must pause AniList.');
+        } catch (\Exception $exception) {
+            $this->assertStringContainsString('Paused until', $exception->getMessage());
+        }
+
+        $this->assertEquals(now()->addMinutes(15)->getTimestamp(), app(ProviderGateway::class)->heldUntil('anilist')?->getTimestamp());
+
+        try {
+            $service->searchAnime('Steins;Gate');
+            $this->fail('A paused AniList must not be asked.');
+        } catch (\Exception $exception) {
+            $this->assertStringContainsString('Paused until', $exception->getMessage());
+        }
+        $this->assertCount(1, $transport, 'nothing was sent during the pause');
+    }
+
+    public function test_a_429_with_a_short_retry_after_is_waited_and_retried(): void
+    {
+        $service = $this->makeServiceWithResponses(
+            new Response(429, ['Retry-After' => '5']),
+            $this->graphqlResponse(['data' => ['Page' => ['media' => []]]]),
+        );
+
+        $started = now()->copy();
+
+        $this->assertSame([], $service->searchAnime('Steins;Gate'));
+        $this->assertGreaterThanOrEqual(5, $started->diffInSeconds(now()), 'the retry waited out the Retry-After');
+        $this->assertNull(app(ProviderGateway::class)->heldUntil('anilist'), 'no fifteen-minute pause');
+    }
+
     private function makeServiceWithResponses(Response ...$responses): PopulateAniListService
     {
-        $service = new PopulateAniListService;
+        return $this->makeServiceWithHandler(new MockHandler($responses));
+    }
 
-        $client = new Client([
-            'base_uri' => 'https://graphql.anilist.co',
-            'handler' => HandlerStack::create(new MockHandler($responses)),
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json',
-            ],
-        ]);
+    private function makeServiceWithHandler(MockHandler $transport): PopulateAniListService
+    {
+        app(ProviderGateway::class)->useHandler('anilist', $transport);
 
-        $property = new ReflectionProperty($service, 'client');
-        $property->setAccessible(true);
-        $property->setValue($service, $client);
-
-        return $service;
+        return new PopulateAniListService;
     }
 
     /**
@@ -149,12 +187,5 @@ class AniListServiceTest extends TestCase
             ],
             json_encode($body) ?: '{}'
         );
-    }
-
-    private function resetRateLimitPause(): void
-    {
-        $property = new ReflectionProperty(PopulateAniListService::class, 'rateLimitPause');
-        $property->setAccessible(true);
-        $property->setValue(null, null);
     }
 }

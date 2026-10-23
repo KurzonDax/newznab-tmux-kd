@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\RequestException;
-use Illuminate\Support\Facades\Http;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ProviderResult;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -25,16 +25,10 @@ class TmdbClient
 
     protected int $timeout;
 
-    protected int $retryTimes;
-
-    protected int $retryDelay;
-
     public function __construct()
     {
         $this->apiKey = (string) config('tmdb.api_key', '');
         $this->timeout = (int) config('tmdb.timeout', 30);
-        $this->retryTimes = (int) config('tmdb.retry_times', 3);
-        $this->retryDelay = (int) config('tmdb.retry_delay', 100);
     }
 
     /**
@@ -54,59 +48,66 @@ class TmdbClient
      */
     protected function get(string $endpoint, array $params = []): ?array
     {
+        $result = $this->request($endpoint, $params);
+
+        return is_array($result->value) ? $result->value : null;
+    }
+
+    /**
+     * A GET request to the TMDB API through the provider gateway, which paces, retries and
+     * breaker-guards it. An empty answer is NotFound, like a 404, and keeps its value.
+     *
+     * @param  array<string, mixed>  $params
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    protected function request(string $endpoint, array $params = []): ProviderResult
+    {
         if (! $this->isConfigured()) {
             Log::warning('TMDB API key is not configured');
 
-            return null;
+            return ProviderResult::unavailable();
         }
 
         $params['api_key'] = $this->apiKey;
+        $gateway = app(ProviderGateway::class);
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->retry($this->retryTimes, $this->retryDelay, function (\Throwable $exception, PendingRequest $request, ?string $key = null) {
-                    // Don't retry on 404 errors - resource simply doesn't exist
-                    if ($exception instanceof RequestException) {
-                        return $exception->response->status() !== 404;
-                    }
-
-                    return true;
-                }, throw: false)
+            $response = $gateway->http('tmdb')
+                ->timeout($this->timeout)
                 ->get(self::BASE_URL.$endpoint, $params);
+        } catch (\Throwable $e) {
+            Log::warning('TMDB API request exception', [
+                'endpoint' => $endpoint,
+                'message' => $e->getMessage(),
+            ]);
 
-            if ($response->successful()) {
-                return $response->json();
-            }
+            return ProviderResult::unavailable($e);
+        }
 
-            // Handle specific error codes - 404 is normal (resource not found)
-            if ($response->status() === 404) {
-                Log::debug('TMDB: Resource not found', ['endpoint' => $endpoint]);
+        if ($response->status() === 404) {
+            Log::debug('TMDB: Resource not found', ['endpoint' => $endpoint]);
 
-                return null;
-            }
+            return ProviderResult::notFound();
+        }
 
+        if (! $response->successful()) {
             Log::warning('TMDB API request failed', [
                 'endpoint' => $endpoint,
                 'status' => $response->status(),
                 'body' => $response->body(),
             ]);
 
-            return null;
-        } catch (\Throwable $e) {
-            // Check if this is a 404 wrapped in an exception
-            if ($e instanceof RequestException && $e->response->status() === 404) {
-                Log::debug('TMDB: Resource not found', ['endpoint' => $endpoint]);
-
-                return null;
-            }
-
-            Log::warning('TMDB API request exception', [
-                'endpoint' => $endpoint,
-                'message' => $e->getMessage(),
-            ]);
-
-            return null;
+            return new ProviderResult($gateway->lastOutcome('tmdb') ?? ProviderOutcome::Unavailable);
         }
+
+        $data = $response->json();
+        if (! is_array($data) || $data === []) {
+            $gateway->report('tmdb', ProviderOutcome::NotFound);
+
+            return new ProviderResult(ProviderOutcome::NotFound, is_array($data) ? $data : null);
+        }
+
+        return ProviderResult::found($data);
     }
 
     /**
@@ -160,18 +161,32 @@ class TmdbClient
      */
     public function getMovie(int|string $id, array $appendToResponse = []): ?array
     {
+        $result = $this->movie($id, $appendToResponse);
+
+        return is_array($result->value) ? $result->value : null;
+    }
+
+    /**
+     * A movie by TMDB ID or IMDb ID ('tt' prefix), with whether TMDB has no such movie
+     * (NotFound) or could not be asked (Unavailable).
+     *
+     * @param  array<string, mixed>  $appendToResponse
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    public function movie(int|string $id, array $appendToResponse = []): ProviderResult
+    {
         if (is_string($id) && str_starts_with($id, 'tt')) {
-            $movie = $this->findMovieByExternalId($id, 'imdb_id');
-            if ($movie === null) {
-                return null;
+            $found = $this->findMovie($id);
+            if (! $found->isFound()) {
+                return $found;
             }
 
-            $tmdbId = self::getInt($movie, 'id');
+            $tmdbId = self::getInt($found->value ?? [], 'id');
             if ($tmdbId <= 0) {
-                return null;
+                return ProviderResult::notFound();
             }
 
-            return $this->getMovie($tmdbId, $appendToResponse);
+            return $this->movie($tmdbId, $appendToResponse);
         }
 
         $params = [];
@@ -180,7 +195,7 @@ class TmdbClient
             $params['append_to_response'] = implode(',', $appendToResponse);
         }
 
-        return $this->get('/movie/'.$id, $params);
+        return $this->request('/movie/'.$id, $params);
     }
 
     /**
@@ -192,23 +207,32 @@ class TmdbClient
      */
     public function findMovieByExternalId(string $externalId, string $source = 'imdb_id'): ?array
     {
-        if (empty($externalId)) {
-            return null;
+        $result = $this->findMovie($externalId, $source);
+
+        return $result->isFound() ? $result->value : null;
+    }
+
+    /**
+     * The first TMDB movie with this external ID, NotFound when TMDB knows none.
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    public function findMovie(string $externalId, string $source = 'imdb_id'): ProviderResult
+    {
+        if (empty($externalId) || $source !== 'imdb_id') {
+            return ProviderResult::notFound();
         }
 
-        if ($source !== 'imdb_id') {
-            return null;
-        }
-
-        $result = $this->get('/find/'.$externalId, [
+        $result = $this->request('/find/'.$externalId, [
             'external_source' => $source,
         ]);
-
-        if ($result === null || empty($result['movie_results'])) {
-            return null;
+        if (! $result->isFound()) {
+            return $result;
         }
 
-        return $result['movie_results'][0] ?? null;
+        $movie = $result->value['movie_results'][0] ?? null;
+
+        return is_array($movie) && $movie !== [] ? ProviderResult::found($movie) : ProviderResult::notFound();
     }
 
     /**
@@ -387,13 +411,21 @@ class TmdbClient
      */
     public function getTvEpisodeWithFallback(array $ids, int $seasonNumber, int $episodeNumber): ?array
     {
-        // First try with TMDB ID if available
-        $tmdbId = (int) ($ids['tmdb'] ?? 0);
-        if ($tmdbId > 0) {
-            $result = $this->getTvEpisode($tmdbId, $seasonNumber, $episodeNumber);
-            if ($result !== null) {
-                return $result;
+        // Each TMDB show is asked once, however many of the IDs lead to it.
+        $asked = [];
+        $episodeOf = function (int $showId) use (&$asked, $seasonNumber, $episodeNumber): ?array {
+            if ($showId <= 0 || isset($asked[$showId])) {
+                return null;
             }
+            $asked[$showId] = true;
+
+            return $this->getTvEpisode($showId, $seasonNumber, $episodeNumber);
+        };
+
+        // First try with TMDB ID if available
+        $result = $episodeOf((int) ($ids['tmdb'] ?? 0));
+        if ($result !== null) {
+            return $result;
         }
 
         // Try to find the show by TVDB ID
@@ -401,7 +433,7 @@ class TmdbClient
         if ($tvdbId > 0) {
             $show = $this->findTvByExternalId((string) $tvdbId, 'tvdb_id');
             if ($show !== null && isset($show['id'])) {
-                $result = $this->getTvEpisode((int) $show['id'], $seasonNumber, $episodeNumber);
+                $result = $episodeOf((int) $show['id']);
                 if ($result !== null) {
                     return $result;
                 }
@@ -417,7 +449,7 @@ class TmdbClient
 
             $show = $this->findTvByExternalId($imdbFormatted, 'imdb_id');
             if ($show !== null && isset($show['id'])) {
-                $result = $this->getTvEpisode((int) $show['id'], $seasonNumber, $episodeNumber);
+                $result = $episodeOf((int) $show['id']);
                 if ($result !== null) {
                     return $result;
                 }

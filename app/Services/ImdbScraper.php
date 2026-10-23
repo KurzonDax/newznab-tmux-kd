@@ -4,24 +4,35 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ProviderResult;
+use App\Services\ProviderGateway\ShortCircuit;
+use App\Services\ProviderGateway\ShortCircuitReason;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Psr\Http\Message\ResponseInterface;
 use voku\helper\HtmlDomParser;
 
 class ImdbScraper
 {
-    protected const int SOFT_FAILURE_TTL_MINUTES = 30;
+    /** How long IMDb's answer that it has no such title is kept. */
+    protected const int NOT_FOUND_TTL_HOURS = 6;
 
-    protected const int HARD_FAILURE_TTL_HOURS = 6;
+    /** Failure reasons of the title page that mean IMDb gave no answer. */
+    private const array UNAVAILABLE_REASONS = ['waf_block', 'html_unavailable', 'html_exception'];
 
-    protected const string IMDBAPI_DEV_INTERVAL_CACHE_KEY = 'imdbapi_dev:min_interval';
-
-    protected const string IMDBAPI_DEV_COOLDOWN_CACHE_KEY = 'imdbapi_dev:cooldown';
+    /** Failure reasons of the imdbapi.dev fallback that mean it gave no answer. */
+    private const array FALLBACK_UNAVAILABLE_REASONS = [
+        'fallback_disabled', 'fallback_rate_limited', 'fallback_unavailable', 'fallback_exception',
+        'fallback_min_interval_active', 'fallback_cooldown_active',
+    ];
 
     protected Client $client;
+
+    protected Client $imdbApiDevClient;
 
     protected string $imdbApiDevBaseUrl;
 
@@ -40,10 +51,16 @@ class ImdbScraper
 
     protected ?string $lastFallbackFailureReason = null;
 
+    /**
+     * Requests go through the provider gateway: `imdb` for IMDb itself, where a WAF challenge
+     * is no answer and counts against its breaker, and `imdbapi_dev` for the fallback, spaced by
+     * `imdbapi_dev_min_interval_seconds` (a request too soon is skipped) and closed by its
+     * breaker after a failure. An injected client's handler is used as the transport.
+     */
     public function __construct(?Client $client = null)
     {
         $this->imdbApiDevBaseUrl = rtrim((string) config('nntmux_api.imdbapi_dev_base_url', 'https://api.imdbapi.dev'), '/');
-        $this->client = $client ?? RecoveryCatalog::client([
+        $options = [
             'timeout' => 10,
             'connect_timeout' => 10,
             'http_errors' => false,
@@ -54,7 +71,22 @@ class ImdbScraper
                 'Cache-Control' => 'no-cache',
                 'Pragma' => 'no-cache',
             ],
-        ]);
+        ];
+        $gateway = app(ProviderGateway::class);
+        $this->client = $gateway->guzzle('imdb', $options, $client, classify: fn (ResponseInterface $response): ?ProviderOutcome => $this->isWafResponse($response->getStatusCode(), (string) $response->getBody())
+            ? ProviderOutcome::Unavailable
+            : null);
+        $this->imdbApiDevClient = $gateway->guzzle('imdbapi_dev', $options, $client);
+    }
+
+    /**
+     * Whether a title fetch that found nothing got no answer at all, so it must not be
+     * remembered as a miss: IMDb gave none, and neither did the fallback.
+     */
+    public static function failureIsUnavailable(?string $failureReason, ?string $fallbackFailureReason): bool
+    {
+        return in_array($failureReason, self::UNAVAILABLE_REASONS, true)
+            && ($fallbackFailureReason === null || in_array($fallbackFailureReason, self::FALLBACK_UNAVAILABLE_REASONS, true));
     }
 
     public function wasBlockedByWaf(): bool
@@ -97,15 +129,22 @@ class ImdbScraper
             return false;
         }
 
-        $cacheKey = 'imdb_scrape_id_'.$id;
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
-        }
+        $result = app(ProviderGateway::class)->remember(
+            'imdb',
+            'imdb_scrape_id_'.$id,
+            now()->addDays(7),
+            now()->addHours(self::NOT_FOUND_TTL_HOURS),
+            fn (): ProviderResult => $this->scrapeTitle($id),
+        );
 
-        $url = 'https://www.imdb.com/title/tt'.$id.'/';
+        return $result->isFound() && is_array($result->value) ? $result->value : false;
+    }
 
+    /** @return ProviderResult<array<string, mixed>|null> */
+    private function scrapeTitle(string $id): ProviderResult
+    {
         try {
-            $response = $this->client->get($url, [
+            $response = $this->client->get('https://www.imdb.com/title/tt'.$id.'/', [
                 'headers' => [
                     'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Referer' => 'https://www.imdb.com/',
@@ -127,55 +166,37 @@ class ImdbScraper
                 if ($data !== false) {
                     $this->lastFetchSource = 'imdb_html';
                     $this->lastFailureReason = null;
-                    Cache::put($cacheKey, $data, now()->addDays(7));
 
-                    return $data;
+                    return ProviderResult::found($data);
                 }
 
                 $this->lastFailureReason = 'html_parse_failure';
             } elseif (! $this->lastRequestWasBlocked) {
-                $this->lastFailureReason = trim($html) === '' ? 'html_empty_response' : 'html_http_failure';
+                $this->lastFailureReason = match (true) {
+                    trim($html) === '' && $statusCode < 400 => 'html_empty_response',
+                    $statusCode === 429 || $statusCode >= 500 => 'html_unavailable',
+                    default => 'html_http_failure',
+                };
             }
-
-            $fallbackData = $this->fetchFromImdbApiDev($id);
-            if ($fallbackData !== false) {
-                $this->lastFetchSource = 'imdbapi_dev';
-                $this->lastFailureReason = null;
-                $this->lastFallbackFailureReason = null;
-                Cache::put($cacheKey, $fallbackData, now()->addDays(7));
-
-                return $fallbackData;
-            }
-
-            $ttl = $this->lastRequestWasBlocked
-                ? now()->addMinutes(self::SOFT_FAILURE_TTL_MINUTES)
-                : now()->addHours(self::HARD_FAILURE_TTL_HOURS);
-            Cache::put($cacheKey, false, $ttl);
-
-            return false;
         } catch (\Throwable $e) {
             Log::debug('IMDb fetch error tt'.$id.': '.$e->getMessage());
             if ($this->lastFailureReason === null) {
                 $this->lastFailureReason = 'html_exception';
             }
-
-            $fallbackData = $this->fetchFromImdbApiDev($id);
-            if ($fallbackData !== false) {
-                $this->lastFetchSource = 'imdbapi_dev';
-                $this->lastFailureReason = null;
-                $this->lastFallbackFailureReason = null;
-                Cache::put($cacheKey, $fallbackData, now()->addDays(7));
-
-                return $fallbackData;
-            }
-
-            $ttl = $this->lastRequestWasBlocked
-                ? now()->addMinutes(self::SOFT_FAILURE_TTL_MINUTES)
-                : now()->addHours(self::HARD_FAILURE_TTL_HOURS);
-            Cache::put($cacheKey, false, $ttl);
-
-            return false;
         }
+
+        $fallbackData = $this->fetchFromImdbApiDev($id);
+        if ($fallbackData !== false) {
+            $this->lastFetchSource = 'imdbapi_dev';
+            $this->lastFailureReason = null;
+            $this->lastFallbackFailureReason = null;
+
+            return ProviderResult::found($fallbackData);
+        }
+
+        return self::failureIsUnavailable($this->lastFailureReason, $this->lastFallbackFailureReason)
+            ? ProviderResult::unavailable()
+            : ProviderResult::notFound();
     }
 
     /**
@@ -238,7 +259,7 @@ class ImdbScraper
 
             if ($results === []) {
                 if ($this->lastSearchAvailable) {
-                    Cache::put($cacheKey, [], now()->addHours(self::HARD_FAILURE_TTL_HOURS));
+                    Cache::put($cacheKey, [], now()->addHours(self::NOT_FOUND_TTL_HOURS));
                 }
 
                 return [];
@@ -323,20 +344,14 @@ class ImdbScraper
      */
     private function fetchFromImdbApiDev(string $id): array|false
     {
-        if (! $this->canUseImdbApiDev()) {
-            return false;
-        }
-
-        if ($this->imdbApiDevBaseUrl === '') {
+        if (! (bool) config('nntmux_api.imdbapi_dev_enabled', true) || $this->imdbApiDevBaseUrl === '') {
             $this->lastFallbackFailureReason = 'fallback_disabled';
 
             return false;
         }
 
         try {
-            $this->markImdbApiDevAttempt();
-
-            $response = $this->client->get($this->imdbApiDevBaseUrl.'/titles/tt'.$id, [
+            $response = $this->imdbApiDevClient->get($this->imdbApiDevBaseUrl.'/titles/tt'.$id, [
                 'headers' => [
                     'Accept' => 'application/json',
                 ],
@@ -344,16 +359,12 @@ class ImdbScraper
 
             if ($response->getStatusCode() === 429) {
                 $this->lastFallbackFailureReason = 'fallback_rate_limited';
-                $this->activateImdbApiDevCooldown();
 
                 return false;
             }
 
             if ($response->getStatusCode() !== 200) {
-                $this->lastFallbackFailureReason = 'fallback_http_failure';
-                if ($response->getStatusCode() >= 500) {
-                    $this->activateImdbApiDevCooldown();
-                }
+                $this->lastFallbackFailureReason = $response->getStatusCode() >= 500 ? 'fallback_unavailable' : 'fallback_http_failure';
 
                 return false;
             }
@@ -373,57 +384,19 @@ class ImdbScraper
             }
 
             return $mapped;
+        } catch (ShortCircuit $skipped) {
+            // Asked too soon after the last fallback, or its breaker is open after a failure.
+            $this->lastFallbackFailureReason = $skipped->reason() === ShortCircuitReason::PacerSkip
+                ? 'fallback_min_interval_active'
+                : 'fallback_cooldown_active';
+
+            return false;
         } catch (\Throwable $e) {
             Log::debug('imdbapi.dev fetch error tt'.$id.': '.$e->getMessage());
             $this->lastFallbackFailureReason = 'fallback_exception';
-            $this->activateImdbApiDevCooldown();
 
             return false;
         }
-    }
-
-    private function canUseImdbApiDev(): bool
-    {
-        if (! (bool) config('nntmux_api.imdbapi_dev_enabled', true)) {
-            $this->lastFallbackFailureReason = 'fallback_disabled';
-
-            return false;
-        }
-
-        if (Cache::has(self::IMDBAPI_DEV_COOLDOWN_CACHE_KEY)) {
-            $this->lastFallbackFailureReason = 'fallback_cooldown_active';
-
-            return false;
-        }
-
-        $minInterval = max(0, (int) config('nntmux_api.imdbapi_dev_min_interval_seconds', 15));
-        if ($minInterval > 0 && Cache::has(self::IMDBAPI_DEV_INTERVAL_CACHE_KEY)) {
-            $this->lastFallbackFailureReason = 'fallback_min_interval_active';
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private function markImdbApiDevAttempt(): void
-    {
-        $minInterval = max(0, (int) config('nntmux_api.imdbapi_dev_min_interval_seconds', 15));
-        if ($minInterval <= 0) {
-            return;
-        }
-
-        Cache::put(self::IMDBAPI_DEV_INTERVAL_CACHE_KEY, true, now()->addSeconds($minInterval));
-    }
-
-    private function activateImdbApiDevCooldown(): void
-    {
-        $cooldownSeconds = max(0, (int) config('nntmux_api.imdbapi_dev_cooldown_seconds', 300));
-        if ($cooldownSeconds <= 0) {
-            return;
-        }
-
-        Cache::put(self::IMDBAPI_DEV_COOLDOWN_CACHE_KEY, true, now()->addSeconds($cooldownSeconds));
     }
 
     /**

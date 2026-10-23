@@ -24,6 +24,9 @@ use App\Services\MetadataProcessing\MovieReleaseBackfill;
 use App\Services\ObfuscationRecovery\RecoveryCatalog;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryOmdbClient;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ProviderResult;
 use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Search\MovieSearchIndexSync;
@@ -32,7 +35,6 @@ use App\Services\TvProcessing\TvProcessingPipeline;
 use App\Support\ReleaseSearchIndexSync;
 use App\Support\TitleYearName;
 use App\Traits\DetectsHashedNames;
-use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -76,8 +78,6 @@ class MovieService
 
     protected ReleaseImageService $releaseImage;
 
-    protected Client $client;
-
     public FanartTvService $fanart;
 
     public ?string $fanartapikey;
@@ -111,7 +111,6 @@ class MovieService
         if ($this->traktcheck !== null) {
             $this->traktTv = new TraktProvider;
         }
-        $this->client = new Client;
         $fanartApiKey = trim((string) config('nntmux_api.fanarttv_api_key', ''));
         $this->fanartapikey = $fanartApiKey !== '' ? $fanartApiKey : null;
         $this->fanart = new FanartTvService($this->fanartapikey);
@@ -611,27 +610,36 @@ class MovieService
     {
         $lookupId = $text === false && (strlen($imdbId) === 7 || strlen($imdbId) === 8) ? 'tt'.$imdbId : $imdbId;
 
-        $cacheKey = self::tmdbCacheKey($lookupId);
-        $expiresAt = now()->addDays(7);
+        $tmdbClient = app(TmdbClient::class);
+        $result = app(ProviderGateway::class)->remember(
+            'tmdb',
+            self::tmdbCacheKey($lookupId),
+            now()->addDays(7),
+            now()->addDays(7),
+            fn (): ProviderResult => $this->lookupTmdbMovie($tmdbClient, $imdbId, $lookupId),
+        );
 
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
+        return $result->isFound() && is_array($result->value) ? $result->value : false;
+    }
+
+    /**
+     * TMDB's film for the IMDb id, NotFound when TMDB has none or it is not the film named
+     * by the release, Unavailable when TMDB could not be asked.
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    private function lookupTmdbMovie(TmdbClient $tmdbClient, string $imdbId, string $lookupId): ProviderResult
+    {
+        if (! $tmdbClient->isConfigured()) {
+            return ProviderResult::unavailable();
         }
 
         try {
-            $tmdbClient = app(TmdbClient::class);
-
-            if (! $tmdbClient->isConfigured()) {
-                return false;
+            $movie = $tmdbClient->movie($lookupId, ['credits', 'release_dates']); // @phpstan-ignore argument.type
+            if (! $movie->isFound() || ! is_array($movie->value) || $movie->value === []) {
+                return $movie->isUnavailable() || $movie->outcome === ProviderOutcome::Rejected ? $movie : ProviderResult::notFound();
             }
-
-            $tmdbLookup = $tmdbClient->getMovie($lookupId, ['credits', 'release_dates']); // @phpstan-ignore argument.type
-
-            if ($tmdbLookup === null || empty($tmdbLookup)) {
-                Cache::put($cacheKey, false, $expiresAt);
-
-                return false;
-            }
+            $tmdbLookup = $movie->value;
 
             $title = TmdbClient::getString($tmdbLookup, 'title');
             if ($this->currentTitle !== '' && ! empty($title)) {
@@ -652,9 +660,7 @@ class MovieService
                         }
                     }
                     if (! $matched) {
-                        Cache::put($cacheKey, false, $expiresAt);
-
-                        return false;
+                        return ProviderResult::notFound();
                     }
                 }
             }
@@ -665,9 +671,7 @@ class MovieService
 
                 $percent = $this->similarityPercent($this->currentYear, $tmdbYear);
                 if ($percent < self::YEAR_MATCH_PERCENT) {
-                    Cache::put($cacheKey, false, $expiresAt);
-
-                    return false;
+                    return ProviderResult::notFound();
                 }
             }
 
@@ -764,16 +768,12 @@ class MovieService
                 cli()->info('TMDb found '.$ret['title']);
             }
 
-            Cache::put($cacheKey, $ret, $expiresAt);
-
-            return $ret;
-
+            return ProviderResult::found($ret);
         } catch (\Throwable $e) {
             $this->movieProviderOutcomes['tmdb'] = $e::class;
             Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'tmdb', 'error_class' => $e::class]);
-            Cache::put($cacheKey, false, now()->addHours(6));
 
-            return false;
+            return ProviderResult::unavailable($e);
         }
     }
 
@@ -836,39 +836,40 @@ class MovieService
      */
     public function fetchIMDBProperties(string $imdbId): array|false
     {
-        $cacheKey = 'imdb_movie_'.md5($imdbId);
-        $expiresAt = now()->addDays(7);
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
-        }
+        $result = app(ProviderGateway::class)->remember(
+            'imdb',
+            'imdb_movie_'.md5($imdbId),
+            now()->addDays(7),
+            now()->addHours(6),
+            fn (): ProviderResult => $this->lookupImdbMovie($imdbId),
+        );
+
+        return $result->isFound() && is_array($result->value) ? $result->value : false;
+    }
+
+    /**
+     * IMDb's film for the id, NotFound when IMDb has none or it is not the film named by the
+     * release, Unavailable when neither IMDb nor its fallback answered.
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    private function lookupImdbMovie(string $imdbId): ProviderResult
+    {
         try {
             $scraper = app(ImdbScraper::class);
             $scraped = $scraper->fetchById($imdbId);
             if ($scraped === false || empty($scraped['title'])) {
-                $ttl = $scraper->wasBlockedByWaf()
-                    ? now()->addMinutes(30)
-                    : now()->addHours(6);
-
                 $failureReason = $scraper->getLastFailureReason() ?? 'unknown';
                 $fallbackFailureReason = $scraper->getLastFallbackFailureReason();
+                $unavailable = ImdbScraper::failureIsUnavailable($scraper->getLastFailureReason(), $fallbackFailureReason);
 
-                if ($scraper->wasBlockedByWaf()) {
-                    Log::warning('IMDb title fetch failed after WAF block.', [
-                        'imdb_id' => $imdbId,
-                        'reason' => $failureReason,
-                        'fallback_reason' => $fallbackFailureReason,
-                        'source' => $scraper->getLastFetchSource(),
-                        'negative_cache' => '30m',
-                    ]);
-                } else {
-                    Log::warning('IMDb metadata fetch failed.', [
-                        'imdb_id' => $imdbId,
-                        'reason' => $failureReason,
-                        'fallback_reason' => $fallbackFailureReason,
-                        'source' => $scraper->getLastFetchSource(),
-                        'negative_cache' => '6h',
-                    ]);
-                }
+                Log::warning($scraper->wasBlockedByWaf() ? 'IMDb title fetch failed after WAF block.' : 'IMDb metadata fetch failed.', [
+                    'imdb_id' => $imdbId,
+                    'reason' => $failureReason,
+                    'fallback_reason' => $fallbackFailureReason,
+                    'source' => $scraper->getLastFetchSource(),
+                    'negative_cache' => $unavailable ? 'none' : '6h',
+                ]);
 
                 if ($this->echooutput) {
                     $message = 'IMDb fetch failed ['.$failureReason;
@@ -880,27 +881,20 @@ class MovieService
                     cli()->warning($message);
                 }
 
-                Cache::put($cacheKey, false, $ttl);
-
-                return false;
+                return $unavailable ? ProviderResult::unavailable() : ProviderResult::notFound();
             }
             if (! empty($this->currentTitle)) {
                 $percent = $this->similarityPercent($this->currentTitle, $scraped['title']);
                 if ($percent < self::MATCH_PERCENT) {
-                    Cache::put($cacheKey, false, now()->addHours(6));
-
-                    return false;
+                    return ProviderResult::notFound();
                 }
                 if (! empty($this->currentYear) && ! empty($scraped['year'])) {
                     $yearPercent = $this->similarityPercent($this->currentYear, $scraped['year']);
                     if ($yearPercent < self::YEAR_MATCH_PERCENT) {
-                        Cache::put($cacheKey, false, now()->addHours(6));
-
-                        return false;
+                        return ProviderResult::notFound();
                     }
                 }
             }
-            Cache::put($cacheKey, $scraped, $expiresAt);
             if ($this->echooutput) {
                 $sourceLabel = match ($scraper->getLastFetchSource()) {
                     'imdbapi_dev' => 'IMDb fallback (imdbapi.dev)',
@@ -911,13 +905,12 @@ class MovieService
                 cli()->info($sourceLabel.' found '.$scraped['title']);
             }
 
-            return $scraped;
+            return ProviderResult::found($scraped);
         } catch (\Throwable $e) {
             $this->movieProviderOutcomes['imdb'] = $e::class;
             Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'imdb', 'error_class' => $e::class]);
-            Cache::put($cacheKey, false, now()->addHours(6));
 
-            return false;
+            return ProviderResult::unavailable($e);
         }
     }
 
@@ -934,37 +927,49 @@ class MovieService
             return false;
         }
 
-        $cacheKey = 'trakt_movie_'.md5($imdbId);
-        $expiresAt = now()->addDays(7);
+        $result = app(ProviderGateway::class)->remember(
+            'trakt',
+            'trakt_movie_'.md5($imdbId),
+            now()->addDays(7),
+            now()->addHours(6),
+            fn (): ProviderResult => $this->lookupTraktMovie($imdbId),
+        );
 
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
-        }
+        return $result->isFound() && is_array($result->value) ? $result->value : false;
+    }
 
+    /**
+     * Trakt's film for the IMDb id, NotFound when Trakt has none or it is not the film named
+     * by the release, Unavailable when Trakt could not be asked.
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    private function lookupTraktMovie(string $imdbId): ProviderResult
+    {
         try {
+            $gateway = app(ProviderGateway::class);
+            $unavailableBefore = $gateway->unavailableCount('trakt');
             $resp = $this->traktTv->client->getMovieSummary('tt'.$imdbId, 'full');
 
-            if ($resp === false || empty($resp['title'])) {
-                Cache::put($cacheKey, false, now()->addHours(6));
-
-                return false;
+            if (! is_array($resp) || empty($resp['title'])) {
+                return match (true) {
+                    $gateway->unavailableCount('trakt') > $unavailableBefore => ProviderResult::unavailable(),
+                    $gateway->lastOutcome('trakt') === ProviderOutcome::Rejected => ProviderResult::rejected(),
+                    default => ProviderResult::notFound(),
+                };
             }
 
             if (! empty($this->currentTitle)) {
                 $percent = $this->similarityPercent($this->currentTitle, $resp['title']);
                 if ($percent < self::MATCH_PERCENT) {
-                    Cache::put($cacheKey, false, now()->addHours(6));
-
-                    return false;
+                    return ProviderResult::notFound();
                 }
             }
 
             if (! empty($this->currentYear) && ! empty($resp['year'])) {
                 $percent = $this->similarityPercent($this->currentYear, $resp['year']);
                 if ($percent < self::YEAR_MATCH_PERCENT) {
-                    Cache::put($cacheKey, false, now()->addHours(6));
-
-                    return false;
+                    return ProviderResult::notFound();
                 }
             }
 
@@ -986,16 +991,12 @@ class MovieService
                 cli()->info('Trakt found '.$movieData['title']);
             }
 
-            Cache::put($cacheKey, $movieData, $expiresAt);
-
-            return $movieData;
-
+            return ProviderResult::found($movieData);
         } catch (\Throwable $e) {
             $this->movieProviderOutcomes['trakt'] = $e::class;
             Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'trakt', 'error_class' => $e::class]);
-            Cache::put($cacheKey, false, now()->addHours(6));
 
-            return false;
+            return ProviderResult::unavailable($e);
         }
     }
 
@@ -1010,40 +1011,49 @@ class MovieService
             return false;
         }
 
-        $cacheKey = 'omdb_movie_'.md5($imdbId);
-        $expiresAt = now()->addDays(7);
+        $result = app(ProviderGateway::class)->remember(
+            'omdb',
+            'omdb_movie_'.md5($imdbId),
+            now()->addDays(7),
+            now()->addHours(6),
+            fn (): ProviderResult => $this->lookupOmdbMovie($imdbId),
+        );
 
-        if (Cache::has($cacheKey)) {
-            return Cache::get($cacheKey);
-        }
+        return $result->isFound() && is_array($result->value) ? $result->value : false;
+    }
 
+    /**
+     * OMDb's film for the IMDb id, NotFound when OMDb has none or it is not the film named by
+     * the release, Unavailable when OMDb could not be asked (its spent-quota 401 included).
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    private function lookupOmdbMovie(string $imdbId): ProviderResult
+    {
         try {
             $resp = $this->omdbApi->fetch('i', 'tt'.$imdbId);
 
-            if (! is_object($resp) ||
-                $resp->message !== 'OK' ||
-                Str::contains($resp->data->Response, 'Error:') ||
-                $resp->data->Response === 'False') {
+            if (! is_object($resp) || $resp->message !== 'OK') {
+                // OMDb refused the request or could not be asked; only a 404 is an answer.
+                return app(ProviderGateway::class)->lastOutcome('omdb') === ProviderOutcome::NotFound
+                    ? ProviderResult::notFound()
+                    : ProviderResult::unavailable();
+            }
 
-                Cache::put($cacheKey, false, now()->addHours(6));
-
-                return false;
+            if (Str::contains($resp->data->Response, 'Error:') || $resp->data->Response === 'False') {
+                return ProviderResult::notFound();
             }
 
             if (! empty($this->currentTitle)) {
                 $percent = $this->similarityPercent($this->currentTitle, $resp->data->Title);
                 if ($percent < self::MATCH_PERCENT) {
-                    Cache::put($cacheKey, false, now()->addHours(6));
-
-                    return false;
+                    return ProviderResult::notFound();
                 }
 
                 if (! empty($this->currentYear)) {
                     $percent = $this->similarityPercent($this->currentYear, $resp->data->Year);
                     if ($percent < self::YEAR_MATCH_PERCENT) {
-                        Cache::put($cacheKey, false, now()->addHours(6));
-
-                        return false;
+                        return ProviderResult::notFound();
                     }
                 }
             }
@@ -1072,16 +1082,12 @@ class MovieService
                 cli()->info('OMDbAPI Found '.$movieData['title']);
             }
 
-            Cache::put($cacheKey, $movieData, $expiresAt);
-
-            return $movieData;
-
+            return ProviderResult::found($movieData);
         } catch (\Throwable $e) {
             $this->movieProviderOutcomes['omdb'] = $e::class;
             Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'omdb', 'error_class' => $e::class]);
-            Cache::put($cacheKey, false, now()->addHours(6));
 
-            return false;
+            return ProviderResult::unavailable($e);
         }
     }
 

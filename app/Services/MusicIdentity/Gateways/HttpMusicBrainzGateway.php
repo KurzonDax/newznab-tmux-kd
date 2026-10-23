@@ -18,10 +18,12 @@ use App\Services\MusicIdentity\Exceptions\MusicBrainzCircuitOpen;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzConfigurationException;
 use App\Services\MusicIdentity\Exceptions\MusicBrainzGatewayException;
 use App\Services\MusicIdentity\Support\MusicIdentityValueNormalizer;
-use Illuminate\Http\Client\ConnectionException;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ShortCircuit;
+use App\Services\ProviderGateway\ShortCircuitReason;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -48,6 +50,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
     public function __construct(
         private readonly MusicBrainzNormalizer $normalizer,
         private readonly MusicBrainzRequestPacer $requestPacer,
+        private readonly ProviderGateway $providers,
     ) {}
 
     public function candidatesFor(RecordingQuery $query): RecordingCandidates
@@ -664,7 +667,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             return $responses;
         }
 
-        $this->assertCircuitClosed($endpoint);
+        $this->assertCircuitClosed();
         $concurrency = max(1, (int) config('music-identity.musicbrainz.max_concurrency', 4));
         foreach (array_chunk($uncached, $concurrency, preserve_keys: true) as $chunk) {
             $pooled = Http::pool(function (Pool $pool) use ($budget, $chunk, $endpoint): array {
@@ -680,22 +683,14 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             foreach ($chunk as $key => $request) {
                 $response = $pooled[$key] ?? null;
                 if ($response instanceof Throwable) {
-                    if ($this->isTransientFailure($response)) {
-                        $this->recordFailure($endpoint);
-                    }
-                    if ($response instanceof MusicBrainzGatewayException) {
-                        throw $response;
-                    }
-
-                    throw new MusicBrainzGatewayException('MusicBrainz request failed: '.$response->getMessage(), previous: $response);
+                    throw $this->failure($response);
                 }
                 if (! $response instanceof Response) {
                     throw new MusicBrainzGatewayException('MusicBrainz request returned no response.');
                 }
 
-                $payload = $this->decodeResponse($response, $endpoint);
-                $this->validatePayload($payload, $request['shape'], $endpoint);
-                $this->recordSuccess($endpoint);
+                $payload = $this->decodeResponse($response);
+                $this->validatePayload($payload, $request['shape']);
                 $responses[$key] = $payload;
                 $this->cache($endpoint, $request, $payload);
             }
@@ -716,54 +711,41 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
             return $cached;
         }
 
-        $this->assertCircuitClosed($endpoint);
+        $this->assertCircuitClosed();
 
         try {
             $response = $this->pending(Http::acceptJson(), $endpoint, $budget)
                 ->get($this->url($endpoint, $request['path']), $request['query']);
-            $payload = $this->decodeResponse($response, $endpoint);
-            $this->validatePayload($payload, $request['shape'], $endpoint);
-            $this->recordSuccess($endpoint);
+            $payload = $this->decodeResponse($response);
+            $this->validatePayload($payload, $request['shape']);
             $this->cache($endpoint, $request, $payload);
 
             return $payload;
-        } catch (InvalidMusicBrainzResponse|MusicBrainzGatewayException $exception) {
-            throw $exception;
         } catch (Throwable $exception) {
-            if ($this->isTransientFailure($exception)) {
-                $this->recordFailure($endpoint);
-            }
-
-            throw new MusicBrainzGatewayException('MusicBrainz request failed: '.$exception->getMessage(), previous: $exception);
+            throw $this->failure($exception);
         }
     }
 
     /** @return array<string, mixed> */
-    private function decodeResponse(Response $response, string $endpoint): array
+    private function decodeResponse(Response $response): array
     {
         if ($response->status() === 404) {
-            $this->recordSuccess($endpoint);
-
             return [];
         }
         if (! $response->successful()) {
-            if ($response->status() === 429 || $response->serverError()) {
-                $this->recordFailure($endpoint);
-            }
-
             throw new MusicBrainzGatewayException(sprintf('MusicBrainz returned HTTP %d.', $response->status()));
         }
 
         try {
             $payload = json_decode($response->body(), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            $this->recordFailure($endpoint);
+            $this->reportUnusableAnswer();
 
             throw new InvalidMusicBrainzResponse('MusicBrainz returned invalid JSON.', previous: $exception);
         }
 
         if (! is_array($payload) || array_is_list($payload)) {
-            $this->recordFailure($endpoint);
+            $this->reportUnusableAnswer();
 
             throw new InvalidMusicBrainzResponse('MusicBrainz returned JSON that is not an object.');
         }
@@ -772,7 +754,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
     }
 
     /** @param array<string, mixed> $payload */
-    private function validatePayload(array $payload, string $shape, string $endpoint): void
+    private function validatePayload(array $payload, string $shape): void
     {
         if ($payload === []) {
             return;
@@ -864,49 +846,43 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
 
             throw new InvalidMusicBrainzResponse('Unknown MusicBrainz response shape.');
         } catch (InvalidMusicBrainzResponse $exception) {
-            $this->recordFailure($endpoint);
+            $this->reportUnusableAnswer();
 
             throw $exception;
         }
     }
 
+    /**
+     * The request through the provider gateway, which paces the public musicbrainz.org one
+     * request a second across workers, retries transient failures and breaker-guards it.
+     * Every attempt, retries included, spends one request of the budget.
+     */
     private function pending(
         PendingRequest $request,
         string $endpoint,
         MusicBrainzRequestBudget $budget,
     ): PendingRequest {
-        return $request
+        return $this->providers->through($request, 'musicbrainz', budget: static function () use ($budget): void {
+            $budget->consume();
+        })
             ->acceptJson()
             ->withUserAgent($this->userAgent($endpoint))
             ->connectTimeout(max(0.1, (float) config('music-identity.musicbrainz.connect_timeout_seconds', 2)))
-            ->timeout(max(0.1, (float) config('music-identity.musicbrainz.timeout_seconds', 8)))
-            ->beforeSending(function () use ($budget, $endpoint): void {
-                $budget->consume();
-                $this->requestPacer->pace($endpoint);
-            })
-            ->retry(
-                max(1, (int) config('music-identity.musicbrainz.retry.attempts', 3)),
-                max(0, (int) config('music-identity.musicbrainz.retry.backoff_milliseconds', 250)),
-                fn (Throwable $exception, PendingRequest $pendingRequest): bool => $this->shouldRetry($exception, $pendingRequest),
-                throw: false,
-            );
+            ->timeout(max(0.1, (float) config('music-identity.musicbrainz.timeout_seconds', 8)));
     }
 
-    private function shouldRetry(Throwable $exception, PendingRequest $request): bool
+    /** The exception a failed request becomes; an open breaker reads as an open circuit. */
+    private function failure(Throwable $exception): MusicBrainzGatewayException
     {
-        unset($request);
-
-        return $this->isTransientFailure($exception);
-    }
-
-    private function isTransientFailure(Throwable $exception): bool
-    {
-        if ($exception instanceof ConnectionException) {
-            return true;
+        if ($exception instanceof MusicBrainzGatewayException) {
+            return $exception;
+        }
+        if ($exception instanceof ShortCircuit
+            && in_array($exception->reason(), [ShortCircuitReason::BreakerOpen, ShortCircuitReason::TrialClaimed], true)) {
+            return new MusicBrainzCircuitOpen('MusicBrainz circuit is open after repeated provider failures.', previous: $exception);
         }
 
-        return $exception instanceof RequestException
-            && ($exception->response->serverError() || $exception->response->status() === 429);
+        return new MusicBrainzGatewayException('MusicBrainz request failed: '.$exception->getMessage(), previous: $exception);
     }
 
     /** @return array{path: string, query: array<string, int|string>, exact: bool, shape: string} */
@@ -970,41 +946,17 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         ));
     }
 
-    private function assertCircuitClosed(string $endpoint): void
+    private function assertCircuitClosed(): void
     {
-        if (Cache::has($this->circuitKey($endpoint, 'open'))) {
+        if ($this->providers->isOpen('musicbrainz')) {
             throw new MusicBrainzCircuitOpen('MusicBrainz circuit is open after repeated provider failures.');
         }
     }
 
-    private function recordFailure(string $endpoint): void
+    /** An answer MusicBrainz sent but that cannot be used counts against its breaker. */
+    private function reportUnusableAnswer(): void
     {
-        $failuresKey = $this->circuitKey($endpoint, 'failures');
-        Cache::add($failuresKey, 0, now()->addDay());
-        $failures = (int) Cache::increment($failuresKey);
-        $threshold = max(1, (int) config('music-identity.musicbrainz.circuit_breaker.failure_threshold', 3));
-        if ($failures >= $threshold) {
-            Cache::put(
-                $this->circuitKey($endpoint, 'open'),
-                true,
-                max(1, (int) config('music-identity.musicbrainz.circuit_breaker.open_seconds', 60)),
-            );
-        }
-    }
-
-    private function recordSuccess(string $endpoint): void
-    {
-        Cache::forget($this->circuitKey($endpoint, 'failures'));
-    }
-
-    private function circuitKey(string $endpoint, string $suffix): string
-    {
-        return sprintf(
-            'musicbrainz:circuit:%s:%s:%s',
-            hash('sha256', strtolower($endpoint)),
-            config('music-identity.musicbrainz.provider_version', 'ws2-v1'),
-            $suffix,
-        );
+        $this->providers->report('musicbrainz', ProviderOutcome::Unavailable);
     }
 
     private function endpoint(): ?string

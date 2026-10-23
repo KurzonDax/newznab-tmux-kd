@@ -6,6 +6,8 @@ namespace Tests\Feature;
 
 use App\Facades\Search;
 use App\Models\Category;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
 use App\Services\Runners\PostProcessRunner;
 use App\Services\Tmux\TmuxMonitorService;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
@@ -19,6 +21,7 @@ use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingPipeline;
 use App\Services\TvProcessing\TvProcessingResult;
 use App\Services\TvProcessor;
+use GuzzleHttp\Handler\MockHandler;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
@@ -497,6 +500,39 @@ class TvEpisodeRevisitTest extends TestCase
             ->once()
             ->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'TV revisit finalization failed')
                 && $context['exception'] instanceof QueryException);
+    }
+
+    #[Test]
+    public function a_lookup_no_provider_could_answer_stays_pending_instead_of_settling_as_unmatched(): void
+    {
+        config([
+            'nntmux.echocli' => false,
+            'tmdb.api_key' => 'tmdb-key',
+            'nntmux_api.trakttv_api_key' => 'trakt-key',
+            'tvdb.api_key' => 'tvdb-key',
+            'tvdb.user_pin' => 'pin',
+        ]);
+        $gateway = app(ProviderGateway::class);
+        foreach (['tvdb', 'tvmaze', 'tmdb', 'trakt'] as $provider) {
+            foreach (range(1, 3) as $failure) {
+                $gateway->report($provider, ProviderOutcome::Unavailable);
+            }
+        }
+        $gateway->useHandler('tvdb', new MockHandler);
+        Http::preventStrayRequests();
+        Http::fake();
+        $this->insertRelease(1);
+
+        $result = TvProcessingPipeline::createDefault(echoOutput: false)->processRelease(DB::table('releases')->find(1));
+
+        $this->assertFalse($result['matched']);
+        Http::assertNothingSent();
+        $this->assertSame(0, $gateway->counters('tvdb')['requests']);
+        $this->assertSame(0, $gateway->counters('tvmaze')['requests']);
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(0, (int) $release->tv_episodes_id, 'not settled as no match');
+        $this->assertNull($release->tv_episode_lookup_attempted_at);
+        $this->assertSame([1], TvProcessingCandidateQuery::query()->pluck('id')->all(), 'a candidate again on the next pass');
     }
 
     #[Test]

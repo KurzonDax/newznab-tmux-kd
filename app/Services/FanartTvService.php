@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
+use App\Services\ProviderGateway\ProviderResult;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -26,16 +28,10 @@ class FanartTvService
 
     protected int $timeout;
 
-    protected int $retryTimes;
-
-    protected int $retryDelay;
-
     public function __construct(?string $apiKey = null)
     {
         $this->apiKey = $apiKey ?? (string) config('nntmux_api.fanarttv_api_key', '');
         $this->timeout = (int) config('nntmux_api.fanarttv_timeout', 30);
-        $this->retryTimes = (int) config('nntmux_api.fanarttv_retry_times', 3);
-        $this->retryDelay = (int) config('nntmux_api.fanarttv_retry_delay', 100);
     }
 
     /**
@@ -54,58 +50,72 @@ class FanartTvService
      */
     protected function get(string $endpoint): ?array
     {
+        $result = $this->request($endpoint);
+
+        return $result->isFound() && is_array($result->value) ? $result->value : null;
+    }
+
+    /**
+     * A GET request to the Fanart.TV API through the provider gateway, with whether Fanart.TV
+     * has no art (NotFound) or could not be asked (Unavailable).
+     *
+     * @return ProviderResult<array<string, mixed>|null>
+     */
+    public function request(string $endpoint): ProviderResult
+    {
         if (! $this->isConfigured()) {
             Log::debug('FanartTV API key is not configured');
 
-            return null;
+            return ProviderResult::unavailable();
         }
 
-        $url = self::BASE_URL.'/'.$endpoint;
+        $gateway = app(ProviderGateway::class);
 
         try {
-            $response = Http::timeout($this->timeout)
-                ->retry($this->retryTimes, $this->retryDelay)
+            $response = $gateway->http('fanarttv')
+                ->timeout($this->timeout)
                 ->withQueryParameters(['api_key' => $this->apiKey])
-                ->get($url);
-
-            if ($response->successful()) {
-                $data = $response->json();
-
-                // Check for API error responses
-                if (isset($data['status']) && $data['status'] === 'error') {
-                    Log::debug('FanartTV API returned error status', [
-                        'endpoint' => $endpoint,
-                        'message' => $data['error message'] ?? 'Unknown error',
-                    ]);
-
-                    return null;
-                }
-
-                return $data;
-            }
-
-            // Handle specific error codes
-            if ($response->status() === 404) {
-                Log::debug('FanartTV: Resource not found', ['endpoint' => $endpoint]);
-
-                return null;
-            }
-
-            Log::warning('FanartTV API request failed', [
-                'endpoint' => $endpoint,
-                'status' => $response->status(),
-                'body' => $response->body(),
-            ]);
-
-            return null;
+                ->get(self::BASE_URL.'/'.$endpoint);
         } catch (\Throwable $e) {
             Log::warning('FanartTV API request exception', [
                 'endpoint' => $endpoint,
                 'message' => $e->getMessage(),
             ]);
 
-            return null;
+            return ProviderResult::unavailable($e);
         }
+
+        if ($response->successful()) {
+            $data = $response->json();
+
+            // Check for API error responses
+            if (isset($data['status']) && $data['status'] === 'error') {
+                Log::debug('FanartTV API returned error status', [
+                    'endpoint' => $endpoint,
+                    'message' => $data['error message'] ?? 'Unknown error',
+                ]);
+                $gateway->report('fanarttv', ProviderOutcome::NotFound);
+
+                return ProviderResult::notFound();
+            }
+
+            return is_array($data) ? ProviderResult::found($data) : ProviderResult::notFound();
+        }
+
+        // Handle specific error codes
+        if ($response->status() === 404) {
+            Log::debug('FanartTV: Resource not found', ['endpoint' => $endpoint]);
+
+            return ProviderResult::notFound();
+        }
+
+        Log::warning('FanartTV API request failed', [
+            'endpoint' => $endpoint,
+            'status' => $response->status(),
+            'body' => $response->body(),
+        ]);
+
+        return new ProviderResult($gateway->lastOutcome('fanarttv') ?? ProviderOutcome::Unavailable);
     }
 
     /**

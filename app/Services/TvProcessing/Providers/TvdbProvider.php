@@ -6,7 +6,7 @@ namespace App\Services\TvProcessing\Providers;
 
 use App\Enums\ImageAssetProfile;
 use App\Services\FanartTvService;
-use App\Services\ObfuscationRecovery\RecoveryCatalog;
+use App\Services\ProviderGateway\ProviderGateway;
 use App\Services\ReleaseImageService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
@@ -15,6 +15,7 @@ use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ParseException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ResourceNotFoundException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\UnauthorizedException;
 use CanIHaveSomeCoffee\TheTVDbAPI\TheTVDbAPI;
+use GuzzleHttp\Exception\TransferException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
 
 /**
@@ -53,8 +54,8 @@ class TvdbProvider extends AbstractTvProvider
     public function __construct()
     {
         parent::__construct();
-        $this->client = new TheTVDbAPI(client: RecoveryCatalog::client([
-            'base_uri' => TheTVDbAPI::API_BASE_URI, 'verify' => false, 'headers' => ['accept' => 'application/json'],
+        $this->client = new TheTVDbAPI(client: app(ProviderGateway::class)->guzzle('tvdb', [
+            'base_uri' => TheTVDbAPI::API_BASE_URI, 'headers' => ['accept' => 'application/json'],
         ]));
         $this->local = false;
         $this->authorizeTvdb();
@@ -280,6 +281,9 @@ class TvdbProvider extends AbstractTvProvider
         $releaseYear = $this->resolveReleaseYear($name, $releaseYear);
         try {
             $response = $this->client->search()->search($name, ['type' => 'series']);
+        } catch (TransferException) {
+            // TVDB could not be asked (down, or its breaker is open): no answer, not a miss.
+            $response = false;
         } catch (ResourceNotFoundException $e) {
             $response = false;
             cli()->error('Show not found on TVDB');
@@ -290,8 +294,6 @@ class TvdbProvider extends AbstractTvProvider
                 cli()->error('Not authorized to access TVDB');
             }
         }
-
-        sleep(1);
 
         if (\is_array($response)) {
             $shows = array_filter(
@@ -343,7 +345,7 @@ class TvdbProvider extends AbstractTvProvider
             if ($videoId > 0) {
                 try {
                     $response = $this->client->series()->allEpisodes($siteId);
-                } catch (ResourceNotFoundException $error) {
+                } catch (ResourceNotFoundException|TransferException) {
                     return false;
                 } catch (UnauthorizedException $error) {
                     try {
@@ -359,12 +361,18 @@ class TvdbProvider extends AbstractTvProvider
                             $response = $episodeBaseRecord;
                         }
                     }
-                } catch (ResourceNotFoundException $error) {
+                } catch (ResourceNotFoundException|TransferException) {
+                    return false;
+                } catch (UnauthorizedException) {
+                    try {
+                        $this->authorizeTvdb();
+                    } catch (UnauthorizedException) {
+                        cli()->error('Not authorized to access TVDB');
+                    }
+
                     return false;
                 }
             }
-
-            sleep(1);
 
             if (\is_object($response)) {
                 if ($this->checkRequiredAttr($response, 'tvdbE')) {
@@ -394,6 +402,8 @@ class TvdbProvider extends AbstractTvProvider
             $poster = $this->client->series()->artworks((int) $show->tvdb_id);
             $poster = collect($poster)->where('type', 2)->sortByDesc('score')->first();
             $this->posterUrl = ! empty($poster->image) ? $poster->image : '';
+        } catch (TransferException) {
+            $this->posterUrl = '';
         } catch (ResourceNotFoundException $e) {
             cli()->error('Poster image not found on TVDB');
         } catch (UnauthorizedException $error) {
@@ -545,6 +555,10 @@ class TvdbProvider extends AbstractTvProvider
         } else {
             try {
                 $this->token = $this->client->authentication()->login(config('tvdb.api_key'), config('tvdb.user_pin'));
+            } catch (TransferException) {
+                // TVDB could not be reached: requests go without a token, are refused as
+                // unauthorized once TVDB answers again, and log in again then.
+                $this->client->setToken(null);
             } catch (UnauthorizedException $error) {
                 cli()->warning('Could not reach TVDB API. Running in local mode only!', true);
                 $this->local = true;

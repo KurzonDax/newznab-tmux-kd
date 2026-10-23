@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\ObfuscationRecovery;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\HandlerStack;
+use App\Services\ProviderGateway\ProviderGateway;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Cache\Events\CacheHit;
@@ -41,18 +40,13 @@ final class RecoveryCatalog
         }
     }
 
-    /** @param array<string,mixed> $options */
-    public static function client(array $options = []): Client
-    {
-        $stack = HandlerStack::create();
-        $stack->push(self::middleware(), 'recovery_catalog');
-
-        return new Client([...$options, 'handler' => $stack]);
-    }
-
     public static function middleware(): callable
     {
         return static fn (callable $handler): callable => static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
+            if (isset($options[ProviderGateway::OPTION])) {
+                // The gateway records each of its attempts itself.
+                return $handler($request, $options);
+            }
             $id = self::begin($request->getUri()->getHost(), 'http');
             try {
                 return $handler($request, $options)->then(
@@ -72,24 +66,6 @@ final class RecoveryCatalog
                 throw $error;
             }
         };
-    }
-
-    /** @template T
-     * @param  callable():T  $operation
-     * @return T
-     */
-    public static function legacy(string $provider, callable $operation): mixed
-    {
-        $id = self::begin($provider, 'legacy_http');
-        try {
-            $result = $operation();
-            self::finish($id, $result === false || $result === null ? 'unavailable' : 'response_received');
-
-            return $result;
-        } catch (Throwable $error) {
-            self::finish($id, 'transport_failure');
-            throw $error;
-        }
     }
 
     public static function cacheHit(CacheHit $event): void
@@ -136,7 +112,8 @@ final class RecoveryCatalog
         }, 1);
     }
 
-    private static function begin(string $provider, string $kind): ?int
+    /** Opens a ledger row for a request inside {@see run()}; null outside one. */
+    public static function begin(string $provider, string $kind): ?int
     {
         if (self::$publication === null) {
             return null;
@@ -148,7 +125,7 @@ final class RecoveryCatalog
         ]);
     }
 
-    private static function finish(?int $id, string $outcome, ?int $status = null, ?int $bytes = null): void
+    public static function finish(?int $id, string $outcome, ?int $status = null, ?int $bytes = null): void
     {
         if ($id === null) {
             return;

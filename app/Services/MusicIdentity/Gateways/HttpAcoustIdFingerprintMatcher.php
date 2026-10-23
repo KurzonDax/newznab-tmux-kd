@@ -10,18 +10,18 @@ use App\Services\MusicIdentity\DTO\AcousticFingerprintQuery;
 use App\Services\MusicIdentity\DTO\AcousticRecording;
 use App\Services\MusicIdentity\Exceptions\AcousticFingerprintLookupException;
 use App\Services\MusicIdentity\Support\MusicIdentityValueNormalizer;
+use App\Services\ProviderGateway\ProviderGateway;
+use App\Services\ProviderGateway\ProviderOutcome;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Sleep;
 use JsonException;
+use Psr\Http\Message\ResponseInterface;
 
 /**
  * AcoustID `/v2/lookup` by fingerprint. Requests are POSTed with the configured client key, the
- * whole-file duration and the fingerprint, paced by the shared {@see AcoustIdRequestPacer}, and
- * every validated answer (a no-match or a rejection of the fingerprint included) is cached per
+ * whole-file duration and the fingerprint through the provider gateway, which spaces them across
+ * workers, retries a throttled or unreadable answer and honours Retry-After for every worker.
+ * Every validated answer (a no-match or a rejection of the fingerprint included) is cached per
  * fingerprint algorithm, generator version, hash and duration. Retryable failures, rejections of
  * the deployment (its client key) included, are never cached.
  */
@@ -38,7 +38,8 @@ final readonly class HttpAcoustIdFingerprintMatcher implements AcousticFingerpri
      */
     private const array CONFIGURATION_ERROR_CODES = [4, 12, 17];
 
-    public function __construct(private AcoustIdRequestPacer $pacer) {}
+    // @phpstan-ignore constructor.unusedParameter (Its callers still pass the pacer; the provider gateway now paces every AcoustID request.)
+    public function __construct(AcoustIdRequestPacer $pacer) {}
 
     public function available(): bool
     {
@@ -80,72 +81,80 @@ final readonly class HttpAcoustIdFingerprintMatcher implements AcousticFingerpri
     /** @return array<string, mixed> the decoded `status: ok` payload */
     private function request(string $clientKey, AcousticFingerprintQuery $query): array
     {
-        $attempts = max(1, (int) config('music-identity.acoustid.retry.attempts', 3));
-        for ($attempt = 1; ; $attempt++) {
-            $this->pacer->pace();
-
-            try {
-                $response = Http::asForm()
-                    ->acceptJson()
-                    ->connectTimeout(max(0.1, (float) config('music-identity.acoustid.connect_timeout_seconds', 5)))
-                    ->timeout(max(0.1, (float) config('music-identity.acoustid.timeout_seconds', 10)))
-                    ->post((string) config('music-identity.acoustid.lookup_url', 'https://api.acoustid.org/v2/lookup'), [
-                        'format' => 'json',
-                        'client' => $clientKey,
-                        'duration' => $query->durationSeconds,
-                        'fingerprint' => $query->fingerprint,
-                        'meta' => self::META,
-                    ]);
-            } catch (ConnectionException $exception) {
-                if ($attempt >= $attempts) {
-                    throw new AcousticFingerprintLookupException('AcoustID request failed: '.$exception->getMessage(), retryable: true, previous: $exception);
-                }
-                $this->wait($this->backoffMilliseconds($attempt));
-
-                continue;
-            }
-
-            $payload = $this->decode($response);
-            if ($response->successful() && $payload !== null && ($payload['status'] ?? null) === 'ok') {
-                return $payload;
-            }
-
-            $errorCode = $this->errorCode($payload);
-            $message = $response->successful() && $errorCode === null
-                ? 'AcoustID returned an unreadable response.'
-                : sprintf('AcoustID lookup returned HTTP %d%s.', $response->status(), $this->errorDescription($payload));
-            if (in_array($response->status(), [401, 403], true) || in_array($errorCode, self::CONFIGURATION_ERROR_CODES, true)) {
-                // A rejection of the deployment, not of this fingerprint: defer the decision until it is fixed.
-                throw new AcousticFingerprintLookupException($message, retryable: true);
-            }
-            $retryable = $response->status() === 429
-                || $response->serverError()
-                || in_array($errorCode, self::RETRYABLE_ERROR_CODES, true)
-                || ($response->successful() && $errorCode === null);
-            if (! $retryable) {
-                // A rejection of this fingerprint is its answer, cached like any other.
-                throw new AcousticFingerprintLookupException($message, retryable: false, cacheable: true);
-            }
-
-            $retryAfterMilliseconds = $this->retryAfterMilliseconds($response);
-            $maximumWaitMilliseconds = max(0, (int) config('music-identity.acoustid.retry.maximum_wait_seconds', 30)) * 1_000;
-            if ($retryAfterMilliseconds !== null) {
-                // Every worker honours the service's hold-off, not only the one that received it.
-                $this->pacer->holdOff(min($retryAfterMilliseconds, $maximumWaitMilliseconds));
-            }
-            $delayMilliseconds = max($this->backoffMilliseconds($attempt), $retryAfterMilliseconds ?? 0);
-            if ($attempt >= $attempts || $delayMilliseconds > $maximumWaitMilliseconds) {
-                throw new AcousticFingerprintLookupException($message, retryable: true);
-            }
-            $this->wait($this->backoffMilliseconds($attempt));
+        try {
+            $response = app(ProviderGateway::class)
+                ->http('acoustid', classify: fn (ResponseInterface $response): ProviderOutcome => $this->classify($response))
+                ->asForm()
+                ->acceptJson()
+                ->connectTimeout(max(0.1, (float) config('music-identity.acoustid.connect_timeout_seconds', 5)))
+                ->timeout(max(0.1, (float) config('music-identity.acoustid.timeout_seconds', 10)))
+                ->post((string) config('music-identity.acoustid.lookup_url', 'https://api.acoustid.org/v2/lookup'), [
+                    'format' => 'json',
+                    'client' => $clientKey,
+                    'duration' => $query->durationSeconds,
+                    'fingerprint' => $query->fingerprint,
+                    'meta' => self::META,
+                ]);
+        } catch (ConnectionException $exception) {
+            throw new AcousticFingerprintLookupException('AcoustID request failed: '.$exception->getMessage(), retryable: true, previous: $exception);
         }
+
+        $payload = $this->decode($response->body());
+        if ($response->successful() && $payload !== null && ($payload['status'] ?? null) === 'ok') {
+            return $payload;
+        }
+
+        $errorCode = $this->errorCode($payload);
+        $message = $response->successful() && $errorCode === null
+            ? 'AcoustID returned an unreadable response.'
+            : sprintf('AcoustID lookup returned HTTP %d%s.', $response->status(), $this->errorDescription($payload));
+
+        // A rejection of this fingerprint is its answer, cached like any other. Anything else
+        // (a rejection of the deployment, or throttling and failures the retries did not get
+        // past) defers the decision.
+        $rejectsFingerprint = $this->classify($response->toPsrResponse()) === ProviderOutcome::Rejected
+            && ! $this->rejectsDeployment($response->status(), $errorCode);
+
+        throw new AcousticFingerprintLookupException($message, retryable: ! $rejectsFingerprint, cacheable: $rejectsFingerprint);
+    }
+
+    /**
+     * What one AcoustID answer means: an ok payload is found, throttling, a failure or an
+     * unreadable 2xx reply is unavailable (and retried), any other refusal is rejected.
+     */
+    private function classify(ResponseInterface $response): ProviderOutcome
+    {
+        $status = $response->getStatusCode();
+        $successful = $status >= 200 && $status < 300;
+        $payload = $this->decode((string) $response->getBody());
+        if ($successful && $payload !== null && ($payload['status'] ?? null) === 'ok') {
+            return ProviderOutcome::Found;
+        }
+
+        $errorCode = $this->errorCode($payload);
+        if ($this->rejectsDeployment($status, $errorCode)) {
+            return ProviderOutcome::Rejected;
+        }
+
+        return $status === 429
+            || $status >= 500
+            || in_array($errorCode, self::RETRYABLE_ERROR_CODES, true)
+            || ($successful && $errorCode === null)
+            ? ProviderOutcome::Unavailable
+            : ProviderOutcome::Rejected;
+    }
+
+    /** A rejection of the deployment (its client key), not of the fingerprint. */
+    private function rejectsDeployment(int $status, ?int $errorCode): bool
+    {
+        return in_array($status, [401, 403], true) || in_array($errorCode, self::CONFIGURATION_ERROR_CODES, true);
     }
 
     /** @return array<string, mixed>|null */
-    private function decode(Response $response): ?array
+    private function decode(string $body): ?array
     {
         try {
-            $payload = json_decode($response->body(), true, flags: JSON_THROW_ON_ERROR);
+            $payload = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             return null;
         }
@@ -170,35 +179,6 @@ final readonly class HttpAcoustIdFingerprintMatcher implements AcousticFingerpri
         }
 
         return sprintf(' (error %s: %s)', $error['code'] ?? '?', is_string($error['message'] ?? null) ? $error['message'] : 'no message');
-    }
-
-    private function backoffMilliseconds(int $attempt): int
-    {
-        return max(0, (int) config('music-identity.acoustid.retry.backoff_milliseconds', 1_000)) * (2 ** ($attempt - 1));
-    }
-
-    private function retryAfterMilliseconds(Response $response): ?int
-    {
-        $retryAfter = trim($response->header('Retry-After'));
-        if ($retryAfter === '') {
-            return null;
-        }
-        if (ctype_digit($retryAfter)) {
-            return (int) $retryAfter * 1_000;
-        }
-
-        try {
-            return max(0, (int) now()->diffInMilliseconds(Carbon::parse($retryAfter), false));
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    private function wait(int $milliseconds): void
-    {
-        if ($milliseconds > 0) {
-            Sleep::usleep($milliseconds * 1_000);
-        }
     }
 
     /**

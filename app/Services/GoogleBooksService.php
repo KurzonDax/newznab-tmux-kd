@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\BookProviderException;
+use App\Services\ProviderGateway\ProviderGateway;
 use App\Support\BookIsbn;
 use Carbon\Carbon;
 use GuzzleHttp\Client;
@@ -26,7 +27,7 @@ class GoogleBooksService
     {
         $this->apiKey = trim($apiKey ?? (string) config('nntmux_api.google_books_api_key', '')) ?: null;
 
-        $this->client = $client ?? new Client([
+        $this->client = app(ProviderGateway::class)->guzzle('googlebooks', [
             'timeout' => 15,
             'connect_timeout' => 10,
             'http_errors' => false,
@@ -34,7 +35,7 @@ class GoogleBooksService
                 'Accept' => 'application/json',
                 'User-Agent' => 'NNTmux/1.0',
             ],
-        ]);
+        ], $client);
     }
 
     public function hasApiKey(): bool
