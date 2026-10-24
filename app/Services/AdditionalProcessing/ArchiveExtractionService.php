@@ -107,21 +107,22 @@ class ArchiveExtractionService
             ];
         }
 
+        // A video signature wins over ArchiveInfo: its fragment search can read random
+        // video bytes as a RAR header and report a phantom (often passworded) file.
+        $videoType = $this->detectStandaloneVideo($compressedData);
+        if ($videoType !== null) {
+            return [
+                'success' => false,
+                'files' => [],
+                'hasPassword' => false,
+                'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
+                'standaloneVideoType' => $videoType,
+                'standaloneVideoData' => $compressedData,
+            ];
+        }
+
         // Try ArchiveInfo for RAR/ZIP
         if (! $this->archiveInfo->setData($compressedData, true)) {
-            // Handle standalone video detection
-            $videoType = $this->detectStandaloneVideo($compressedData);
-            if ($videoType !== null) {
-                return [
-                    'success' => false,
-                    'files' => [],
-                    'hasPassword' => false,
-                    'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
-                    'standaloneVideoType' => $videoType,
-                    'standaloneVideoData' => $compressedData,
-                ];
-            }
-
             return $result;
         }
 
@@ -742,12 +743,9 @@ class ArchiveExtractionService
                 return 'mpg';
             }
         }
-        // MP4/MOV
+        // MP4/MOV, any brand (the PayloadSniffer rule)
         if (substr($data, 4, 4) === 'ftyp') {
-            $brands = ['isom', 'iso2', 'avc1', 'mp41', 'mp42', 'dash', 'MSNV', 'qt  ', 'M4V ', 'M4P ', 'M4B ', 'M4A '];
-            if (in_array(substr($data, 8, 4), $brands, true)) {
-                return 'mp4';
-            }
+            return 'mp4';
         }
 
         return null;
