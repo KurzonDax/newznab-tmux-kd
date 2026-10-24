@@ -712,8 +712,7 @@ class ArchiveExtractionService
      */
     public function detectStandaloneVideo(string $data): ?string
     {
-        $len = strlen($data);
-        if ($len < 16) {
+        if (strlen($data) < 16) {
             return null;
         }
 
@@ -731,24 +730,51 @@ class ArchiveExtractionService
             return 'mpg';
         }
         // Transport Stream
-        if ($len >= 188 * 5) {
-            $isTs = true;
-            for ($i = 0; $i < 5; $i++) {
-                if (! isset($data[188 * $i]) || $data[188 * $i] !== "\x47") {
-                    $isTs = false;
-                    break;
-                }
-            }
-            if ($isTs) {
-                return 'mpg';
-            }
+        if ($this->hasTransportSyncBytes($data, 188, 0)) {
+            return 'mpg';
+        }
+        // M2TS / BDAV: 192-byte packets, a 4-byte timestamp before each sync byte
+        if ($this->hasTransportSyncBytes($data, 192, 4)) {
+            return 'm2ts';
         }
         // MP4/MOV, any brand (the PayloadSniffer rule)
         if (substr($data, 4, 4) === 'ftyp') {
             return 'mp4';
         }
+        // ASF (WMV/WMA) header object GUID
+        if (strncmp($data, "\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA\x00\x62\xCE\x6C", 16) === 0) {
+            return 'wmv';
+        }
+        if (strncmp($data, "FLV\x01", 4) === 0) {
+            return 'flv';
+        }
+        if (strncmp($data, '.RMF', 4) === 0) {
+            return 'rm';
+        }
+        if (strncmp($data, 'OggS', 4) === 0) {
+            return 'ogv';
+        }
+        // QuickTime without a leading ftyp atom
+        if (in_array(substr($data, 4, 4), ['moov', 'mdat', 'wide', 'free', 'skip', 'pnot'], true)) {
+            return 'mov';
+        }
 
         return null;
+    }
+
+    /**
+     * Whether the first five transport packets of $packetSize bytes carry the
+     * 0x47 sync byte at $syncOffset.
+     */
+    private function hasTransportSyncBytes(string $data, int $packetSize, int $syncOffset): bool
+    {
+        for ($i = 0; $i < 5; $i++) {
+            if (($data[$packetSize * $i + $syncOffset] ?? null) !== "\x47") {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
