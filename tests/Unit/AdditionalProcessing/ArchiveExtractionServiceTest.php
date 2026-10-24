@@ -60,6 +60,49 @@ class ArchiveExtractionServiceTest extends TestCase
         }
     }
 
+    #[DataProvider('videoPayloadPrefixes')]
+    public function test_a_video_payload_is_not_inspected_as_an_archive(string $prefix, string $type): void
+    {
+        $payload = str_pad($prefix, 4096, "\0").self::passwordedRar15FileHeader().str_repeat("\0", 4096);
+        $service = new ArchiveExtractionService($this->makeConfig());
+        $context = new ReleaseProcessingContext(new Release(['id' => 1]));
+
+        $result = $service->processCompressedData($payload, $context, $this->makeTempDirectory('video-payload').'/');
+
+        $this->assertFalse($result['success']);
+        $this->assertSame($type, $result['standaloneVideoType'] ?? null);
+        $this->assertSame($payload, $result['standaloneVideoData']);
+        $this->assertSame([], $result['files']);
+        $this->assertFalse($result['hasPassword']);
+        $this->assertSame(ReleaseBrowseService::PASSWD_NONE, $result['passwordStatus']);
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function videoPayloadPrefixes(): array
+    {
+        return [
+            'Matroska' => ["\x1A\x45\xDF\xA3", 'mkv'],
+            'AVI' => ["RIFF\x00\x00\x00\x00AVI ", 'avi'],
+            'MP4, listed brand' => ["\x00\x00\x00\x18ftypisom", 'mp4'],
+            'MP4, brand outside the old list' => ["\x00\x00\x00\x1Cftypiso5", 'mp4'],
+            'MPEG-PS' => ["\x00\x00\x01\xBA", 'mpg'],
+        ];
+    }
+
+    /**
+     * A RAR 1.5 file-header block for a passworded "phantom.bin", the shape rarinfo's
+     * fragment search can find inside video bytes.
+     */
+    private static function passwordedRar15FileHeader(): string
+    {
+        $name = 'phantom.bin';
+        $body = pack('CvvVVCVVCCvV', 0x74, 0x8004, 32 + strlen($name), 1000, 1000, 2, 0, 0, 29, 0x30, strlen($name), 0x20).$name;
+
+        return pack('v', crc32($body) & 0xFFFF).$body;
+    }
+
     protected function tearDown(): void
     {
         Mockery::close();
