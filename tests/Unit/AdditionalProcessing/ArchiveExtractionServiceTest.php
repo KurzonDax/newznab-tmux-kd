@@ -88,6 +88,17 @@ class ArchiveExtractionServiceTest extends TestCase
             'MP4, listed brand' => ["\x00\x00\x00\x18ftypisom", 'mp4'],
             'MP4, brand outside the old list' => ["\x00\x00\x00\x1Cftypiso5", 'mp4'],
             'MPEG-PS' => ["\x00\x00\x01\xBA", 'mpg'],
+            'ASF' => ["\x30\x26\xB2\x75\x8E\x66\xCF\x11\xA6\xD9\x00\xAA\x00\x62\xCE\x6C", 'wmv'],
+            'FLV' => ["FLV\x01\x05\x00\x00\x00\x09", 'flv'],
+            'M2TS' => [str_repeat("\x00\x00\x00\x00\x47".str_repeat("\x00", 187), 5), 'm2ts'],
+            'RealMedia' => [".RMF\x00\x00\x00\x12", 'rm'],
+            'Ogg' => ["OggS\x00\x02", 'ogv'],
+            'QuickTime, wide first' => ["\x00\x00\x00\x08wide", 'mov'],
+            'QuickTime, free first' => ["\x00\x00\x00\x08free", 'mov'],
+            'QuickTime, skip first' => ["\x00\x00\x00\x08skip", 'mov'],
+            'QuickTime, mdat first' => ["\x00\x00\x10\x00mdat", 'mov'],
+            'QuickTime, moov first' => ["\x00\x00\x10\x00moov", 'mov'],
+            'QuickTime, pnot first' => ["\x00\x00\x00\x14pnot", 'mov'],
         ];
     }
 
