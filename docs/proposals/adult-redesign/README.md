@@ -22,7 +22,7 @@ title page: adult releases carry no title, performer or studio data.
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue that shaped the design |
 | [`evidence/`](evidence/) | the query-lab write-up the data contract cites |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's Adult screens, with `path:line` |
-| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder pictures and no clips: `adult.html`, its behaviour checks (`check.mjs`) and 18 reference screens in both themes (`reference/`) |
+| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder pictures and no clips: `adult.html`, its behaviour checks (`check.mjs`) and 19 reference screens in both themes (`reference/`) |
 
 ```bash
 cd docs/proposals/adult-redesign/prototype

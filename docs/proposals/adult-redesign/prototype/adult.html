@@ -169,6 +169,19 @@ input[type=checkbox]{width:16px;height:16px;accent-color:var(--acc);cursor:point
 .dlg .dlghead p{margin-top:4px;font-size:13px;line-height:1.4;color:var(--dim);overflow-wrap:anywhere}
 .dlg .dlghead button{margin-left:auto}
 .dlg .body{padding:6px 22px 22px;overflow:auto}
+/* a long release name in the toast ("Deleted <name>") wraps inside the pill (finish reviewer, 2026-10-24) */
+.toast{max-width:min(720px,calc(100vw - 48px));overflow-wrap:anywhere;text-align:center}
+/* the admin's Delete (2026-10-24): the app's existing danger red (hue 12, the poster page's Confirm blacklist) */
+.btn.danger{--h:12;background:oklch(0.31 0.07 var(--h));color:oklch(0.86 0.11 var(--h))}
+.btn.danger:hover{filter:none;background:oklch(0.37 0.09 var(--h))}
+:root[data-theme=light] .btn.danger{background:oklch(0.92 0.045 var(--h));color:oklch(0.45 0.16 var(--h))}
+:root[data-theme=light] .btn.danger:hover{background:oklch(0.87 0.07 var(--h))}
+.btn.danger:focus-visible{outline-color:var(--ink);outline-offset:1px}
+.dlg.del{width:min(560px,100%)}
+.dlg.del .body{padding:18px 22px 22px}
+.dlg.del .delname{padding:12px 14px;border-radius:10px;background:var(--bg);font-weight:600;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+.dlg.del .delnote{margin-top:14px;font-size:14px;line-height:1.5;color:var(--dim)}
+.dacts.end{justify-content:flex-end;margin-top:20px}
 /* ---- colour: one hue per section, one hue per kind of value; coral stays reserved for actions ---- */
 .hue{display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:7px;font-size:12.5px;font-weight:600;white-space:nowrap;background:oklch(0.31 0.06 var(--h));color:oklch(0.87 0.08 var(--h))}
 :root[data-theme=light] .hue{background:oklch(0.93 0.035 var(--h));color:oklch(0.40 0.13 var(--h))}
@@ -455,7 +468,7 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 /* release-list buttons in colour (2026-09-26): coral stays on Download only; Copy link blue, Cart green, Watch violet.
    Tinted ground + coloured icon (he chose A). On (in cart / following) = solid fill of the button's own hue. */
 :root{--b-cp:235;--b-ct:150;--b-w:300}
-.iconacts.stack .ia[data-copynzb]{--h:var(--b-cp)}.iconacts.stack .ia[data-cart]{--h:var(--b-ct)}.iconacts.stack .ia[data-watch]{--h:var(--b-w)}
+.iconacts.stack .ia[data-del]{--h:12}.iconacts.stack .ia[data-copynzb]{--h:var(--b-cp)}.iconacts.stack .ia[data-cart]{--h:var(--b-ct)}.iconacts.stack .ia[data-watch]{--h:var(--b-w)}
 .iconacts.stack .ia:not(.dl){background:oklch(0.31 0.06 var(--h));color:oklch(0.86 0.11 var(--h))}
 .iconacts.stack .ia:not(.dl):hover{background:oklch(0.37 0.08 var(--h))}
 :root[data-theme=light] .iconacts.stack .ia:not(.dl){background:oklch(0.92 0.045 var(--h));color:oklch(0.45 0.14 var(--h))}
@@ -666,6 +679,7 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
   <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 5.2a3.2 3.2 0 0 1 0 5.6M18 14.4c1.8.9 3 2.9 3 5.6"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 6.5h15M9.5 6.5V4.5h5v2M6.5 6.5l1 13.5h9l1-13.5M10 10.5v6M14 10.5v6"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M9 3l3 3 3-3"/></symbol>
   <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 10v4h3l5 4V6l-5 4zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></symbol>
@@ -762,9 +776,12 @@ function rowOrigin(r){const x=X(r),cls=()=>'rc origin';
   const link=(k,href,t,icon,label,cut)=>`<a class="${cls(k)}" href="${href}" data-applink="${href}" title="${esc(t)}">${ic(icon)}${cut?`<span class="ot">${esc(label)}</span>`:esc(label)}</a>`;
   return `<span class="orig">`+(x.group?link('k-grp','/browse/all?group='+encodeURIComponent(x.group),'All releases in '+x.group,'users',x.group.replace('alt.binaries.','a.b.')):'')
    +(x.poster?link('k-pst','/browse/all?poster='+encodeURIComponent(x.poster),'All posts by '+x.poster,'user',x.poster,true):'')+`</span>`;}
-// no title, so no Follow: Cart sits alone under Download (TV SPEC, VISUAL 2)
+// no title, so no Follow: Cart sits alone under Download (TV SPEC, VISUAL 2). An admin gets the red Delete in that empty slot,
+// right of Cart, in the list and the Similar releases table (his call 2026-10-24); everyone else keeps the empty slot.
+// The prototype is viewed as an admin.
+const ADMIN=true,GONE=new Set();let held=new Set();
 function rowActions(r,stack){const inC=state.cart.has(r.id);
-  return `<div class="iconacts${stack?' stack':''}"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button><span class="ia slot" aria-hidden="true"></span></div>`;}
+  return `<div class="iconacts${stack?' stack':''}"><button class="ia dl" data-nzb="${r.id}" title="Download NZB" aria-label="Download NZB">${ic('down')}</button><button class="ia" data-copynzb="${r.id}" title="Copy NZB link for SABnzbd or NZBGet" aria-label="Copy NZB link for SABnzbd or NZBGet">${ic('link')}</button><button class="ia" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}" aria-label="${inC?'Remove from cart':'Add to cart'}">${ic('cart')}</button>${ADMIN?`<button class="ia" data-del="${r.id}" title="Delete release" aria-label="Delete ${esc(r.name)}">${ic('trash')}</button>`:'<span class="ia slot" aria-hidden="true"></span>'}</div>`;}
 const pageHref=(base,n)=>/^#\/release\//.test(base)?base+'/p/'+n:n===1?base:(base==='#/'?'#/p/':base+'/p/')+n;
 function pager(page,pages,total,bottom,base='#/',unit='release',per=state.per){const href=n=>pageHref(base,n);
   if(!bottom){const from=total?(page-1)*per+1:0,to=Math.min(page*per,total);
@@ -788,22 +805,22 @@ function picCell(x){const u=rowPic(x),xx=X(x),kind=xx.pv&&imgFor(x,'preview')?'p
   return `<td class="art wide">${u?`<a href="#/release/${x.id}" data-img="${x.id}" data-kind="${kind}" tabindex="-1" aria-hidden="true" title="View ${kind} image"><img src="${u}" alt="" loading="lazy"></a>`:`<a class="nopic" href="#/release/${x.id}" tabindex="-1" aria-hidden="true">${ic('image')}<small>No picture</small></a>`}</td>`;}
 function releasesView(){
   const [sk,sd]=state.rsort.split('_'),tk=r=>sk==='added'?X(r).added:r.t,dir=sd==='asc'?1:-1;
-  const rs=REL.filter(matchRel).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id), pages=Math.max(1,Math.ceil(rs.length/state.per));
+  const rs=REL.filter(r=>(!GONE.has(r.id)||held.has(r.id))&&matchRel(r)).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id), pages=Math.max(1,Math.ceil(rs.length/state.per));
   state.page=Math.min(Math.max(1,state.page),pages);
-  const page=rs.slice((state.page-1)*state.per,state.page*state.per);
+  const page=rs.slice((state.page-1)*state.per,state.page*state.per).filter(r=>!GONE.has(r.id)),total=rs.length-rs.filter(r=>GONE.has(r.id)).length;
   let h=filterBar();
   if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false))+`<p class="empty">No releases match ${esc(filterText())}.</p>`;return;}
   if(state.sel.size)h+=`<div class="bulk"><span>${state.sel.size} selected</span><button class="btn" data-bulk="nzb">${ic('down')}Download NZBs</button><button class="btn sec" data-bulk="cart">${ic('cart')}Add to cart</button><button class="btn sec" data-bulk="clear">Clear selection</button></div>`;
-  h+=barClear(pager(state.page,pages,rs.length,false));
+  h+=barClear(pager(state.page,pages,total,false));
   h+=`<table class="feed"><colgroup><col style="width:34px"><col style="width:196px"><col><col style="width:100px"><col style="width:82px"><col style="width:112px"><col style="width:96px"></colgroup><thead><tr><th class="selall"><input type="checkbox" data-selectall aria-label="Select all releases on this page"></th><th colspan="2">Release</th><th>Resolution</th><th class="num">Size</th><th class="num">${sk==='added'?'Added':'Posted'}</th><th><span class="vh">Actions</span></th></tr></thead><tbody>`;
   page.forEach(x=>{const xx=X(x);
-    h+=`<tr><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
+    h+=`<tr data-row="${x.id}"><td><input type="checkbox" data-select="${x.id}" ${state.sel.has(x.id)?'checked':''} aria-label="Select ${esc(x.name)}"></td>
     ${picCell(x)}
     <td class="what"><a class="rname" href="#/release/${x.id}" title="${esc(x.name)}">${esc(x.name)}</a><div class="rchips">${chips(x)}${rowOrigin(x)}</div></td>
     <td>${resChip(x.res)}</td><td class="num">${gb(x.size)}</td>
     <td class="num" title="Posted ${fullDate(x.t)} · Added ${fullDate(xx.added)}">${ago(tk(x))}</td>
     <td>${rowActions(x,true)}</td></tr>`;});
-  h+='</tbody></table>'+pager(state.page,pages,rs.length,true);
+  h+='</tbody></table>'+pager(state.page,pages,total,true);
   $('#app').innerHTML=h;
   syncSelectAll();
 }
@@ -813,14 +830,14 @@ const detSort=(rs,s)=>{const val={size:r=>r.size,posted:r=>r.t,res:r=>RES.indexO
 function detTable(rs,key){const {k,dir}=state[key];
   const th=(id,l,num)=>`<th class="${num?'num':''}" ${k===id?`aria-sort="${dir>0?'ascending':'descending'}"`:''}><button data-dsort="${key}:${id}">${l}${ic('sort')}</button></th>`;
   return `<table class="rt"><colgroup><col><col style="width:100px"><col style="width:82px"><col style="width:64px"><col style="width:124px"><col style="width:96px"></colgroup>
-   <thead><tr><th>Release</th>${th('res','Resolution')}${th('size','Size',1)}<th class="num">Files</th>${th('posted','Posted',1)}<th><span class="vh">Actions</span></th></tr></thead><tbody>${rs.map(r=>`<tr>
+   <thead><tr><th>Release</th>${th('res','Resolution')}${th('size','Size',1)}<th class="num">Files</th>${th('posted','Posted',1)}<th><span class="vh">Actions</span></th></tr></thead><tbody>${rs.map(r=>`<tr data-row="${r.id}">
    <td class="name"><a class="rname" href="#/release/${r.id}">${esc(r.name)}</a><div class="rchips">${chips(r)}</div></td>
    <td>${resChip(r.res)}</td><td class="num">${gb(r.size)}</td><td class="num">${X(r).files?`<button class="filesbtn" data-files="${r.id}" title="View file list">${X(r).files}</button>`:'—'}</td>
    <td class="num" title="Posted ${fullDate(r.t)} · Added ${fullDate(X(r).added)}">${shortDate(r.t)}</td><td>${rowActions(r,true)}</td></tr>`).join('')}</tbody></table>`;}
 const needDetails=()=>PREDB&&SIM?Promise.resolve():(needDetails.p||(needDetails.p=Promise.all(['ad/predb.json','ad/similar.json'].map(u=>fetch(u+NOCACHE).then(r=>r.ok?r.json():{}))).then(([p,s])=>{PREDB=p;SIM=s;})));
 function release(id){const h0=location.hash;
   if(!PREDB){$('#app').innerHTML='<p class="loadnote">Loading the release…</p>';const h=location.hash;needDetails().then(()=>{if(location.hash===h)route();});return;}
-  const r=BYID[id];if(!r){$('#app').innerHTML=`<div class="later"><h1>Release details</h1><p>This release is not in the prototype.</p><p style="margin-top:18px"><a href="#/">Back to Adult releases</a></p></div>`;return;}
+  const r=GONE.has(id)?null:BYID[id];if(!r){$('#app').innerHTML=`<div class="later"><h1>Release details</h1><p>This release is not in the prototype.</p><p style="margin-top:18px"><a href="#/">Back to Adult releases</a></p></div>`;return;}
   if(state.drel!==id){state.drel=id;state.ssort={k:'posted',dir:-1};}
   const x=X(r),pre=PREDB[id];
   const tabs=[['overview','Overview'],['files',x.files?'Files ('+x.files+')':'Files'],['media','Media info'],['nfo','NFO'],['comments','Comments ('+x.cm+')']];
@@ -845,7 +862,7 @@ function release(id){const h0=location.hash;
    <div class="dacts"><button class="btn" data-nzb="${r.id}">${ic('down')}Download NZB</button><button class="btn sec nt" data-copynzb="${r.id}">${ic('link')}Copy NZB link</button>
     <button class="btn sec nt ct" data-cart="${r.id}" aria-pressed="${inC}" title="${inC?'In cart · click to remove':'Add to cart'}">${ic('cart')}<span class="wl"><span${inC?' hidden':''}>Add to cart</span><span${inC?'':' hidden'}>In cart</span></span></button></div></div></div>
   <div class="dcols noshow"><div><div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${state.tab===k}">${l}</button>`).join('')}</div><div class="panel" role="tabpanel" aria-label="${esc(tabs.find(t=>t[0]===state.tab)[1])}"><h2 class="vh">${esc(tabs.find(t=>t[0]===state.tab)[1])}</h2>${panel}</div></div></div>`;
-  const sim=(SIM[id]||[]).map(i=>BYID[i]).filter(Boolean);
+  const sim=(SIM[id]||[]).map(i=>BYID[i]).filter(r=>r&&!GONE.has(r.id));
   if(sim.length)h+=`<section class="sibs simrel" aria-labelledby="simrh"><h2 id="simrh">Similar releases</h2>${detTable(detSort(sim,state.ssort),'ssort')}</section>`;
   else h+='<div class="list-end" aria-hidden="true"></div>';
   $('#app').innerHTML=h+'</div>';
@@ -911,6 +928,20 @@ function openDialog(title,r,body){lastFocus=document.activeElement;$('#modal').i
 // full: open straight at full size when the image is larger than the window (the details page's Sample picture, his call 2026-09-29)
 function setupImg(full){const img=$('#modal .pvimg');if(!img)return;if(full)img.style.visibility='hidden';const go=()=>{const b=$('#modal .pvbar [data-full]'),dim=$('#modal .pvdim');if(dim)dim.textContent=img.naturalWidth+' × '+img.naturalHeight;if(b&&img.naturalWidth>img.clientWidth+1){b.hidden=false;$('#modal .dlg').classList.add('canfull');if(full)toggleFull();}img.style.visibility='';};img.complete?go():img.addEventListener('load',go);}
 function toggleFull(){const d=$('#modal .dlg'),b=$('#modal .pvbar [data-full]');if(!d||!d.classList.contains('canfull'))return;const on=d.classList.toggle('full');b.setAttribute('aria-pressed',on);b.textContent=on?'Fit to window':'Full size';}
+// the admin's delete confirmation (2026-10-24): the release name in full, what goes with it, Cancel and Delete.
+// Cancel takes the focus, so Enter on a stray press does not delete
+function deleteDialog(r){lastFocus=document.activeElement;
+  $('#modal').innerHTML=`<div class="scrim" data-close><div class="dlg del" role="alertdialog" aria-modal="true" aria-labelledby="delh" aria-describedby="deln delx"><div class="dlghead"><div><h2 id="delh">Delete this release?</h2></div><button class="ia" data-close aria-label="Close">${ic('x')}</button></div>
+   <div class="body"><p class="delname" id="deln">${esc(r.name)}</p><p class="delnote" id="delx">This permanently removes the NZB, its pictures and clip, and everything linked to it. It can’t be undone.</p>
+   <div class="dacts end"><button type="button" class="btn sec" data-close>Cancel</button><button type="button" class="btn danger" data-delconfirm="${r.id}">${ic('trash')}Delete</button></div></div></div></div>`;
+  $('#modal .dacts .btn.sec').focus();}
+// confirmed: the row goes from the table you are on, the count drops by one, a ticked or carted release leaves the selection and the cart.
+// The rest of the page stays where it is (no row pulled up from the next page) until you change page or filters.
+function deleteRelease(id){const r=BYID[id],row=document.querySelector(`[data-row="${id}"]`),rows=[...(row?.parentElement?.children||[])],i=rows.indexOf(row);
+  GONE.add(id);held.add(id);state.sel.delete(id);if(state.cart.delete(id))$('#cartn').textContent=state.cart.size;
+  $('#modal').innerHTML='';rerender();
+  const next=$$('[data-row] [data-del]');(next[Math.min(Math.max(i,0),next.length-1)]||$('#q')||$('.tabs [aria-selected=true]'))?.focus({preventScroll:true});
+  toast('Deleted '+r.name);}
 function closeDialog(){$('#modal').innerHTML='';if(lastFocus&&document.contains(lastFocus))lastFocus.focus();}
 </script>
 
@@ -930,14 +961,14 @@ function route(){
 function firstPage(){state.page=1;if(location.hash!=='#/'&&location.hash!=='')location.hash='#/';else route();}
 function rerender(){const y=scrollY;route();scrollTo(0,y);}
 let lastHash='';
-addEventListener('hashchange',()=>{state.dd=null;closeDialog();const rid=h=>(h.match(/^#\/release\/(\d+)/)||[])[1];
+addEventListener('hashchange',()=>{state.dd=null;held=new Set();closeDialog();const rid=h=>(h.match(/^#\/release\/(\d+)/)||[])[1];
   if(rid(location.hash)){if(rid(location.hash)!==rid(lastHash)){state.tab='overview';scrollTo(0,0);}lastHash=location.hash;route();return;}
   scrollTo(0,0);lastHash=location.hash;route();});
 // the list remembers its last dropdown filters for the user (his call 2026-09-29; the app keeps them in the profile, here
 // localStorage stands in); the name search is never remembered, and neither is the page
 const saveFilters=()=>store.set('filters',JSON.stringify({cat:isExo()?'exo':[...state.cat],res:[...state.res],aud:[...state.aud],comp:state.comp}));
 function loadFilters(){try{const f=JSON.parse(store.get('filters','{}'));['cat','res','aud'].forEach(k=>{state[k]=new Set((k==='cat'&&f.cat==='exo'?EXO():(f[k]||[])).filter(v=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:AUDS).includes(v)));});state.comp=['100','95'].includes(f.comp)?f.comp:false;}catch(e){}}
-function afterFilter(){state.page=1;saveFilters();if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');}
+function afterFilter(){held=new Set();state.page=1;saveFilters();if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');}
 document.addEventListener('click',e=>{
   const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
   if(e.target.closest('[data-full]')){toggleFull();return;}
@@ -954,6 +985,8 @@ document.addEventListener('click',e=>{
   if(e.target.closest('[data-clearall]')){['cat','res','aud'].forEach(k=>state[k].clear());state.comp=false;state.q='';afterFilter();rerender();$('.fbar .mbtn')?.focus({preventScroll:true});return;}
   const cpk=e.target.closest('[data-cpick]');if(cpk){state.comp=cpk.dataset.cpick==='any'?false:cpk.dataset.cpick;state.dd=null;afterFilter();rerender();$('[data-ddtoggle=comp]')?.focus({preventScroll:true});return;}
   const cl=e.target.closest('[data-close]');if(cl&&(e.target===cl||cl.tagName==='BUTTON')){closeDialog();return;}
+  const dl=e.target.closest('[data-del]');if(dl){deleteDialog(BYID[dl.dataset.del]);return;}
+  const dc=e.target.closest('[data-delconfirm]');if(dc){deleteRelease(+dc.dataset.delconfirm);return;}
   const cp=e.target.closest('[data-copynzb]');
   if(cp){const r=BYID[cp.dataset.copynzb];copyText(nzbLink(r)).then(ok=>{toast(ok?'NZB link copied. It contains your API key, so only paste it into your own downloader.':'Could not copy. The link is: '+nzbLink(r));if(ok){const svg=cp.querySelector('use');if(svg){svg.setAttribute('href','#i-check');setTimeout(()=>svg.setAttribute('href','#i-link'),1600);}}});return;}
   // a row picture: Ctrl / Cmd / Shift-click follows its link to the details page as a browser does; a plain click opens the image

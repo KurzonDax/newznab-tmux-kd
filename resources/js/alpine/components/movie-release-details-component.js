@@ -2,6 +2,7 @@ import { isTab, tvReleaseDetails } from './tv-release-details-component.js';
 import { currentSort, nextSort, offeredSorts, sortUrl } from './movie-film-component.js';
 import { sortRows } from './tv-episode-list-component.js';
 import { fetchList } from './tv-list.js';
+import { takeOutRow } from './release-delete-component.js';
 
 /**
  * The URL of another page of "All N releases of this film": the page link's own query (its sort
@@ -115,6 +116,24 @@ export function movieReleaseDetails() {
                 if (error.name !== 'AbortError') window.showToast('Could not load the releases. Reload the page and try again.', 'error');
                 return false;
             }
+        },
+
+        /**
+         * A Similar release an admin deleted on the Adult details page (adult-redesign SPEC 5.11, release-deleted on its
+         * row): the row goes and the page stays; the trashcan now in its place takes the focus. The last row takes the
+         * whole section with it (SPEC 5A.4: no section without a match) and the selected tab takes the focus.
+         */
+        similarReleaseDeleted(event) {
+            const row = event.target.closest('[data-release-row]');
+            if (!row) return;
+            const section = row.closest('[data-similar-releases]');
+            const next = takeOutRow(row);
+            if (next !== null) {
+                next.focus();
+                return;
+            }
+            section?.remove();
+            this.screen.querySelector('[role="tab"][aria-selected="true"]')?.focus();
         },
 
         sortSimilar(button) {

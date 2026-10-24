@@ -19,6 +19,7 @@ use ReflectionMethod;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\AssertsImportedChip;
+use Tests\Support\AssertsReleaseDeleteDialog;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -29,6 +30,7 @@ final class MovieReleaseDetailsPageTest extends TestCase
 {
     use AssertsFollowWording;
     use AssertsImportedChip;
+    use AssertsReleaseDeleteDialog;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -467,6 +469,16 @@ final class MovieReleaseDetailsPageTest extends TestCase
         $this->assertMatchesRegularExpression('/>\s*99% complete\s*</', $chips);
         $this->assertStringNotContainsString('late headers pending', $chips);
         $this->assertStringContainsString('The site will not try to recover more of it."', $chips);
+    }
+
+    public function test_an_admin_gets_no_delete_button_or_dialog_in_the_movies_similar_releases(): void
+    {
+        $current = $this->movie(self::FILM, name: 'Heat.1995.1080p.BluRay');
+        $this->similarIds = [$this->movie(self::OTHER_FILM, '2026-09-22 10:00:00', name: 'Heat.Wave.2022.1080p')];
+        $this->user = $this->browserUser('Admin');
+
+        $response = $this->details($current)->assertOk()->assertSee('data-similar-releases', false)->assertSee('Heat.Wave.2022.1080p');
+        $this->assertNoReleaseDelete((string) $response->getContent(), 'The Movies details page');
     }
 
     private function movie(int $film, string $posted = '2026-09-20 10:00:00', int $categories = self::HD, int $password = 0, ?string $name = null,

@@ -16,9 +16,11 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\AssertsImportedChip;
+use Tests\Support\AssertsReleaseDeleteDialog;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -32,6 +34,7 @@ final class AdultReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
     use AssertsImportedChip;
+    use AssertsReleaseDeleteDialog;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -446,6 +449,41 @@ final class AdultReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('<b>', $row);
     }
 
+    public function test_an_admin_gets_the_red_delete_button_right_of_cart_in_every_row_and_the_confirmation_dialog(): void
+    {
+        $first = $this->adult('Studio.Scene.One.1080p');
+        $second = $this->adult('Studio.Scene.Two.720p', ['postdate' => '2026-09-01 00:00:00']);
+        $admin = $this->browserUser('Admin');
+
+        $response = $this->page('/adult', $admin)->assertOk();
+        foreach ([$first => 'Studio.Scene.One.1080p', $second => 'Studio.Scene.Two.720p'] as $id => $name) {
+            $row = $this->rowOf($response, $name);
+            $this->assertSame(['download', 'copy', 'cart', 'delete'], $this->actions($row), $name);
+            $this->assertStringContainsString('<button type="button" class="tv-action" data-delete-release="'.route('admin.release-delete', $this->guidOf($id)).'" data-release-name="'.$name
+                .'" title="Delete release" aria-label="Delete '.$name.'"><i class="fas fa-trash" aria-hidden="true"></i></button>', $row);
+            $this->assertStringNotContainsString('tv-action-slot', $row);
+        }
+        // the dialog sits inside the screen, after the floating bar, which keeps its three buttons (one at a time, no bulk delete)
+        $response->assertSeeInOrder(['x-data="tvReleases"', 'class="tv-bulk"', 'Clear selection</button>', 'x-data="releaseDeleteDialog"'], false)
+            ->assertDontSee('Delete selected');
+        $this->assertReleaseDeleteDialog((string) $response->getContent());
+        // a list drawn again in place (a filter, the name search, the last row deleted) keeps the buttons
+        $fragment = $this->page('/adult?_fragment=list', $admin)->assertOk();
+        $this->assertSame(['download', 'copy', 'cart', 'delete'], $this->actions($this->rowOf($fragment, 'Studio.Scene.One.1080p')));
+        $fragment->assertDontSee('releaseDeleteDialog', false);
+    }
+
+    #[DataProvider('nonAdminRoles')]
+    public function test_a_user_or_moderator_gets_the_empty_cell_and_no_delete_dialog(string $role): void
+    {
+        $this->adult('Studio.Scene.One.1080p');
+        $response = $this->page('/adult', $this->browserUser($role))->assertOk();
+        $this->assertNoReleaseDelete((string) $response->getContent(), $role);
+        $row = $this->rowOf($response, 'Studio.Scene.One.1080p');
+        $this->assertSame(['download', 'copy', 'cart'], $this->actions($row));
+        $this->assertStringContainsString('<span class="tv-action tv-action-slot" aria-hidden="true"></span>', $row);
+    }
+
     public function test_the_list_fragment_is_the_list_alone_and_the_count_is_cached_under_the_browse_version(): void
     {
         $this->adult('First release');
@@ -593,6 +631,11 @@ final class AdultReleasesPageTest extends TestCase
         return array_map(static fn (string $guid): int => (int) $ids[$guid], $matches[1]);
     }
 
+    private function guidOf(int $id): string
+    {
+        return (string) DB::table('releases')->where('id', $id)->value('guid');
+    }
+
     private function rowOf(TestResponse $response, string $name): string
     {
         foreach (explode('<tr data-release-row', (string) $response->getContent()) as $row) {
@@ -606,11 +649,11 @@ final class AdultReleasesPageTest extends TestCase
     /** @return list<string> */
     private function actions(string $row): array
     {
-        preg_match_all('/class="tv-action(?: tv-action-download download-nzb)?" (?:data-copy-nzb|data-cart|data-watch-picker|title="Download)/', $row, $matches);
+        preg_match_all('/class="tv-action(?: tv-action-download download-nzb)?" (?:data-copy-nzb|data-cart|data-watch-picker|data-delete-release|title="Download)/', $row, $matches);
 
         return array_map(static fn (string $match): string => match (true) {
             str_contains($match, 'Download') => 'download', str_contains($match, 'copy') => 'copy',
-            str_contains($match, 'cart') => 'cart', default => 'watch',
+            str_contains($match, 'cart') => 'cart', str_contains($match, 'delete') => 'delete', default => 'watch',
         }, $matches[0]);
     }
 

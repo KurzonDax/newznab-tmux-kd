@@ -2,7 +2,7 @@
     /**
      * The Adult details page's Similar releases table (docs/proposals/adult-redesign/SPEC.md 5A.4): the
      * Movies details page's table without its Source column (Release with the chip line, whose Preview
-     * chip plays a clip, Resolution, Size, Files, Posted and the 2 × 2 buttons without Follow), sorted in the
+     * chip plays a clip, Resolution, Size, Files, Posted and the 2 × 2 buttons without Follow, an admin's with Delete), sorted in the
      * browser by Resolution, Size and Posted. Files reads "—" when none is stored.
      *
      * @var list<\App\Data\AdultReleaseRow> $rows
@@ -49,7 +49,7 @@
                 </td>
                 <td class="tv-num" title="{{ $row->dateTitle }}">{{ $row->postedOn }}</td>
                 <td>
-                    @include('movies.partials.release-actions', ['parts' => false, 'follow' => false])
+                    @include('movies.partials.release-actions', ['parts' => false, 'follow' => false, 'delete' => true])
                 </td>
             </tr>
         @endforeach

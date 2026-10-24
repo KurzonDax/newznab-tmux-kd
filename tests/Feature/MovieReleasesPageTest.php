@@ -20,6 +20,7 @@ use Illuminate\Testing\TestResponse;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\AssertsImportedChip;
+use Tests\Support\AssertsReleaseDeleteDialog;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -30,6 +31,7 @@ final class MovieReleasesPageTest extends TestCase
 {
     use AssertsFollowWording;
     use AssertsImportedChip;
+    use AssertsReleaseDeleteDialog;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -944,6 +946,13 @@ final class MovieReleasesPageTest extends TestCase
         $noVerdict = $this->rowOf($response, 'No verdict');
         $this->assertMatchesRegularExpression('/>\s*80% complete\s*</', $noVerdict);
         $this->assertStringNotContainsString('late headers pending', $noVerdict);
+    }
+
+    public function test_an_admin_gets_no_delete_button_or_dialog_on_the_movies_list(): void
+    {
+        $this->movie('Some.Movie.2024.1080p');
+        $response = $this->page('/movies', $this->browserUser('Admin'))->assertOk()->assertSee('Some.Movie.2024.1080p');
+        $this->assertNoReleaseDelete((string) $response->getContent(), 'The Movies list');
     }
 
     /** The response after the one redirect a bare open answers with while filters are remembered (#881). */

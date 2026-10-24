@@ -6,11 +6,16 @@
     @include('tv.partials.dialogs')
 @endpush
 
+@php
+    // An admin deletes a release from its row (SPEC 5.11): the dialog, and the row's leaving handled by the list.
+    $canDelete = auth()->user()?->hasRole('Admin') ?? false;
+@endphp
+
 @section('content')
 <div class="tv-screen" data-part="page ground and body text" x-data="tvReleases"
      data-preference-url="{{ route('profile.update-view') }}" data-preference-root="xxx" data-filters-clock="{{ $filtersClock }}"
      data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
-     x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter">
+     x-on:click="handleClick" x-on:change="handleChange" x-on:checkbox-menu-change="applyFilter" @if($canDelete) x-on:release-deleted="releaseDeleted" @endif>
     <div class="tv-wrap" data-part="content width wrapper">
         <div class="tv-filters">
             <h1 data-part="page title">Adult releases</h1>
@@ -51,5 +56,8 @@
         <button type="button" class="tv-button tv-button-secondary" x-on:click="addSelectedToCart"><i class="fas fa-cart-shopping" aria-hidden="true"></i>Add to cart</button>
         <button type="button" class="tv-button tv-button-secondary" x-on:click="clearSelection">Clear selection</button>
     </div>
+    @if($canDelete)
+        @include('adult.releases.delete-dialog')
+    @endif
 </div>
 @endsection
