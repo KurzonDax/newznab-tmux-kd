@@ -235,6 +235,8 @@
 .dark .tv-actions [data-cart] { --tv-action-bg: var(--row-action-cart-bg-dark); --tv-action-fg: var(--row-action-cart-fg-dark); --tv-action-hover-bg: var(--row-action-cart-hover-bg-dark); --tv-action-on-bg: var(--row-action-cart-on-bg-dark); --tv-action-on-fg: var(--row-action-cart-on-fg-dark); --tv-action-on-hover-bg: var(--row-action-cart-on-hover-bg-dark); }
 .tv-actions [data-watch-picker] { --tv-action-bg: var(--row-action-follow-bg); --tv-action-fg: var(--row-action-follow-fg); --tv-action-hover-bg: var(--row-action-follow-hover-bg); --tv-action-on-bg: var(--row-action-follow-on-bg); --tv-action-on-fg: var(--row-action-follow-on-fg); --tv-action-on-hover-bg: var(--row-action-follow-on-hover-bg); }
 .dark .tv-actions [data-watch-picker] { --tv-action-bg: var(--row-action-follow-bg-dark); --tv-action-fg: var(--row-action-follow-fg-dark); --tv-action-hover-bg: var(--row-action-follow-hover-bg-dark); --tv-action-on-bg: var(--row-action-follow-on-bg-dark); --tv-action-on-fg: var(--row-action-follow-on-fg-dark); --tv-action-on-hover-bg: var(--row-action-follow-on-hover-bg-dark); }
+/* An admin's Delete (adult-redesign SPEC 5.11): the danger red the poster page's Confirm blacklist wears, tinted like Copy link and Cart (the tokens switch with the theme on .tv-screen). */
+.tv-actions [data-delete-release] { --tv-action-bg: var(--tv-danger-bg); --tv-action-fg: var(--tv-danger-fg); --tv-action-hover-bg: var(--tv-danger-hover-bg); }
 .tv-actions .tv-action:not(.tv-action-download) { background: var(--tv-action-bg); color: var(--tv-action-fg); }
 .tv-actions .tv-action:not(.tv-action-download):hover { background: var(--tv-action-hover-bg); }
 .tv-actions .tv-action[aria-pressed="true"], .tv-actions .tv-action[data-watched="1"] { background: var(--tv-action-on-bg); color: var(--tv-action-on-fg); }
@@ -746,6 +748,11 @@ a.tv-tag:hover { background: var(--tv-line); }
 .tv-danger-option:has(input:checked) { border-color: var(--tv-danger-mark); background: color-mix(in oklab, var(--tv-danger-mark) 10%, transparent); }
 .tv-danger-option input { margin-top: 3px; accent-color: var(--tv-danger-mark); }
 .tv-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+/* The admin's Delete confirmation (adult-redesign SPEC 5.11), 560 px: the release name in full in a recessed box, then the note in dim. */
+.tv-dialog.is-release-delete { width: min(560px, 100%); }
+.tv-delete-name { margin: 12px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--tv-ground); color: var(--tv-ink); font-size: 14px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.tv-delete-note { margin: 14px 0 0; color: var(--tv-dim); font-size: 14px; line-height: 1.5; }
+.tv-dialog.is-release-delete .tv-dialog-actions { margin-top: 20px; }
 .tv-report-note { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px; padding: 12px 16px; border-radius: 14px; background: var(--tv-panel-alt); color: var(--tv-dim); font-size: 14px; }
 .tv-report-note i { flex: none; margin-top: 3px; color: var(--chip-reported-fg); }
 .tv-report-note b { font-weight: 700; color: var(--chip-reported-fg); }

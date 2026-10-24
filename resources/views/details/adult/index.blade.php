@@ -28,12 +28,14 @@
     $sampleThumb = $row->sample['thumb'] ?? null;
     // The shared Preview chip names its data-part through $chipPart; this page names none.
     $chipPart = static fn (string $name): ?string => null;
+    // An admin deletes a Similar release from its row (SPEC 5.11): the dialog, and the row's leaving handled by the page.
+    $canDelete = auth()->user()?->hasRole('Admin') ?? false;
 @endphp
 
 @section('content')
 <div class="tv-screen tv-details" data-part="page ground and body text" x-data="movieReleaseDetails"
      data-guid="{{ $row->guid }}" data-release-id="{{ $row->id }}" data-has-media="{{ $row->mediaInfo === null ? '0' : '1' }}" data-has-nfo="{{ $row->nfo ? '1' : '0' }}" data-nzb-link-base="{{ $nzbLinkBase }}" data-api-token="{{ $apiToken }}"
-     x-on:click="handleClick" x-on:submit="handleSubmit">
+     x-on:click="handleClick" x-on:submit="handleSubmit" @if($canDelete) x-on:release-deleted="similarReleaseDeleted" @endif>
     <div class="tv-wrap" data-part="content width wrapper">
         <nav class="tv-crumbs" aria-label="Breadcrumb">
             <a href="{{ route('adult.releases') }}">Adult releases</a><span aria-hidden="true">›</span>
@@ -159,5 +161,8 @@
             </section>
         @endif
     </div>
+    @if($canDelete && $similar !== [])
+        @include('adult.releases.delete-dialog')
+    @endif
 </div>
 @endsection

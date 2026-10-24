@@ -20,6 +20,7 @@ const states = [
   ['releases-picture-dialog', `${pics};document.querySelector('.feed td.art a[data-img]').click();${wait(700)}`],
   ['releases-media-info', `${pics};document.querySelector('.feed [data-mi]').click();${wait(900)}`],
   ['releases-clip-dialog', `${pics};document.querySelector('.feed [data-clip]').click();${wait(400)}`],
+  ['releases-delete-dialog', `document.querySelector('.feed [data-del]').click()`],
   ['details-clip', `location.hash='#/release/'+${FX}.clip;${wait(1200)}`],
   ['details-sample-full', `location.hash='#/release/'+(REL.find(r=>X(r).jpg&&PV.has('sample/'+X(r).guid+'.webp'))||{}).id;${wait(1200)};document.querySelector('.adpics [data-kind=sample]')?.click();${wait(1200)}`],
   ['details-similar', `location.hash='#/release/'+${FX}.similar;${wait(1200)};scrollTo(0,document.querySelector('.simrel')?.offsetTop-90||0)`],

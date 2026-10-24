@@ -16,9 +16,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\Admin\InteractsWithAdminListPages;
 use Tests\Support\AssertsFollowWording;
 use Tests\Support\AssertsImportedChip;
+use Tests\Support\AssertsReleaseDeleteDialog;
 use Tests\Support\InteractsWithReleaseBrowser;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -32,6 +34,7 @@ final class AdultReleaseDetailsPageTest extends TestCase
 {
     use AssertsFollowWording;
     use AssertsImportedChip;
+    use AssertsReleaseDeleteDialog;
     use InteractsWithAdminListPages;
     use InteractsWithReleaseBrowser;
     use IsolatedSqliteDatabase;
@@ -284,6 +287,43 @@ final class AdultReleaseDetailsPageTest extends TestCase
 
         $this->similarIds = [];
         $this->details($current)->assertOk()->assertDontSee('Similar releases')->assertDontSee('data-similar-releases', false);
+    }
+
+    public function test_an_admin_gets_the_red_delete_button_in_every_similar_row_but_not_in_the_header_and_the_confirmation_dialog(): void
+    {
+        $current = $this->adult('Some.Scene.XXX.1080p');
+        $clip = $this->adult('Some.Scene.Part.Two.XXX.720p', ['postdate' => '2026-09-22 10:00:00']);
+        $plain = $this->adult('Some.Scene.Other.XXX.2160p', ['postdate' => '2026-09-21 10:00:00']);
+        $this->similarIds = [$plain, $clip];
+        $this->user = $this->browserUser('Admin');
+
+        $response = $this->details($current)->assertOk();
+        $html = (string) $response->getContent();
+        $similar = (string) preg_replace('/>\s+</', '><', $this->between($response, 'data-similar-releases>', '</section>'));
+        $this->assertSame(2, substr_count($similar, 'data-delete-release'));
+        foreach ([$clip => 'Some.Scene.Part.Two.XXX.720p', $plain => 'Some.Scene.Other.XXX.2160p'] as $id => $name) {
+            $this->assertStringContainsString('<button type="button" class="tv-action" data-cart="'.$this->guid($id).'" aria-pressed="false" title="Add to cart" aria-label="Add to cart"><i class="fas fa-cart-shopping" aria-hidden="true"></i></button>'
+                .'<button type="button" class="tv-action" data-delete-release="'.route('admin.release-delete', $this->guid($id)).'" data-release-name="'.$name
+                .'" title="Delete release" aria-label="Delete '.$name.'"><i class="fas fa-trash" aria-hidden="true"></i></button>', $similar);
+        }
+        $this->assertStringNotContainsString('tv-action-slot', $similar);
+        // the header keeps its three buttons, and the page's own release has no trashcan
+        $this->assertSame(['Download NZB', 'Copy NZB link', 'Add to cart'], $this->buttons($html));
+        $this->assertStringNotContainsString('data-delete-release="'.route('admin.release-delete', $this->guid($current)).'"', $html);
+        $response->assertSeeInOrder(['x-data="movieReleaseDetails"', 'data-similar-releases', 'x-data="releaseDeleteDialog"'], false);
+        $this->assertReleaseDeleteDialog($html);
+    }
+
+    #[DataProvider('nonAdminRoles')]
+    public function test_a_user_or_moderator_gets_the_empty_cells_and_no_delete_dialog_on_the_details_page(string $role): void
+    {
+        $current = $this->adult('Some.Scene.XXX.1080p');
+        $this->similarIds = [$this->adult('Some.Scene.Part.Two.XXX.720p')];
+        $this->user = $this->browserUser($role);
+
+        $response = $this->details($current)->assertOk();
+        $this->assertNoReleaseDelete((string) $response->getContent(), $role);
+        $this->assertSame(1, substr_count($this->between($response, 'data-similar-releases>', '</section>'), 'tv-action tv-action-slot'));
     }
 
     public function test_the_similar_search_reads_the_adult_categories_without_the_viewer_s_excluded_ones(): void

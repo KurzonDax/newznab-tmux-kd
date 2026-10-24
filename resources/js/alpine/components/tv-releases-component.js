@@ -1,3 +1,4 @@
+import { summaryAfterDelete, takeOutRow } from './release-delete-component.js';
 import { fetchList, filterUrl, firstPageUrl, paramsUrl, postJson } from './tv-list.js';
 import { rowActions } from './tv-row-actions.js';
 
@@ -21,6 +22,11 @@ import { rowActions } from './tv-row-actions.js';
  * takes its release out: the list is then drawn again without the row, and the heading row's
  * Download N NZBs follows the count the redrawn pager line carries (both actions leave with the
  * last release).
+ *
+ * On the Adult list an admin deletes a release from its row (docs/proposals/adult-redesign/SPEC.md 5.11,
+ * release-deleted from releaseDeleteDialog): the row leaves the page, which is not refilled, the pager
+ * line's count drops by one and the selection follows; the last row on a page draws the list again at
+ * the current address, as the basket does.
  */
 export function tvReleases() {
     return {
@@ -157,14 +163,7 @@ export function tvReleases() {
          * server redirects) the address is opened again.
          */
         async redrawBasket() {
-            let drawn;
-            try {
-                drawn = await this.drawList(new URL(window.location.href));
-            } catch {
-                window.location.assign(window.location.href);
-                return;
-            }
-            if (!drawn) return;
+            if (!(await this.redrawHere())) return;
             const total = this.$refs.list.querySelector('[data-basket-total]')?.dataset.basketTotal;
             if (total === undefined) return;
             if (total === '0') {
@@ -173,6 +172,38 @@ export function tvReleases() {
             }
             const count = this.screen.querySelector('[data-download-count]');
             if (count) count.textContent = total;
+        },
+
+        /**
+         * The list at the current address drawn again; resolves true when it was. When it cannot be read (the page
+         * was the last and is gone, so the server redirects) the address is opened again.
+         */
+        async redrawHere() {
+            try {
+                return await this.drawList(new URL(window.location.href));
+            } catch {
+                window.location.assign(window.location.href);
+                return false;
+            }
+        },
+
+        /**
+         * A release an admin deleted (release-deleted on its row): the row goes and the trashcan now in its place takes
+         * the focus, the selection and the pager line's "Showing X–Y of N" following. When it was the page's last row
+         * the list is drawn again at the current address and the name search takes the focus.
+         */
+        async releaseDeleted(event) {
+            const row = event.target.closest('[data-release-row]');
+            if (!row) return;
+            const next = takeOutRow(row);
+            this.selectionChanged();
+            if (next === null) {
+                if (await this.redrawHere()) this.$refs.nameSearch?.focus();
+                return;
+            }
+            const summary = this.$refs.list.querySelector('.pager-line-summary');
+            if (summary) summary.textContent = summaryAfterDelete(summary.textContent);
+            next.focus();
         },
 
         async reloadList(url) {

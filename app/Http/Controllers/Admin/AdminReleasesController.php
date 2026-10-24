@@ -9,6 +9,7 @@ use App\Http\Requests\Admin\AdminReleaseListRequest;
 use App\Models\Category;
 use App\Models\Release;
 use App\Services\Releases\PreviewGenerationPolicy;
+use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\RedirectResponse;
@@ -137,6 +138,8 @@ class AdminReleasesController extends BasePageController
             if ($id) {
                 $this->releaseManagement->deleteMultiple($id);
                 Release::clearAdminReleasesRangeCache();
+                // The browse lists' cached totals (the Adult list's among them) are keyed on this version.
+                ReleaseBrowseService::bumpCacheVersion();
 
                 // Handle AJAX requests
                 if (request()->wantsJson() || request()->ajax()) {

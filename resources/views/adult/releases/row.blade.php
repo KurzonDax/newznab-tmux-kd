@@ -49,6 +49,6 @@
     <td class="tv-num">{{ $row->size }}</td>
     <td class="tv-num" title="{{ $row->dateTitle }}">{{ $row->date }}</td>
     <td>
-        @include('movies.partials.release-actions', ['follow' => false, 'parts' => true])
+        @include('movies.partials.release-actions', ['follow' => false, 'parts' => true, 'delete' => true])
     </td>
 </tr>

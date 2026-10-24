@@ -48,6 +48,7 @@ const lazyComponentMap = {
     'showAddForm':     () => import('./components/admin/show-add.js'),
     'copyToClipboard': () => import('./components/profile-edit.js'),
     'tvReleases':      () => import('./components/tv-releases.js'),
+    'releaseDeleteDialog': () => import('./components/release-delete.js'),
     'homeShelves':     () => import('./components/home-shelves.js'),
     'checkboxMenu':    () => import('./components/checkbox-menu.js'),
     'yearMenu':        () => import('./components/year-menu.js'),

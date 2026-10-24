@@ -13,9 +13,9 @@ use Spatie\Permission\Models\Permission;
 
 trait InteractsWithReleaseBrowser
 {
-    protected function browserUser(): User
+    protected function browserUser(string $role = 'User'): User
     {
-        $user = $this->createUserWithRole('User');
+        $user = $this->createUserWithRole($role);
         foreach (['movies', 'audio', 'console', 'books', 'adult', 'pc', 'tv', 'other'] as $root) {
             $permission = Permission::findOrCreate('view '.$root, 'web');
             $user->givePermissionTo($permission);

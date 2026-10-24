@@ -170,6 +170,8 @@ the date on one line.
 Download (coral) and Copy NZB link (blue) on top, **Cart** (green) alone under Download: there is no
 Follow. A pressed Cart fills in its own green, never coral.
 
+An admin (the Admin role) also gets **Delete** (red) right of Cart, in the cell Follow takes on Movies (5.11); everyone else keeps the empty cell.
+
 ### 5.8 Selection
 
 As TV / Movies: a select box per row, select-all for the visible rows, the floating bar
@@ -209,6 +211,43 @@ whose lists rejected an in-list text search.
   from the files whatever the image flags say. It plays only when asked. Without a clip the chip opens
   the **Image preview** dialog. Escape, the close button or a click outside close it and focus
   returns.
+
+### 5.11 Delete (admins, approved 2026-10-24)
+
+His request, grilled and approved on screen in the prototype on 2026-10-24 (issue #1167). A user with the
+**Admin** role (not Moderator) deletes a release straight from its row; everyone else sees exactly what
+they saw before.
+
+- **Where:** each row of this list and each row of an Adult release's **Similar releases** (5A.4). Nowhere
+  else: the details page header, the Movies, shelf and film tables and every other screen keep their buttons.
+- **The button:** a round button with a trashcan in the 2 × 2 group's fourth cell, right of Cart. Tooltip
+  "Delete release", accessible name "Delete <release name>". The app's existing danger red, the poster
+  page's Confirm blacklist tokens (`--tv-danger-bg`, `--tv-danger-fg`, `--tv-danger-hover-bg`): a tinted red
+  ground with a red icon, as Copy link and Cart are tinted, never a solid fill.
+- **The dialog:** the redesign's dialog frame, titled "Delete this release?", no subtitle. The release name in
+  full in a recessed box, then "This permanently removes the NZB, its pictures and clip, and everything linked
+  to it. It can’t be undone." Right-aligned, Cancel (secondary) then Delete (red, with the trashcan). Cancel
+  has the focus when it opens. Escape, the close button, a click outside and Cancel close it without sending
+  anything, and the focus returns to the trashcan.
+- **Deleted right away**, by the existing admin delete (the one Admin → Releases uses): one POST for the
+  release's guid. The NZB, the pictures and clip, the search-index entry and the release row go, and the
+  database removes everything linked to it, other users' carts included, silently. No pending-deletion flag, no
+  cleanup job, no record of who deleted what, no change to search, API or RSS.
+- **One at a time:** the floating selection bar has no Delete.
+- **In flight:** Delete is disabled and the dialog cannot be closed until the answer comes; a second press sends
+  nothing.
+- **After confirming:** the dialog closes, then the row leaves the table it was in, and the focus moves to the
+  trashcan of the row now in its place (the last row's when it was last). On this list the pager line's
+  "Showing X–Y of N" follows the server's rule (N drops by one, Y becomes min(Y, N), X stays); "Page X of Y" and
+  the bottom pager stay as drawn, and the page is not refilled from the next one until the page or a filter
+  changes. A ticked row leaves the selection; a release in the admin's own cart leaves the header's cart count.
+  A toast reads "Deleted <release name>".
+- **The last row on a page:** the list is drawn again at the current address (as the basket does after its last
+  row), which shows the next page's rows, the last page or the empty note, and the name search takes the focus.
+- **The last Similar row:** the whole Similar releases section goes (5A.4: no section without a match) and the
+  selected tab takes the focus. You stay on the details page.
+- **Failure** (any answer but success, a refused or two-factor request included): the dialog closes, the row
+  stays, the focus returns to the trashcan, and a toast reads "Could not delete the release. Please try again."
 
 ---
 
@@ -265,6 +304,8 @@ newest posted first, at most one page of 50, without this release. The table is 
 page's Similar releases table without a Source column: Release (name and chips), Resolution, Size,
 Files ("—" when not stored), Posted, and the 2 × 2 buttons without Follow. Sortable by Resolution, Size
 and Posted. No section when there is no match.
+
+An admin's buttons include Delete (5.11); a deleted row leaves this table and the page stays.
 
 ---
 

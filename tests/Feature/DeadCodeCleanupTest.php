@@ -251,15 +251,17 @@ final class DeadCodeCleanupTest extends TestCase
             'adminDashboard', 'adminGroups', 'adminUserEdit', 'adminUserList', 'adminDeletedUsers', 'richTextEditor', 'verifyUser',
             // #1057: the regex and blacklist deletes, the admin cover placeholder and the invitations select-all
             'adminRowDelete', 'imageFallback', 'adminInvitations',
+            // #1167: the Adult admin's Delete confirmation
+            'releaseDeleteDialog',
         ];
-        $this->assertCount(47, $expected);
+        $this->assertCount(48, $expected);
 
         $loader = $this->source('resources/js/alpine/lazy-loader.js');
         $this->assertSame(1, preg_match('/const lazyComponentMap = \{\n(.*?)\n\};/s', $loader, $map));
         preg_match_all('/^\s*\'([^\']+)\'\s*:\s*\(\)\s*=>\s*import\(/m', $map[1], $entries);
         $keys = $entries[1];
         $this->assertSame(substr_count($map[1], 'import('), count($keys));
-        $this->assertCount(47, $keys);
+        $this->assertCount(48, $keys);
         $this->assertSame($keys, array_values(array_unique($keys)));
         $this->assertEqualsCanonicalizing($expected, $keys);
 
