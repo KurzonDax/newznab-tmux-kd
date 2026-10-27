@@ -188,8 +188,9 @@ Most other behaviour is set in the admin settings pages; see
 
 `.env.example` sets `QUEUE_CONNECTION=sync`, which runs queued jobs (mail, API
 usage records) inline. To run them in the background, switch to Redis and run
-Laravel Horizon, listing every queue the application uses in `HORIZON_QUEUES`;
-see [docs/installation.md](docs/installation.md#7-scheduler-and-queue-workers).
+Laravel Horizon. With `HORIZON_QUEUES` unset, Horizon consumes every queue the
+application dispatches to; see
+[docs/installation.md](docs/installation.md#7-scheduler-and-queue-workers).
 The Docker image already runs Horizon under Supervisor.
 
 ```env
