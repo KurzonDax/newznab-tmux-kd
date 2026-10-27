@@ -102,6 +102,17 @@ are checked first):
 | Recovery discovery / publication | `php artisan obfuscation:discover --engine; php artisan obfuscation:publish --engine` | See [Obfuscated recovery](#obfuscated-recovery). |
 | Recovery downloads | `php artisan obfuscation:download --engine` | See [Obfuscated recovery](#obfuscated-recovery). |
 
+Every pane except the IRC scraper is supervised. Each step appends its exit
+code, timing and failed pool children to `storage/tmux/panes/<role>.status`, and a
+`cycle_end` line closes the cycle with its sleep. The monitor counts each finished
+cycle once (`TmuxPaneSupervisor`, state in `storage/tmux/pane-supervision.json`,
+cleared when the monitor starts), logs a warning per failed cycle and shows each
+pane's last exit, duration and failures in a row. After
+`TMUX_FAILURES_BEFORE_BACKOFF` failed cycles in a row it parks the pane, waiting
+the pane's sleep (at least `TMUX_MONITOR_DELAY`) and doubling up to
+`TMUX_MAX_BACKOFF_SECONDS`; one success resets it. A "no work" park waits for a
+running batch to finish instead of killing it.
+
 The `multiprocessing:*` commands all delegate to `ForkingService`
 (`app/Services/ForkingService.php`), which dispatches to a runner in
 `app/Services/Runners/`. Runners fan work out across worker processes

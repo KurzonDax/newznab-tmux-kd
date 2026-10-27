@@ -128,6 +128,8 @@ return [
     'monitor' => [
         'delay' => env('TMUX_MONITOR_DELAY', 10),
         'refresh_interval' => env('TMUX_REFRESH_INTERVAL', 60),
+        'failures_before_backoff' => env('TMUX_FAILURES_BEFORE_BACKOFF', 3),
+        'max_backoff_seconds' => env('TMUX_MAX_BACKOFF_SECONDS', 1800),
     ],
 
     'performance' => [

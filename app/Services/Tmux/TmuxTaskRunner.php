@@ -34,12 +34,15 @@ class TmuxTaskRunner
 
     protected TmuxPaneManager $paneManager;
 
+    protected TmuxPaneSupervisor $supervisor;
+
     protected string $sessionName;
 
     public function __construct(string $sessionName)
     {
         $this->sessionName = $sessionName;
         $this->paneManager = new TmuxPaneManager($sessionName);
+        $this->supervisor = new TmuxPaneSupervisor;
     }
 
     /**
@@ -85,7 +88,7 @@ class TmuxTaskRunner
         }
 
         if (! $workAvailable) {
-            return $this->disablePane($pane, $taskName, 'no work available');
+            return $this->disablePane($pane, $taskName, 'no work available', kill: false);
         }
 
         // Respawn the pane with the command
@@ -93,14 +96,45 @@ class TmuxTaskRunner
     }
 
     /**
-     * Disable a pane with a message
+     * Disable a pane with a message.
+     *
+     * `kill` stops whatever the pane is running. Without it tmux refuses while
+     * a worker is still busy, so a "no work" park waits for the batch to end
+     * and the next pass parks the finished pane.
      */
-    protected function disablePane(string $pane, string $taskName, string $reason): bool
+    protected function disablePane(string $pane, string $taskName, string $reason, bool $kill = true): bool
+    {
+        return $this->parkPane($pane, "{$taskName} has been disabled: {$reason}", $kill);
+    }
+
+    /**
+     * A pane disabled in settings is parked, killing any running worker, and
+     * starts its supervision history clean.
+     */
+    protected function disableInSettings(string $pane, TmuxPaneRole $role, string $taskName): bool
+    {
+        $this->supervisor->forget($role);
+
+        return $this->disablePane($pane, $taskName, 'disabled in settings');
+    }
+
+    /**
+     * Park a supervised pane that is waiting out its backoff. Returns null
+     * when the pane may launch.
+     */
+    protected function parkWhileBackingOff(string $pane, TmuxPaneRole $role, string $taskName): ?bool
+    {
+        $message = $this->supervisor->backoffMessage($role, $taskName);
+
+        return $message === null ? null : $this->parkPane($pane, $message, kill: false);
+    }
+
+    private function parkPane(string $pane, string $message, bool $kill): bool
     {
         $color = $this->getRandomColor();
-        $message = "echo -e \"\033[38;5;{$color}m\n{$taskName} has been disabled: {$reason}\"";
+        $message = addcslashes($message, '\\"$`');
 
-        return $this->paneManager->respawnPane($pane, $message, kill: true);
+        return $this->paneManager->respawnPane($pane, "echo -e \"\033[38;5;{$color}m\n{$message}\"", kill: $kill);
     }
 
     /**
@@ -110,24 +144,74 @@ class TmuxTaskRunner
      */
     public function buildCommand(string $baseCommand, array $options = []): string
     {
-        $parts = [$baseCommand];
-
-        // Add sleep timer at the end if specified
-        if (isset($options['sleep'])) {
-            $sleepCommand = $this->buildSleepCommand($options['sleep']);
-            $parts[] = 'date +"%Y-%m-%d %T"';
-            $parts[] = $sleepCommand;
-        }
-
-        // Add logging if enabled
         if (isset($options['log_pane'])) {
             $logFile = $this->getLogFile($options['log_pane']);
-            $command = implode('; ', $parts);
 
-            return "{$command} 2>&1 | tee -a {$logFile}";
+            return "{$baseCommand} 2>&1 | tee -a {$logFile}";
         }
 
-        return implode('; ', $parts);
+        return $baseCommand;
+    }
+
+    /**
+     * One step of a supervised pane, with its output logged and its result
+     * appended to the role's status file.
+     *
+     * The step's exit status is taken inside the braces, before the pipe to
+     * `tee` replaces it, and every later check reads `$rc`, never `$?`. The
+     * worker writes its failed/total pool children to the file named by
+     * {@see TmuxPaneSupervisor::CHILDREN_ENV}; the status line carries them.
+     * `$c` is the cycle id {@see self::supervisedCycle()} sets.
+     */
+    protected function supervisedStep(
+        TmuxPaneRole $role,
+        string $label,
+        string $command,
+        string $log,
+        ?string $timeoutNotice = null,
+    ): string {
+        $children = escapeshellarg($this->supervisor->childrenFile($role));
+        $status = escapeshellarg($this->supervisor->statusFile($role));
+        $timeoutCheck = $timeoutNotice === null ? '' : "case \$rc in 124|137) echo \"{$timeoutNotice}\";; esac; ";
+        $bounded = $timeoutNotice === null ? '' : ' bounded=1';
+
+        return '{ export '.TmuxPaneSupervisor::CHILDREN_ENV."={$children}; rm -f {$children}; s=\$(date +%s); "
+            ."{$command}; rc=\$?; {$timeoutCheck}"
+            ."k=; if [ -f {$children} ]; then k=\" children_failed=\$(cat {$children})\"; rm -f {$children}; fi; "
+            ."printf '%s\\n' \"cycle=\$c step=\"".escapeshellarg($label)."\" exit=\$rc start=\$s end=\$(date +%s){$bounded}\$k\" >> {$status}; "
+            .'} 2>&1 | tee -a '.escapeshellarg($log);
+    }
+
+    /**
+     * A supervised pane's whole command: the cycle id, its steps, the
+     * `cycle_end` line recording this cycle's sleep, then the timestamp and
+     * the sleep outside any step.
+     *
+     * @param  list<string>  $parts  steps from {@see self::supervisedStep()}, plus any plain notices
+     */
+    protected function supervisedCycle(TmuxPaneRole $role, array $parts, int $sleep): string
+    {
+        $this->supervisor->ensureDirectory();
+        $status = escapeshellarg($this->supervisor->statusFile($role));
+
+        return 'c=$(date +%s); '.implode('; ', $parts)
+            ."; printf '%s\\n' \"cycle=\$c cycle_end=1 sleep={$sleep} end=\$(date +%s)\" >> {$status}"
+            ."; date +'%Y-%m-%d %T'; ".$this->buildSleepCommand($sleep);
+    }
+
+    /**
+     * A supervised cycle of plain steps, all logged to one pane log.
+     *
+     * @param  array<string, string>  $steps  label => command
+     */
+    protected function supervisedCommand(TmuxPaneRole $role, array $steps, string $log, int $sleep): string
+    {
+        $parts = [];
+        foreach ($steps as $label => $command) {
+            $parts[] = $this->supervisedStep($role, (string) $label, $command, $log);
+        }
+
+        return $this->supervisedCycle($role, $parts, $sleep);
     }
 
     /**
@@ -228,9 +312,10 @@ class TmuxTaskRunner
         $enabled = (int) ($config['settings']['binaries_run'] ?? 0);
         $killswitch = $config['killswitch']['pp'] ?? false;
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::Binaries, '0.1');
+        $this->supervisor->observe(TmuxPaneRole::Binaries);
 
         if (! $enabled) {
-            return $this->disablePane($pane, 'Update Binaries', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::Binaries, 'Update Binaries');
         }
 
         if ($killswitch) {
@@ -246,10 +331,14 @@ class TmuxTaskRunner
             return false;
         }
 
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::Binaries, 'Update Binaries')) !== null) {
+            return $parked;
+        }
+
         $niceness = $this->getNiceness();
         $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";
         $sleep = (int) ($config['settings']['bins_timer'] ?? 60);
-        $command = $this->buildCommand($command, ['log_pane' => 'binaries', 'sleep' => $sleep]);
+        $command = $this->supervisedCommand(TmuxPaneRole::Binaries, ['binaries' => $command], $this->getLogFile('binaries'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $command);
     }
@@ -265,9 +354,10 @@ class TmuxTaskRunner
         $collKillswitch = $config['killswitch']['coll'] ?? false;
         $ppKillswitch = $config['killswitch']['pp'] ?? false;
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::Backfill, '0.2');
+        $this->supervisor->observe(TmuxPaneRole::Backfill);
 
         if (! $enabled) {
-            return $this->disablePane($pane, 'Backfill', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::Backfill, 'Backfill');
         }
 
         if ($collKillswitch || $ppKillswitch) {
@@ -281,6 +371,10 @@ class TmuxTaskRunner
 
         if (! $artisanCommand) {
             return false;
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::Backfill, 'Backfill')) !== null) {
+            return $parked;
         }
 
         // Calculate sleep time (progressive if enabled). intdiv() keeps this an
@@ -300,7 +394,7 @@ class TmuxTaskRunner
 
         $niceness = $this->getNiceness();
         $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";
-        $command = $this->buildCommand($command, ['log_pane' => 'backfill', 'sleep' => $sleep]);
+        $command = $this->supervisedCommand(TmuxPaneRole::Backfill, ['backfill' => $command], $this->getLogFile('backfill'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $command);
     }
@@ -315,15 +409,20 @@ class TmuxTaskRunner
         $enabled = (int) ($config['settings']['releases_run'] ?? 0);
         $legacyPane = (int) ($config['constants']['sequential'] ?? 0) === 1 ? '0.1' : '0.3';
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::Releases, $legacyPane);
+        $this->supervisor->observe(TmuxPaneRole::Releases);
 
         if (! $enabled) {
-            return $this->disablePane($pane, 'Update Releases', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::Releases, 'Update Releases');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::Releases, 'Update Releases')) !== null) {
+            return $parked;
         }
 
         $niceness = $this->getNiceness();
         $command = "nice -n{$niceness} ".PHP_BINARY.' artisan multiprocessing:releases';
         $sleep = (int) ($config['settings']['rel_timer'] ?? 60);
-        $command = $this->buildCommand($command, ['log_pane' => 'releases', 'sleep' => $sleep]);
+        $command = $this->supervisedCommand(TmuxPaneRole::Releases, ['releases' => $command], $this->getLogFile('releases'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $command);
     }
@@ -361,10 +460,19 @@ class TmuxTaskRunner
     {
         $role = $download ? TmuxPaneRole::RecoveryDownload : TmuxPaneRole::RecoveryLocal;
         $pane = $this->paneManager->paneForRole($role);
+        $this->supervisor->observe($role);
+        $taskName = $download ? 'Recovery Downloads' : 'Recovery Local';
+
+        if (($parked = $this->parkWhileBackingOff($pane, $role, $taskName)) !== null) {
+            return $parked;
+        }
+
         $artisan = 'nice -n'.$this->getNiceness().' php '.escapeshellarg(base_path('artisan'));
-        $steps = $download ? ['download'] : ['discover', 'publish'];
-        $commands = array_map(static fn (string $step): string => $artisan.' obfuscation:'.$step.' --engine', $steps);
-        $command = $this->buildCommand(implode('; ', $commands), ['log_pane' => $role->value, 'sleep' => 5]);
+        $steps = [];
+        foreach ($download ? ['download'] : ['discover', 'publish'] as $step) {
+            $steps[$step] = $artisan.' obfuscation:'.$step.' --engine';
+        }
+        $command = $this->supervisedCommand($role, $steps, $this->getLogFile($role->value), 5);
 
         return $this->paneManager->respawnPane($pane, $command);
     }
@@ -422,13 +530,18 @@ class TmuxTaskRunner
         $work = (int) ($runVar['counts']['now']['name_work_available'] ?? $runVar['counts']['now']['processrenames'] ?? 0)
             + (int) ($runVar['counts']['now']['processpredbft'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::FixNames, '1.0');
+        $this->supervisor->observe(TmuxPaneRole::FixNames);
 
         if ($enabled !== 1) {
-            return $this->disablePane($pane, 'Fix Release Names', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::FixNames, 'Fix Release Names');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::FixNames, 'Fix Release Names')) !== null) {
+            return $parked;
         }
 
         if ($work === 0) {
-            return $this->disablePane($pane, 'Fix Release Names', 'no releases to process');
+            return $this->disablePane($pane, 'Fix Release Names', 'no releases to process', kill: false);
         }
 
         $artisan = base_path('artisan');
@@ -451,6 +564,7 @@ class TmuxTaskRunner
 
         foreach ($levels as $level) {
             $steps[] = $this->boundedStep(
+                TmuxPaneRole::FixNames,
                 "fix-names {$level}",
                 "php {$artisan} releases:fix-names {$level} --update --category=other --set-status --show",
                 $timeout,
@@ -459,6 +573,7 @@ class TmuxTaskRunner
         }
 
         $steps[] = $this->boundedStep(
+            TmuxPaneRole::FixNames,
             'fix-names standard sweep',
             "php {$artisan} multiprocessing:fixrelnames standard",
             $timeout,
@@ -466,6 +581,7 @@ class TmuxTaskRunner
         );
 
         $steps[] = $this->boundedStep(
+            TmuxPaneRole::FixNames,
             'fix-names predb full-text sweep',
             "php {$artisan} multiprocessing:fixrelnames predbft",
             $timeout,
@@ -473,36 +589,34 @@ class TmuxTaskRunner
         );
 
         $sleep = (int) ($runVar['settings']['fix_timer'] ?? 300);
-        $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = implode('; ', $steps)."; date +'%Y-%m-%d %T'; {$sleepCommand}";
 
-        return $this->paneManager->respawnPane($pane, $fullCommand);
+        return $this->paneManager->respawnPane($pane, $this->supervisedCycle(TmuxPaneRole::FixNames, $steps, $sleep));
     }
 
     /**
-     * One step of a sequential pane chain, bounded by a wall-clock limit.
+     * One supervised step of a sequential pane chain, bounded by a wall-clock
+     * limit.
      *
      * The command runs under coreutils `timeout`, which TERMs it at the limit
      * and KILLs it shortly after, and a single line naming the step is written
      * when that happens. The signal goes to the command's whole process group,
-     * so the sweep's forked `groupfixrelnames.php` workers die with it. The
-     * pipe to `tee` would otherwise swallow the exit status, so the check
-     * happens inside the braces, before the pipe. When no `timeout` binary is
-     * available the command runs unbounded; {@see self::runFixNamesTask()}
-     * says so in the pane once per cycle.
+     * so the sweep's forked `groupfixrelnames.php` workers die with it. Such a
+     * step is recorded with `bounded=1`, and its 124/137 exit counts as moving
+     * on, not as a failure. When no `timeout` binary is available the command
+     * runs unbounded; {@see self::runFixNamesTask()} says so in the pane once
+     * per cycle.
      */
-    public function boundedStep(string $label, string $command, int $timeoutSeconds, string $log): string
+    public function boundedStep(TmuxPaneRole $role, string $label, string $command, int $timeoutSeconds, string $log): string
     {
         $timeoutBinary = $this->timeoutBinary();
         if ($timeoutBinary === null) {
-            return "{$command} 2>&1 | tee -a {$log}";
+            return $this->supervisedStep($role, $label, $command, $log);
         }
 
         $killAfter = self::TIMEOUT_KILL_AFTER;
         $notice = "\$(date +'%Y-%m-%d %T') {$label} timed out after {$timeoutSeconds}s, moving on";
 
-        return "{ {$timeoutBinary} -k {$killAfter} {$timeoutSeconds} {$command}; "
-            ."case \$? in 124|137) echo \"{$notice}\";; esac; } 2>&1 | tee -a {$log}";
+        return $this->supervisedStep($role, $label, "{$timeoutBinary} -k {$killAfter} {$timeoutSeconds} {$command}", $log, $notice);
     }
 
     /**
@@ -535,25 +649,18 @@ class TmuxTaskRunner
     {
         $option = $runVar['settings']['fix_crap_opt'] ?? 'Disabled';
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::RemoveCrap, '1.1');
+        $this->supervisor->observe(TmuxPaneRole::RemoveCrap);
 
         // Handle disabled state
         if ($option === 'Disabled' || $option === 0 || $option === '0') {
-            return $this->disablePane($pane, 'Remove Crap', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::RemoveCrap, 'Remove Crap');
         }
 
-        $niceness = $this->getNiceness();
-        $artisan = base_path('artisan');
-        $sleep = (int) ($runVar['settings']['crap_timer'] ?? 300);
-
-        // Handle 'All' mode - run all types with 2 hour time limit
-        if ($option === 'All') {
-            $command = "nice -n{$niceness} php {$artisan} releases:remove-crap --time=2 --delete";
-            $command = $this->buildCommand($command, ['log_pane' => 'removecrap', 'sleep' => $sleep]);
-
-            return $this->paneManager->respawnPane($pane, $command);
+        if ($option !== 'All' && $option !== 'Custom') {
+            return $this->disablePane($pane, 'Remove Crap', 'invalid configuration');
         }
 
-        // Handle 'Custom' mode - run all selected types sequentially
+        $types = [];
         if ($option === 'Custom') {
             $selectedTypes = $runVar['settings']['fix_crap'] ?? '';
 
@@ -574,38 +681,55 @@ class TmuxTaskRunner
             if (empty($types)) {
                 return $this->disablePane($pane, 'Remove Crap', 'no crap types selected');
             }
-
-            // Get state to determine if this is first run
-            $stateFile = storage_path('tmux/removecrap_state.json');
-            $state = $this->loadCrapState($stateFile);
-            $isFirstRun = $state['first_run'] ?? true;
-
-            // Determine time limit: full on first run, 4 hours otherwise
-            $time = $isFirstRun ? 'full' : '4';
-
-            // Build commands for all enabled types to run sequentially
-            $log = $this->getLogFile('removecrap');
-            $commands = [];
-            foreach ($types as $type) {
-                $commands[] = "echo \"\nRunning removeCrapReleases for {$type}\"; nice -n{$niceness} php {$artisan} releases:remove-crap --type={$type} --time={$time} --delete 2>&1 | tee -a {$log}";
-            }
-
-            // Join all commands with semicolons and add final timestamp and sleep
-            $allCommands = implode('; ', $commands);
-            $sleepCommand = $this->buildSleepCommand($sleep);
-            $fullCommand = "{$allCommands}; date +'%Y-%m-%d %T'; {$sleepCommand}";
-
-            // Mark that we're not on the first run anymore for next cycle
-            $this->saveCrapState($stateFile, [
-                'first_run' => false,
-                'types' => $types,
-            ]);
-
-            return $this->paneManager->respawnPane($pane, $fullCommand);
         }
 
-        // Default fallback - disabled
-        return $this->disablePane($pane, 'Remove Crap', 'invalid configuration');
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::RemoveCrap, 'Remove Crap')) !== null) {
+            return $parked;
+        }
+
+        $niceness = $this->getNiceness();
+        $artisan = base_path('artisan');
+        $sleep = (int) ($runVar['settings']['crap_timer'] ?? 300);
+        $log = $this->getLogFile('removecrap');
+
+        // Handle 'All' mode - run all types with 2 hour time limit
+        if ($option === 'All') {
+            $command = "nice -n{$niceness} php {$artisan} releases:remove-crap --time=2 --delete";
+            $command = $this->supervisedCommand(TmuxPaneRole::RemoveCrap, ['all' => $command], $log, $sleep);
+
+            return $this->paneManager->respawnPane($pane, $command);
+        }
+
+        // 'Custom' mode - run all selected types sequentially
+        // Get state to determine if this is first run
+        $stateFile = storage_path('tmux/removecrap_state.json');
+        $state = $this->loadCrapState($stateFile);
+        $isFirstRun = $state['first_run'] ?? true;
+
+        // Determine time limit: full on first run, 4 hours otherwise
+        $time = $isFirstRun ? 'full' : '4';
+
+        // Build commands for all enabled types to run sequentially
+        $commands = [];
+        foreach ($types as $type) {
+            $commands[] = "echo \"\nRunning removeCrapReleases for {$type}\"";
+            $commands[] = $this->supervisedStep(
+                TmuxPaneRole::RemoveCrap,
+                (string) $type,
+                "nice -n{$niceness} php {$artisan} releases:remove-crap --type={$type} --time={$time} --delete",
+                $log,
+            );
+        }
+
+        $fullCommand = $this->supervisedCycle(TmuxPaneRole::RemoveCrap, $commands, $sleep);
+
+        // Mark that we're not on the first run anymore for next cycle
+        $this->saveCrapState($stateFile, [
+            'first_run' => false,
+            'types' => $types,
+        ]);
+
+        return $this->paneManager->respawnPane($pane, $fullCommand);
     }
 
     /**
@@ -649,58 +773,49 @@ class TmuxTaskRunner
     {
         $postSetting = (int) ($runVar['settings']['post'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostAdditional, '2.0');
+        $this->supervisor->observe(TmuxPaneRole::PostAdditional);
 
         // Check if post processing is enabled (1 = additional, 2 = nfo, 3 = both)
         if ($postSetting === 0) {
-            return $this->disablePane($pane, 'Post-process Additional', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::PostAdditional, 'Post-process Additional');
+        }
+
+        if (! in_array($postSetting, [1, 2, 3], true)) {
+            return $this->disablePane($pane, 'Post-process Additional', 'invalid post setting value');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::PostAdditional, 'Post-process Additional')) !== null) {
+            return $parked;
         }
 
         $hasWork = (int) ($runVar['counts']['now']['work_available'] ?? $runVar['counts']['now']['work'] ?? 0) > 0;
         $hasNfo = (int) ($runVar['counts']['now']['processnfo'] ?? 0) > 0;
 
         $niceness = $this->getNiceness();
-        $log = $this->getLogFile('post_additional');
         $sleep = (int) ($runVar['settings']['post_timer'] ?? 300);
+        $worker = "nice -n{$niceness} ".PHP_BINARY.' artisan multiprocessing:postprocess';
 
-        $commands = [];
-
-        // Build commands based on post setting value
-        if ($postSetting === 1) {
-            // Post = 1: Additional processing only
-            if ($hasWork) {
-                $commands[] = "nice -n{$niceness} ".PHP_BINARY." artisan multiprocessing:postprocess add 2>&1 | tee -a {$log}";
-            }
-        } elseif ($postSetting === 2) {
-            // Post = 2: NFO processing only
-            if ($hasNfo) {
-                $commands[] = "nice -n{$niceness} ".PHP_BINARY." artisan multiprocessing:postprocess nfo 2>&1 | tee -a {$log}";
-            }
-        } elseif ($postSetting === 3) {
-            // Post = 3: Both additional and NFO
-            if ($hasWork) {
-                $commands[] = "nice -n{$niceness} ".PHP_BINARY." artisan multiprocessing:postprocess add 2>&1 | tee -a {$log}";
-            }
-            if ($hasNfo) {
-                $commands[] = "nice -n{$niceness} ".PHP_BINARY." artisan multiprocessing:postprocess nfo 2>&1 | tee -a {$log}";
-            }
+        // Post = 1: additional only, 2: NFO only, 3: both
+        $steps = [];
+        if ($postSetting !== 2 && $hasWork) {
+            $steps['add'] = "{$worker} add";
+        }
+        if ($postSetting !== 1 && $hasNfo) {
+            $steps['nfo'] = "{$worker} nfo";
         }
 
-        // If no work available, disable the pane
-        if (empty($commands)) {
+        // If no work available, park the pane once the running batch ends
+        if ($steps === []) {
             $reason = match ($postSetting) {
                 1 => 'no additional work to process',
                 2 => 'no NFOs to process',
-                3 => 'no additional work or NFOs to process',
-                default => 'invalid post setting value',
+                default => 'no additional work or NFOs to process',
             };
 
-            return $this->disablePane($pane, 'Post-process Additional', $reason);
+            return $this->disablePane($pane, 'Post-process Additional', $reason, kill: false);
         }
 
-        // Build the full command with all parts
-        $allCommands = implode('; ', $commands);
-        $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = "{$allCommands}; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $fullCommand = $this->supervisedCommand(TmuxPaneRole::PostAdditional, $steps, $this->getLogFile('post_additional'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
     }
@@ -714,53 +829,55 @@ class TmuxTaskRunner
     {
         $enabled = (int) ($runVar['settings']['post_non'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostTv, '2.1');
+        $this->supervisor->observe(TmuxPaneRole::PostTv);
 
         if ($enabled !== 1) {
-            return $this->disablePane($pane, 'Post-process TV/Anime', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::PostTv, 'Post-process TV/Anime');
+        }
+
+        $processTv = (int) ($runVar['settings']['processtvrage'] ?? 0);
+        $processAnime = (int) ($runVar['settings']['processanime'] ?? 0);
+        $enabledTypes = [];
+        if ($processTv > 0) {
+            $enabledTypes[] = 'TV';
+        }
+        if ($processAnime > 0) {
+            $enabledTypes[] = 'Anime';
+        }
+
+        if (empty($enabledTypes)) {
+            return $this->disablePane($pane, 'Post-process TV/Anime', 'no types enabled (TV/Anime)');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::PostTv, 'Post-process TV/Anime')) !== null) {
+            return $parked;
         }
 
         $niceness = $this->getNiceness();
-        $log = $this->getLogFile('post_tv');
         $artisan = PHP_BINARY.' artisan';
-        $commands = [];
+        $steps = [];
 
         // TV processing - Check work count before adding to queue
-        $processTv = (int) ($runVar['settings']['processtvrage'] ?? 0);
         $hasTvWork = (int) ($runVar['counts']['now']['processtv'] ?? 0) > 0;
         if ($processTv > 0 && $hasTvWork) {
-            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess tv 2>&1 | tee -a {$log}";
+            $steps['tv'] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess tv";
         }
 
         // Anime processing
-        $processAnime = (int) ($runVar['settings']['processanime'] ?? 0);
         $hasAnimeWork = (int) ($runVar['counts']['now']['processanime'] ?? 0) > 0;
         if ($processAnime > 0 && $hasAnimeWork) {
-            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ani 2>&1 | tee -a {$log}";
+            $steps['ani'] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ani";
         }
 
-        // If no work available for any enabled type, disable the pane
-        if (empty($commands)) {
-            $enabledTypes = [];
-            if ($processTv > 0) {
-                $enabledTypes[] = 'TV';
-            }
-            if ($processAnime > 0) {
-                $enabledTypes[] = 'Anime';
-            }
-
-            if (empty($enabledTypes)) {
-                return $this->disablePane($pane, 'Post-process TV/Anime', 'no types enabled (TV/Anime)');
-            }
-
+        // If no work available for any enabled type, park the pane once the running batch ends
+        if ($steps === []) {
             $typesList = implode(', ', $enabledTypes);
 
-            return $this->disablePane($pane, 'Post-process TV/Anime', "no work for enabled types ({$typesList})");
+            return $this->disablePane($pane, 'Post-process TV/Anime', "no work for enabled types ({$typesList})", kill: false);
         }
 
         $sleep = (int) ($runVar['settings']['post_timer_non'] ?? 300);
-        $allCommands = implode('; ', $commands);
-        $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = "{$allCommands}; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $fullCommand = $this->supervisedCommand(TmuxPaneRole::PostTv, $steps, $this->getLogFile('post_tv'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
     }
@@ -774,13 +891,13 @@ class TmuxTaskRunner
     {
         $enabled = (int) ($runVar['settings']['post_non'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMovies, '2.3');
+        $this->supervisor->observe(TmuxPaneRole::PostMovies);
 
         if ($enabled !== 1) {
-            return $this->disablePane($pane, 'Post-process Movies', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::PostMovies, 'Post-process Movies');
         }
 
         $niceness = $this->getNiceness();
-        $log = $this->getLogFile('post_movies');
         $artisan = PHP_BINARY.' artisan';
 
         // Movies processing - Uses single-process command
@@ -788,17 +905,20 @@ class TmuxTaskRunner
         $hasMoviesWork = (int) ($runVar['counts']['now']['processmovies'] ?? 0) > 0;
 
         if ($processMovies === 0) {
-            return $this->disablePane($pane, 'Post-process Movies', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::PostMovies, 'Post-process Movies');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::PostMovies, 'Post-process Movies')) !== null) {
+            return $parked;
         }
 
         if (! $hasMoviesWork) {
-            return $this->disablePane($pane, 'Post-process Movies', 'no work available');
+            return $this->disablePane($pane, 'Post-process Movies', 'no work available', kill: false);
         }
 
         $sleep = (int) ($runVar['settings']['post_timer_non'] ?? 300);
-        $command = "nice -n{$niceness} {$artisan} multiprocessing:postprocess mov false 2>&1 | tee -a {$log}";
-        $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = "{$command}; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $command = "nice -n{$niceness} {$artisan} multiprocessing:postprocess mov false";
+        $fullCommand = $this->supervisedCommand(TmuxPaneRole::PostMovies, ['mov' => $command], $this->getLogFile('post_movies'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
     }
@@ -824,9 +944,14 @@ class TmuxTaskRunner
     {
         $enabled = (int) ($runVar['settings']['post_amazon'] ?? 0);
         $pane = $this->paneManager->paneForRole(TmuxPaneRole::PostMetadata, '2.2');
+        $this->supervisor->observe(TmuxPaneRole::PostMetadata);
 
         if ($enabled !== 1) {
-            return $this->disablePane($pane, 'Post-process Metadata', 'disabled in settings');
+            return $this->disableInSettings($pane, TmuxPaneRole::PostMetadata, 'Post-process Metadata');
+        }
+
+        if (($parked = $this->parkWhileBackingOff($pane, TmuxPaneRole::PostMetadata, 'Post-process Metadata')) !== null) {
+            return $parked;
         }
 
         $hasMetadataWork = (int) ($runVar['counts']['now']['processmusic'] ?? 0) > 0
@@ -840,24 +965,22 @@ class TmuxTaskRunner
         $hasAudioWork = (int) ($runVar['counts']['now']['audio_work_available'] ?? 0) > 0;
 
         if (! $hasMetadataWork && ! $hasAudioWork) {
-            return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games or audio previews to process');
+            return $this->disablePane($pane, 'Post-process Metadata', 'no music/books/games or audio previews to process', kill: false);
         }
 
         $niceness = $this->getNiceness();
-        $log = $this->getLogFile('post_amazon');
         $artisan = PHP_BINARY.' artisan';
         $sleep = (int) ($runVar['settings']['post_timer_amazon'] ?? 300);
 
-        $commands = [];
+        $steps = [];
         if ($hasMetadataWork) {
-            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ama 2>&1 | tee -a {$log}";
+            $steps['ama'] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess ama";
         }
         if ($hasAudioWork) {
-            $commands[] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess aud 2>&1 | tee -a {$log}";
+            $steps['aud'] = "nice -n{$niceness} {$artisan} multiprocessing:postprocess aud";
         }
 
-        $sleepCommand = $this->buildSleepCommand($sleep);
-        $fullCommand = implode('; ', $commands)."; date +'%Y-%m-%d %T'; {$sleepCommand}";
+        $fullCommand = $this->supervisedCommand(TmuxPaneRole::PostMetadata, $steps, $this->getLogFile('post_amazon'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $fullCommand);
     }

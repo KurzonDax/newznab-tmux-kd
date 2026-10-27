@@ -31,6 +31,9 @@ class ForkingService
 
     protected int $maxRetries;
 
+    /** Exit code of the last {@see self::executeCommand()} run. */
+    protected ?int $lastExitCode = null;
+
     public function __construct()
     {
         $this->maxRetries = (int) Settings::settingValue('maxnforetries') >= 0
@@ -262,6 +265,10 @@ class ForkingService
     {
         $command = [PHP_BINARY, 'artisan', 'releases:finalize'];
         $this->executeCommand($command);
+
+        if (($this->lastExitCode ?? 0) !== 0) {
+            Log::warning("releases:finalize exited with code {$this->lastExitCode}", ['exit_code' => $this->lastExitCode]);
+        }
     }
 
     /**
@@ -272,7 +279,7 @@ class ForkingService
     {
         $process = new OwnedProcess(is_array($command) ? $command : ['/bin/sh', '-c', $command]);
         $process->setTimeout((int) config('nntmux.multiprocessing_max_child_time', 1800));
-        $process->run(function ($type, $buffer) {
+        $this->lastExitCode = $process->run(function ($type, $buffer) {
             if ($type === Process::ERR) {
                 echo $buffer;
             }

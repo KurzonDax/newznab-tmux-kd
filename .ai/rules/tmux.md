@@ -14,6 +14,11 @@ Use these rules for layout, task dispatch, or post-processing throughput changes
   to the three processing windows. Optional monitoring windows follow them.
 - Route work through `TmuxPaneRole` and the pane manager. Numeric window/pane
   addresses are legacy fallbacks, not the ownership model.
+- Processing panes are supervised by `TmuxPaneSupervisor`: build each worker step
+  with `TmuxTaskRunner::supervisedStep()`/`boundedStep()` and the whole command with
+  `supervisedCycle()`, or the step's exit status and backoff are lost. Only
+  settings, safety-valve and configuration parks may use `respawn-pane -k`; "no
+  work" and backoff parks must let a running batch finish.
 - `multiprocessing:postprocess` dispatches through `PostProcessRunner`. Additional
   processing can run directly with one process; parallel additional workers use
   `postprocess:guid` worker mode. Hot GUID buckets can be shared across workers,

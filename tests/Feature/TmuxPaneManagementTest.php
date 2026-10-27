@@ -6,14 +6,20 @@ namespace Tests\Feature;
 
 use App\Console\Commands\TmuxMonitor;
 use App\Enums\TmuxPaneRole;
+use App\Services\Tmux\Tmux;
 use App\Services\Tmux\TmuxLayoutBuilder;
+use App\Services\Tmux\TmuxMonitorService;
+use App\Services\Tmux\TmuxOutput;
 use App\Services\Tmux\TmuxPaneManager;
+use App\Services\Tmux\TmuxPaneSupervisor;
 use App\Services\Tmux\TmuxSessionManager;
 use App\Services\Tmux\TmuxTaskRunner;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -24,11 +30,16 @@ use Tests\TestCase;
 
 class TmuxPaneManagementTest extends TestCase
 {
+    /** @var list<string> commands sent through `respawn-pane` while fakePaneRole() is active */
+    private array $respawned = [];
+
     protected function setUp(): void
     {
         parent::setUp();
 
         Process::preventStrayProcesses();
+        // Pane status files and the supervision state live under storage/tmux.
+        $this->app->useStoragePath($this->makeTempDirectory('nntmux-storage'));
     }
 
     public function test_engine_start_does_not_rewrite_collection_timestamps(): void
@@ -918,10 +929,12 @@ SH;
             'counts' => ['now' => $counts],
         ]));
 
+        // A "no work" park never kills a running worker: tmux refuses while the
+        // batch runs, and the next pass parks the finished pane.
         Process::assertRan(function (PendingProcess $process) use ($displayName, $reason): bool {
             return is_array($process->command)
                 && in_array('respawn-pane', $process->command, true)
-                && in_array('-k', $process->command, true)
+                && ! in_array('-k', $process->command, true)
                 && str_contains((string) end($process->command), "{$displayName} has been disabled")
                 && str_contains((string) end($process->command), $reason);
         });
@@ -979,6 +992,33 @@ SH;
                 'Post-process Additional',
                 'no NFOs to process',
                 'multiprocessing:postprocess nfo',
+            ],
+            'additional only' => [
+                'ppadditional',
+                'post_additional',
+                ['post' => 1],
+                ['processnfo' => 0, 'work_available' => 0],
+                'Post-process Additional',
+                'no additional work to process',
+                'multiprocessing:postprocess add',
+            ],
+            'additional and NFO' => [
+                'ppadditional',
+                'post_additional',
+                ['post' => 3],
+                ['processnfo' => 0, 'work_available' => 0],
+                'Post-process Additional',
+                'no additional work or NFOs to process',
+                'multiprocessing:postprocess',
+            ],
+            'fix names' => [
+                'fixnames',
+                'fix_names',
+                ['fix_names' => 1],
+                ['name_work_available' => 0, 'processpredbft' => 0],
+                'Fix Release Names',
+                'no releases to process',
+                'releases:fix-names',
             ],
         ];
     }
@@ -1132,8 +1172,9 @@ SH;
         $command = $this->respawnedCommand();
         $this->assertStringNotContainsString('timeout -k', $command);
         $this->assertStringNotContainsString('timed out', $command);
-        $this->assertStringStartsWith("echo 'fix_names_timeout is not enforced", $command);
-        $this->assertStringContainsString('multiprocessing:fixrelnames standard 2>&1 | tee -a', $command);
+        $this->assertStringNotContainsString('bounded=1', $command);
+        $this->assertStringStartsWith("c=\$(date +%s); echo 'fix_names_timeout is not enforced", $command);
+        $this->assertMatchesRegularExpression('/multiprocessing:fixrelnames standard; rc=\$\?; .*\} 2>&1 \| tee -a /', $command);
     }
 
     /**
@@ -1148,8 +1189,9 @@ SH;
         }
 
         $log = $this->makeTempPath('nntmux-fixnames', '.log');
+        mkdir(storage_path('tmux/panes'), 0755, true);
         $runner = new TmuxTaskRunner('test-session');
-        $chain = $runner->boundedStep('fix-names 7', 'sleep 30', 1, $log).'; echo next-step';
+        $chain = 'c=100; '.$runner->boundedStep(TmuxPaneRole::FixNames, 'fix-names 7', 'sleep 30', 1, $log).'; echo next-step';
 
         $started = microtime(true);
         $process = SymfonyProcess::fromShellCommandline($chain);
@@ -1161,6 +1203,10 @@ SH;
         $this->assertMatchesRegularExpression('/fix-names 7 timed out after 1s, moving on\n.*next-step/s', $process->getOutput());
         $this->assertSame(1, substr_count((string) file_get_contents($log), 'timed out after 1s'));
         $this->assertStringNotContainsString('next-step', (string) file_get_contents($log), 'only the step itself is logged');
+        $this->assertMatchesRegularExpression(
+            '/^cycle=100 step=fix-names 7 exit=124 start=\d+ end=\d+ bounded=1$/',
+            trim((string) file_get_contents(storage_path('tmux/panes/fix_names.status'))),
+        );
     }
 
     #[DataProvider('nicenessSettingProvider')]
@@ -1234,11 +1280,376 @@ SH;
     }
 
     /**
-     * Give the task runner a settings table holding (or deliberately missing)
-     * the niceness row. Every other setting it reads stays absent, which is the
-     * state a fresh install's tmux pane sees before the seeder runs.
+     * Every builder shape, run for real through /bin/sh with each worker
+     * replaced by a fake that prints and exits 3.
+     *
+     * @param  array<string, mixed>  $runVar
      */
-    private function seedNicenessSetting(?string $value): void
+    #[DataProvider('supervisedPaneShapeProvider')]
+    public function test_each_pane_command_records_every_step_exit_and_ends_the_cycle_with_its_sleep(
+        string $task,
+        string $role,
+        array $runVar,
+        ?string $timeoutBinary,
+        int $steps,
+        int $sleep,
+    ): void {
+        if ($timeoutBinary === 'timeout') {
+            $timeoutBinary = (new ExecutableFinder)->find('timeout');
+            if ($timeoutBinary === null) {
+                $this->markTestSkipped('coreutils timeout is not installed on this host.');
+            }
+        }
+        config(['nntmux_srrdb.enabled' => false]);
+        $logs = $this->makeTempDirectory('nntmux-pane-logs');
+        config(['tmux.paths.logs' => $logs]);
+        $this->seedNicenessSetting('5', ['write_logs' => '1']);
+        $this->fakePaneRole($role);
+
+        $runner = $this->runnerWithTimeoutBinary($timeoutBinary);
+        $this->assertTrue(match ($task) {
+            'binaries' => $runner->runBinariesUpdate($runVar),
+            'backfill' => $runner->runBackfill($runVar),
+            'releases' => $runner->runReleasesUpdate($runVar),
+            default => $runner->runPaneTask($task, [], $runVar),
+        });
+
+        $process = new SymfonyProcess(['/bin/sh', '-c', $this->withFakeWorkers($this->respawnedCommand())]);
+        $process->setTimeout(60);
+        $process->run();
+        $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
+
+        $lines = file(storage_path("tmux/panes/{$role}.status"), FILE_IGNORE_NEW_LINES) ?: [];
+        $this->assertCount($steps + 1, $lines, implode("\n", $lines));
+        foreach (array_slice($lines, 0, $steps) as $line) {
+            $this->assertMatchesRegularExpression('/^cycle=\d+ step=\S.* exit=3 start=\d+ end=\d+( bounded=1)?$/', $line);
+        }
+        $this->assertMatchesRegularExpression("/^cycle=\\d+ cycle_end=1 sleep={$sleep} end=\\d+$/", (string) end($lines));
+        $this->assertCount(1, array_unique(array_map(static fn (string $line): string => (string) strtok($line, ' '), $lines)), 'one cycle id');
+
+        $logged = implode('', array_map('file_get_contents', glob($logs.'/*.log') ?: []));
+        $this->assertSame($steps, substr_count($logged, 'fake worker output'), 'the log holds every step\'s output');
+    }
+
+    /**
+     * @return array<string, array{string, string, array<string, mixed>, ?string, int, int}>
+     */
+    public static function supervisedPaneShapeProvider(): array
+    {
+        $killswitch = ['coll' => false, 'pp' => false];
+
+        return [
+            'binaries' => ['binaries', 'binaries', ['settings' => ['binaries_run' => 1, 'bins_timer' => 7], 'killswitch' => $killswitch], null, 1, 7],
+            'backfill' => ['backfill', 'backfill', ['settings' => ['backfill' => 1, 'back_timer' => 8, 'progressive' => 0], 'killswitch' => $killswitch, 'counts' => ['now' => ['collections_table' => 0]]], null, 1, 8],
+            'releases' => ['releases', 'releases', ['settings' => ['releases_run' => 1, 'rel_timer' => 9], 'constants' => ['sequential' => 0]], null, 1, 9],
+            'fix names under timeout' => ['fixnames', 'fix_names', ['settings' => ['fix_names' => 1, 'fix_timer' => 0], 'counts' => ['now' => ['processrenames' => 1]]], 'timeout', 11, 0],
+            'fix names without timeout' => ['fixnames', 'fix_names', ['settings' => ['fix_names' => 1, 'fix_timer' => 1], 'counts' => ['now' => ['processrenames' => 1]]], null, 11, 1],
+            'remove crap all' => ['removecrap', 'remove_crap', ['settings' => ['fix_crap_opt' => 'All', 'crap_timer' => 2]], null, 1, 2],
+            'remove crap custom' => ['removecrap', 'remove_crap', ['settings' => ['fix_crap_opt' => 'Custom', 'fix_crap' => 'blacklist,executable', 'crap_timer' => 3]], null, 2, 3],
+            'additional and NFO' => ['ppadditional', 'post_additional', ['settings' => ['post' => 3, 'post_timer' => 4], 'counts' => ['now' => ['work_available' => 1, 'processnfo' => 1]]], null, 2, 4],
+            'TV and anime' => ['tv', 'post_tv', ['settings' => ['post_non' => 1, 'processtvrage' => 1, 'processanime' => 1, 'post_timer_non' => 5], 'counts' => ['now' => ['processtv' => 1, 'processanime' => 1]]], null, 2, 5],
+            'movies' => ['movies', 'post_movies', ['settings' => ['post_non' => 1, 'processmovies' => 1, 'post_timer_non' => 6], 'counts' => ['now' => ['processmovies' => 1]]], null, 1, 6],
+            'metadata and audio' => ['amazon', 'post_metadata', ['settings' => ['post_amazon' => 1, 'post_timer_amazon' => 7], 'counts' => ['now' => ['processmusic' => 1, 'audio_work_available' => 1]]], null, 2, 7],
+            'recovery discovery and publication' => ['recovery_local', 'recovery_local', [], null, 2, 5],
+            'recovery downloads' => ['recovery_download', 'recovery_download', [], null, 1, 5],
+        ];
+    }
+
+    public function test_a_step_reports_its_workers_failed_children_on_its_status_line(): void
+    {
+        mkdir(storage_path('tmux/panes'), 0755, true);
+        $runner = new class('test-session') extends TmuxTaskRunner
+        {
+            public function step(string $command, string $log): string
+            {
+                return $this->supervisedStep(TmuxPaneRole::PostAdditional, 'add', $command, $log);
+            }
+        };
+        $worker = escapeshellarg(PHP_BINARY).' -r '.escapeshellarg('file_put_contents(getenv("NNTMUX_PANE_CHILDREN"), "1/3");');
+
+        $process = new SymfonyProcess(['/bin/sh', '-c', 'c=200; '.$runner->step($worker, $this->makeTempPath('nntmux-add', '.log'))]);
+        $process->run();
+
+        $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
+        $this->assertMatchesRegularExpression(
+            '/^cycle=200 step=add exit=0 start=\d+ end=\d+ children_failed=1\/3$/',
+            trim((string) file_get_contents(storage_path('tmux/panes/post_additional.status'))),
+            'failed children are reported, and the worker\'s own exit stays 0',
+        );
+        $this->assertFileDoesNotExist(storage_path('tmux/panes/post_additional.children'));
+    }
+
+    public function test_a_failed_cycle_is_counted_once_and_shown_on_the_monitor(): void
+    {
+        Log::spy();
+        $this->fakePaneRole('binaries');
+        $this->writeStatus('binaries', [
+            'cycle=900 step=binaries exit=0 start=900 end=905',
+            'cycle=1000 step=binaries exit=2 start=1000 end=1030',
+            'not a status line',
+            'cycle=1000 cycle_end=1 sleep=10 end=1031',
+        ]);
+
+        $this->travelTo(Carbon::createFromTimestamp(1035));
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar());
+        $this->assertSame('', file_get_contents(storage_path('tmux/panes/binaries.status')), 'the counted cycle is emptied');
+
+        // The same cycle read again changes nothing and logs nothing.
+        $this->writeStatus('binaries', ['cycle=1000 step=binaries exit=2 start=1000 end=1030', 'cycle=1000 cycle_end=1 sleep=10 end=1031']);
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar());
+
+        Log::shouldHaveReceived('warning')
+            ->withArgs(fn (string $message, array $context = []): bool => str_contains($message, 'binaries failed: step binaries exited 2 after 31s')
+                && $context['exit'] === 2 && $context['duration'] === 31)
+            ->once();
+
+        $supervision = (new TmuxPaneSupervisor)->summaries();
+        $this->assertSame(array_keys(TmuxPaneSupervisor::ROLES), array_keys($supervision));
+        $this->assertSame('Binaries', $supervision['binaries']['label']);
+        $this->assertSame(1, $supervision['binaries']['failures']);
+        $this->assertSame(['step' => 'binaries', 'exit' => 2, 'duration' => 31, 'children_failed' => null], $supervision['binaries']['last']);
+
+        $display = (string) preg_replace('/\e\[[0-9;]*m/', '', (new TmuxOutput)->renderSupervision($supervision));
+        $this->assertMatchesRegularExpression('/Binaries\s+exit 2 in 31s\s+1\n/', $display);
+        $this->assertMatchesRegularExpression('/Fix Names\s+no runs yet\s*\n/', $display);
+        $this->assertSame(count(TmuxPaneSupervisor::ROLES) + 3, substr_count($display, "\n"), 'blank line, header, separator, one line per role');
+    }
+
+    public function test_a_cycle_without_its_end_line_is_never_counted(): void
+    {
+        Log::spy();
+        $this->fakePaneRole('binaries');
+        $this->writeStatus('binaries', [
+            // Killed mid-step: no cycle_end.
+            'cycle=1000 step=binaries exit=2 start=1000 end=1030',
+            'cycle=1100 step=binaries exit=0 start=1100 end=1110',
+            'cycle=1100 cycle_end=1 sleep=10 end=1110',
+        ]);
+
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar());
+
+        Log::shouldNotHaveReceived('warning');
+        $this->assertSame(['step' => 'binaries', 'exit' => 0, 'duration' => 10, 'children_failed' => null], (new TmuxPaneSupervisor)->summaries()['binaries']['last']);
+
+        // A running cycle has no end line yet and stays untouched.
+        $this->writeStatus('binaries', ['cycle=1200 step=binaries exit=4 start=1200 end=1201']);
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar());
+
+        Log::shouldNotHaveReceived('warning');
+        $this->assertSame(0, (new TmuxPaneSupervisor)->summaries()['binaries']['failures']);
+        $this->assertStringContainsString('cycle=1200', (string) file_get_contents(storage_path('tmux/panes/binaries.status')));
+    }
+
+    public function test_only_a_bounded_step_cut_off_by_timeout_counts_as_moving_on(): void
+    {
+        $this->fakePaneRole('fix_names');
+        $this->writeStatus('fix_names', [
+            'cycle=1000 step=fix-names 3 exit=124 start=1000 end=1010 bounded=1',
+            'cycle=1000 step=fix-names 5 exit=137 start=1010 end=1020 bounded=1 children_failed=1/4',
+            'cycle=1000 step=fix-names standard sweep exit=0 start=1020 end=1030 children_failed=2/5',
+            'cycle=1000 cycle_end=1 sleep=10 end=1030',
+        ]);
+        $runVar = ['settings' => ['fix_names' => 1, 'fix_timer' => 10], 'counts' => ['now' => ['processrenames' => 1]]];
+        $runner = $this->runnerWithTimeoutBinary('timeout');
+
+        $runner->runPaneTask('fixnames', [], $runVar);
+        $summary = (new TmuxPaneSupervisor)->summaries()['fix_names'];
+        $this->assertSame(0, $summary['failures']);
+        $this->assertSame(['step' => 'fix-names standard sweep', 'exit' => 0, 'duration' => 30, 'children_failed' => '3/9'], $summary['last']);
+
+        $this->writeStatus('fix_names', [
+            'cycle=1100 step=fix-names 3 exit=137 start=1100 end=1110',
+            'cycle=1100 cycle_end=1 sleep=10 end=1110',
+        ]);
+        $runner->runPaneTask('fixnames', [], $runVar);
+        $summary = (new TmuxPaneSupervisor)->summaries()['fix_names'];
+        $this->assertSame(1, $summary['failures']);
+        $this->assertSame('fix-names 3', $summary['last']['step']);
+        $this->assertSame(137, $summary['last']['exit']);
+    }
+
+    /**
+     * The monitor passes every few seconds; a role failing three cycles in a
+     * row is held off until its cycle's end + sleep + wait, the wait doubling
+     * up to the cap and resetting on success.
+     */
+    public function test_a_pane_failing_three_cycles_in_a_row_backs_off_doubling_up_to_the_cap(): void
+    {
+        config(['tmux.monitor.delay' => 10, 'tmux.monitor.failures_before_backoff' => 3, 'tmux.monitor.max_backoff_seconds' => 50]);
+        Log::spy();
+        $respawns = [];
+        Process::fake(function (PendingProcess $process) use (&$respawns) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\tbinaries\n");
+            }
+            if (is_array($process->command) && in_array('respawn-pane', $process->command, true)) {
+                $respawns[] = $process->command;
+            }
+
+            return Process::result();
+        });
+        $pass = function (int $at) use (&$respawns): array {
+            $respawns = [];
+            $this->travelTo(Carbon::createFromTimestamp($at));
+            (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar(sleep: 0));
+
+            return $respawns;
+        };
+        $launched = static fn (array $respawns): bool => $respawns !== []
+            && str_contains((string) end($respawns[0]), 'multiprocessing:safe binaries');
+        $failCycle = fn (int $start, int $end) => $this->writeStatus('binaries', [
+            "cycle={$start} step=binaries exit=1 start={$start} end={$end}",
+            "cycle={$start} cycle_end=1 sleep=0 end={$end}",
+        ]);
+
+        // Two failures: still launched.
+        $failCycle(1000, 1005);
+        $this->assertTrue($launched($pass(1006)));
+        $failCycle(1006, 1010);
+        $this->assertTrue($launched($pass(1012)));
+
+        // Third failure: the sleep is 0, so the first wait is the 10 s monitor delay.
+        $failCycle(1012, 1020);
+        foreach ([1021, 1025, 1029] as $at) {
+            $respawns = $pass($at);
+            $this->assertFalse($launched($respawns), "no launch at {$at}");
+            $this->assertCount(1, $respawns);
+            $this->assertNotContains('-k', $respawns[0], 'a backoff park never kills');
+            $this->assertStringContainsString(
+                'Update Binaries is backing off after 3 failed runs (last: binaries exit 1); next try '
+                    .Carbon::createFromTimestamp(1030, config('app.timezone'))->format('H:i:s'),
+                (string) end($respawns[0]),
+            );
+        }
+        $this->assertTrue($launched($pass(1030)));
+
+        // Fourth: 20 s. Fifth: 40 s. Sixth: capped at 50 s.
+        foreach ([[1030, 1040, 1060], [1060, 1061, 1101], [1101, 1102, 1152]] as [$start, $end, $next]) {
+            $failCycle($start, $end);
+            $this->assertFalse($launched($pass($end + 1)));
+            $this->assertFalse($launched($pass($next - 1)));
+            $this->assertTrue($launched($pass($next)), "launch at {$next}");
+        }
+
+        // One success resets the count and the wait.
+        $this->writeStatus('binaries', ['cycle=1152 step=binaries exit=0 start=1152 end=1160', 'cycle=1152 cycle_end=1 sleep=0 end=1160']);
+        $this->assertTrue($launched($pass(1161)));
+        $this->assertSame(0, (new TmuxPaneSupervisor)->summaries()['binaries']['failures']);
+        $failCycle(1161, 1170);
+        $this->assertTrue($launched($pass(1171)), 'one failure after recovering is not a backoff');
+
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => str_contains($message, 'is backing off for 10s after 3 failed runs'))->once();
+        Log::shouldHaveReceived('info')->withArgs(fn (string $message): bool => str_contains($message, 'binaries recovered after 6 failed runs'))->once();
+    }
+
+    public function test_the_first_wait_is_the_panes_own_sleep_when_that_is_longer_than_the_monitor_delay(): void
+    {
+        config(['tmux.monitor.delay' => 10]);
+        $this->fakePaneRole('binaries');
+        foreach ([1000, 2000, 3000] as $cycle) {
+            $this->writeStatus('binaries', [
+                "cycle={$cycle} step=binaries exit=1 start={$cycle} end=".($cycle + 5),
+                "cycle={$cycle} cycle_end=1 sleep=60 end=".($cycle + 5),
+            ]);
+            $this->travelTo(Carbon::createFromTimestamp($cycle + 6));
+            (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar(sleep: 60));
+        }
+
+        // end 3005 + sleep 60 + wait 60
+        $this->travelTo(Carbon::createFromTimestamp(3124));
+        $this->assertNotNull((new TmuxPaneSupervisor)->backoffMessage(TmuxPaneRole::Binaries, 'Update Binaries'));
+        $this->travelTo(Carbon::createFromTimestamp(3125));
+        $this->assertNull((new TmuxPaneSupervisor)->backoffMessage(TmuxPaneRole::Binaries, 'Update Binaries'));
+    }
+
+    public function test_disabled_in_settings_beats_backoff_and_clears_it_and_backoff_beats_no_work(): void
+    {
+        $this->fakePaneRole('post_movies');
+        $runVar = ['settings' => ['post_non' => 1, 'processmovies' => 1, 'post_timer_non' => 0], 'counts' => ['now' => ['processmovies' => 0]]];
+        foreach ([1000, 1100, 1200] as $cycle) {
+            $this->writeStatus('post_movies', ["cycle={$cycle} step=mov exit=1 start={$cycle} end={$cycle}", "cycle={$cycle} cycle_end=1 sleep=0 end={$cycle}"]);
+            $this->travelTo(Carbon::createFromTimestamp($cycle + 1));
+            (new TmuxTaskRunner('test-session'))->runPaneTask('movies', [], $runVar);
+        }
+        $this->assertStringContainsString('Post-process Movies is backing off after 3 failed runs', $this->respawnedCommands()[2]);
+
+        $runVar['settings']['post_non'] = 0;
+        (new TmuxTaskRunner('test-session'))->runPaneTask('movies', [], $runVar);
+        $this->assertStringContainsString('Post-process Movies has been disabled: disabled in settings', $this->respawnedCommands()[3]);
+        $this->assertNull((new TmuxPaneSupervisor)->summaries()['post_movies']['last'], 'the role\'s entry is cleared');
+
+        $runVar['settings']['post_non'] = 1;
+        (new TmuxTaskRunner('test-session'))->runPaneTask('movies', [], $runVar);
+        $this->assertStringContainsString('Post-process Movies has been disabled: no work available', $this->respawnedCommands()[4]);
+    }
+
+    public function test_the_monitor_starts_every_role_clean_and_reads_unreadable_state_as_empty(): void
+    {
+        $this->writeStatus('binaries', ['cycle=1000 step=binaries exit=1 start=1000 end=1001', 'cycle=1000 cycle_end=1 sleep=0 end=1001']);
+        $this->fakePaneRole('binaries');
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate($this->binariesRunVar());
+        $this->assertFileExists(storage_path('tmux/pane-supervision.json'));
+
+        $monitor = new class extends TmuxMonitorService
+        {
+            public function __construct()
+            {
+                $this->tmux = new class extends Tmux
+                {
+                    public function __construct() {}
+
+                    public function getConstantSettings(): array
+                    {
+                        return [];
+                    }
+
+                    public function getMonitorSettings(): array
+                    {
+                        return [];
+                    }
+
+                    public function getConnectionsInfo(): array
+                    {
+                        return [];
+                    }
+                };
+            }
+        };
+        $this->writeStatus('releases', ['cycle=1000 step=releases exit=1 start=1000 end=1001', 'cycle=1000 cycle_end=1 sleep=0 end=1001']);
+        $monitor->initializeMonitor();
+
+        $this->assertFileDoesNotExist(storage_path('tmux/pane-supervision.json'));
+        $this->assertFileDoesNotExist(storage_path('tmux/panes/releases.status'), 'a cycle finished before the restart is not counted');
+        file_put_contents(storage_path('tmux/pane-supervision.json'), '{not json');
+        $this->assertNull((new TmuxPaneSupervisor)->summaries()['binaries']['last'], 'unreadable state reads as empty');
+    }
+
+    public function test_settings_safety_valve_and_configuration_parks_still_kill(): void
+    {
+        $this->fakePaneRole('binaries');
+        (new TmuxTaskRunner('test-session'))->runBinariesUpdate(['settings' => ['binaries_run' => 1], 'killswitch' => ['pp' => true]]);
+        $this->fakePaneRole('post_tv');
+        $runner = new TmuxTaskRunner('test-session');
+        $runner->runPaneTask('tv', [], ['settings' => ['post_non' => 1, 'processtvrage' => 0, 'processanime' => 0], 'counts' => ['now' => []]]);
+        $runner->runPaneTask('tv', [], ['settings' => ['post_non' => 0], 'counts' => ['now' => []]]);
+
+        foreach (['postprocess kill limit exceeded', 'no types enabled (TV/Anime)', 'disabled in settings'] as $reason) {
+            Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+                && in_array('respawn-pane', $process->command, true)
+                && in_array('-k', $process->command, true)
+                && str_contains((string) end($process->command), $reason));
+        }
+    }
+
+    /**
+     * Give the task runner a settings table holding (or deliberately missing)
+     * the niceness row, plus any other rows a test needs. Every other setting
+     * it reads stays absent, which is the state a fresh install's tmux pane
+     * sees before the seeder runs.
+     *
+     * @param  array<string, string>  $others
+     */
+    private function seedNicenessSetting(?string $value, array $others = []): void
     {
         Schema::create('settings', function (Blueprint $table): void {
             $table->string('name')->primary();
@@ -1248,6 +1659,67 @@ SH;
         if ($value !== null) {
             DB::table('settings')->insert(['name' => 'niceness', 'value' => $value]);
         }
+        foreach ($others as $name => $setting) {
+            DB::table('settings')->insert(['name' => $name, 'value' => $setting]);
+        }
+    }
+
+    private function fakePaneRole(string $role): void
+    {
+        Process::fake(function (PendingProcess $process) use ($role) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%9\t{$role}\n");
+            }
+            if (is_array($process->command) && in_array('respawn-pane', $process->command, true)) {
+                $this->respawned[] = (string) end($process->command);
+            }
+
+            return Process::result();
+        });
+    }
+
+    /**
+     * @param  list<string>  $lines
+     */
+    private function writeStatus(string $role, array $lines): void
+    {
+        if (! is_dir(storage_path('tmux/panes'))) {
+            mkdir(storage_path('tmux/panes'), 0755, true);
+        }
+
+        file_put_contents(storage_path("tmux/panes/{$role}.status"), implode("\n", $lines)."\n");
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function binariesRunVar(int $sleep = 10): array
+    {
+        return ['settings' => ['binaries_run' => 1, 'bins_timer' => $sleep], 'killswitch' => ['pp' => false]];
+    }
+
+    /**
+     * Swap every worker in a generated pane command for a fake that prints
+     * and exits 3, and the sleep for a no-op. A bounded step keeps its
+     * `timeout` prefix.
+     */
+    private function withFakeWorkers(string $command): string
+    {
+        $command = (string) preg_replace_callback(
+            '/(s=\$\(date \+%s\); (?:\S*timeout -k \d+ \d+ )?)(.*?)(; rc=\$\?)/',
+            static fn (array $match): string => $match[1]."sh -c 'echo fake worker output; exit 3'".$match[3],
+            $command,
+        );
+
+        return (string) preg_replace('/(?:nice -n-?\d+ php \S+showsleep\.php|sleep) \d+$/', 'true', $command);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function respawnedCommands(): array
+    {
+        return $this->respawned;
     }
 
     private function fakeFixNamesPane(): void
