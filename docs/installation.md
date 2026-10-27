@@ -140,14 +140,11 @@ and other housekeeping (`routes/console.php`). Add one cron entry:
 
 `.env.example` sets `QUEUE_CONNECTION=sync`, which runs queued jobs inline. To
 run them in the background, set `QUEUE_CONNECTION=redis` and run Laravel
-Horizon under Supervisor. Horizon consumes only the queues in `HORIZON_QUEUES`
-(default `api-audit,default`); the application also dispatches mail to the
-`emails`, `incidents`, `contactemail`, `newreg` and `welcomeemails` queues, so list
-those too:
+Horizon under Supervisor. With `HORIZON_QUEUES` unset, Horizon consumes every
+queue the application dispatches to; set it only to restrict them.
 
 ```dotenv
 QUEUE_CONNECTION=redis
-HORIZON_QUEUES=api-audit,default,emails,incidents,contactemail,newreg,welcomeemails
 ```
 
 ```ini

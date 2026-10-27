@@ -199,7 +199,18 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => array_values(array_filter(array_map('trim', explode(',', env('HORIZON_QUEUES', 'api-audit,default'))))),
+            // Unset, HORIZON_QUEUES defaults to every queue the application dispatches to, read
+            // from the env keys the dispatch sites use (this file loads before mail.php and
+            // nntmux.php). With 'balance' => 'auto' each queue gets its own pool; order sets no priority.
+            'queue' => array_values(array_unique(array_filter(array_map('trim', explode(',', env('HORIZON_QUEUES', implode(',', [
+                env('API_AUDIT_QUEUE', 'api-audit'),
+                env('REDIS_QUEUE', 'default'),
+                env('MAIL_QUEUE', 'emails'),
+                env('MAIL_INCIDENT_QUEUE', 'incidents'),
+                'contactemail',
+                'newreg',
+                'welcomeemails',
+            ]))))))),
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
