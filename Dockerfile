@@ -8,7 +8,7 @@ ARG MYSQL_CLIENT="mariadb-client"
 WORKDIR /app
 
 
-COPY --from=node:22 /usr/local/ /usr/local/
+COPY --from=node:24 /usr/local/ /usr/local/
 COPY --from=composer-base --link /usr/bin/composer /usr/bin/composer
 
 RUN apt update \
