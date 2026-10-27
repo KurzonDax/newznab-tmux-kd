@@ -33,6 +33,8 @@ class TmuxMonitorService
 
     protected ?TmuxDisplaySnapshot $displaySnapshot = null;
 
+    protected ?TmuxPaneSupervisor $supervisor = null;
+
     /**
      * @var array<string, mixed>
      */
@@ -58,6 +60,9 @@ class TmuxMonitorService
      */
     public function initializeMonitor(): array
     {
+        // A tmux restart after a fix starts every pane's failure history clean.
+        $this->supervisor()->reset();
+
         $this->runVar['paths']['misc'] = base_path().'/misc/';
         $this->runVar['paths']['cli'] = base_path().'/cli/';
 
@@ -167,8 +172,14 @@ class TmuxMonitorService
 
         $this->updateConnectionCounts();
         $this->setKillswitches();
+        $this->runVar['supervision'] = $this->supervisor()->summaries();
 
         return $this->runVar;
+    }
+
+    protected function supervisor(): TmuxPaneSupervisor
+    {
+        return $this->supervisor ??= new TmuxPaneSupervisor;
     }
 
     protected function refreshOperationalStatistics(): void
@@ -179,7 +190,7 @@ class TmuxMonitorService
 
         $this->getProcessCounts();
         $this->refreshOperationalReleaseStatistics();
-        $this->runVar['recovery'] = app(RecoveryStatus::class)->summary();
+        $this->runVar['recovery'] = app(RecoveryStatus::class)->display();
         $this->runVar['reconciliation'] = app(ReconciliationStatus::class)->summary();
     }
 

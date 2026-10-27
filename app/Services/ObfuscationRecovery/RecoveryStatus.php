@@ -19,13 +19,11 @@ final class RecoveryStatus
         $config = RecoveryConfig::fromSettings();
         $work = DB::table('obfuscation_recovery_work')->selectRaw('stage, status, COUNT(*) AS count, MIN(due_at) AS oldest_due_at')
             ->groupBy('stage', 'status')->get()->map(static fn (object $row): array => (array) $row)->all();
-        $recent = DB::table('obfuscation_recovery_attempts')->where('created_at', '>=', now()->subMinute())
-            ->selectRaw('COALESCE(SUM(connections_opened), 0) AS opens, COALESCE(SUM(socket_received_bytes), 0) AS observed_bytes, COALESCE(SUM(debited_bytes), 0) AS accounted_bytes')->first();
         $oldestHeader = DB::table('obfuscation_recovery_headers')->min('first_observed_at');
         $oldestPending = DB::table('obfuscation_recovery_work')->whereIn('status', ['pending', 'claimed'])->min('created_at');
 
         return ['available' => true, 'enabled' => $config->enabled, 'worker_limit' => $config->threads,
-            'occupied_slots' => DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count(),
+            'occupied_slots' => $this->occupiedSlots(),
             'active_connections' => DB::table('obfuscation_recovery_attempts')->whereNotNull('connected_at')->whereNull('closed_at')->whereNull('settled_at')->count(),
             'arrivals_last_minute' => DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')->where('state', '!=', 'coalesced')->where('created_at', '>=', now()->subMinute())->count(),
             'completions_last_minute' => DB::table('obfuscation_recovery_work')->where('status', 'completed')->where('updated_at', '>=', now()->subMinute())->count(),
@@ -35,8 +33,7 @@ final class RecoveryStatus
             'queued_work' => $work, 'traffic' => $this->traffic(),
             'catalog' => DB::table('obfuscation_recovery_catalog')->selectRaw('provider, kind, outcome, SUM(requests) AS requests, SUM(response_bytes) AS response_bytes, SUM(unknown_response_sizes) AS unknown_response_sizes')
                 ->groupBy('provider', 'kind', 'outcome')->get()->all(),
-            'opens_per_second' => (int) $recent->opens / 60, 'observed_bytes_per_second' => (int) $recent->observed_bytes / 60,
-            'accounted_bytes_per_second' => (int) $recent->accounted_bytes / 60,
+            ...$this->recentRates(),
             'publications' => $this->counts('obfuscation_recovery_publications', 'state'),
             'naming' => $this->counts('obfuscation_recovery_publications', 'identity_outcome'),
             'bundles' => $this->counts('obfuscation_recovery_bundles', 'state'),
@@ -50,6 +47,38 @@ final class RecoveryStatus
             'retention_hours' => $config->retentionHours,
             'oldest_header_observed_at' => $oldestHeader,
             'settings_diagnostics' => $config->diagnostics];
+    }
+
+    /**
+     * Only the fields the tmux monitor renders, without the full summary's
+     * table-wide counts.
+     *
+     * @return array<string,mixed>
+     */
+    public function display(): array
+    {
+        if (! Schema::hasTable('obfuscation_recovery_work')) {
+            return ['available' => false];
+        }
+        $config = RecoveryConfig::fromSettings();
+
+        return ['available' => true, 'enabled' => $config->enabled, 'worker_limit' => $config->threads,
+            'occupied_slots' => $this->occupiedSlots(), ...$this->recentRates()];
+    }
+
+    private function occupiedSlots(): int
+    {
+        return DB::table('obfuscation_recovery_slots')->whereNotNull('worker_token')->count();
+    }
+
+    /** @return array{opens_per_second: float|int, observed_bytes_per_second: float|int, accounted_bytes_per_second: float|int} */
+    private function recentRates(): array
+    {
+        $recent = DB::table('obfuscation_recovery_attempts')->where('created_at', '>=', now()->subMinute())
+            ->selectRaw('COALESCE(SUM(connections_opened), 0) AS opens, COALESCE(SUM(socket_received_bytes), 0) AS observed_bytes, COALESCE(SUM(debited_bytes), 0) AS accounted_bytes')->first();
+
+        return ['opens_per_second' => (int) $recent->opens / 60, 'observed_bytes_per_second' => (int) $recent->observed_bytes / 60,
+            'accounted_bytes_per_second' => (int) $recent->accounted_bytes / 60];
     }
 
     /** @return array<string,mixed> */

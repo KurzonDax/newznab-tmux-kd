@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Runners;
 
+use App\Services\Tmux\TmuxPaneSupervisor;
 use Illuminate\Concurrency\ProcessDriver;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -245,69 +246,16 @@ abstract class BaseRunner
         ?int $timeout = null,
         ?callable $onComplete = null,
     ): array {
-        $maxProcesses = max(1, $maxProcesses);
-        $timeout = $timeout ?? (int) config('nntmux.multiprocessing_max_child_time', 1800);
-        $results = [];
-        $running = [];
-        $queue = $commands;
-
-        $startNext = function () use (&$queue, &$running, $timeout) {
-            if (empty($queue)) {
-                return;
-            }
-            $key = array_key_first($queue);
-            $cmd = $queue[$key];
-            unset($queue[$key]);
-
-            $proc = $this->createProcess($cmd);
-            $proc->setTimeout($timeout);
-            $proc->start(function ($type, $buffer): void {
-                if ($type === Process::ERR) {
-                    echo $buffer;
-                }
-            });
-            $running[$key] = $proc;
-        };
-
-        // Prime initial processes
-        for ($i = 0; $i < $maxProcesses && ! empty($queue); $i++) {
-            $startNext();
-        }
-
-        // Event loop
-        while (! empty($running)) {
-            foreach ($running as $key => $proc) {
-                $timedOut = false;
-                try {
-                    $proc->checkTimeout();
-                    $isRunning = $proc->isRunning();
-                } catch (ProcessTimedOutException $e) {
-                    echo $e->getMessage().PHP_EOL;
-                    $isRunning = false;
-                    $timedOut = true;
-                }
-
-                if (! $isRunning) {
-                    $results[$key] = $proc->getOutput();
-                    $exitCode = $timedOut ? 124 : ($proc->getExitCode() ?? 1);
-                    unset($running[$key]);
-                    if (! empty($queue)) {
-                        $startNext();
-                    }
-                    if ($onComplete !== null) {
-                        $onComplete($key, $results[$key], $exitCode);
-                    }
-                }
-            }
-            usleep(50000); // 50ms
-        }
-
-        return $results;
+        return $this->runProcessPool(
+            $commands,
+            $maxProcesses,
+            $timeout ?? (int) config('nntmux.multiprocessing_max_child_time', 1800),
+            $onComplete,
+        );
     }
 
     /**
      * Run multiple shell commands concurrently and stream their output in real-time.
-     * Uses Symfony Process start() with a small event loop to enforce max concurrency.
      *
      * @param  array<string|int, list<string>|string>  $commands
      * @param  callable(string|int, string, int): void|null  $onComplete
@@ -318,30 +266,66 @@ abstract class BaseRunner
         string $desc,
         ?callable $onComplete = null,
     ): void {
-        $maxProcesses = max(1, (int) $maxProcesses);
+        $this->runProcessPool(
+            $commands,
+            $maxProcesses,
+            (int) config('nntmux.multiprocessing_max_child_time', 1800),
+            $onComplete,
+            $desc,
+        );
+    }
+
+    /**
+     * Start every command through {@see self::createProcess()}, at most
+     * $maxProcesses at a time, refilling a slot as soon as its child is reaped.
+     *
+     * Collect mode ($streamAs null) echoes only STDERR, returns each child's
+     * output and polls every 50 ms. Stream mode echoes both streams live,
+     * prints the start header and a "Finished task" line per child, returns
+     * nothing and polls every 100 ms. Each child's exit code (124 when it
+     * timed out) goes to $onComplete and to the run's {@see ChildProcessTally}.
+     *
+     * @param  array<string|int, list<string>|string>  $commands
+     * @param  callable(string|int, string, int): void|null  $onComplete
+     * @return array<string|int, string>
+     */
+    private function runProcessPool(
+        array $commands,
+        int $maxProcesses,
+        int $timeout,
+        ?callable $onComplete,
+        ?string $streamAs = null,
+    ): array {
+        $stream = $streamAs !== null;
+        $maxProcesses = max(1, $maxProcesses);
+        $results = [];
         $running = [];
         $queue = $commands;
         $total = \count($commands);
-        $started = 0;
         $finished = 0;
+        $tally = app(ChildProcessTally::class);
 
-        $this->headerStart('postprocess: '.$desc, $total, $maxProcesses);
+        if ($stream) {
+            $this->headerStart('postprocess: '.$streamAs, $total, $maxProcesses);
+        }
 
-        $startNext = function () use (&$queue, &$running, &$started) {
+        $startNext = function () use (&$queue, &$running, $timeout, $stream): void {
             if (empty($queue)) {
                 return;
             }
             $key = array_key_first($queue);
             $cmd = $queue[$key];
             unset($queue[$key]);
+
             $proc = $this->createProcess($cmd);
-            $proc->setTimeout((int) config('nntmux.multiprocessing_max_child_time', 1800));
-            $proc->start(function ($type, $buffer) {
-                // Stream both STDOUT and STDERR
-                echo $buffer;
-            });
+            $proc->setTimeout($timeout);
+            // Children report to their own tally, never to this pane step's file.
+            $proc->start(static function ($type, $buffer) use ($stream): void {
+                if ($stream || $type === Process::ERR) {
+                    echo $buffer;
+                }
+            }, [TmuxPaneSupervisor::CHILDREN_ENV => false]);
             $running[$key] = $proc;
-            $started++;
         };
 
         // Prime initial processes
@@ -365,20 +349,31 @@ abstract class BaseRunner
                 if (! $isRunning) {
                     $exitCode = $timedOut ? 124 : ($proc->getExitCode() ?? 1);
                     $output = $proc->getOutput();
+                    if (! $stream) {
+                        $results[$key] = $output;
+                    }
                     unset($running[$key]);
                     $finished++;
+                    $tally->record($exitCode);
                     if (! empty($queue)) {
                         $startNext();
                     }
                     if ($onComplete !== null) {
                         $onComplete($key, $output, $exitCode);
                     }
-                    if (config('nntmux.echocli')) {
-                        cli()->primary('Finished task #'.($total - $finished + 1).' for '.$desc);
+                    if ($stream && config('nntmux.echocli')) {
+                        cli()->primary('Finished task #'.($total - $finished + 1).' for '.$streamAs);
                     }
                 }
             }
-            usleep(100000); // 100ms
+            $this->pauseBetweenPolls($stream ? 100000 : 50000);
         }
+
+        return $results;
+    }
+
+    protected function pauseBetweenPolls(int $microseconds): void
+    {
+        usleep($microseconds);
     }
 }

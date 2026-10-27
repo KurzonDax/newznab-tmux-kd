@@ -52,6 +52,7 @@ class TmuxOutput extends Tmux
         }
 
         $buffer .= $this->renderOperationalStatistics($runVar['reconciliation'] ?? [], $runVar['recovery'] ?? []);
+        $buffer .= $this->renderSupervision($runVar['supervision'] ?? []);
 
         // begin update display with screen clear
         passthru('clear');
@@ -85,6 +86,44 @@ class TmuxOutput extends Tmux
         }
 
         return $buffer;
+    }
+
+    /**
+     * One line per supervised worker pane: its last counted cycle's exit and
+     * duration, and how many cycles in a row have failed.
+     *
+     * @param  array<string, array{label: string, last: array<string, mixed>|null, failures: int}>  $supervision
+     */
+    public function renderSupervision(array $supervision): string
+    {
+        if ($supervision === []) {
+            return '';
+        }
+
+        $this->tmpMasks = $this->_getFormatMasks(config('nntmux_nntp.compressed_headers'));
+        $buffer = "\n".sprintf($this->tmpMasks[3], 'Workers', 'Last Run', 'Failed In A Row').$this->_getSeparator();
+        foreach ($supervision as $pane) {
+            $last = $pane['last'];
+            $buffer .= $last === null
+                ? sprintf($this->tmpMasks[4], $pane['label'], 'no runs yet', '')
+                : sprintf($this->tmpMasks[4], $pane['label'],
+                    'exit '.(int) $last['exit'].' in '.self::compactDuration((int) $last['duration']),
+                    (string) $pane['failures']);
+        }
+
+        return $buffer;
+    }
+
+    private static function compactDuration(int $seconds): string
+    {
+        if ($seconds < 60) {
+            return $seconds.'s';
+        }
+        if ($seconds < 3600) {
+            return intdiv($seconds, 60).'m '.($seconds % 60).'s';
+        }
+
+        return intdiv($seconds, 3600).'h '.intdiv($seconds % 3600, 60).'m';
     }
 
     private static function compactBytes(int|float $bytes): string
