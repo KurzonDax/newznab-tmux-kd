@@ -58,10 +58,8 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
     {
         parent::setUp();
         Schema::table('releases', function (Blueprint $table): void {
-            $table->integer('totalpart')->default(1);
             $table->integer('declaredfiles')->default(1);
             $table->integer('passwordstatus')->default(-1);
-            $table->integer('categories_id')->default(6000);
         });
         Schema::table('release_files', function (Blueprint $table): void {
             $table->integer('passworded')->default(-1);
@@ -280,7 +278,7 @@ class ReleaseCleanupSafetyMariaDbTest extends ReleaseRemoverBatchingTest
     {
         $this->createWriterSchema();
         Schema::table('releases', function (Blueprint $table): void {
-            $table->bigInteger('size')->default(2013265920);
+            $table->unsignedBigInteger('size')->default(2013265920)->change();
             $table->dateTime('postdate')->nullable();
             foreach (['nfostatus', 'iscategorized', 'rarinnerfilecount', 'haspreview', 'jpgstatus', 'predb_id', 'videostatus'] as $column) {
                 $table->integer($column)->default(0);
