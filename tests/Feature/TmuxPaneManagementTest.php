@@ -1177,6 +1177,38 @@ SH;
         $this->assertMatchesRegularExpression('/multiprocessing:fixrelnames standard; rc=\$\?; .*\} 2>&1 \| tee -a /', $command);
     }
 
+    #[DataProvider('paneLogSwitchProvider')]
+    public function test_pane_output_reaches_a_log_file_only_when_tmux_write_logs_is_on(bool $enabled): void
+    {
+        $this->freezeTime();
+        $logs = $this->makeTempDirectory('nntmux-pane-logs');
+        config(['tmux.paths.logs' => $logs, 'tmux.write_logs' => $enabled]);
+        $this->fakeFixNamesPane();
+
+        $this->runnerWithTimeoutBinary(null)->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300],
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]);
+
+        $expected = $enabled ? $logs.'/fixnames-'.now()->format('Y_m_d').'.log' : '/dev/null';
+        $command = $this->respawnedCommand();
+        $this->assertStringContainsString('| tee -a '.escapeshellarg($expected), $command);
+        if (! $enabled) {
+            $this->assertStringNotContainsString($logs, $command);
+        }
+    }
+
+    /**
+     * @return array<string, array{bool}>
+     */
+    public static function paneLogSwitchProvider(): array
+    {
+        return [
+            'off writes to /dev/null' => [false],
+            'on writes under the tmux log directory' => [true],
+        ];
+    }
+
     /**
      * The generated step really does kill a hung command, write one notice, and
      * let the chain continue. Needs coreutils `timeout`; skipped where absent.
@@ -1303,7 +1335,8 @@ SH;
         config(['nntmux_srrdb.enabled' => false]);
         $logs = $this->makeTempDirectory('nntmux-pane-logs');
         config(['tmux.paths.logs' => $logs]);
-        $this->seedNicenessSetting('5', ['write_logs' => '1']);
+        $this->seedNicenessSetting('5');
+        config(['tmux.write_logs' => true]);
         $this->fakePaneRole($role);
 
         $runner = $this->runnerWithTimeoutBinary($timeoutBinary);
@@ -1643,13 +1676,10 @@ SH;
 
     /**
      * Give the task runner a settings table holding (or deliberately missing)
-     * the niceness row, plus any other rows a test needs. Every other setting
-     * it reads stays absent, which is the state a fresh install's tmux pane
-     * sees before the seeder runs.
-     *
-     * @param  array<string, string>  $others
+     * the niceness row. Every other setting it reads stays absent, which is
+     * the state a fresh install's tmux pane sees before the seeder runs.
      */
-    private function seedNicenessSetting(?string $value, array $others = []): void
+    private function seedNicenessSetting(?string $value): void
     {
         Schema::create('settings', function (Blueprint $table): void {
             $table->string('name')->primary();
@@ -1658,9 +1688,6 @@ SH;
 
         if ($value !== null) {
             DB::table('settings')->insert(['name' => 'niceness', 'value' => $value]);
-        }
-        foreach ($others as $name => $setting) {
-            DB::table('settings')->insert(['name' => $name, 'value' => $setting]);
         }
     }
 

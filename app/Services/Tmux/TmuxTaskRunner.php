@@ -234,9 +234,7 @@ class TmuxTaskRunner
      */
     protected function getLogFile(string $paneName): string
     {
-        $logsEnabled = (int) Settings::settingValue('write_logs') === 1;
-
-        if (! $logsEnabled) {
+        if (! config('tmux.write_logs')) {
             return '/dev/null';
         }
 
