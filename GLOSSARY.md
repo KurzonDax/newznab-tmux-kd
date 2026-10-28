@@ -31,7 +31,7 @@ A group's `minsizetoformrelease` / `minfilestoformrelease`: the smallest collect
 _Avoid_: calling a group floor an override of the site setting — it can only raise it, never lower it.
 
 **Backfill Days**:
-A group's `backfill_target`: how many days back the backfill runner aims for on that group. The column defaults to 1 and Edit Selected accepts only 1 to 7300; the single-group form (which pre-fills 0 for a new group) does not validate the value.
+A group's `backfill_target`: how many days back the backfill runner aims for on that group. 0 means the group is not backfilled. The single-group form pre-fills 0 for a new group, and both the single-group form and Edit Selected accept 0 to 7300.
 
 **Web Login Session**:
 An authenticated browsing session on the web frontend, expiring after 12 hours of inactivity. Applies only to browser logins by users and admins — API keys and RSS tokens are a separate concept and are never affected by session policy.

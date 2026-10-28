@@ -452,6 +452,22 @@ class AdminGroupListPageTest extends TestCase
         $this->assertSame($lastUpdated, DB::table('usenet_groups')->where('id', $ids[0])->value('last_updated'));
     }
 
+    public function test_edit_selected_saves_a_backfill_target_of_0(): void
+    {
+        $this->createGroups(1);
+        $id = DB::table('usenet_groups')->value('id');
+        DB::table('usenet_groups')->where('id', $id)->update(['backfill_target' => 30]);
+
+        $response = $this->actingAs($this->admin())->post(route('admin.ajax'), [
+            'action' => 'edit_selected_groups',
+            'group_ids' => json_encode([$id]),
+            'changes' => json_encode(['backfill_target' => 0]),
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true, 'updated' => 1]);
+        $this->assertSame(0, DB::table('usenet_groups')->where('id', $id)->value('backfill_target'));
+    }
+
     public function test_edit_selected_saves_and_clears_the_forced_root_category(): void
     {
         $this->createGroups(2);
@@ -620,7 +636,7 @@ class AdminGroupListPageTest extends TestCase
 
         foreach ([
             ['group_ids' => [$id], 'changes' => []],
-            ['group_ids' => [$id], 'changes' => ['backfill_target' => 0]],
+            ['group_ids' => [$id], 'changes' => ['backfill_target' => -1]],
             ['group_ids' => [$id], 'changes' => ['backfill_target' => 7301]],
             ['group_ids' => [$id], 'changes' => ['minfilestoformrelease' => 3000000000]],
             ['group_ids' => [$id], 'changes' => ['minsizetoformrelease' => '10K']],

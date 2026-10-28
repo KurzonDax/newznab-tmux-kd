@@ -266,7 +266,7 @@ export function adminGroups() {
 
         validateEditSelected() {
             this.editRecoveryProfileError = ['', 'disabled', 'media', 'rar', 'both'].includes(this.editRecoveryProfile) ? '' : 'Choose a valid recovery profile.';
-            this.editBackfillTargetError = this._integerError(this.editBackfillTarget, 1, 7300, 'Backfill Days must be a whole number between 1 and 7300.');
+            this.editBackfillTargetError = this._integerError(this.editBackfillTarget, 0, 7300, 'Backfill Days must be a whole number between 0 and 7300.');
             this.editMinFilesError = this._integerError(this.editMinFiles, 0, 2147483647, 'Minimum Files must be a whole number between 0 and 2,147,483,647.');
 
             if (this.editMinSize === '') {
