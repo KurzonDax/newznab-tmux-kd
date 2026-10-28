@@ -171,8 +171,8 @@ MANTICORESEARCH_HOST=localhost
 MANTICORESEARCH_PORT=9308
 
 # IRC Pre Scraping (optional; set these before running irc:scrape)
-SCRAPE_IRC_SERVER=
-SCRAPE_IRC_PORT=
+SCRAPE_IRC_SERVER=irc.synirc.net
+SCRAPE_IRC_PORT=6667
 SCRAPE_IRC_TLS=
 SCRAPE_IRC_USERNAME=
 ```
@@ -364,18 +364,17 @@ NNTmux can scrape IRC pre channels for early release information with
 ### Configuration
 
 ```env
-SCRAPE_IRC_SERVER=
-SCRAPE_IRC_PORT=
+SCRAPE_IRC_SERVER=irc.synirc.net
+SCRAPE_IRC_PORT=6667
 SCRAPE_IRC_TLS=
 SCRAPE_IRC_USERNAME=
 SCRAPE_IRC_PASSWORD=
 ```
 
-Set the server, port and TLS flag before running the scraper: `.env.example`
-leaves them empty, and an empty value is used as is. The defaults in
-`config/irc_settings.php` (`irc.synirc.net`, port 6667, no TLS) apply only when
-a key is absent from `.env`. `SCRAPE_IRC_USERNAME` is used as the nickname, real
-name and ident; `SCRAPE_IRC_PASSWORD` is only needed for a bouncer such as ZNC.
+`.env.example` ships the SynIRC server and port 6667; an empty value in `.env`
+is used as is, not replaced by the code default. `SCRAPE_IRC_USERNAME` is used
+as the nickname, real name and ident; `SCRAPE_IRC_PASSWORD` is only needed for a
+bouncer such as ZNC.
 The channel list (by default `#PreNNTmux`) and the category, title and source
 filters are set in `config/irc_settings.php`.
 

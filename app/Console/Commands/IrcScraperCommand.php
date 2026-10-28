@@ -30,7 +30,7 @@ class IrcScraperCommand extends Command
     public function handle(): int
     {
         if (config('irc_settings.scrape_irc_username') === '') {
-            $this->error('ERROR! You must put a username in config/irc_settings.php');
+            $this->error('ERROR! Set SCRAPE_IRC_USERNAME in .env.');
 
             return self::FAILURE;
         }

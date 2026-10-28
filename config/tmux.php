@@ -15,70 +15,7 @@ return [
     'config_file' => env('TMUX_CONFIG_FILE', config_path('tmux.conf')),
 
     'session' => [
-        'name' => env('TMUX_SESSION_NAME'),
         'default_name' => 'nntmux',
-    ],
-
-    'terminal' => [
-        'type' => env('TMUX_TERMINAL', 'xterm-256color'),
-        'escape_time' => 0,
-    ],
-
-    'status_bar' => [
-        'interval' => 5,
-        'bg_color' => 'colour235',  // Dark grey
-        'fg_color' => 'colour250',  // Light grey
-        'active_bg' => 'colour39',  // Bright blue
-        'active_fg' => 'colour234', // Almost black
-        'show_system_info' => true,
-        'use_powerline' => env('TMUX_USE_POWERLINE', true),
-        'left_length' => 40,
-        'right_length' => 150,
-    ],
-
-    'fonts' => [
-        // Popular Nerd Fonts / Powerline fonts
-        // Install with: ./install-tmux-fonts.sh or see TMUX_FONTS_GUIDE.md
-        'use_nerd_fonts' => env('TMUX_USE_NERD_FONTS', true),
-        'symbols' => [
-            // Powerline arrows (rounded style)
-            'separator_left' => '',   // Rounded powerline arrow left
-            'separator_right' => '',  // Rounded powerline arrow right
-            'separator_thin_left' => '',  // Thin separator
-            'separator_thin_right' => '', // Thin separator
-
-            // Status icons
-            'session' => '',           // Terminal/session icon
-            'window' => '',            // Window icon
-            'pane_active' => '●',       // Active pane indicator
-            'pane_inactive' => '○',     // Inactive pane indicator
-
-            // System monitoring
-            'cpu' => '',              // CPU symbol
-            'ram' => '',              // RAM symbol
-            'disk' => '󰋊',             // Disk symbol
-            'network' => '󰛳',          // Network symbol
-            'clock' => '',            // Clock symbol
-            'calendar' => '',         // Calendar symbol
-            'uptime' => '󰥔',           // Uptime symbol
-
-            // Processing icons
-            'download' => '',         // Download/binaries
-            'sync' => '󰑓',             // Sync/backfill
-            'release' => '',          // Release
-            'fix' => '󰯃',              // Fix/wrench
-            'trash' => '󰆴',            // Trash/remove
-            'tv' => '󰟴',               // TV
-            'movie' => '',            // Movie
-            'amazon' => '',           // Amazon/shopping
-            'irc' => '󰻞',              // Chat/IRC
-
-            // Monitoring tools
-            'htop' => '',             // Process monitor
-            'database' => '',         // Database
-            'redis' => '',            // Redis
-            'console' => '',          // Console/terminal
-        ],
     ],
 
     'panes' => [
@@ -132,9 +69,5 @@ return [
         'refresh_interval' => env('TMUX_REFRESH_INTERVAL', 60),
         'failures_before_backoff' => env('TMUX_FAILURES_BEFORE_BACKOFF', 3),
         'max_backoff_seconds' => env('TMUX_MAX_BACKOFF_SECONDS', 1800),
-    ],
-
-    'performance' => [
-        'timeout' => env('TMUX_TIMEOUT', 300),
     ],
 ];

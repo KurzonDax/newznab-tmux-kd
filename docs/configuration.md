@@ -268,8 +268,8 @@ what they announce into the PreDB.
 | `scrape_irc_nickname`, `scrape_irc_realname`, `scrape_irc_username` | `SCRAPE_IRC_USERNAME` | empty | One value for nickname, real name and ident (also the ZNC user name). `irc:scrape` refuses to start while it is empty. |
 | `scrape_irc_password` | `SCRAPE_IRC_PASSWORD` | `false` | Not needed on SynIRC; required for ZNC (`username:password` or `username/network:password`). |
 
-`.env.example` lists all five keys with empty values. An empty value in `.env` is used as is,
-not replaced by the code default, so set `SCRAPE_IRC_SERVER` and `SCRAPE_IRC_PORT` explicitly.
+`.env.example` ships the SynIRC server and port 6667. An empty value in `.env` is used as is,
+not replaced by the code default.
 The channel list (`scrape_irc_channels`, default `#PreNNTmux`), the sources to ignore
 (`scrape_irc_source_ignore`) and the optional category and title ignore regexes
 (`scrape_irc_category_ignore`, `scrape_irc_title_ignore`) have no environment keys; they are
@@ -330,7 +330,7 @@ are described in [NNTP providers](architecture/nntp-providers.md).
 | `redis.probe` | `STATUS_PROBE_REDIS` | `true` | Whether the Redis probe runs at all. |
 | `redis.only_when_used` | `STATUS_PROBE_REDIS_ONLY_WHEN_USED` | `true` | Skip the Redis check when cache, session, queue and Pulse do not use Redis. |
 
-The three disk keys are not in `.env.example` yet; the defaults apply until they are set.
+`.env.example` lists the three disk keys commented out at these defaults.
 
 ### GDPR requests
 

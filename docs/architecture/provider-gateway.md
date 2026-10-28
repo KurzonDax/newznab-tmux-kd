@@ -101,7 +101,7 @@ object, such as the SRRDB lookup service or the decision model client.
 
 | Entry | Settings (from `config/provider-gateway.php` and the service's own configuration) |
 | --- | --- |
-| `tmdb` | 1 s spacing, shared. Attempts `tmdb.retry_times` (`TMDB_RETRY_TIMES`, default 3), backoff `tmdb.retry_delay` (`TMDB_RETRY_DELAY`, default 100 ms). Neither key is in `.env.example` yet. |
+| `tmdb` | 1 s spacing, shared. Attempts `tmdb.retry_times` (`TMDB_RETRY_TIMES`, default 3), backoff `tmdb.retry_delay` (`TMDB_RETRY_DELAY`, default 100 ms). `.env.example` lists both commented out at these defaults. |
 | `tvmaze` | 1 s spacing. It is called through `call()`, so it is paced, counted and breaker-guarded but never retried. Ledger host `api.tvmaze.com`. |
 | `trakt` | 1 s spacing. A 429 without `Retry-After` is treated as 60 s. Attempts `TRAKTTV_RETRY_TIMES` (3), backoff `TRAKTTV_RETRY_DELAY` (100 ms). |
 | `tvdb` | 1 s spacing. |
