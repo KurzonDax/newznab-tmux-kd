@@ -22,6 +22,7 @@ use Illuminate\Support\Str;
 use Mockery;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ApiRequestMatrixTest extends TestCase
@@ -1033,10 +1034,7 @@ class ApiRequestMatrixTest extends TestCase
             $table->unsignedInteger('groups_id')->nullable();
         });
 
-        Schema::create('release_nfos', function (Blueprint $table): void {
-            $table->unsignedInteger('releases_id')->primary();
-            $table->binary('nfo')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('release_nfos');
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');
