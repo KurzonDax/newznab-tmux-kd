@@ -395,10 +395,14 @@ test('edit selected save stays disabled for invalid values or no changes', () =>
     assert.match(page.component.editMinFilesError, /2,147,483,647/);
     assert.equal(page.component.canSaveEditSelected(), false);
 
+    page.component.editBackfillTarget = '-1';
+    page.component.validateEditSelected();
+    assert.match(page.component.editBackfillTargetError, /between 0 and 7300/);
+    assert.equal(page.component.canSaveEditSelected(), false);
+
     page.component.editBackfillTarget = '0';
     page.component.validateEditSelected();
-    assert.match(page.component.editBackfillTargetError, /between 1 and 7300/);
-    assert.equal(page.component.canSaveEditSelected(), false);
+    assert.equal(page.component.editBackfillTargetError, '');
 
     page.component.editBackfillTarget = '30';
     page.component.editMinSize = '10K';

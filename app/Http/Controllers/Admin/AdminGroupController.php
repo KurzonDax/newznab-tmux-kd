@@ -102,6 +102,7 @@ class AdminGroupController extends BasePageController
                         : null,
                 ]);
                 $request->validate([
+                    'backfill_target' => ['required', 'integer', 'between:0,7300'],
                     'obfuscation_recovery_profile' => ['sometimes', Rule::enum(ObfuscationRecoveryProfile::class)],
                     'route_obfuscated_names' => ['required', 'boolean'],
                     'obfuscated_default_root_categories_id' => [

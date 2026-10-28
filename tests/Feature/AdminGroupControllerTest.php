@@ -13,7 +13,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\ViewErrorBag;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
 use Tests\Support\ProductionTables;
@@ -174,6 +177,79 @@ class AdminGroupControllerTest extends TestCase
         );
 
         $this->assertNull(DB::table('usenet_groups')->where('id', $groupId)->value('forced_root_categories_id'));
+    }
+
+    #[DataProvider('backfillTargetsOutsideTheAcceptedRange')]
+    public function test_edit_submit_rejects_a_backfill_target_outside_0_to_7300(string $backfillTarget): void
+    {
+        $this->createUsenetGroupsTable();
+        $groupId = $this->createGroup();
+        DB::table('usenet_groups')->where('id', $groupId)->update(['backfill_target' => 30]);
+
+        try {
+            app(AdminGroupController::class)->edit(
+                $this->editRequest($groupId, ['backfill_target' => $backfillTarget])
+            );
+            $this->fail('Expected a ValidationException for backfill_target '.var_export($backfillTarget, true).'.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('backfill_target', $exception->errors());
+        }
+
+        $this->assertSame(30, (int) DB::table('usenet_groups')->where('id', $groupId)->value('backfill_target'));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function backfillTargetsOutsideTheAcceptedRange(): array
+    {
+        return [
+            'negative' => ['-1'],
+            'above the maximum' => ['7301'],
+            'blank' => [''],
+        ];
+    }
+
+    #[DataProvider('backfillTargetsInsideTheAcceptedRange')]
+    public function test_edit_submit_saves_a_backfill_target_from_0_to_7300(string $backfillTarget): void
+    {
+        $this->createUsenetGroupsTable();
+        $groupId = $this->createGroup();
+        DB::table('usenet_groups')->where('id', $groupId)->update(['backfill_target' => 30]);
+
+        $response = app(AdminGroupController::class)->edit(
+            $this->editRequest($groupId, ['backfill_target' => $backfillTarget])
+        );
+
+        $this->assertTrue($response->isRedirect());
+        $this->assertSame((int) $backfillTarget, (int) DB::table('usenet_groups')->where('id', $groupId)->value('backfill_target'));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function backfillTargetsInsideTheAcceptedRange(): array
+    {
+        return [
+            'zero, meaning no backfill' => ['0'],
+            'one' => ['1'],
+            'the maximum' => ['7300'],
+        ];
+    }
+
+    public function test_new_group_form_prefills_backfill_target_0(): void
+    {
+        $this->createUsenetGroupsTable();
+        view()->share('errors', new ViewErrorBag);
+
+        $response = app(AdminGroupController::class)->edit(Request::create('/admin/group-edit', 'GET'));
+
+        $this->assertInstanceOf(View::class, $response);
+        $this->assertSame(0, $response->getData()['group']['backfill_target']);
+        $this->assertMatchesRegularExpression(
+            '/name="backfill_target"[^>]*value="0"/s',
+            $response->render()
+        );
     }
 
     private function createGroup(): int
