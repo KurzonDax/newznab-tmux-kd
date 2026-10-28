@@ -13,8 +13,7 @@ use Illuminate\Console\Command;
 #[Signature('backup:offsite
             {--destination= : Override the configured off-site destination}
             {--keep= : Override the destination retention count; 0 keeps everything}
-            {--allow-local : Allow a destination on the same filesystem}
-            {--prune : Apply retention even when every file is already copied}')]
+            {--allow-local : Allow a destination on the same filesystem}')]
 #[Description('Copy database Backup sets to verified external or network storage')]
 class BackupOffsite extends Command
 {

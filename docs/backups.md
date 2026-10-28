@@ -69,7 +69,7 @@ By default the destination must be on a different mounted filesystem. For a genu
 php artisan backup:offsite --destination=/mnt/backup-disk/nntmux --allow-local
 ```
 
-Use `--keep=N` to override off-site retention for a run. Zero retains every copied set. The admin page shows `Copied`, `Partial`, `Failed`, or `Not copied` per local set.
+Use `--keep=N` to override off-site retention for a run. Zero retains every copied set. Retention runs at the end of every successful run, including one where every file was already copied; a run that fails part-way does not prune. The admin page shows `Copied`, `Partial`, `Failed`, or `Not copied` per local set.
 
 To copy independently of the application scheduler, add a cron entry for the application user. Adjust paths and the time to suit the installation:
 
