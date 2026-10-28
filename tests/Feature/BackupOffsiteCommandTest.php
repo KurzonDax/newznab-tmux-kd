@@ -321,6 +321,34 @@ class BackupOffsiteCommandTest extends TestCase
         $this->assertDirectoryExists($destination.'/20260816-020000');
     }
 
+    public function test_destination_retention_runs_when_every_file_is_already_copied(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        DB::table('settings')->insert([
+            ['name' => 'categorizeforeign', 'value' => '0'],
+            ['name' => 'catwebdl', 'value' => '0'],
+            ['name' => 'backup_location', 'value' => $source],
+            ['name' => 'backup_offsite_path', 'value' => $destination],
+            ['name' => 'backup_offsite_keep', 'value' => '2'],
+        ]);
+        $this->writeBackup($source, '20260809-020000');
+        $this->writeBackup($source, '20260816-020000');
+        $this->writeBackup($destination, '20260802-020000');
+        $this->writeBackup($destination, '20260809-020000');
+        $this->writeBackup($destination, '20260816-020000');
+        $this->fakeSuccessfulCopies();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])
+            ->expectsOutputToContain('0 files copied')
+            ->assertSuccessful();
+
+        $this->assertDirectoryDoesNotExist($destination.'/20260802-020000');
+        $this->assertDirectoryExists($destination.'/20260809-020000');
+        $this->assertDirectoryExists($destination.'/20260816-020000');
+    }
+
     public function test_destination_retention_includes_verified_daily_only_sets(): void
     {
         $source = $this->makeTempDirectory('nntmux-offsite-source');
