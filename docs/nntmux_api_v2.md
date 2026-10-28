@@ -133,7 +133,7 @@ Behavior:
 
 - If `id` is present: text search.
 - If `id` is omitted: browse mode.
-- Includes API usage counters via response headers (`X-Api-Current`, `X-Api-Max`, `X-Grab-Current`, `X-Grab-Max`, `X-Api-Oldest-Time`, `X-Grab-Oldest-Time`).
+- Includes API usage counters in the JSON body (apiCurrent, apiMax, grabCurrent, grabMax, apiOldestTime, grabOldestTime).
 
 ## 3) TV Search
 

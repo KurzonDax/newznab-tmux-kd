@@ -56,7 +56,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Optional aliases are supported for several t-values:
    c/caps, s/search, tv/tvsearch, m/movie, b/book, d/details, g/get,
-   gn|n|nfo|info/getnfo.
+   gn|n|nfo|info.
 
 2.1 CAPS
 
@@ -83,6 +83,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    - book-search: q,title,author,cat,minsize,maxsize,maxage,group,limit,offset,attrs,extended,del,sort
    - anime-search: q,anidbid,anilistid,cat,minsize,maxsize,maxage,limit,offset,attrs,extended,del,sort
 
+   attrs (every search type), genre (movie-search), and title and author (book-search) are advertised for client compatibility but ignored.
+
 2.2 SEARCH
 
    Parameters:
@@ -95,7 +97,6 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    limit=123
    cat=xxx
    o=xml|json
-   attrs=xxx
    extended=1
    del=1
    maxage=123
@@ -142,7 +143,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    Optional:
    q, vid, tvdbid, traktid, rid, tvmazeid, imdbid, tmdbid
    season, ep
-   cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+   cat, limit, offset, maxage, minsize, maxsize, extended, del, sort
 
    Notes:
    - season YYYY + ep MM/DD is treated as daily date-style query.
@@ -157,8 +158,8 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    apikey=xxxx
 
    Optional:
-   q, imdbid, tmdbid, traktid, genre
-   cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+   q, imdbid, tmdbid, traktid
+   cat, limit, offset, maxage, minsize, maxsize, extended, del, sort
 
    Notes:
    - Without q or an identifier, movie browses the Movies categories (or cat).
@@ -175,8 +176,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Optional:
    q
-   album, artist, label, track, year, genre
-   group, cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+   group, cat, limit, offset, maxage, minsize, maxsize, extended, del, sort
 
    Without q, music browses Audio (3000, or cat). An empty q= returns error 201.
 
@@ -188,8 +188,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Optional:
    q
-   title, author
-   group, cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+   group, cat, limit, offset, maxage, minsize, maxsize, extended, del, sort
 
    Without q, book browses Books (7000, or cat). An empty q= returns error 201.
 
@@ -201,7 +200,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Optional:
    q, anidbid, anilistid
-   cat, limit, offset, maxage, minsize, maxsize, attrs, extended, del, sort
+   cat, limit, offset, maxage, minsize, maxsize, extended, del, sort
 
    At least one of q, anidbid or anilistid is required; otherwise error 200.
 
@@ -219,12 +218,12 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 2.9 GETNFO
 
    Parameters:
-   t=getnfo (aliases: nfo, info, n, gn)
+   t=nfo (aliases: info, n, gn)
    id=guid
    apikey=xxxx
 
    Optional:
-   raw=1 or o=file
+   o=file
 
    Behavior:
    Without o=file the NFO text is returned as HTML (line breaks as <br />).
@@ -256,7 +255,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 
    Optional:
    nfo=<multipart nfo file with any basename>
-   cat, includemeta, dupecheck, medianfo
+   cat
 
    Legacy fallback:
    file=<single multipart nzb or nfo file>
@@ -311,12 +310,7 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    NNTmux files its Other categories under root 1 (1 Other, 10 Other/Misc,
    20 Other/Hashed) rather than in the 8000 range.
 
-   Important category IDs (union of upstream + NNTmux):
-   7900 Category Not Determined
-   8000 Other, 8010 Other/Misc
-   1035 Console/Switch
-   1090 Console/XBox One (upstream ID; NNTmux uses 1140)
-   1100 Console/PS4 (upstream ID; NNTmux uses 1180)
+   Important category IDs (NNTmux):
    1110 Console/3DS (NNTmux)
    1120 Console/PS Vita (NNTmux)
    1130 Console/WiiU (NNTmux)
@@ -346,12 +340,13 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
 5. Predefined Attributes
 
    Standard:
-   size, category, guid, files, poster, group, grabs, comments, password,
-   usenetdate, info, year, genre, imdb, coverurl, review, etc.
+   size, category, files, group, grabs, comments, password, usenetdate,
+   info, imdb, coverurl.
 
    NNTmux extensions:
-   prematch, videos_id, tv_episodes_id, tvdbid, traktid, tvmazeid, imdbid,
-   tmdbid, title, firstaired, anidbid.
+   prematch, tvdbid, traktid, tvmazeid, imdbid, tmdbid, title, anidbid.
+
+   guid is the <guid> element, not an attribute.
 
    Also returned by NNTmux for TV releases: season, episode, tvairdate,
    tvrageid, rageid.
@@ -399,6 +394,10 @@ newznab-tmux https://github.com/NNTmux/newznab-tmux
    910 API disabled
 
 7. Changelog
+
+   2026-10-28
+     - Documentation now lists only what NNTmux serves; no API behaviour
+       changed (#1157).
 
    2026-10-23
      - Corrected the example URLs to the /api/v1/api endpoint.
