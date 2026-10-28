@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Facades\Search;
+use App\Models\Release;
+use App\Services\Nzb\NzbService;
+use App\Services\ReleaseImageService;
+use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\ReleaseManagementService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class DeleteReleases extends Command
 {
+    private const int CHUNK_SIZE = 100;
+
     /**
      * The name and signature of the console command.
      *
@@ -127,43 +135,49 @@ class DeleteReleases extends Command
             $count = count($releases);
             $this->info("Found {$count} release(s) to delete...");
 
-            $deleted = 0;
-            foreach ($releases as $release) {
-                try {
-                    // Delete the release using direct database operations
-                    $releaseId = $release->id;
+            $management = app(ReleaseManagementService::class);
+            $nzb = app(NzbService::class);
+            $releaseImage = app(ReleaseImageService::class);
 
+            $deleted = 0;
+            foreach (array_chunk($releases, self::CHUNK_SIZE) as $chunk) {
+                foreach ($chunk as $release) {
                     $releaseName = $release->searchname ?: ($release->name ?: 'Unknown');
                     $this->line("Deleting: {$releaseName}");
-
-                    // Delete related data first (to maintain referential integrity)
-                    DB::delete('DELETE FROM user_downloads WHERE releases_id = ?', [$releaseId]);
-                    DB::delete('DELETE FROM users_releases WHERE releases_id = ?', [$releaseId]);
-                    DB::delete('DELETE FROM release_files WHERE releases_id = ?', [$releaseId]);
-                    DB::delete('DELETE FROM release_comments WHERE releases_id = ?', [$releaseId]);
-                    DB::delete('DELETE FROM release_nfos WHERE releases_id = ?', [$releaseId]);
-                    DB::delete('DELETE FROM release_subtitles WHERE releases_id = ?', [$releaseId]);
-
-                    // Delete the main release record
-                    DB::delete('DELETE FROM releases WHERE id = ?', [$releaseId]);
-
-                    // Delete from search indexes
-                    Search::deleteRelease($releaseId);
-
-                    $deleted++;
-
-                    // Show progress for large deletions
-                    if ($deleted % 100 == 0) {
-                        $this->info("Deleted {$deleted}/{$count} releases...");
-                    }
-
-                } catch (\Exception $e) {
-                    $releaseName = $release->searchname ?? 'Unknown';
-                    $this->warn("Failed to delete release {$releaseName}: ".$e->getMessage());
                 }
+
+                try {
+                    $chunkDeleted = $management->deleteBatch($chunk, $nzb, $releaseImage);
+                } catch (Throwable $e) {
+                    Log::error('nntmux:delete-releases chunk failed', [
+                        'release_ids' => array_column($chunk, 'id'),
+                        'error' => $e->getMessage(),
+                    ]);
+                    $chunkDeleted = 0;
+                }
+
+                $chunkCount = count($chunk);
+                if ($chunkDeleted < $chunkCount) {
+                    $missing = $chunkCount - $chunkDeleted;
+                    $this->warn("Failed to delete {$missing} of {$chunkCount} release(s) in this chunk; see the log.");
+                }
+
+                $deleted += $chunkDeleted;
+                $this->info("Deleted {$deleted}/{$count} releases...");
+            }
+
+            if ($deleted > 0) {
+                Release::clearAdminReleasesRangeCache();
+                ReleaseBrowseService::bumpCacheVersion();
             }
 
             $this->info("Successfully deleted {$deleted} release(s).");
+
+            if ($deleted < $count) {
+                $this->warn(($count - $deleted).' release(s) were not deleted; re-run the same criteria to finish.');
+
+                return 1;
+            }
 
             return 0;
 

@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Enums\BlacklistConstants;
 use App\Facades\Search;
+use App\Models\Category;
 use App\Models\Release;
 use App\Services\Nzb\NzbCreationCandidateQuery;
 use App\Services\Nzb\NzbService;
@@ -76,6 +77,9 @@ class ReleaseRemoverBatchingTest extends TestCase
             $table->dateTime('adddate')->nullable();
             $table->dateTime('additional_pp_claimed_at')->nullable();
             $table->dateTime('recovery_claimed_at')->nullable();
+            $table->unsignedInteger('totalpart')->default(0);
+            $table->unsignedBigInteger('size')->default(0);
+            $table->unsignedInteger('categories_id')->default(Category::OTHER_MISC);
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
@@ -369,9 +373,13 @@ class ReleaseRemoverBatchingTest extends TestCase
         self::assertSame([2], DB::table('releases')->pluck('id')->all());
     }
 
-    public function test_criteria_advances_past_a_fully_protected_page_and_logs_only_actual_deletions(): void
+    public function test_size_sweep_advances_past_a_fully_protected_page_and_logs_only_actual_deletions(): void
     {
-        $rows = array_map(fn (int $id): array => $this->releaseRow($id, additionalClaimedAt: $id <= 500 ? now() : null), range(1, 501));
+        // removeSize() selects single-part releases under the 2 MiB default minimum outside its excluded categories.
+        $rows = array_map(fn (int $id): array => [
+            ...$this->releaseRow($id, additionalClaimedAt: $id <= 500 ? now() : null),
+            'totalpart' => 1, 'size' => 1048576, 'categories_id' => Category::TV_HD,
+        ], range(1, 501));
         DB::table('releases')->insert($rows);
         $events = [];
         $logger = Mockery::mock(LoggerInterface::class);
@@ -389,13 +397,13 @@ class ReleaseRemoverBatchingTest extends TestCase
         self::assertSame([], array_values(array_filter($events, static fn (array $event): bool => $event[0] === 'release_deleted')));
         self::assertSame(501, DB::table('releases')->count());
 
-        (new ReleaseRemoverService($management, $nzb, $images))->removeByCriteria(['ignore', 'searchname=like=blocked']);
+        (new ReleaseRemoverService($management, $nzb, $images))->removeCrap(true, 'full', 'size');
 
         self::assertSame(500, DB::table('releases')->count());
         $deleted = array_values(array_filter($events, static fn (array $event): bool => $event[0] === 'release_deleted'));
         self::assertCount(1, $deleted);
         self::assertSame(501, $deleted[0][1]['release_id']);
-        self::assertSame('userCriteria', $deleted[0][1]['reason']);
+        self::assertSame('Size', $deleted[0][1]['reason']);
         self::assertSame(500, $events[0][1]['protected_or_deferred']);
     }
 

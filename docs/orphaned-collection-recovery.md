@@ -12,8 +12,8 @@ The password-title class still requires its previous title match, category/text 
 
 ## Caller policy
 
-- `removeCrap` (`releases:remove-crap`, including All), `removeByCriteria`, processing retention/password/completion cleanup, `NntmuxRemoveBadReleases` (`nntmux:remove-bad`), and `NntmuxResetTruncate` (`nntmux:reset-truncate`) retain the shared protected boundary. `removeByCriteria` currently has no caller. Reset/truncate still resets groups and CBP, but pending releases are retained for token-owned creation failure disposal.
-- `nntmux:delete-releases` does not go through `removeByCriteria` or the protected boundary: it deletes the matching release rows and their dependent rows directly and removes them from the search index. Treat it as a manual override.
+- `removeCrap` (`releases:remove-crap`, including All), processing retention/password/completion cleanup, `NntmuxRemoveBadReleases` (`nntmux:remove-bad`), and `NntmuxResetTruncate` (`nntmux:reset-truncate`) retain the shared protected boundary. Reset/truncate still resets groups and CBP, but pending releases are retained for token-owned creation failure disposal.
+- `nntmux:delete-releases` does not go through the protected boundary: it deletes the matching releases through `ReleaseManagementService::deleteBatch()`, which tombstones their recovery publications, deletes their NZB files and images, removes them from the search index and deletes the rows. Treat it as a manual override.
 - Explicit admin/manual deletion and `CleanNZB` (`nntmux:nzbclean`) retain their existing override behavior. `CleanNZB` is an operator storage-reconciliation command; do not run it against an unavailable NZB mount.
 - Token-owned deterministic NZB failure disposal and exhausted retries retain their separate pending-release/CBP disposal. A losing token deletes nothing.
 
