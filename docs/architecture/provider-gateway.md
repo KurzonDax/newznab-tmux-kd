@@ -11,8 +11,7 @@ The gateway has one entry per service, named in `config/provider-gateway.php`:
 | Entry | Service |
 | --- | --- |
 | `tmdb`, `tvmaze`, `trakt`, `tvdb` | TV and film metadata |
-| `imdb` | IMDb title pages and the `/find` HTML search |
-| `imdb_search` | IMDb's suggestion search (`v2.sg.media-imdb.com`), with its own breaker so that blocked title pages do not stop it |
+| `imdb_search` | IMDb's suggestion search (`v2.sg.media-imdb.com`), the only IMDb request NNTmux sends |
 | `omdb`, `fanarttv` | Film details and artwork |
 | `musicbrainz`, `acoustid`, `coverart` | Music identity: MusicBrainz, AcoustID, Cover Art Archive |
 | `srrdb` | SRRDB archive-CRC name fixing |
@@ -106,7 +105,7 @@ object, such as the SRRDB lookup service or the decision model client.
 | `tvmaze` | 1 s spacing. It is called through `call()`, so it is paced, counted and breaker-guarded but never retried. Ledger host `api.tvmaze.com`. |
 | `trakt` | 1 s spacing. A 429 without `Retry-After` is treated as 60 s. Attempts `TRAKTTV_RETRY_TIMES` (3), backoff `TRAKTTV_RETRY_DELAY` (100 ms). |
 | `tvdb` | 1 s spacing. |
-| `imdb`, `imdb_search` | Defaults; each has its own breaker. |
+| `imdb_search` | Defaults. |
 | `omdb` | A 401 (the daily quota is spent) counts as unavailable. |
 | `fanarttv` | Attempts `FANARTTV_RETRY_TIMES` (3), backoff `FANARTTV_RETRY_DELAY` (100 ms). |
 | `musicbrainz` | Only requests to `musicbrainz.org` are paced, at least 1 s apart; lock wait 5 s. Attempts 3, backoff 250 ms; breaker 3 failures, 60 s (`config/music-identity.php`). |

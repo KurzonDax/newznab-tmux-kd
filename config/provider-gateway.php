@@ -76,8 +76,7 @@ return [
         'tvdb' => [
             'pace' => ['min_interval_ms' => 1_000],
         ],
-        'imdb' => [],
-        // IMDb's suggestion search (v2.sg.media-imdb.com) has its own breaker so that title-page blocks don't stop it.
+        // IMDb's suggestion search (v2.sg.media-imdb.com), the only IMDb request NNTmux sends.
         'imdb_search' => [],
         'omdb' => [
             // OMDb answers 401 once the daily quota is spent.

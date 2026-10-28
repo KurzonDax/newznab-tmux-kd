@@ -6,27 +6,18 @@ namespace App\Services;
 
 use App\Services\ProviderGateway\ProviderGateway;
 use App\Services\ProviderGateway\ProviderOutcome;
-use App\Services\ProviderGateway\ProviderResult;
 use GuzzleHttp\Client;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Psr\Http\Message\ResponseInterface;
-use voku\helper\HtmlDomParser;
 
 class ImdbScraper
 {
     /** How long IMDb's answer that it has no such title is kept. */
     protected const int NOT_FOUND_TTL_HOURS = 6;
 
-    /** Failure reasons of the title page that mean IMDb gave no answer. */
-    private const array UNAVAILABLE_REASONS = ['waf_block', 'html_unavailable', 'html_exception'];
-
-    protected Client $client;
-
     protected Client $searchClient;
-
-    protected bool $lastRequestWasBlocked = false;
 
     private bool $lastSearchAvailable = false;
 
@@ -35,14 +26,10 @@ class ImdbScraper
         return ! $this->lastSearchAvailable;
     }
 
-    protected ?string $lastFetchSource = null;
-
-    protected ?string $lastFailureReason = null;
-
     /**
-     * Title pages and the HTML search go through the provider gateway as `imdb`, the suggestion
-     * search as `imdb_search`, each with its own breaker. A WAF challenge is no answer and counts
-     * against the breaker. An injected client's handler is used as the transport by both.
+     * Only IMDb's suggestion search is sent, through the provider gateway as `imdb_search` with
+     * its own breaker. A WAF challenge is no answer and counts against the breaker. An injected
+     * client's handler is used as the transport.
      */
     public function __construct(?Client $client = null)
     {
@@ -62,112 +49,7 @@ class ImdbScraper
             ? ProviderOutcome::Unavailable
             : null;
         $gateway = app(ProviderGateway::class);
-        $this->client = $gateway->guzzle('imdb', $options, $client, classify: $classify);
         $this->searchClient = $gateway->guzzle('imdb_search', $options, $client, classify: $classify);
-    }
-
-    /**
-     * Whether a title fetch that found nothing got no answer at all from IMDb, so it must not
-     * be remembered as a miss.
-     */
-    public static function failureIsUnavailable(?string $failureReason): bool
-    {
-        return in_array($failureReason, self::UNAVAILABLE_REASONS, true);
-    }
-
-    public function wasBlockedByWaf(): bool
-    {
-        return $this->lastRequestWasBlocked;
-    }
-
-    public function getLastFetchSource(): ?string
-    {
-        return $this->lastFetchSource;
-    }
-
-    public function getLastFailureReason(): ?string
-    {
-        return $this->lastFailureReason;
-    }
-
-    /**
-     * Fetch a movie by IMDB numeric ID.
-     *
-     * @param  string  $id  Numeric part without 'tt'.
-     * @return array<string, mixed>
-     */
-    public function fetchById(string $id): array|false
-    {
-        $this->lastRequestWasBlocked = false;
-        $this->lastFetchSource = null;
-        $this->lastFailureReason = null;
-
-        $id = preg_replace('/[^0-9]/', '', $id) ?? '';
-        if ($id === '' || strlen($id) < 5 || strlen($id) > 8) {
-            $this->lastFailureReason = 'invalid_id';
-
-            return false;
-        }
-
-        $result = app(ProviderGateway::class)->remember(
-            'imdb',
-            'imdb_scrape_id_'.$id,
-            now()->addDays(7),
-            now()->addHours(self::NOT_FOUND_TTL_HOURS),
-            fn (): ProviderResult => $this->scrapeTitle($id),
-        );
-
-        return $result->isFound() && is_array($result->value) ? $result->value : false;
-    }
-
-    /** @return ProviderResult<array<string, mixed>|null> */
-    private function scrapeTitle(string $id): ProviderResult
-    {
-        try {
-            $response = $this->client->get('https://www.imdb.com/title/tt'.$id.'/', [
-                'headers' => [
-                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Referer' => 'https://www.imdb.com/',
-                    'Upgrade-Insecure-Requests' => '1',
-                ],
-            ]);
-
-            $statusCode = $response->getStatusCode();
-            $html = (string) $response->getBody();
-
-            if ($this->isWafResponse($statusCode, $html)) {
-                $this->lastRequestWasBlocked = true;
-                $this->lastFailureReason = 'waf_block';
-                Log::notice('IMDb title fetch was challenged by WAF for tt'.$id);
-            }
-
-            if (! $this->lastRequestWasBlocked && $statusCode < 400 && trim($html) !== '') {
-                $data = $this->parseTitleHtml($html, $id);
-                if ($data !== false) {
-                    $this->lastFetchSource = 'imdb_html';
-                    $this->lastFailureReason = null;
-
-                    return ProviderResult::found($data);
-                }
-
-                $this->lastFailureReason = 'html_parse_failure';
-            } elseif (! $this->lastRequestWasBlocked) {
-                $this->lastFailureReason = match (true) {
-                    trim($html) === '' && $statusCode < 400 => 'html_empty_response',
-                    $statusCode === 429 || $statusCode >= 500 => 'html_unavailable',
-                    default => 'html_http_failure',
-                };
-            }
-        } catch (\Throwable $e) {
-            Log::debug('IMDb fetch error tt'.$id.': '.$e->getMessage());
-            if ($this->lastFailureReason === null) {
-                $this->lastFailureReason = 'html_exception';
-            }
-        }
-
-        return self::failureIsUnavailable($this->lastFailureReason)
-            ? ProviderResult::unavailable()
-            : ProviderResult::notFound();
     }
 
     /**
@@ -177,7 +59,6 @@ class ImdbScraper
      */
     public function search(string $query): array
     {
-        $this->lastRequestWasBlocked = false;
         $this->lastSearchAvailable = false;
 
         $query = trim($query);
@@ -212,20 +93,10 @@ class ImdbScraper
             $body = (string) $res->getBody();
 
             $results = [];
-            if ($this->isWafResponse($res->getStatusCode(), $body)) {
-                $this->lastRequestWasBlocked = true;
-            }
             if ($res->getStatusCode() === 200 && ! $this->isWafResponse($res->getStatusCode(), $body)) {
                 $json = json_decode($body, true);
                 $this->lastSearchAvailable = is_array($json) && isset($json['d']) && is_array($json['d']);
                 $results = $this->parseSuggestionJson($body);
-            }
-
-            if ($results === []) {
-                $htmlResults = $this->searchHtmlFallback($query);
-                if ($htmlResults !== []) {
-                    $results = $htmlResults;
-                }
             }
 
             if ($results === []) {
@@ -247,69 +118,6 @@ class ImdbScraper
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function parseTitleHtml(string $html, string $id): array|false
-    {
-        if ($this->isWafResponse(200, $html)) {
-            $this->lastRequestWasBlocked = true;
-
-            return false;
-        }
-
-        $jsonLd = $this->extractPrimaryJsonLdEntity($html);
-        $dom = HtmlDomParser::str_get_html($html);
-
-        $title = $this->extractTitle($jsonLd, $dom);
-        if ($title === '') {
-            return false;
-        }
-
-        $year = $this->extractYearFromEntity($jsonLd);
-        if ($year === '') {
-            $year = $this->extractYearFromDom($dom);
-        }
-
-        $plot = $this->extractPlot($jsonLd, $dom);
-        $rating = $this->extractRating($jsonLd, $dom);
-        $cover = $this->extractCover($jsonLd, $dom);
-        $genres = $this->extractGenres($jsonLd, $dom);
-        $directors = $this->extractPeople($jsonLd['director'] ?? null);
-        $actors = array_slice($this->extractPeople($jsonLd['actor'] ?? null), 0, 10);
-        $language = $this->extractLanguage($jsonLd, $dom);
-        $type = $this->extractType($jsonLd);
-
-        if ($dom !== false) {
-            if ($directors === []) {
-                $directors = $this->extractPeopleFromDom($dom, [
-                    "li[data-testid='title-pc-principal-credit']:contains(Director) a",
-                    "li[data-testid='title-pc-principal-credit']:contains(Creator) a",
-                ]);
-            }
-
-            if ($actors === []) {
-                $actors = array_slice($this->extractPeopleFromDom($dom, [
-                    "div[data-testid='title-cast-item'] a[data-testid='title-cast-item__actor']",
-                ]), 0, 10);
-            }
-        }
-
-        return [
-            'imdbid' => $id,
-            'title' => $title,
-            'year' => $year,
-            'plot' => $plot,
-            'rating' => $rating,
-            'cover' => $cover,
-            'genre' => $genres,
-            'director' => $directors,
-            'actors' => $actors,
-            'language' => $language,
-            'type' => $type,
-        ];
-    }
-
     private function isWafResponse(int $statusCode, string $body): bool
     {
         if ($statusCode === 202) {
@@ -327,343 +135,6 @@ class ImdbScraper
             'captcha',
             'awswaf',
         ], true);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function extractPrimaryJsonLdEntity(string $html): array
-    {
-        if (! preg_match_all('/<script[^>]*type=["\']application\/ld\+json["\'][^>]*>(.*?)<\/script>/is', $html, $matches)) {
-            return [];
-        }
-
-        foreach ($matches[1] as $json) {
-            $decoded = json_decode(html_entity_decode(trim($json), ENT_QUOTES | ENT_HTML5, 'UTF-8'), true);
-            if (! is_array($decoded)) {
-                continue;
-            }
-
-            $entity = $this->findTitleEntity($decoded);
-            if ($entity !== []) {
-                return $entity;
-            }
-        }
-
-        return [];
-    }
-
-    /**
-     * @param  array<int|string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    private function findTitleEntity(array $payload): array
-    {
-        if ($this->looksLikeTitleEntity($payload)) {
-            /** @var array<string, mixed> $payload */
-            return $payload;
-        }
-
-        foreach ($payload as $value) {
-            if (! is_array($value)) {
-                continue;
-            }
-
-            $entity = $this->findTitleEntity($value);
-            if ($entity !== []) {
-                return $entity;
-            }
-        }
-
-        return [];
-    }
-
-    /**
-     * @param  array<int|string, mixed>  $payload
-     */
-    private function looksLikeTitleEntity(array $payload): bool
-    {
-        $type = strtolower((string) ($payload['@type'] ?? ''));
-
-        return in_array($type, ['movie', 'tvseries', 'tvminiseries', 'tvepisode', 'tvmovie', 'video'], true)
-            || (isset($payload['name']) && (isset($payload['actor']) || isset($payload['director']) || isset($payload['aggregateRating'])));
-    }
-
-    private function extractTitle(array $jsonLd, HtmlDomParser|false $dom): string
-    {
-        $title = trim((string) ($jsonLd['name'] ?? ''));
-        if ($title !== '') {
-            return $title;
-        }
-
-        if ($dom !== false) {
-            $titleNode = $dom->findOne('h1');
-            $title = trim((string) ($titleNode?->text() ?? ''));
-            if ($title !== '') {
-                return preg_replace('/\s+\(.*?\)$/', '', $title) ?? $title;
-            }
-
-            $ogTitle = $dom->findOne("meta[property='og:title']");
-            $title = trim((string) ($ogTitle?->getAttribute('content') ?? ''));
-            if ($title !== '') {
-                return preg_replace('/\s+-\s+IMDb$/', '', $title) ?? $title;
-            }
-        }
-
-        return '';
-    }
-
-    private function extractYearFromEntity(array $jsonLd): string
-    {
-        $year = $this->extractYearFromText((string) ($jsonLd['datePublished'] ?? ''));
-        if ($year !== '') {
-            return $year;
-        }
-
-        return $this->extractYearFromText((string) ($jsonLd['dateCreated'] ?? ''));
-    }
-
-    private function extractYearFromDom(HtmlDomParser|false $dom): string
-    {
-        if ($dom === false) {
-            return '';
-        }
-
-        $selectors = [
-            "span[data-testid='title-details-releasedate'] a",
-            "span[data-testid='title-details-releasedate']",
-            "ul[data-testid='hero-title-block__metadata'] li",
-        ];
-
-        foreach ($selectors as $selector) {
-            foreach ($dom->find($selector) as $node) {
-                $year = $this->extractYearFromText($node->text());
-                if ($year !== '') {
-                    return $year;
-                }
-            }
-        }
-
-        return '';
-    }
-
-    private function extractPlot(array $jsonLd, HtmlDomParser|false $dom): string
-    {
-        $plot = trim((string) ($jsonLd['description'] ?? ''));
-        if ($plot !== '') {
-            return $plot;
-        }
-
-        if ($dom === false) {
-            return '';
-        }
-
-        $plotNode = $dom->findOne("span[data-testid='plot-l']") ?: $dom->findOne("span[data-testid='plot-xl']");
-        $plot = trim((string) ($plotNode?->text() ?? ''));
-        if ($plot !== '') {
-            return $plot;
-        }
-
-        $html = $dom->html();
-        if (preg_match('/data-testid=["\']plot-(?:l|xl)["\'][^>]*>(.*?)<\/span>/is', $html, $matches) === 1) {
-            $plot = trim(html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-            if ($plot !== '') {
-                return $plot;
-            }
-        }
-
-        $descriptionNode = $dom->findOne("meta[name='description']");
-
-        return trim((string) ($descriptionNode?->getAttribute('content') ?? ''));
-    }
-
-    private function extractRating(array $jsonLd, HtmlDomParser|false $dom): string
-    {
-        $rating = trim((string) ($jsonLd['aggregateRating']['ratingValue'] ?? ''));
-        if ($rating !== '') {
-            return $rating;
-        }
-
-        if ($dom === false) {
-            return '';
-        }
-
-        $ratingNode = $dom->findOne("div[data-testid='hero-rating-bar__aggregate-rating__score'] span");
-        $ratingText = trim((string) ($ratingNode?->text() ?? ''));
-
-        return preg_match('/\d+(?:\.\d+)?/', $ratingText, $matches) === 1 ? $matches[0] : '';
-    }
-
-    private function extractCover(array $jsonLd, HtmlDomParser|false $dom): string
-    {
-        $cover = $this->normalizeImageUrl($jsonLd['image'] ?? '');
-        if ($cover !== '') {
-            return $cover;
-        }
-
-        if ($dom === false) {
-            return '';
-        }
-
-        $posterNode = $dom->findOne("div[data-testid='hero-media__poster'] img") ?: $dom->findOne("meta[property='og:image']");
-        $cover = (string) ($posterNode?->getAttribute('src') ?? $posterNode?->getAttribute('content') ?? '');
-
-        return $this->normalizeImageUrl($cover);
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function extractGenres(array $jsonLd, HtmlDomParser|false $dom): array
-    {
-        $genres = $this->normalizeStringList($jsonLd['genre'] ?? []);
-        if ($genres !== []) {
-            return $genres;
-        }
-
-        if ($dom === false) {
-            return [];
-        }
-
-        $genres = [];
-        foreach ($dom->find("div[data-testid='genres'] a") as $genreNode) {
-            $genre = trim($genreNode->text());
-            if ($genre !== '') {
-                $genres[] = $genre;
-            }
-        }
-
-        return array_values(array_unique($genres));
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function extractPeople(mixed $value): array
-    {
-        $people = [];
-        foreach ($this->normalizeValueList($value) as $item) {
-            $name = '';
-            if (is_array($item)) {
-                $name = trim((string) ($item['name'] ?? ''));
-            } elseif (is_string($item)) {
-                $name = trim($item);
-            }
-
-            if ($name !== '') {
-                $people[] = $name;
-            }
-        }
-
-        return array_values(array_unique($people));
-    }
-
-    /**
-     * @param  array<int, string>  $selectors
-     * @return array<int, string>
-     */
-    private function extractPeopleFromDom(HtmlDomParser $dom, array $selectors): array
-    {
-        $people = [];
-
-        foreach ($selectors as $selector) {
-            foreach ($dom->find($selector) as $node) {
-                $name = trim($node->text());
-                if ($name !== '') {
-                    $people[] = $name;
-                }
-            }
-        }
-
-        return array_values(array_unique($people));
-    }
-
-    private function extractLanguage(array $jsonLd, HtmlDomParser|false $dom): string
-    {
-        $languages = $this->normalizeStringList($jsonLd['inLanguage'] ?? []);
-        if ($languages !== []) {
-            return implode(', ', $languages);
-        }
-
-        if ($dom === false) {
-            return '';
-        }
-
-        $languages = [];
-        foreach ($dom->find("li[data-testid='title-details-languages'] a") as $languageNode) {
-            $language = trim($languageNode->text());
-            if ($language !== '') {
-                $languages[] = $language;
-            }
-        }
-
-        return implode(', ', array_values(array_unique($languages)));
-    }
-
-    private function extractType(array $jsonLd): string
-    {
-        $type = strtolower((string) ($jsonLd['@type'] ?? 'movie'));
-
-        return match ($type) {
-            'tvseries', 'tvminiseries', 'tvepisode', 'tvmovie' => 'tv',
-            default => 'movie',
-        };
-    }
-
-    private function extractYearFromText(string $text): string
-    {
-        return preg_match('/(19|20)\d{2}/', $text, $matches) === 1 ? $matches[0] : '';
-    }
-
-    private function normalizeImageUrl(mixed $image): string
-    {
-        $url = '';
-
-        if (is_string($image)) {
-            $url = trim($image);
-        } elseif (is_array($image)) {
-            $url = trim((string) ($image['url'] ?? $image[0]['url'] ?? $image[0] ?? ''));
-        }
-
-        if ($url !== '' && str_contains($url, '._V1_')) {
-            $url = preg_replace('/\._V1_.*\./', '.', $url) ?? $url;
-        }
-
-        return $url;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function normalizeStringList(mixed $value): array
-    {
-        $items = [];
-        foreach ($this->normalizeValueList($value) as $item) {
-            if (is_string($item)) {
-                $string = trim($item);
-                if ($string !== '') {
-                    $items[] = $string;
-                }
-            }
-        }
-
-        return array_values(array_unique($items));
-    }
-
-    /**
-     * @return array<int, mixed>
-     */
-    private function normalizeValueList(mixed $value): array
-    {
-        if ($value === null || $value === '') {
-            return [];
-        }
-
-        if (is_array($value)) {
-            return array_is_list($value) ? $value : [$value];
-        }
-
-        return [$value];
     }
 
     /**
@@ -700,112 +171,5 @@ class ImdbScraper
         }
 
         return $results;
-    }
-
-    /**
-     * @return array<int, array{imdbid: string, title: string, year: string, type: string}>
-     */
-    private function searchHtmlFallback(string $query): array
-    {
-        $url = 'https://www.imdb.com/find/?q='.rawurlencode($query).'&s=tt';
-
-        try {
-            $response = $this->client->get($url, [
-                'headers' => [
-                    'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Referer' => 'https://www.imdb.com/',
-                ],
-            ]);
-
-            $statusCode = $response->getStatusCode();
-            $html = (string) $response->getBody();
-
-            if ($this->isWafResponse($statusCode, $html)) {
-                $this->lastRequestWasBlocked = true;
-
-                return [];
-            }
-
-            if ($statusCode >= 400 || trim($html) === '') {
-                return [];
-            }
-
-            $results = $this->parseSearchHtml($html);
-            if ($results !== [] || preg_match('/No results found|No results for/i', strip_tags($html))) {
-                $this->lastSearchAvailable = true;
-            }
-
-            return $results;
-        } catch (\Throwable $e) {
-            Log::debug('IMDb HTML search fallback failed for '.$query.': '.$e->getMessage());
-
-            return [];
-        }
-    }
-
-    private function searchTypeFromText(string $text): string
-    {
-        foreach (['TV Mini Series' => 'tvMiniSeries', 'TV Mini-Series' => 'tvMiniSeries', 'TV Series' => 'tvSeries', 'TV Episode' => 'tvEpisode', 'TV Special' => 'tvSpecial', 'Movie' => 'movie'] as $label => $type) {
-            if (stripos($text, $label) !== false) {
-                return $type;
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * @return array<int, array{imdbid: string, title: string, year: string, type: string}>
-     */
-    private function parseSearchHtml(string $html): array
-    {
-        $document = new \DOMDocument;
-        if (! $document->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING)) {
-            return [];
-        }
-        $xpath = new \DOMXPath($document);
-        $links = $xpath->query('//a[contains(@href, "/title/tt")]');
-        $results = [];
-        if ($links === false) {
-            return [];
-        }
-        foreach ($links as $link) {
-            if (! $link instanceof \DOMElement || ! preg_match('#/title/tt(?P<id>\d{5,})/#', $link->getAttribute('href'), $matches)) {
-                continue;
-            }
-            $title = trim($link->textContent);
-            if ($title === '') {
-                continue;
-            }
-            $row = $link;
-            for ($parent = $link->parentNode; $parent instanceof \DOMElement; $parent = $parent->parentNode) {
-                $rowLinks = $xpath->query('.//a[contains(@href, "/title/tt")]', $parent);
-                $ids = [];
-                foreach ($rowLinks === false ? [] : $rowLinks as $rowLink) {
-                    if ($rowLink instanceof \DOMElement && preg_match('#/title/(tt\d+)/#', $rowLink->getAttribute('href'), $id)) {
-                        $ids[$id[1]] = true;
-                    }
-                }
-                if (count($ids) > 1) {
-                    break;
-                }
-                $row = $parent;
-                if (in_array(strtolower($parent->tagName), ['li', 'tr'], true)) {
-                    break;
-                }
-            }
-            $context = $row->textContent;
-            $results[$matches['id']] = [
-                'imdbid' => $matches['id'],
-                'title' => $title,
-                'year' => $this->extractYearFromText($context),
-                'type' => $this->searchTypeFromText($context),
-            ];
-            if (count($results) >= 25) {
-                break;
-            }
-        }
-
-        return array_values($results);
     }
 }
