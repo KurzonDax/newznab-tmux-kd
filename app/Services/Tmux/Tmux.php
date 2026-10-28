@@ -251,18 +251,6 @@ class Tmux
         return round($bytes, 2).' '.$types[$index];
     }
 
-    public function writelog(mixed $pane): ?string
-    {
-        $path = storage_path('logs');
-        $getDate = now()->format('Y_m_d');
-        $logs = Settings::settingValue('write_logs') ?? 0;
-        if ($logs === 1) {
-            return "2>&1 | tee -a $path/$pane-$getDate.log";
-        }
-
-        return '';
-    }
-
     /**
      * @throws \Exception
      */

@@ -557,9 +557,11 @@ php artisan pulse:clear
 ### Logs
 
 - **Application logs:** `storage/logs/` (`laravel.log` by default, plus per-channel files)
-- **Tmux pane logs:** `storage/logs/tmux/`, written only when the `write_logs`
-  setting is 1. Neither the seeder nor any admin page sets it, so pane logging is
-  off on a standard install; pane output is visible in the session
+- **Tmux pane logs:** `storage/logs/tmux/`, written only when
+  `TMUX_WRITE_LOGS=true`; pane logging is off by default. A change takes effect
+  after tmux is restarted (`php artisan tmux:stop`, then `php artisan tmux:start`),
+  and after rebuilding the config cache if you cache configuration. `logs:prune`
+  does not remove these files. Pane output is always visible in the session
   (`php artisan tmux:attach`).
 - **nginx logs:** `/var/log/nginx/`
 - **PHP-FPM logs:** `/var/log/php-fpm/`

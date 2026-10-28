@@ -125,6 +125,8 @@ return [
         'logs' => storage_path('logs/tmux'),
     ],
 
+    'write_logs' => (bool) env('TMUX_WRITE_LOGS', false),
+
     'monitor' => [
         'delay' => env('TMUX_MONITOR_DELAY', 10),
         'refresh_interval' => env('TMUX_REFRESH_INTERVAL', 60),
