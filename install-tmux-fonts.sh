@@ -147,6 +147,5 @@ echo "3. Or restart tmux:"
 echo "   php artisan tmux:stop --force"
 echo "   php artisan tmux:start"
 echo ""
-echo "📖 Full guide: TMUX_FONTS_GUIDE.md"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
