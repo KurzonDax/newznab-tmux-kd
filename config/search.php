@@ -64,7 +64,6 @@ return [
             'fuzzy' => [
                 'enabled' => env('MANTICORESEARCH_FUZZY_ENABLED', true),
                 'max_distance' => env('MANTICORESEARCH_FUZZY_MAX_DISTANCE', 2),
-                'layouts' => env('MANTICORESEARCH_FUZZY_LAYOUTS', 'us'),
             ],
         ],
 

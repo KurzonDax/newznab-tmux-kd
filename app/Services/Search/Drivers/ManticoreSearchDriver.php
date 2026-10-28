@@ -294,7 +294,6 @@ class ManticoreSearchDriver implements SearchDriverInterface
         return $this->config['fuzzy'] ?? [
             'enabled' => true,
             'max_distance' => 2,
-            'layouts' => 'us',
         ];
     }
 

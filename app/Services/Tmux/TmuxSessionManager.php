@@ -32,7 +32,6 @@ class TmuxSessionManager
     public function getSessionName(): string
     {
         return Settings::settingValue('tmux_session')
-            ?? config('tmux.session.name')
             ?? config('tmux.session.default_name', 'nntmux');
     }
 
