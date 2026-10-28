@@ -122,11 +122,7 @@ class UpdateNNTmux extends Command
         // Check if app is in maintenance mode
         $this->wasInMaintenance = App::isDownForMaintenance();
         if (! $this->wasInMaintenance) {
-            $this->call('down', [
-                '--render' => 'errors::maintenance',
-                '--retry' => 120,
-                '--secret' => config('app.key'),
-            ]);
+            $this->call('down', $this->maintenanceOptions());
         }
 
         // Check if tmux is running
@@ -137,6 +133,21 @@ class UpdateNNTmux extends Command
         }
 
         $this->progressBar->advance();
+    }
+
+    /**
+     * Options for the `down` call; `--with-secret` makes Laravel generate a random
+     * bypass secret and print the bypass URL
+     *
+     * @return array<string, mixed>
+     */
+    protected function maintenanceOptions(): array
+    {
+        return [
+            '--render' => 'errors::maintenance',
+            '--retry' => 120,
+            '--with-secret' => true,
+        ];
     }
 
     /**
