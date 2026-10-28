@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Facades\Search;
-use App\Services\ImdbScraper;
 use App\Services\MetadataProcessing\MovieCredits;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -30,10 +29,6 @@ final class AdminMovieEditCreditsTest extends TestCase
         Search::spy();
         Http::preventStrayRequests();
         config(['tmdb.api_key' => '', 'nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '', 'nntmux_api.fanarttv_api_key' => '']);
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldReceive('fetchById')->andReturnFalse();
-        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull();
 
         $tables = ProductionTables::fromAuthority();
         foreach (['movieinfo', 'genres', 'people', 'movie_genres', 'movie_people'] as $table) {

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use aharen\OMDbAPI;
 use App\Facades\Search;
 use App\Http\Controllers\Api\XML_Response;
 use App\Models\Category;
-use App\Services\ImdbScraper;
 use App\Services\MetadataProcessing\MovieCredits;
 use App\Services\MetadataProcessing\PeopleRows;
 use App\Services\MovieService;
@@ -44,10 +44,6 @@ final class MovieCreditsTest extends ImdbScraperTestCase
             'tmdb.retry_times' => 1,
             'tmdb.retry_delay' => 0,
         ]);
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldReceive('fetchById')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
         Http::preventStrayRequests();
         Carbon::setTestNow('2026-09-27 12:00:00');
 
@@ -165,15 +161,15 @@ final class MovieCreditsTest extends ImdbScraperTestCase
     public function test_when_tmdb_returns_nothing_the_rows_come_from_the_saved_text(): void
     {
         Http::fake(['*find/tt0137523*' => Http::response(['movie_results' => []])]);
-        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
-            'title' => 'Fight Club',
-            'year' => '1999',
-            'genre' => ['Drama', 'Thriller'],
-            'director' => ['David Fincher'],
-            'actors' => ['Robert Downey, Jr.', 'Edward Norton'],
-        ])->byDefault();
+        $omdb = [
+            'Title' => 'Fight Club',
+            'Year' => '1999',
+            'Genre' => 'Drama, Thriller',
+            'Director' => 'David Fincher',
+            'Actors' => 'Robert Downey, Jr., Edward Norton',
+        ];
 
-        $this->assertTrue($this->service()->updateMovieInfo(self::IMDB_ID));
+        $this->assertTrue($this->service($omdb)->updateMovieInfo(self::IMDB_ID));
 
         $id = $this->filmId();
         $this->assertNull(DB::table('movieinfo')->where('id', $id)->value('vote_count'));
@@ -186,15 +182,15 @@ final class MovieCreditsTest extends ImdbScraperTestCase
     public function test_a_list_tmdb_leaves_empty_alone_comes_from_the_saved_text(): void
     {
         $this->fakeTmdb($this->tmdbMovie(['credits' => ['cast' => [], 'crew' => $this->tmdbMovie()['credits']['crew']]]));
-        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
-            'title' => 'Fight Club',
-            'year' => '1999',
-            'genre' => 'Imdb Genre',
-            'director' => 'Imdb Director',
-            'actors' => 'Brad Pitt, Edward Norton',
-        ])->byDefault();
+        $omdb = [
+            'Title' => 'Fight Club',
+            'Year' => '1999',
+            'Genre' => 'Imdb Genre',
+            'Director' => 'Imdb Director',
+            'Actors' => 'Brad Pitt, Edward Norton',
+        ];
 
-        $this->service()->updateMovieInfo(self::IMDB_ID);
+        $this->service($omdb)->updateMovieInfo(self::IMDB_ID);
 
         $id = $this->filmId();
         $this->assertSame(['Drama', 'Thriller'], $this->genreTitles($id));
@@ -205,15 +201,15 @@ final class MovieCreditsTest extends ImdbScraperTestCase
     public function test_a_fetch_with_no_tmdb_genres_links_the_saved_genres_on_tmdbs_list_and_drops_a_cut_off_director(): void
     {
         $this->fakeTmdb($this->tmdbMovie(['genres' => [], 'credits' => ['cast' => $this->tmdbMovie()['credits']['cast'], 'crew' => []]]));
-        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
-            'title' => 'Fight Club',
-            'year' => '1999',
-            'genre' => 'Action, Adventure, Science F',
-            'director' => 'Pedro Almodóvar, Alejandro González Iñárritu, Alfonso Cuarón, Gu',
-            'actors' => 'Brad Pitt',
-        ])->byDefault();
+        $omdb = [
+            'Title' => 'Fight Club',
+            'Year' => '1999',
+            'Genre' => 'Action, Adventure, Science F',
+            'Director' => 'Pedro Almodóvar, Alejandro González Iñárritu, Alfonso Cuarón, Gu',
+            'Actors' => 'Brad Pitt',
+        ];
 
-        $this->service()->updateMovieInfo(self::IMDB_ID);
+        $this->service($omdb)->updateMovieInfo(self::IMDB_ID);
 
         $id = $this->filmId();
         $this->assertSame('Action, Adventure, Science F', DB::table('movieinfo')->where('id', $id)->value('genre'));
@@ -328,15 +324,15 @@ final class MovieCreditsTest extends ImdbScraperTestCase
             'cast' => [['id' => 201, 'name' => ''], ['id' => 202, 'name' => '  ']],
             'crew' => $this->tmdbMovie()['credits']['crew'],
         ]]));
-        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andReturn([
-            'title' => 'Fight Club',
-            'year' => '1999',
-            'genre' => 'Imdb Genre',
-            'director' => 'Imdb Director',
-            'actors' => 'Brad Pitt, Edward Norton',
-        ])->byDefault();
+        $omdb = [
+            'Title' => 'Fight Club',
+            'Year' => '1999',
+            'Genre' => 'Imdb Genre',
+            'Director' => 'Imdb Director',
+            'Actors' => 'Brad Pitt, Edward Norton',
+        ];
 
-        $this->service()->updateMovieInfo(self::IMDB_ID);
+        $this->service($omdb)->updateMovieInfo(self::IMDB_ID);
 
         $this->assertSame(['Brad Pitt', 'Edward Norton'], $this->names($this->filmId(), MovieCredits::ROLE_CAST));
         $this->assertSame(0, DB::table('people')->whereIn('tmdb_id', [201, 202])->count());
@@ -474,9 +470,23 @@ final class MovieCreditsTest extends ImdbScraperTestCase
         $this->assertSame(['Brad Pitt'], $this->names($id, MovieCredits::ROLE_CAST));
     }
 
-    private function service(): MovieService
+    /**
+     * @param  array<string, string>  $omdb  The film OMDb answers for tt0137523; none when empty.
+     */
+    private function service(array $omdb = []): MovieService
     {
-        return new MovieService;
+        $service = new MovieService;
+        if ($omdb !== []) {
+            $client = \Mockery::mock(OMDbAPI::class);
+            $client->shouldReceive('fetch')->with('i', 'tt'.self::IMDB_ID)->andReturn((object) [
+                'message' => 'OK',
+                'data' => (object) ['Response' => 'True', ...$omdb],
+            ]);
+            $service->omdbapikey = 'omdb-key';
+            $service->omdbApi = $client;
+        }
+
+        return $service;
     }
 
     /**

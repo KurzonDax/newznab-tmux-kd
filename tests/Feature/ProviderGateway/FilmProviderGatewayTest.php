@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ProviderGateway;
 
-use App\Services\ImdbScraper;
 use App\Services\MovieService;
 use App\Services\ProviderGateway\ProviderGateway;
-use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
-use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -77,32 +74,6 @@ final class FilmProviderGatewayTest extends ImdbScraperTestCase
     }
 
     #[Test]
-    public function an_imdb_waf_challenge_is_not_cached_under_either_key(): void
-    {
-        $this->useImdbResponses([new Response(202, [], '<script>window.gokuProps={}</script>')]);
-
-        $this->assertFalse((new MovieService)->fetchIMDBProperties(self::IMDB_ID));
-
-        $this->assertFalse(Cache::has('imdb_scrape_id_'.self::IMDB_ID));
-        $this->assertFalse(Cache::has('imdb_movie_'.md5(self::IMDB_ID)));
-    }
-
-    #[Test]
-    public function an_imdb_not_found_is_kept_six_hours_under_both_keys(): void
-    {
-        $this->useImdbResponses([new Response(404, [], 'Not found')]);
-
-        $this->assertFalse((new MovieService)->fetchIMDBProperties(self::IMDB_ID));
-
-        $this->assertFalse(Cache::get('imdb_scrape_id_'.self::IMDB_ID));
-        $this->assertFalse(Cache::get('imdb_movie_'.md5(self::IMDB_ID)));
-        $this->travel(6)->hours();
-        $this->travel(1)->seconds();
-        $this->assertFalse(Cache::has('imdb_scrape_id_'.self::IMDB_ID));
-        $this->assertFalse(Cache::has('imdb_movie_'.md5(self::IMDB_ID)));
-    }
-
-    #[Test]
     public function an_omdb_quota_401_or_failure_is_not_cached_and_its_not_found_is_kept_six_hours(): void
     {
         config(['nntmux_api.omdb_api_key' => 'omdb-key']);
@@ -134,12 +105,5 @@ final class FilmProviderGatewayTest extends ImdbScraperTestCase
         $this->assertFalse((new MovieService)->fetchTraktTVProperties(self::IMDB_ID));
 
         $this->assertFalse(Cache::has('trakt_movie_'.md5(self::IMDB_ID)));
-    }
-
-    /** @param list<Response> $responses */
-    private function useImdbResponses(array $responses): void
-    {
-        $client = new Client(['handler' => HandlerStack::create(new MockHandler($responses)), 'http_errors' => false]);
-        $this->app->bind(ImdbScraper::class, static fn (): ImdbScraper => new ImdbScraper($client));
     }
 }

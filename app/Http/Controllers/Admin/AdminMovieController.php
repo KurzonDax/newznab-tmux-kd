@@ -103,7 +103,7 @@ class AdminMovieController extends BasePageController
                     ->with('success', 'Movie successfully added! IMDB ID: '.$id);
             } else {
                 return redirect()->back()
-                    ->with('error', 'Could not fetch movie information from TMDB/IMDB. Please verify the IMDB ID is correct.')
+                    ->with('error', 'Could not fetch movie information from TMDB/Trakt/OMDb. Please verify the IMDB ID is correct.')
                     ->withInput();
             }
         } catch (\Exception $e) {

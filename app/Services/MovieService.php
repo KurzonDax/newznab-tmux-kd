@@ -237,16 +237,14 @@ class MovieService
     }
 
     /**
-     * Choose the first non-empty variable from up to five inputs.
+     * Choose the first non-empty variable from three inputs.
      *
      * @param  array<string, mixed>  $variable1
      * @param  array<string, mixed>  $variable2
      * @param  array<string, mixed>  $variable3
-     * @param  array<string, mixed>  $variable4
-     * @param  array<string, mixed>  $variable5
      * @return array<string, mixed>
      */
-    protected function setVariables(string|array|int|float $variable1, string|array|int|float $variable2, string|array|int|float $variable3, string|array|int|float $variable4, string|array|int|float $variable5 = ''): array|string
+    protected function setVariables(string|array|int|float $variable1, string|array|int|float $variable2, string|array|int|float $variable3): array|string
     {
         if (! empty($variable1)) {
             return is_array($variable1) ? $variable1 : (string) $variable1;
@@ -256,12 +254,6 @@ class MovieService
         }
         if (! empty($variable3)) {
             return is_array($variable3) ? $variable3 : (string) $variable3;
-        }
-        if (! empty($variable4)) {
-            return is_array($variable4) ? $variable4 : (string) $variable4;
-        }
-        if (! empty($variable5)) {
-            return is_array($variable5) ? $variable5 : (string) $variable5;
         }
 
         return '';
@@ -330,22 +322,19 @@ class MovieService
     }
 
     /**
-     * Fetch IMDB/TMDB/TRAKT/OMDB/iTunes info for the movie.
+     * Fetch TMDB/Trakt/OMDb info for the movie.
      *
      * @throws \Exception
      */
     public function updateMovieInfo(string $imdbId): bool
     {
-        $this->movieProviderOutcomes = ['tmdb' => 'not found', 'imdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'];
+        $this->movieProviderOutcomes = ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'];
         if ($this->echooutput && $this->service !== '') {
-            cli()->primary('Fetching IMDB info from TMDB/IMDB/Trakt/OMDB/iTunes using IMDB id: '.$imdbId);
+            cli()->primary('Fetching movie info from TMDB/Trakt/OMDB using IMDB id: '.$imdbId);
         }
 
         // Check TMDB for IMDB info.
         $tmdb = $this->fetchTMDBProperties($imdbId);
-
-        // Check IMDB for movie info.
-        $imdb = $this->fetchIMDBProperties($imdbId);
 
         // Check TRAKT for movie info
         $trakt = $this->fetchTraktTVProperties($imdbId);
@@ -353,7 +342,7 @@ class MovieService
         // Check OMDb for movie info
         $omdb = $this->fetchOmdbAPIProperties($imdbId);
 
-        if (! $imdb && ! $tmdb && ! $trakt && ! $omdb) {
+        if (! $tmdb && ! $trakt && ! $omdb) {
             Log::warning('Movie record fetch failed.', [
                 'imdb_id' => $imdbId,
                 'providers' => $this->movieProviderOutcomes,
@@ -374,7 +363,7 @@ class MovieService
         $mov['tmdbid'] = (! isset($tmdb['tmdbid']) || $tmdb['tmdbid'] === '') ? 0 : $tmdb['tmdbid'];
         $mov['traktid'] = (! isset($trakt['id']) || $trakt['id'] === '') ? 0 : $trakt['id'];
 
-        // Prefer Fanart.tv cover over TMDB,TMDB over IMDB,IMDB over OMDB and OMDB over iTunes.
+        // Prefer Fanart.tv over TMDB over OMDb.
         if (! empty($fanart['cover'])) {
             try {
                 $mov['cover'] = $this->saveRemoteAsset($imdbId.'-cover', $fanart['cover']);
@@ -395,18 +384,6 @@ class MovieService
                 }
             } catch (\Throwable $e) {
                 Log::error('Error saving TMDB cover for '.$imdbId.': '.$e->getMessage());
-                $mov['cover'] = 0;
-            }
-        }
-
-        if ($mov['cover'] === 0 && ! empty($imdb['cover'])) {
-            try {
-                $mov['cover'] = $this->saveRemoteAsset($imdbId.'-cover', $imdb['cover']);
-                if ($mov['cover'] === 0) {
-                    Log::warning('Failed to save IMDB cover for '.$imdbId.' from URL: '.$imdb['cover']);
-                }
-            } catch (\Throwable $e) {
-                Log::error('Error saving IMDB cover for '.$imdbId.': '.$e->getMessage());
                 $mov['cover'] = 0;
             }
         }
@@ -457,45 +434,31 @@ class MovieService
             $mov['rtrating'] = $omdb['rtRating'];
         }
 
-        $mov['title'] = $this->setVariables($imdb['title'] ?? '', $tmdb['title'] ?? '', $trakt['title'] ?? '', $omdb['title'] ?? '');
-        $mov['rating'] = $this->setVariables($imdb['rating'] ?? '', $tmdb['rating'] ?? '', $trakt['rating'] ?? '', $omdb['rating'] ?? '');
-        $mov['plot'] = $this->setVariables($imdb['plot'] ?? '', $tmdb['plot'] ?? '', $trakt['overview'] ?? '', $omdb['plot'] ?? '');
-        $mov['tagline'] = $this->setVariables($imdb['tagline'] ?? '', $tmdb['tagline'] ?? '', $trakt['tagline'] ?? '', $omdb['tagline'] ?? '');
-        $mov['year'] = $this->setVariables($imdb['year'] ?? '', $tmdb['year'] ?? '', $trakt['year'] ?? '', $omdb['year'] ?? '');
-        $mov['genre'] = $this->setVariables($imdb['genre'] ?? '', $tmdb['genre'] ?? '', $trakt['genres'] ?? '', $omdb['genre'] ?? '');
+        $mov['title'] = $this->setVariables($tmdb['title'] ?? '', $trakt['title'] ?? '', $omdb['title'] ?? '');
+        $mov['rating'] = $this->setVariables($tmdb['rating'] ?? '', $trakt['rating'] ?? '', $omdb['rating'] ?? '');
+        $mov['plot'] = $this->setVariables($tmdb['plot'] ?? '', $trakt['overview'] ?? '', $omdb['plot'] ?? '');
+        $mov['tagline'] = $this->setVariables($tmdb['tagline'] ?? '', $trakt['tagline'] ?? '', $omdb['tagline'] ?? '');
+        $mov['year'] = $this->setVariables($tmdb['year'] ?? '', $trakt['year'] ?? '', $omdb['year'] ?? '');
+        $mov['genre'] = $this->setVariables($tmdb['genre'] ?? '', $trakt['genres'] ?? '', $omdb['genre'] ?? '');
 
-        if (! empty($imdb['type'])) {
-            $mov['type'] = $imdb['type'];
-        }
-
-        if (! empty($imdb['director'])) {
-            $mov['director'] = \is_array($imdb['director']) ? implode(', ', array_unique($imdb['director'])) : $imdb['director'];
-        } elseif (! empty($omdb['director'])) {
+        if (! empty($omdb['director'])) {
             $mov['director'] = \is_array($omdb['director']) ? implode(', ', array_unique($omdb['director'])) : $omdb['director'];
         } elseif (! empty($tmdb['director'])) {
             $mov['director'] = \is_array($tmdb['director']) ? implode(', ', array_unique($tmdb['director'])) : $tmdb['director'];
         }
 
-        if (! empty($imdb['actors'])) {
-            $mov['actors'] = \is_array($imdb['actors']) ? implode(', ', array_unique($imdb['actors'])) : $imdb['actors'];
-        } elseif (! empty($omdb['actors'])) {
+        if (! empty($omdb['actors'])) {
             $mov['actors'] = \is_array($omdb['actors']) ? implode(', ', array_unique($omdb['actors'])) : $omdb['actors'];
         } elseif (! empty($tmdb['actors'])) {
             $mov['actors'] = \is_array($tmdb['actors']) ? implode(', ', array_unique($tmdb['actors'])) : $tmdb['actors'];
         }
 
-        if (! empty($imdb['language'])) {
-            $mov['language'] = \is_array($imdb['language']) ? implode(', ', array_unique($imdb['language'])) : $imdb['language'];
-        } elseif (! empty($omdb['language']) && ! is_bool($omdb['language'])) {
+        if (! empty($omdb['language']) && ! is_bool($omdb['language'])) {
             $mov['language'] = \is_array($omdb['language']) ? implode(', ', array_unique($omdb['language'])) : $omdb['language'];
         }
 
         if (\is_array($mov['genre'])) {
             $mov['genre'] = implode(', ', array_unique($mov['genre']));
-        }
-
-        if (\is_array($mov['type'])) {
-            $mov['type'] = implode(', ', array_unique($mov['type']));
         }
 
         $mov['title'] = html_entity_decode($mov['title'], ENT_QUOTES, 'UTF-8');
@@ -827,82 +790,6 @@ class MovieService
         }
 
         return array_values($people);
-    }
-
-    /**
-     * Fetch movie information from IMDB.
-     *
-     * @return array<string, mixed>
-     */
-    public function fetchIMDBProperties(string $imdbId): array|false
-    {
-        $result = app(ProviderGateway::class)->remember(
-            'imdb',
-            'imdb_movie_'.md5($imdbId),
-            now()->addDays(7),
-            now()->addHours(6),
-            fn (): ProviderResult => $this->lookupImdbMovie($imdbId),
-        );
-
-        return $result->isFound() && is_array($result->value) ? $result->value : false;
-    }
-
-    /**
-     * IMDb's film for the id, NotFound when IMDb has none or it is not the film named by the
-     * release, Unavailable when IMDb did not answer.
-     *
-     * @return ProviderResult<array<string, mixed>|null>
-     */
-    private function lookupImdbMovie(string $imdbId): ProviderResult
-    {
-        try {
-            $scraper = app(ImdbScraper::class);
-            $scraped = $scraper->fetchById($imdbId);
-            if ($scraped === false || empty($scraped['title'])) {
-                $failureReason = $scraper->getLastFailureReason() ?? 'unknown';
-                $unavailable = ImdbScraper::failureIsUnavailable($scraper->getLastFailureReason());
-
-                Log::warning($scraper->wasBlockedByWaf() ? 'IMDb title fetch failed after WAF block.' : 'IMDb metadata fetch failed.', [
-                    'imdb_id' => $imdbId,
-                    'reason' => $failureReason,
-                    'source' => $scraper->getLastFetchSource(),
-                    'negative_cache' => $unavailable ? 'none' : '6h',
-                ]);
-
-                if ($this->echooutput) {
-                    cli()->warning('IMDb fetch failed ['.$failureReason.'] for tt'.$imdbId);
-                }
-
-                return $unavailable ? ProviderResult::unavailable() : ProviderResult::notFound();
-            }
-            if (! empty($this->currentTitle)) {
-                $percent = $this->similarityPercent($this->currentTitle, $scraped['title']);
-                if ($percent < self::MATCH_PERCENT) {
-                    return ProviderResult::notFound();
-                }
-                if (! empty($this->currentYear) && ! empty($scraped['year'])) {
-                    $yearPercent = $this->similarityPercent($this->currentYear, $scraped['year']);
-                    if ($yearPercent < self::YEAR_MATCH_PERCENT) {
-                        return ProviderResult::notFound();
-                    }
-                }
-            }
-            if ($this->echooutput) {
-                $sourceLabel = match ($scraper->getLastFetchSource()) {
-                    'imdb_html' => 'IMDb scrape',
-                    default => 'IMDb',
-                };
-
-                cli()->info($sourceLabel.' found '.$scraped['title']);
-            }
-
-            return ProviderResult::found($scraped);
-        } catch (\Throwable $e) {
-            $this->movieProviderOutcomes['imdb'] = $e::class;
-            Log::warning('Movie provider fetch error.', ['imdb_id' => $imdbId, 'provider' => 'imdb', 'error_class' => $e::class]);
-
-            return ProviderResult::unavailable($e);
-        }
     }
 
     /**
@@ -1829,17 +1716,6 @@ class MovieService
             }
         } catch (\Throwable $e) {
             Log::debug('TMDB cover fetch failed for '.$imdbId.': '.$e->getMessage());
-        }
-
-        try {
-            $imdb = $this->fetchIMDBProperties($imdbId);
-            if (! empty($imdb['cover'])) {
-                if ($this->saveRemoteAsset($imdbId.'-cover', $imdb['cover']) === 1) {
-                    return true;
-                }
-            }
-        } catch (\Throwable $e) {
-            Log::debug('IMDB cover fetch failed for '.$imdbId.': '.$e->getMessage());
         }
 
         try {

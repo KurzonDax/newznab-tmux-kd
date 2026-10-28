@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Unit\Services;
 
+use aharen\OMDbAPI;
 use App\Enums\MovieLookupOutcome;
 use App\Facades\Search;
 use App\Models\Category;
@@ -35,10 +36,6 @@ class MovieServiceTest extends ImdbScraperTestCase
         Search::spy();
         config(['nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '', 'nntmux_api.fanarttv_api_key' => '']);
         $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse()->byDefault();
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldReceive('fetchById')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse()->byDefault();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull()->byDefault();
 
         Schema::dropIfExists('movieinfo');
         Schema::create('movieinfo', function (Blueprint $table): void {
@@ -85,11 +82,15 @@ class MovieServiceTest extends ImdbScraperTestCase
     public function provider_errors_are_logged_by_class_without_sensitive_messages(): void
     {
         Log::spy();
-        $this->mock(ImdbScraper::class)->shouldReceive('fetchById')->andThrow(new \RuntimeException('https://provider.test/?api_key=secret'));
-        $this->assertFalse((new MovieService)->updateMovieInfo('0137523'));
+        $omdb = \Mockery::mock(OMDbAPI::class);
+        $omdb->shouldReceive('fetch')->andThrow(new \RuntimeException('https://provider.test/?api_key=secret'));
+        $service = new MovieService;
+        $service->omdbapikey = 'omdb-key';
+        $service->omdbApi = $omdb;
+        $this->assertFalse($service->updateMovieInfo('0137523'));
         Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
             'imdb_id' => '0137523',
-            'providers' => ['tmdb' => 'not found', 'imdb' => \RuntimeException::class, 'trakt' => 'not found', 'omdb' => 'not found'],
+            'providers' => ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => \RuntimeException::class],
         ])->once();
         Log::shouldNotHaveReceived('warning', [\Mockery::on(fn ($message) => str_contains($message, 'secret'))]);
     }
@@ -113,13 +114,10 @@ class MovieServiceTest extends ImdbScraperTestCase
     #[Test]
     public function an_existing_id_fetches_its_missing_record_without_name_discovery(): void
     {
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldNotReceive('search');
-        $scraper->shouldReceive('fetchById')->with('0137523')->once()->andReturn(['title' => 'Fight Club', 'year' => '1999']);
-        $scraper->shouldReceive('getLastFetchSource')->andReturnNull();
+        $this->mock(ImdbScraper::class)->shouldNotReceive('search');
         config(['nntmux.echocli' => false]);
         Release::query()->insert(['id' => 1, 'categories_id' => Category::MOVIE_HD, 'imdbid' => '0137523']);
-        (new MovieService)->processMovieReleases();
+        $this->answerFromOmdb(new MovieService, ['Title' => 'Fight Club', 'Year' => '1999'])->processMovieReleases();
         $movie = MovieInfo::query()->where('imdbid', '0137523')->firstOrFail();
         $this->assertSame($movie->id, Release::query()->findOrFail(1)->movieinfo_id);
         Search::shouldHaveReceived('updateRelease')->with(1)->once();
@@ -131,14 +129,12 @@ class MovieServiceTest extends ImdbScraperTestCase
         Search::spy();
         config(['nntmux.echocli' => false, 'nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '', 'nntmux_api.fanarttv_api_key' => '']);
         $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse();
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldReceive('fetchById')->with('0137523')->once()->andReturn(['title' => 'Fight Club', 'year' => '1999']);
         Release::query()->insert([
             ['id' => 1, 'imdbid' => '0137523', 'movie_record_lookup_attempts' => 4],
             ['id' => 2, 'imdbid' => '0137523', 'movie_record_lookup_attempts' => null],
         ]);
 
-        $this->assertTrue((new MovieService)->updateMovieInfo('0137523'));
+        $this->assertTrue($this->answerFromOmdb(new MovieService, ['Title' => 'Fight Club', 'Year' => '1999'])->updateMovieInfo('0137523'));
 
         $movie = MovieInfo::query()->where('imdbid', '0137523')->firstOrFail();
         $this->assertSame('Fight Club', $movie->title);
@@ -154,10 +150,6 @@ class MovieServiceTest extends ImdbScraperTestCase
         Log::spy();
         config(['nntmux.echocli' => false, 'nntmux_api.omdb_api_key' => '', 'nntmux_api.trakttv_api_key' => '']);
         $this->mock(TmdbClient::class)->shouldReceive('isConfigured')->andReturnFalse();
-        $scraper = $this->mock(ImdbScraper::class);
-        $scraper->shouldReceive('fetchById')->with('0137523')->times(4)->andReturnFalse();
-        $scraper->shouldReceive('wasBlockedByWaf')->andReturnFalse();
-        $scraper->shouldReceive('getLastFailureReason', 'getLastFetchSource')->andReturnNull();
         Release::query()->insert(['id' => 1, 'categories_id' => Category::MOVIE_HD, 'imdbid' => '0137523']);
         $service = new MovieService;
         foreach (range(1, 4) as $attempt) {
@@ -175,7 +167,7 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->assertFalse(MovieProcessingCandidateQuery::query(lookupMode: 1)->exists());
         Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
             'imdb_id' => '0137523',
-            'providers' => ['tmdb' => 'not found', 'imdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'],
+            'providers' => ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'],
         ])->times(4);
     }
 
@@ -183,7 +175,6 @@ class MovieServiceTest extends ImdbScraperTestCase
     public function backfill_command_links_existing_records_without_fetching_and_is_idempotent(): void
     {
         Search::spy();
-        $this->mock(ImdbScraper::class)->shouldNotReceive('fetchById');
         $this->mock(TmdbClient::class)->shouldNotReceive('getMovie');
         DB::table('movieinfo')->insert(['id' => 10, 'imdbid' => '0137523']);
         Release::query()->insert([
@@ -591,6 +582,24 @@ class MovieServiceTest extends ImdbScraperTestCase
     {
         $reflectionProperty = new \ReflectionProperty($service, $property);
         $reflectionProperty->setValue($service, $value);
+    }
+
+    /**
+     * Gives the service an OMDb client that answers tt0137523 once with this film.
+     *
+     * @param  array<string, string>  $film
+     */
+    private function answerFromOmdb(MovieService $service, array $film): MovieService
+    {
+        $omdb = \Mockery::mock(OMDbAPI::class);
+        $omdb->shouldReceive('fetch')->with('i', 'tt0137523')->once()->andReturn((object) [
+            'message' => 'OK',
+            'data' => (object) ['Response' => 'True', ...$film],
+        ]);
+        $service->omdbapikey = 'omdb-key';
+        $service->omdbApi = $omdb;
+
+        return $service;
     }
 }
 
