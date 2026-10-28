@@ -77,9 +77,9 @@ class ReleaseRemoverBatchingTest extends TestCase
             $table->dateTime('adddate')->nullable();
             $table->dateTime('additional_pp_claimed_at')->nullable();
             $table->dateTime('recovery_claimed_at')->nullable();
-            $table->unsignedInteger('totalpart')->default(0);
+            $table->integer('totalpart')->default(1);
             $table->unsignedBigInteger('size')->default(0);
-            $table->unsignedInteger('categories_id')->default(Category::OTHER_MISC);
+            $table->integer('categories_id')->default(Category::XXX_ROOT);
         });
         Schema::create('release_files', function (Blueprint $table): void {
             $table->unsignedInteger('releases_id');
