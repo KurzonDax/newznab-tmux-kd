@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Http\Controllers\Api\ApiController;
 use App\Http\Controllers\Api\ApiV2Controller;
 use App\Models\Category;
+use App\Services\Api\V1\ReleaseItemPayloadBuilder;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\Releases\ReleaseSearchService;
 use Illuminate\Database\Schema\Blueprint;
@@ -21,6 +22,7 @@ use Illuminate\Support\Str;
 use Mockery;
 use ReflectionClass;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 class ApiRequestMatrixTest extends TestCase
@@ -57,6 +59,8 @@ class ApiRequestMatrixTest extends TestCase
         $this->nzbUploadFolder = sys_get_temp_dir().'/nntmux-api-matrix-'.bin2hex(random_bytes(6));
         config(['nntmux.nzb_upload_folder' => $this->nzbUploadFolder]);
 
+        // release_nfos stores MariaDB COMPRESS() output; the fixture stores plain text.
+        $this->registerSqliteFunction('UNCOMPRESS', static fn (?string $value): ?string => $value, 1);
         $this->createSchema();
         $this->seedData();
     }
@@ -750,6 +754,29 @@ class ApiRequestMatrixTest extends TestCase
             ->assertJsonPath('password', 0);
     }
 
+    public function test_v1_info_attribute_url_returns_the_release_nfo(): void
+    {
+        $token = (string) DB::table('users')->value('api_token');
+        DB::table('releases')->where('id', 1)->update(['nfostatus' => 1]);
+        DB::table('release_nfos')->insert(['releases_id' => 1, 'nfo' => 'Ubuntu release notes']);
+        $release = DB::table('releases')->where('id', 1)->first();
+        $info = (new ReleaseItemPayloadBuilder(
+            ['token' => $token, 'extended' => '1'],
+            ['server' => ['url' => 'https://example.test']],
+        ))->build($release)['attr']['info'];
+        $url = parse_url($info);
+
+        ob_start();
+        try {
+            $response = $this->get($url['path'].'?'.$url['query']);
+        } finally {
+            $body = (string) ob_get_clean();
+        }
+
+        $response->assertOk();
+        self::assertSame('Ubuntu release notes', $body);
+    }
+
     public function test_v1_nzbadd_stages_differently_named_nzb_and_nfo_fields(): void
     {
         $token = (string) DB::table('users')->value('api_token');
@@ -1006,6 +1033,8 @@ class ApiRequestMatrixTest extends TestCase
             $table->unsignedInteger('consoleinfo_id')->default(0);
             $table->unsignedInteger('groups_id')->nullable();
         });
+
+        ProductionTables::fromAuthority()->create('release_nfos');
 
         Schema::create('usenet_groups', function (Blueprint $table): void {
             $table->increments('id');

@@ -118,7 +118,7 @@ final readonly class ReleaseItemPayloadBuilder
         }
 
         if ((int) ($this->value($release, 'nfostatus') ?? 0) === 1) {
-            $attributes['info'] = $this->serverUrl.'api?t=info&id='.$this->value($release, 'guid').'&r='.$this->token;
+            $attributes['info'] = $this->serverUrl.'/api/v1/api?t=info&id='.$this->value($release, 'guid').'&apikey='.$this->token;
         }
 
         $attributes['grabs'] = $this->value($release, 'grabs');
