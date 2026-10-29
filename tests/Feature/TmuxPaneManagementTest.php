@@ -900,6 +900,68 @@ SH;
     }
 
     /**
+     * The collections valve parks only Backfill; the post-processing valve
+     * parks the header pane too, so the back of the pipeline can catch up.
+     *
+     * @param  array{coll: bool, pp: bool}  $killswitch
+     */
+    #[DataProvider('safetyValveProvider')]
+    public function test_safety_valves_park_the_panes_their_settings_name(
+        array $killswitch,
+        bool $binariesParked,
+        string $binariesCommand,
+    ): void {
+        $respawned = [];
+        Process::fake(function (PendingProcess $process) use (&$respawned) {
+            if (is_array($process->command) && in_array('list-panes', $process->command, true)) {
+                return Process::result("%8\tbinaries\n%9\tbackfill\n");
+            }
+            if (is_array($process->command) && in_array('respawn-pane', $process->command, true)) {
+                $respawned[$process->command[array_search('-t', $process->command, true) + 1]] = $process->command;
+            }
+
+            return Process::result();
+        });
+
+        $runner = new TmuxTaskRunner('test-session');
+        $runner->runBinariesUpdate([
+            'settings' => ['binaries_run' => 1, 'bins_timer' => 10],
+            'killswitch' => $killswitch,
+        ]);
+        $runner->runBackfill([
+            'settings' => ['backfill' => 1, 'back_timer' => 30, 'progressive' => 0],
+            'killswitch' => $killswitch,
+            'counts' => ['now' => ['collections_table' => 0]],
+        ]);
+
+        $this->assertArrayHasKey('%8', $respawned, 'the binaries pane is respawned');
+        $this->assertArrayHasKey('%9', $respawned, 'the backfill pane is respawned');
+        $this->assertContains('-k', $respawned['%9']);
+        $this->assertStringContainsString('Backfill has been disabled: kill limit exceeded', (string) end($respawned['%9']));
+        $this->assertSame($binariesParked, in_array('-k', $respawned['%8'], true));
+        $this->assertStringContainsString($binariesCommand, (string) end($respawned['%8']));
+    }
+
+    /**
+     * @return array<string, array{array{coll: bool, pp: bool}, bool, string}>
+     */
+    public static function safetyValveProvider(): array
+    {
+        return [
+            'collections valve parks only backfill' => [
+                ['coll' => true, 'pp' => false],
+                false,
+                'multiprocessing:safe binaries',
+            ],
+            'post-processing valve parks binaries and backfill' => [
+                ['coll' => false, 'pp' => true],
+                true,
+                'Update Binaries has been disabled: postprocess kill limit exceeded',
+            ],
+        ];
+    }
+
+    /**
      * @param  array<string, int>  $settings
      * @param  array<string, int>  $counts
      */
