@@ -45,6 +45,9 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
 
     private const string RELEASE_INCLUDES = 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+aliases+genres+tags+url-rels';
 
+    // The discid resource refuses media and discids, and returns its releases' media and discs anyway.
+    private const string DISC_INCLUDES = 'recordings+artist-credits+labels+release-groups+isrcs+aliases+genres+tags+url-rels';
+
     private const string RELEASE_GROUP_INCLUDES = 'artist-credits+releases+aliases+genres+tags+url-rels';
 
     public function __construct(
@@ -83,7 +86,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         if ($queryValues['discId'] !== null) {
             $requests['disc_id_lookup'] = $this->descriptor(
                 'discid/'.rawurlencode((string) $queryValues['discId']),
-                ['inc' => self::RELEASE_INCLUDES, 'cdstubs' => 'no', 'fmt' => 'json'],
+                ['inc' => self::DISC_INCLUDES, 'cdstubs' => 'no', 'fmt' => 'json'],
                 exact: true,
                 shape: 'disc',
             );
@@ -94,7 +97,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
                 [
                     'toc' => $queryValues['discToc'],
                     'media-format' => 'all',
-                    'inc' => self::RELEASE_INCLUDES,
+                    'inc' => self::DISC_INCLUDES,
                     'cdstubs' => 'no',
                     'fmt' => 'json',
                 ],
@@ -316,7 +319,7 @@ final class HttpMusicBrainzGateway implements MusicBrainzGateway
         if ($ids['discId'] !== null) {
             $requests['disc'] = $this->descriptor(
                 'discid/'.rawurlencode($ids['discId']),
-                ['inc' => self::RELEASE_INCLUDES, 'cdstubs' => 'no', 'fmt' => 'json'],
+                ['inc' => self::DISC_INCLUDES, 'cdstubs' => 'no', 'fmt' => 'json'],
                 exact: true,
                 shape: 'disc',
             );

@@ -23,6 +23,10 @@ final class HttpMusicBrainzGatewayTest extends TestCase
 {
     private const string RECORDING_ID = '6e615e70-7f67-4f38-9f95-9dfbd579a2b3';
 
+    private const string RELEASE_INCLUDES = 'recordings+artist-credits+labels+release-groups+media+discids+isrcs+aliases+genres+tags+url-rels';
+
+    private const string DISC_INCLUDES = 'recordings+artist-credits+labels+release-groups+isrcs+aliases+genres+tags+url-rels';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -416,6 +420,95 @@ final class HttpMusicBrainzGatewayTest extends TestCase
             return str_contains($request->url(), '/discid/-')
                 && $query['toc'] === '1 12 183150 150 15750 31200'
                 && $query['media-format'] === 'all';
+        });
+    }
+
+    public function test_a_disc_id_lookup_asks_only_for_includes_the_discid_resource_accepts(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('discid-lookup.json'))]);
+
+        $this->gateway()->candidatesFor(new RecordingQuery(discId: 'I5l9cCSFccLKFEKS.7wqSZAorPU-'));
+
+        Http::assertSentCount(1);
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/discid/I5l9cCSFccLKFEKS.7wqSZAorPU-?')
+                && $query['inc'] === self::DISC_INCLUDES
+                && $query['cdstubs'] === 'no'
+                && $query['fmt'] === 'json';
+        });
+    }
+
+    public function test_a_disc_toc_lookup_asks_only_for_includes_the_discid_resource_accepts(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('discid-lookup.json'))]);
+
+        $this->gateway()->candidatesFor(new RecordingQuery(discToc: '1 12 183150 150 15750 31200'));
+
+        Http::assertSentCount(1);
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/discid/-?')
+                && $query['inc'] === self::DISC_INCLUDES
+                && $query['cdstubs'] === 'no'
+                && $query['fmt'] === 'json'
+                && $query['toc'] === '1 12 183150 150 15750 31200'
+                && $query['media-format'] === 'all';
+        });
+    }
+
+    public function test_disc_hydration_asks_only_for_includes_the_discid_resource_accepts(): void
+    {
+        Http::fake(['*' => Http::response($this->fixture('discid-lookup.json'))]);
+
+        $this->gateway()->hydrate(new CandidateIdentifiers(discId: 'I5l9cCSFccLKFEKS.7wqSZAorPU-'));
+
+        Http::assertSentCount(1);
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/discid/I5l9cCSFccLKFEKS.7wqSZAorPU-?')
+                && $query['inc'] === self::DISC_INCLUDES
+                && $query['cdstubs'] === 'no'
+                && $query['fmt'] === 'json';
+        });
+    }
+
+    public function test_release_lookups_and_release_browses_keep_the_release_includes(): void
+    {
+        Http::fake(function (Request $request) {
+            if (str_contains($request->url(), '/release/11111111-1111-4111-8111-111111111111')) {
+                return Http::response($this->fixture('release-lookup.json'));
+            }
+            if (str_contains($request->url(), '/recording/'.self::RECORDING_ID)) {
+                return Http::response($this->fixture('recording-lookup.json'));
+            }
+            if (isset($this->queryParameters($request)['recording'])) {
+                return Http::response([
+                    'release-count' => 1,
+                    'release-offset' => 0,
+                    'releases' => [$this->fixture('release-lookup.json')],
+                ]);
+            }
+
+            return Http::response(['error' => 'unexpected request'], 500);
+        });
+
+        $this->gateway()->hydrate(new CandidateIdentifiers(releaseId: '11111111-1111-4111-8111-111111111111'));
+        $this->gateway()->hydrate(new CandidateIdentifiers(recordingId: self::RECORDING_ID));
+
+        Http::assertSent(function (Request $request): bool {
+            return str_contains($request->url(), '/release/11111111-1111-4111-8111-111111111111?')
+                && $this->queryParameters($request)['inc'] === self::RELEASE_INCLUDES;
+        });
+        Http::assertSent(function (Request $request): bool {
+            $query = $this->queryParameters($request);
+
+            return str_contains($request->url(), '/release?')
+                && ($query['recording'] ?? null) === self::RECORDING_ID
+                && $query['inc'] === self::RELEASE_INCLUDES;
         });
     }
 
