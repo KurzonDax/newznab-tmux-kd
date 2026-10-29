@@ -293,7 +293,8 @@ class IGDBService
     }
 
     /**
-     * Fuzzy search on IGDB using the search endpoint.
+     * Fuzzy search on IGDB using the search endpoint. IGDB refuses a search combined with a sort
+     * (406), so results arrive in IGDB's relevance order and findBestMatch() ranks them.
      */
     protected function searchFuzzy(string $title, ?array $platformIds = null, ?string $platformHint = null): ?Game
     {
@@ -301,7 +302,6 @@ class IGDBService
             $query = Game::search($title)
                 ->where('game_type', 0) // Main game only (not DLC, expansion, etc.)
                 ->with($this->getGameRelations())
-                ->orderByDesc('aggregated_rating_count')
                 ->limit(10);
 
             if ($platformIds !== null) {
