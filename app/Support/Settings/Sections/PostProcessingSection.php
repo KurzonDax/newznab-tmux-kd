@@ -56,10 +56,10 @@ final class PostProcessingSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'obfuscation_recovery_enrichment_release_mib',
                             label: 'Per-release download limit',
-                            help: 'Lifetime accounted allowance shared by all files and inspection paths. 0 disables extra downloads. Default 4 MiB; tested structural limits still apply.',
+                            help: 'Lifetime accounted allowance shared by all files and inspection paths. 0 disables extra downloads. Default and maximum 4 MiB; tested structural limits still apply.',
                             type: SettingType::Int,
                             unit: 'MiB',
-                            rules: ['required', 'integer', 'min:0', 'max:1048576'],
+                            rules: ['required', 'integer', 'min:0', 'max:4'],
                         ),
                     ],
                 ),
