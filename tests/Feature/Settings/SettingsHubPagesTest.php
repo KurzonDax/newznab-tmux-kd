@@ -108,7 +108,8 @@ class SettingsHubPagesTest extends TestCase
         $this->assertStringContainsString('Safety valves', $rendered);
         $this->assertStringContainsString('name="collections_kill"', $rendered);
         $this->assertStringContainsString('name="postprocess_kill"', $rendered);
-        $this->assertStringContainsString('Pause header collection above', $rendered);
+        $this->assertStringContainsString('Pause backfill above', $rendered);
+        $this->assertStringContainsString('Pause header and backfill above', $rendered);
         $this->assertStringContainsString('Layout mode', $rendered);
         $this->assertStringContainsString('Monitoring windows', $rendered);
     }

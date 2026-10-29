@@ -81,8 +81,8 @@ The master switch for the tmux engine, the safety valves and the extra windows.
 | `niceness` | 19 | `nice` priority for every pane command, -20 to 19. Blank falls back to 19. |
 | `monitor_delay` | 30 | Seconds between the monitor's statistics refreshes (the counting queries), and how long `tmux:stop` waits for panes to finish. The monitor loop's own tick is `TMUX_MONITOR_DELAY` (default 10 s, `config/tmux.php`). |
 | **Safety valves** | | |
-| `collections_kill` | 0 (off) | When the `collections` table holds more rows than this, the monitor stops starting the Backfill pane. |
-| `postprocess_kill` | 0 (off) | When pending post-processing work is larger than this, the monitor stops starting the Binaries and Backfill panes. |
+| `collections_kill` | 0 (off) | When the `collections` table holds more rows than this, the monitor stops the Backfill pane, ending a run in progress. |
+| `postprocess_kill` | 0 (off) | When pending post-processing work is larger than this, the monitor stops the Update Binaries and Backfill panes, ending runs in progress. |
 | **Layout mode** | | |
 | `sequential` | 0 (Full) | 0 opens the full layout with panes in parallel; 1 (Basic) opens only Monitor and Releases in window 0. Any other value runs as Full. |
 | **IRC scraper** | | |
@@ -90,11 +90,6 @@ The master switch for the tmux engine, the safety valves and the extra windows.
 | **Monitoring windows** | | |
 | `console`, `htop`, `mytop`, `nmon`, `vnstat`, `tcptrack`, `bwmng`, `redis` | 0 (off) | Each opens its own window from window 5 on. The list is read when the engine starts; a tool that is not installed is skipped. |
 | `vnstat_args`, `tcptrack_args`, `redis_args` | blank, `-i eth0 port 443`, blank | Passed to the tool verbatim. A blank `redis_args` shows the default stats and memory view. |
-
-The admin help text for the two safety valves says `collections_kill` pauses header and
-backfill work and `postprocess_kill` pauses post-processing; the table above gives what the code
-does (`app/Services/Tmux/TmuxMonitorService.php`, `app/Services/Tmux/TmuxTaskRunner.php`).
-The mismatch is tracked in #1161.
 
 ### Usenet Ingest
 

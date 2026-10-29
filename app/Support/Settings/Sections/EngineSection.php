@@ -75,8 +75,8 @@ final class EngineSection implements SettingsSectionProvider
                     settings: [
                         new SettingDefinition(
                             key: 'collections_kill',
-                            label: 'Pause header collection above',
-                            help: 'When the collections table holds more rows than this, the monitor stops starting new header and backfill work until it drops back under. <strong>0 turns the valve off</strong>, which is the seeded default.',
+                            label: 'Pause backfill above',
+                            help: 'When the collections table holds more rows than this, the monitor stops the Backfill pane, ending a run in progress, until it drops back under. <strong>0 turns the valve off</strong>, which is the seeded default.',
                             type: SettingType::Int,
                             unit: 'collections',
                             rules: ['required', 'integer', 'min:0'],
@@ -84,8 +84,8 @@ final class EngineSection implements SettingsSectionProvider
                         ),
                         new SettingDefinition(
                             key: 'postprocess_kill',
-                            label: 'Pause post-processing above',
-                            help: 'When total pending post-processing work is larger than this, the monitor stops starting new post-process passes until it drops back under. <strong>0 turns the valve off</strong>, which is the seeded default.',
+                            label: 'Pause header and backfill above',
+                            help: 'When total pending post-processing work is larger than this, the monitor stops the Update Binaries and Backfill panes, ending runs in progress, until it drops back under, so post-processing can catch up. <strong>0 turns the valve off</strong>, which is the seeded default.',
                             type: SettingType::Int,
                             unit: 'releases',
                             rules: ['required', 'integer', 'min:0'],
