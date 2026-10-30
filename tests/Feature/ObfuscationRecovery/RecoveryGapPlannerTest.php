@@ -239,6 +239,71 @@ final class RecoveryGapPlannerTest extends TestCase
         $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $needed)->value('next_gap_at'));
     }
 
+    public function test_published_candidates_are_not_walked(): void
+    {
+        $collecting = $this->window(201, 50200, 5);
+        $published = $this->window(1, 100, 120);
+        $this->candidate(210, 290);
+        $this->candidate(10, 90, state: 'published');
+
+        $this->assertSame(2, (new RecoveryGapPlanner)->step());
+        $this->assertSame([201, 1], DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
+        $this->assertSame(now()->addSecond()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $collecting)->value('next_gap_at'));
+        $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $published)->value('next_gap_at'));
+    }
+
+    /** @return array<string, array{int, list<int>}> */
+    public static function retentionWalks(): array
+    {
+        return [
+            'default retention walks only the candidate at the cutoff' => [144, [101, 1]],
+            'longer retention walks both candidates' => [240, [1, 101]],
+        ];
+    }
+
+    #[DataProvider('retentionWalks')]
+    public function test_candidates_past_retention_are_not_walked(int $hours, array $expected): void
+    {
+        Settings::settingsUpsert(['obfuscation_recovery_retention_hours' => (string) $hours]);
+        $cutoff = now()->subHours(144)->getTimestampMs();
+        $this->window(101, 200, 5);
+        $this->window(1, 100, 120);
+        $this->candidate(110, 190, endMs: $cutoff);
+        $this->candidate(10, 90, endMs: $cutoff - 1);
+
+        $this->assertSame(2, (new RecoveryGapPlanner)->step());
+        $this->assertSame($expected, DB::table('obfuscation_recovery_gaps')->orderBy('id')->pluck('requested_first')->all());
+    }
+
+    public function test_fallback_plans_windows_when_the_walk_is_cut_off_at_the_midpoint(): void
+    {
+        $orphan = $this->window(501, 600);
+        foreach ([1010, 2010, 3010, 4010, 5010] as $first) {
+            $this->candidate($first, $first + 80);
+        }
+        DB::listen(static function (QueryExecuted $query): void {
+            if (str_starts_with($query->sql, 'select "summary" from "obfuscation_recovery_runs"')) {
+                usleep(800000);
+            }
+        });
+
+        $this->assertSame(1, (new RecoveryGapPlanner)->step(deadline: hrtime(true) + 3000000000));
+        $this->assertSame(501, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
+        $this->assertSame(now()->addHour()->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $orphan)->value('next_gap_at'));
+        $this->assertGreaterThan(1, (int) DB::table('obfuscation_recovery_frontier_progress')->where('scope', 'gap-planner:candidates')->value('cursor'));
+    }
+
+    public function test_walk_ending_on_its_limit_skips_the_fallback(): void
+    {
+        $this->window(1, 100, 5);
+        $orphan = $this->window(501, 600, 120);
+        $this->candidate(10, 90);
+
+        $this->assertSame(1, (new RecoveryGapPlanner)->step(1));
+        $this->assertSame(1, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
+        $this->assertSame(now()->subMinutes(120)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $orphan)->value('next_gap_at'));
+    }
+
     public function test_shared_needed_windows_are_processed_once_and_keep_the_fast_continuation(): void
     {
         $window = $this->window(1, 50000);
@@ -381,7 +446,7 @@ final class RecoveryGapPlannerTest extends TestCase
         return $id;
     }
 
-    private function candidate(int $first, int $last, string $state = 'collecting', int $ageMinutes = 0): int
+    private function candidate(int $first, int $last, string $state = 'collecting', int $ageMinutes = 0, ?int $endMs = null): int
     {
         $run = DB::table('obfuscation_recovery_runs')->insertGetId([
             'run_identity' => hash('sha256', 'run-'.$first), 'scope_digest' => RecoveryPositiveCoverage::scope('epoch', 1, 1),
@@ -397,7 +462,7 @@ final class RecoveryGapPlannerTest extends TestCase
             'owner_digest' => hash('sha256', 'posting-'.$first), 'kind' => 'posting', 'groups_id' => 1,
             'profile' => RecoveryAlgorithm::Media->value, 'source_epoch' => 'epoch', 'capture_generation' => 1,
             'state' => $state, 'membership_changed_at' => now()->subHours(3), 'candidate_runs' => json_encode([$run], JSON_THROW_ON_ERROR),
-            'created_at' => now()->subMinutes($ageMinutes), 'updated_at' => now(),
+            'end_ms' => $endMs ?? now()->subHours(6)->getTimestampMs(), 'created_at' => now()->subMinutes($ageMinutes), 'updated_at' => now(),
         ]);
     }
 

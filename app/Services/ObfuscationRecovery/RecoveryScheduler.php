@@ -27,7 +27,7 @@ final class RecoveryScheduler
         $claims = 0;
         $planning = ['gaps_queued' => 0, 'runs_refreshed' => 0, 'bundles_refreshed' => 0, 'frontier' => []];
         $limit = min(10, max(1, $limit));
-        $deadline = hrtime(true) + min(60, max(1, $seconds)) * 1000000000;
+        $budget = min(60, max(1, $seconds));
         $report = [];
         if (! $this->allowed($engine)) {
             $observe?->__invoke('engine_stopped', []);
@@ -53,6 +53,7 @@ final class RecoveryScheduler
         $work->reclaimExpired();
         app(RecoverySlots::class)->reap();
         $observe?->__invoke('housekeeping', $report);
+        $deadline = hrtime(true) + $budget * 1000000000;
         for ($i = 0; $i < $limit && hrtime(true) < $deadline && $this->allowed($engine); $i++) {
             if ($stage === RecoveryStage::Publish) {
                 $pending = DB::table('obfuscation_recovery_publications')->where('state', 'published')
@@ -74,7 +75,7 @@ final class RecoveryScheduler
             if ($stage === RecoveryStage::Discover) {
                 app(RecoveryLimitResume::class)->step();
                 app(RecoveryEnrichmentResume::class)->step();
-                $planning['gaps_queued'] += app(RecoveryGapPlanner::class)->step(deadline: $deadline);
+                $planning['gaps_queued'] += app(RecoveryGapPlanner::class)->step(deadline: $this->plannerDeadline(hrtime(true), $deadline, $budget, $limit));
                 $planning['runs_refreshed'] += app(RecoveryRunRefresh::class)->batch(deadline: $deadline);
                 $planning['bundles_refreshed'] += app(RecoveryBundleRefresh::class)->step() !== null ? 1 : 0;
                 foreach (app(RecoveryFrontierRebuild::class)->step() as $outcome => $count) {
@@ -106,6 +107,12 @@ final class RecoveryScheduler
         $observe?->__invoke('done', ['claims' => $claims, 'seconds' => (hrtime(true) - $started) / 1e9]);
 
         return $report;
+    }
+
+    /** Half of an even per-iteration share of the slice, so run refresh, candidate building and the claim keep the rest. */
+    public function plannerDeadline(int $now, int $loopDeadline, int $seconds, int $limit): int
+    {
+        return min($loopDeadline, $now + intdiv($seconds * 1000000000, $limit * 2));
     }
 
     public function download(bool $engine = false): string

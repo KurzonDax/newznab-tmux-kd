@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\Feature\ObfuscationRecovery;
 
+use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
+use App\Services\ObfuscationRecovery\RecoveryDirty;
+use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoveryWork;
 use App\Services\Tmux\Tmux;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\Support\IsolatedSqliteDatabase;
@@ -158,6 +163,142 @@ final class RecoverySchedulerTest extends TestCase
         $this->assertSame(1, $report[$events['claim'][0]['result']]);
         $this->assertGreaterThanOrEqual(0, $events['claim'][0]['seconds']);
         $this->assertSame(1, $events['done'][0]['claims']);
+    }
+
+    /** @return array<string, array{int, int, int}> */
+    public static function plannerShares(): array
+    {
+        return [
+            'defaults' => [60, 10, 3000000000],
+            'five iterations' => [60, 5, 6000000000],
+            'uneven split' => [10, 3, 1666666666],
+        ];
+    }
+
+    #[DataProvider('plannerShares')]
+    public function test_planner_deadline_is_half_of_an_even_iteration_share(int $seconds, int $limit, int $share): void
+    {
+        $scheduler = app(RecoveryScheduler::class);
+        $now = 5000000000000;
+
+        $this->assertSame($now + $share, $scheduler->plannerDeadline($now, $now + 60000000000, $seconds, $limit));
+        $this->assertSame($now + $share - 1, $scheduler->plannerDeadline($now, $now + $share - 1, $seconds, $limit));
+    }
+
+    public function test_local_caps_the_planner_so_run_refresh_still_gets_time(): void
+    {
+        $this->createRecoverySchema();
+        $this->enableRecoveryScope();
+        foreach ([1010, 2010, 3010, 4010] as $first) {
+            $this->candidate($first);
+        }
+        foreach ([1, 101, 201, 301] as $first) {
+            $this->window($first);
+        }
+        $this->dirtyMark();
+        DB::listen(static function (QueryExecuted $query): void {
+            if (str_starts_with($query->sql, 'select "summary" from "obfuscation_recovery_runs"')
+                || str_starts_with($query->sql, 'insert or ignore into "obfuscation_recovery_gaps"')) {
+                usleep(600000);
+            }
+        });
+
+        $planning = $this->localPlanning(seconds: 2);
+
+        $this->assertGreaterThanOrEqual(1, $planning['gaps_queued']);
+        $this->assertGreaterThanOrEqual(1, $planning['runs_refreshed']);
+    }
+
+    public function test_housekeeping_does_not_spend_the_loop_budget(): void
+    {
+        $this->createRecoverySchema();
+        $this->enableRecoveryScope();
+        $this->dirtyMark();
+        $this->recoveryRun(now()->subHour()->getTimestampMs(), dirty: true);
+        DB::listen(static function (QueryExecuted $query): void {
+            if (str_contains($query->sql, 'reclaim_after')) {
+                usleep(1100000);
+            }
+        });
+
+        $planning = $this->localPlanning(seconds: 1);
+
+        $this->assertGreaterThanOrEqual(1, $planning['runs_refreshed']);
+        $this->assertSame(1, $planning['bundles_refreshed']);
+
+        app(RecoveryWork::class)->enqueue(RecoveryStage::Publish, 'housekeeping-publish', 1, 'publish', []);
+        $events = [];
+        app(RecoveryScheduler::class)->local(RecoveryStage::Publish, limit: 1, seconds: 1, observe: function (string $event, array $data) use (&$events): void {
+            $events[$event][] = $data;
+        });
+
+        $this->assertCount(1, $events['claim'] ?? []);
+    }
+
+    /** @return array<string, mixed> */
+    private function localPlanning(int $seconds): array
+    {
+        $planning = null;
+        app(RecoveryScheduler::class)->local(RecoveryStage::Discover, limit: 1, seconds: $seconds, observe: function (string $event, array $data) use (&$planning): void {
+            if ($event === 'planning') {
+                $planning = $data;
+            }
+        });
+        $this->assertIsArray($planning);
+
+        return $planning;
+    }
+
+    private function enableRecoveryScope(): void
+    {
+        DB::table('settings')->where('name', 'obfuscation_recovery_enabled')->update(['value' => 1]);
+        DB::table('usenet_groups')->insert(['id' => 1, 'obfuscation_recovery_profile' => 'both']);
+        foreach (['primary', 'group:1'] as $scope) {
+            DB::table('obfuscation_recovery_controls')->insert([
+                'scope' => $scope, 'fingerprint' => str_repeat('a', 64), 'epoch' => 'epoch', 'generation' => 1, 'updated_at' => now(),
+            ]);
+        }
+    }
+
+    private function dirtyMark(): void
+    {
+        RecoveryDirty::mark(DB::connection(), [[
+            'source_epoch' => 'epoch', 'groups_id' => 1, 'capture_generation' => 1, 'profile' => RecoveryAlgorithm::Media->value,
+            'advertised_total' => 4, 'key_digest' => str_repeat('a', 64), 'embedded_timestamp_ms' => now()->subHours(2)->getTimestampMs(),
+        ]]);
+    }
+
+    private function recoveryRun(int $endMs, bool $dirty = false, int $first = 1): int
+    {
+        return DB::table('obfuscation_recovery_runs')->insertGetId([
+            'run_identity' => hash('sha256', 'run-'.$first), 'scope_digest' => RecoveryPositiveCoverage::scope('epoch', 1, 1),
+            'source_epoch' => 'epoch', 'groups_id' => 1, 'capture_generation' => 1, 'profile' => RecoveryAlgorithm::Media->value,
+            'partition_value' => (string) $first, 'start_ms' => $endMs - 1000, 'end_ms' => $endMs, 'observed_count' => 2,
+            'state' => 'collecting', 'membership_digest' => hash('sha256', 'members-'.$first), 'bundle_dirty' => $dirty,
+            'summary' => json_encode(['first_article' => $first, 'last_article' => $first + 80, 'first_postdate' => now()->subHours(3)->toDateTimeString(),
+                'last_postdate' => now()->subHours(3)->toDateTimeString(), 'membership_changed_at' => now()->subHours(3)->format('Y-m-d H:i:s.u')], JSON_THROW_ON_ERROR),
+            'oldest_observed_at' => now(), 'created_at' => now()->subMinute(), 'updated_at' => now()->subMinute(),
+        ]);
+    }
+
+    private function candidate(int $first): void
+    {
+        $endMs = now()->subHours(3)->getTimestampMs();
+        DB::table('obfuscation_recovery_bundles')->insert([
+            'owner_digest' => hash('sha256', 'posting-'.$first), 'kind' => 'posting', 'groups_id' => 1,
+            'profile' => RecoveryAlgorithm::Media->value, 'source_epoch' => 'epoch', 'capture_generation' => 1, 'state' => 'collecting',
+            'membership_changed_at' => now()->subHours(3), 'candidate_runs' => json_encode([$this->recoveryRun($endMs, first: $first)], JSON_THROW_ON_ERROR),
+            'end_ms' => $endMs, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+    }
+
+    private function window(int $first): void
+    {
+        DB::table('obfuscation_recovery_scan_windows')->insert([
+            'scan_id' => (string) Str::uuid(), 'groups_id' => 1, 'source_epoch' => 'epoch', 'capture_generation' => 1,
+            'requested_first' => $first, 'requested_last' => $first + 99, 'gap_cursor' => $first,
+            'next_gap_at' => now()->subMinutes(5), 'expires_at' => now()->addDay(), 'created_at' => now(),
+        ]);
     }
 
     private function createRecoverySchema(): void
