@@ -10,7 +10,7 @@
  * Original location: misc/update/tmux/bin/update_groups.php
  * New location: app/Services/Tmux/Scripts/update_groups.php
  */
-$artisan = dirname(__DIR__, 4).'/artisan';
+$artisan = escapeshellarg(dirname(__DIR__, 4).'/artisan');
 
 passthru("php {$artisan} groups:update", $exitCode);
 exit($exitCode);

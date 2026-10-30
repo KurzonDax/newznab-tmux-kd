@@ -163,15 +163,15 @@ class TmuxStart extends Command
 
         if (file_exists($newMonitor)) {
             // Use the new modernized monitor script
-            $command = "php {$newMonitor}";
+            $command = 'php '.escapeshellarg($newMonitor);
             $this->info('  ✓ Using modernized monitor script');
         } elseif (file_exists($oldMonitor)) {
             // Fall back to original monitor script
-            $command = "php {$oldMonitor}";
+            $command = 'php '.escapeshellarg($oldMonitor);
             $this->warn('  ⚠ Using legacy monitor.php (consider updating)');
         } else {
             // Last resort: use artisan command (not ideal for pane)
-            $artisan = base_path('artisan');
+            $artisan = escapeshellarg(base_path('artisan'));
             $command = "php {$artisan} tmux:monitor --session={$sessionName}";
             $this->warn('  ⚠ Using artisan command (not recommended for pane)');
         }

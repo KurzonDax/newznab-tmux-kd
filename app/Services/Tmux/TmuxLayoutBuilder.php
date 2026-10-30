@@ -337,14 +337,14 @@ class TmuxLayoutBuilder
                 // Use PHP-based Redis monitor service
                 $redisHost = config('database.redis.default.host', '127.0.0.1');
                 $redisPort = config('database.redis.default.port', 6379);
-                $artisan = base_path('artisan');
+                $artisan = escapeshellarg(base_path('artisan'));
 
                 // Determine how to connect to Redis
                 $connectionInfo = $this->resolveRedisConnection($redisHost, (int) $redisPort);
 
                 if ($connectionInfo['use_sail']) {
                     // Use sail to run inside Docker container
-                    $sail = base_path('sail');
+                    $sail = escapeshellarg(base_path('sail'));
                     $this->requireSuccess($this->paneManager->respawnPane($pane, "{$sail} artisan redis:monitor --refresh={$refreshInterval}"), 'respawn Redis pane');
                 } else {
                     // Run directly, potentially with host override
