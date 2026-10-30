@@ -9,7 +9,7 @@
  *
  * This is a simple wrapper that calls the tmux:monitor artisan command.
  */
-$artisan = dirname(__DIR__, 4).'/artisan';
+$artisan = escapeshellarg(dirname(__DIR__, 4).'/artisan');
 
 // Pass any arguments to the artisan command
 $args = array_slice($argv ?? [], 1);

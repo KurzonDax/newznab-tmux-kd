@@ -145,7 +145,7 @@ class TmuxTaskRunner
     public function buildCommand(string $baseCommand, array $options = []): string
     {
         if (isset($options['log_pane'])) {
-            $logFile = $this->getLogFile($options['log_pane']);
+            $logFile = escapeshellarg($this->getLogFile($options['log_pane']));
 
             return "{$baseCommand} 2>&1 | tee -a {$logFile}";
         }
@@ -223,7 +223,7 @@ class TmuxTaskRunner
         $sleepScript = base_path('app/Services/Tmux/Scripts/showsleep.php');
 
         if (file_exists($sleepScript)) {
-            return "nice -n{$niceness} php {$sleepScript} {$seconds}";
+            return "nice -n{$niceness} php ".escapeshellarg($sleepScript)." {$seconds}";
         }
 
         return "sleep {$seconds}";
@@ -293,7 +293,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $artisan = base_path('artisan');
+        $artisan = escapeshellarg(base_path('artisan'));
         $command = "nice -n{$niceness} php {$artisan} irc:scrape";
         $command = $this->buildCommand($command, ['log_pane' => 'scraper']);
 
@@ -334,7 +334,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";
+        $command = "nice -n{$niceness} ".escapeshellarg(PHP_BINARY)." artisan {$artisanCommand}";
         $sleep = (int) ($config['settings']['bins_timer'] ?? 60);
         $command = $this->supervisedCommand(TmuxPaneRole::Binaries, ['binaries' => $command], $this->getLogFile('binaries'), $sleep);
 
@@ -391,7 +391,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $command = "nice -n{$niceness} ".PHP_BINARY." artisan {$artisanCommand}";
+        $command = "nice -n{$niceness} ".escapeshellarg(PHP_BINARY)." artisan {$artisanCommand}";
         $command = $this->supervisedCommand(TmuxPaneRole::Backfill, ['backfill' => $command], $this->getLogFile('backfill'), $sleep);
 
         return $this->paneManager->respawnPane($pane, $command);
@@ -418,7 +418,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $command = "nice -n{$niceness} ".PHP_BINARY.' artisan multiprocessing:releases';
+        $command = "nice -n{$niceness} ".escapeshellarg(PHP_BINARY).' artisan multiprocessing:releases';
         $sleep = (int) ($config['settings']['rel_timer'] ?? 60);
         $command = $this->supervisedCommand(TmuxPaneRole::Releases, ['releases' => $command], $this->getLogFile('releases'), $sleep);
 
@@ -542,7 +542,7 @@ class TmuxTaskRunner
             return $this->disablePane($pane, 'Fix Release Names', 'no releases to process', kill: false);
         }
 
-        $artisan = base_path('artisan');
+        $artisan = escapeshellarg(base_path('artisan'));
         $log = $this->getLogFile('fixnames');
         $timeout = $this->fixNamesTimeout($runVar);
 
@@ -552,7 +552,7 @@ class TmuxTaskRunner
         // stalled method let age out is still picked up on a later cycle.
         $steps = [];
         if ($this->timeoutBinary() === null) {
-            $steps[] = "echo 'fix_names_timeout is not enforced: coreutils timeout (or gtimeout) was not found on PATH' | tee -a {$log}";
+            $steps[] = "echo 'fix_names_timeout is not enforced: coreutils timeout (or gtimeout) was not found on PATH' | tee -a ".escapeshellarg($log);
         }
 
         $levels = [3, 5, 7, 9, 11, 13, 15, 17, 19];
@@ -611,6 +611,7 @@ class TmuxTaskRunner
             return $this->supervisedStep($role, $label, $command, $log);
         }
 
+        $timeoutBinary = escapeshellarg($timeoutBinary);
         $killAfter = self::TIMEOUT_KILL_AFTER;
         $notice = "\$(date +'%Y-%m-%d %T') {$label} timed out after {$timeoutSeconds}s, moving on";
 
@@ -686,7 +687,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $artisan = base_path('artisan');
+        $artisan = escapeshellarg(base_path('artisan'));
         $sleep = (int) ($runVar['settings']['crap_timer'] ?? 300);
         $log = $this->getLogFile('removecrap');
 
@@ -791,7 +792,7 @@ class TmuxTaskRunner
 
         $niceness = $this->getNiceness();
         $sleep = (int) ($runVar['settings']['post_timer'] ?? 300);
-        $worker = "nice -n{$niceness} ".PHP_BINARY.' artisan multiprocessing:postprocess';
+        $worker = "nice -n{$niceness} ".escapeshellarg(PHP_BINARY).' artisan multiprocessing:postprocess';
 
         // Post = 1: additional only, 2: NFO only, 3: both
         $steps = [];
@@ -852,7 +853,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $artisan = PHP_BINARY.' artisan';
+        $artisan = escapeshellarg(PHP_BINARY).' artisan';
         $steps = [];
 
         // TV processing - Check work count before adding to queue
@@ -896,7 +897,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $artisan = PHP_BINARY.' artisan';
+        $artisan = escapeshellarg(PHP_BINARY).' artisan';
 
         // Movies processing - Uses single-process command
         $processMovies = (int) ($runVar['settings']['processmovies'] ?? 0);
@@ -967,7 +968,7 @@ class TmuxTaskRunner
         }
 
         $niceness = $this->getNiceness();
-        $artisan = PHP_BINARY.' artisan';
+        $artisan = escapeshellarg(PHP_BINARY).' artisan';
         $sleep = (int) ($runVar['settings']['post_timer_amazon'] ?? 300);
 
         $steps = [];

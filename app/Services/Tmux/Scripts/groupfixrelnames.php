@@ -19,7 +19,7 @@ if (! isset($argv[1])) {
 [$type, $guidChar, $maxPerRun, $thread, $workers] = array_pad(explode(' ', $argv[1]), 5, '1');
 
 // Build artisan command based on type
-$artisan = dirname(__DIR__, 4).'/artisan';
+$artisan = escapeshellarg(dirname(__DIR__, 4).'/artisan');
 
 switch ($type) {
     case 'standard':

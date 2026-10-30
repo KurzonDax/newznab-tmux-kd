@@ -510,7 +510,10 @@ SH;
 
         $respawned = $this->buildLayoutCapturingRespawns();
 
-        $this->onlyCommandContaining($respawned, 'redis:monitor');
+        $this->assertStringContainsString(
+            'php '.escapeshellarg(base_path('artisan')).' redis:monitor',
+            $this->onlyCommandContaining($respawned, 'redis:monitor'),
+        );
         $this->assertSame([], array_values(array_filter(
             $respawned,
             static fn (string $command): bool => str_contains($command, 'redis-cli'),
@@ -845,7 +848,7 @@ SH;
         ]));
 
         $this->assertMatchesRegularExpression(
-            '/(?:showsleep\.php|sleep) '.$expectedSleep.'(?:\D|$)/',
+            "/(?:showsleep\\.php'|sleep) ".$expectedSleep.'(?:\D|$)/',
             $this->respawnedCommand(),
         );
     }
@@ -1140,21 +1143,21 @@ SH;
 
         $expectedOrder = [];
         foreach ([3, 5, 7, 9, 11, 13, 15, 17, 19] as $level) {
-            $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+            $expectedOrder[] = "'/usr/bin/timeout' -k 10 900 php ";
             $expectedOrder[] = "releases:fix-names {$level} --update --category=other --set-status --show";
             $expectedOrder[] = "fix-names {$level} timed out after 900s";
         }
-        $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+        $expectedOrder[] = "'/usr/bin/timeout' -k 10 900 php ";
         $expectedOrder[] = 'multiprocessing:fixrelnames standard';
         $expectedOrder[] = 'fix-names standard sweep timed out after 900s';
-        $expectedOrder[] = '/usr/bin/timeout -k 10 900 php ';
+        $expectedOrder[] = "'/usr/bin/timeout' -k 10 900 php ";
         $expectedOrder[] = 'multiprocessing:fixrelnames predbft';
         $expectedOrder[] = 'fix-names predb full-text sweep timed out after 900s';
         $expectedOrder[] = "date +'%Y-%m-%d %T'";
 
         $this->assertAppearInOrder($expectedOrder, $command);
         $this->assertSame(11, substr_count($command, '| tee -a '), 'every step logs to the pane log');
-        $this->assertSame(11, substr_count($command, '/usr/bin/timeout -k 10 900 '), 'every step is bounded');
+        $this->assertSame(11, substr_count($command, "'/usr/bin/timeout' -k 10 900 "), 'every step is bounded');
     }
 
     public function test_fix_names_task_wakes_for_predb_only_work(): void
@@ -1207,7 +1210,7 @@ SH;
             'counts' => ['now' => ['processrenames' => 1]],
         ]);
 
-        $this->assertStringContainsString("timeout -k 10 {$expected} php", $this->respawnedCommand());
+        $this->assertStringContainsString("'timeout' -k 10 {$expected} php ", $this->respawnedCommand());
     }
 
     /**
@@ -1233,6 +1236,7 @@ SH;
 
         $command = $this->respawnedCommand();
         $this->assertStringNotContainsString('timeout -k', $command);
+        $this->assertStringNotContainsString("timeout' -k", $command);
         $this->assertStringNotContainsString('timed out', $command);
         $this->assertStringNotContainsString('bounded=1', $command);
         $this->assertStringStartsWith("c=\$(date +%s); echo 'fix_names_timeout is not enforced", $command);
@@ -1268,6 +1272,180 @@ SH;
         return [
             'off writes to /dev/null' => [false],
             'on writes under the tmux log directory' => [true],
+        ];
+    }
+
+    #[DataProvider('spacedLogFolderProvider')]
+    public function test_pane_output_reaches_a_log_folder_whose_name_has_a_space(string $pane): void
+    {
+        $this->freezeTime();
+        $parent = $this->makeTempDirectory('nntmux-spaced-logs');
+        $logs = $parent.'/my logs';
+        config(['tmux.paths.logs' => $logs, 'tmux.write_logs' => true]);
+
+        if ($pane === 'fixnames') {
+            $this->fakeFixNamesPane();
+            $this->runnerWithTimeoutBinary(null)->runPaneTask('fixnames', [], [
+                'settings' => ['fix_names' => 1, 'fix_timer' => 1],
+                'counts' => ['now' => ['processrenames' => 1]],
+            ]);
+            $command = $this->withFakeWorkers($this->respawnedCommand());
+            $expected = ['fix_names_timeout is not enforced', 'fake worker output'];
+        } else {
+            $command = (new TmuxTaskRunner('test-session'))->buildCommand('echo pane output', ['log_pane' => 'scraper']);
+            $expected = ['pane output'];
+        }
+
+        $process = new SymfonyProcess(['/bin/sh', '-c', $command]);
+        $process->setTimeout(60);
+        $process->run();
+        $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
+
+        $log = $logs.'/'.$pane.'-'.now()->format('Y_m_d').'.log';
+        $this->assertFileExists($log);
+        foreach ($expected as $text) {
+            $this->assertStringContainsString($text, (string) file_get_contents($log));
+        }
+        $this->assertSame(['my logs'], array_values(array_diff(scandir($parent) ?: [], ['.', '..'])), 'no stray file beside the log folder');
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function spacedLogFolderProvider(): array
+    {
+        return [
+            'fix-names pane without a timeout binary' => ['fixnames'],
+            'buildCommand log target' => ['scraper'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $runVar
+     */
+    #[DataProvider('quotedPathPaneProvider')]
+    public function test_pane_commands_quote_the_paths_they_run(string $task, string $role, array $runVar, string $path, ?int $sleep): void
+    {
+        $this->fakePaneRole($role);
+
+        $runner = new TmuxTaskRunner('test-session');
+        $this->assertTrue(match ($task) {
+            'binaries' => $runner->runBinariesUpdate($runVar),
+            'backfill' => $runner->runBackfill($runVar),
+            'releases' => $runner->runReleasesUpdate($runVar),
+            default => $runner->runPaneTask($task, [], $runVar),
+        });
+
+        $command = $this->respawnedCommand();
+        $expected = $path === 'artisan' ? 'php '.escapeshellarg(base_path('artisan')).' ' : escapeshellarg(PHP_BINARY).' artisan ';
+        $this->assertStringContainsString($expected, $command);
+        if ($sleep !== null) {
+            $this->assertStringEndsWith(' php '.escapeshellarg(base_path('app/Services/Tmux/Scripts/showsleep.php')).' '.$sleep, $command);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, string, array<string, mixed>, string, ?int}>
+     */
+    public static function quotedPathPaneProvider(): array
+    {
+        $killswitch = ['coll' => false, 'pp' => false];
+
+        return [
+            'IRC scraper' => ['scraper', 'irc_scraper', ['constants' => ['run_ircscraper' => 1]], 'artisan', null],
+            'binaries' => ['binaries', 'binaries', ['settings' => ['binaries_run' => 1, 'bins_timer' => 7], 'killswitch' => $killswitch], 'php', 7],
+            'backfill' => ['backfill', 'backfill', ['settings' => ['backfill' => 1, 'back_timer' => 8, 'progressive' => 0], 'killswitch' => $killswitch, 'counts' => ['now' => ['collections_table' => 0]]], 'php', 8],
+            'releases' => ['releases', 'releases', ['settings' => ['releases_run' => 1, 'rel_timer' => 9], 'constants' => ['sequential' => 0]], 'php', 9],
+            'fix names' => ['fixnames', 'fix_names', ['settings' => ['fix_names' => 1, 'fix_timer' => 1], 'counts' => ['now' => ['processrenames' => 1]]], 'artisan', 1],
+            'remove crap all' => ['removecrap', 'remove_crap', ['settings' => ['fix_crap_opt' => 'All', 'crap_timer' => 2]], 'artisan', 2],
+            'remove crap custom' => ['removecrap', 'remove_crap', ['settings' => ['fix_crap_opt' => 'Custom', 'fix_crap' => 'blacklist', 'crap_timer' => 3]], 'artisan', 3],
+            'additional' => ['ppadditional', 'post_additional', ['settings' => ['post' => 1, 'post_timer' => 4], 'counts' => ['now' => ['work_available' => 1]]], 'php', 4],
+            'TV and anime' => ['tv', 'post_tv', ['settings' => ['post_non' => 1, 'processtvrage' => 1, 'processanime' => 1, 'post_timer_non' => 5], 'counts' => ['now' => ['processtv' => 1, 'processanime' => 1]]], 'php', 5],
+            'movies' => ['movies', 'post_movies', ['settings' => ['post_non' => 1, 'processmovies' => 1, 'post_timer_non' => 6], 'counts' => ['now' => ['processmovies' => 1]]], 'php', 6],
+            'metadata and audio' => ['amazon', 'post_metadata', ['settings' => ['post_amazon' => 1, 'post_timer_amazon' => 7], 'counts' => ['now' => ['processmusic' => 1, 'audio_work_available' => 1]]], 'php', 7],
+        ];
+    }
+
+    public function test_a_bounded_step_quotes_the_timeout_binary_path(): void
+    {
+        $this->fakeFixNamesPane();
+
+        $this->runnerWithTimeoutBinary('/opt/core utils/timeout')->runPaneTask('fixnames', [], [
+            'settings' => ['fix_names' => 1, 'fix_timer' => 300, 'fix_names_timeout' => 900],
+            'counts' => ['now' => ['processrenames' => 1]],
+        ]);
+
+        $this->assertStringContainsString(
+            escapeshellarg('/opt/core utils/timeout').' -k 10 900 php '.escapeshellarg(base_path('artisan')).' releases:fix-names',
+            $this->respawnedCommand(),
+        );
+    }
+
+    public function test_engine_start_runs_the_monitor_script_by_its_quoted_path(): void
+    {
+        $this->seedMonitoringSettings(['sequential' => '0', 'running' => '0']);
+        $nextPaneId = 1;
+        Process::fake(function (PendingProcess $process) use (&$nextPaneId) {
+            $command = $process->command;
+            if (is_string($command)) {
+                return Process::result(str_contains($command, 'which tmux') ? '/usr/bin/tmux' : '');
+            }
+            if (in_array('has-session', $command, true)) {
+                return Process::result('', '', 1);
+            }
+            if (array_intersect(['new-session', 'new-window', 'split-window'], $command) !== []) {
+                return Process::result('%'.$nextPaneId++."\n");
+            }
+            if (in_array('list-panes', $command, true)) {
+                return Process::result("%1\tmonitor\n");
+            }
+            if (in_array('respawn-pane', $command, true)) {
+                $this->respawned[] = (string) end($command);
+            }
+
+            return Process::result();
+        });
+
+        $this->artisan('tmux:start', ['--session' => 'test-monitor'])->assertSuccessful();
+
+        $this->assertSame(
+            'php '.escapeshellarg(base_path('app/Services/Tmux/Scripts/monitor.php')),
+            $this->onlyCommandContaining($this->respawned, 'monitor.php'),
+        );
+    }
+
+    /**
+     * Each helper script, copied under a folder whose name has a space, runs
+     * the artisan file beside it.
+     *
+     * @param  list<string>  $arguments
+     */
+    #[DataProvider('helperScriptProvider')]
+    public function test_helper_scripts_run_artisan_from_a_folder_whose_name_has_a_space(string $script, array $arguments, string $expected): void
+    {
+        $root = $this->makeTempDirectory('nntmux-scripts').'/nntmux root';
+        $scripts = $root.'/app/Services/Tmux/Scripts';
+        mkdir($scripts, 0755, true);
+        copy(base_path('app/Services/Tmux/Scripts/'.$script), $scripts.'/'.$script);
+        file_put_contents($root.'/artisan', '<?php echo implode(" ", array_slice($argv, 1));');
+
+        $process = new SymfonyProcess([PHP_BINARY, $scripts.'/'.$script, ...$arguments], env: ['PATH' => dirname(PHP_BINARY).':'.getenv('PATH')]);
+        $process->run();
+
+        $this->assertTrue($process->isSuccessful(), $process->getErrorOutput());
+        $this->assertSame($expected, $process->getOutput());
+    }
+
+    /**
+     * @return array<string, array{string, list<string>, string}>
+     */
+    public static function helperScriptProvider(): array
+    {
+        return [
+            'monitor' => ['monitor.php', ['--session=x'], 'tmux:monitor --session=x'],
+            'update groups' => ['update_groups.php', [], 'groups:update'],
+            'standard fix names' => ['groupfixrelnames.php', ['standard a 10 1 1'], 'releases:fix-names-group standard --guid-char=a --limit=10'],
+            'predb full-text fix names' => ['groupfixrelnames.php', ['predbft 0 10 2 4'], 'releases:fix-names-group predbft --limit=10 --thread=2 --workers=4'],
         ];
     }
 
@@ -1795,12 +1973,12 @@ SH;
     private function withFakeWorkers(string $command): string
     {
         $command = (string) preg_replace_callback(
-            '/(s=\$\(date \+%s\); (?:\S*timeout -k \d+ \d+ )?)(.*?)(; rc=\$\?)/',
+            "/(s=\\$\\(date \\+%s\\); (?:'[^']*timeout' -k \\d+ \\d+ )?)(.*?)(; rc=\\$\\?)/",
             static fn (array $match): string => $match[1]."sh -c 'echo fake worker output; exit 3'".$match[3],
             $command,
         );
 
-        return (string) preg_replace('/(?:nice -n-?\d+ php \S+showsleep\.php|sleep) \d+$/', 'true', $command);
+        return (string) preg_replace("/(?:nice -n-?\\d+ php '[^']*showsleep\\.php'|sleep) \\d+$/", 'true', $command);
     }
 
     /**
