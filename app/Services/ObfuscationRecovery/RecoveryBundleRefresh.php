@@ -11,11 +11,20 @@ use InvalidArgumentException;
 
 final class RecoveryBundleRefresh
 {
+    public const int RETIRE_LIMIT = 1000;
+
     public function __construct(private readonly RecoveryComponents $components) {}
 
     public function step(): ?int
     {
-        $id = DB::table('obfuscation_recovery_runs')->where('bundle_dirty', true)->orderBy('updated_at')->orderBy('id')->value('id');
+        $cutoff = now()->subHours(min(RecoveryConfig::fromSettings()->retentionHours, 876000))->getTimestampMs();
+        // Inactive runs are covered by their replacement or were purged; runs past retention have no live window to settle on.
+        // One bounded statement with the predicate in its own WHERE, so a run reactivated meanwhile keeps its flag.
+        DB::table('obfuscation_recovery_runs')->where('bundle_dirty', true)
+            ->where(fn ($query) => $query->where('active', false)->orWhere('end_ms', '<', $cutoff))
+            ->orderBy('updated_at')->orderBy('id')->limit(self::RETIRE_LIMIT)->update(['bundle_dirty' => false]);
+        $id = DB::table('obfuscation_recovery_runs')->where('bundle_dirty', true)->where('active', true)->where('end_ms', '>=', $cutoff)
+            ->orderBy('updated_at')->orderBy('id')->value('id');
 
         return $id === null ? null : $this->refresh((int) $id);
     }

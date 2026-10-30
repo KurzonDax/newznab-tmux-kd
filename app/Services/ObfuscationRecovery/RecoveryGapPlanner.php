@@ -14,28 +14,36 @@ final class RecoveryGapPlanner
 {
     public function step(int $limit = 50, ?int $deadline = null): int
     {
-        $deadline ??= hrtime(true) + 60000000000;
+        $started = hrtime(true);
+        $deadline ??= $started + 60000000000;
         $config = RecoveryConfig::fromSettings();
         if (! $config->enabled || $limit < 1 || hrtime(true) >= $deadline) {
             return 0;
         }
         $queued = 0;
-        foreach ($this->windows($limit, $deadline) as [$window, $needed]) {
+        $midpoint = $started + intdiv($deadline - $started, 2);
+        foreach ($this->windows($limit, $midpoint, $deadline, $config) as [$window, $needed]) {
             $queued += $this->plan($window, $config, $needed);
         }
 
         return $queued;
     }
 
-    /** @return Generator<int, array{object, bool}> */
-    private function windows(int $limit, int $deadline): Generator
+    /**
+     * The candidate walk stops at the midpoint so the fallback over all due windows still runs when the walk cannot finish.
+     *
+     * @return Generator<int, array{object, bool}>
+     */
+    private function windows(int $limit, int $midpoint, int $deadline, RecoveryConfig $config): Generator
     {
         $dueAt = now();
         $progress = DB::table('obfuscation_recovery_frontier_progress')->where('scope', 'gap-planner:candidates');
         DB::table('obfuscation_recovery_frontier_progress')->insertOrIgnore(['scope' => 'gap-planner:candidates']);
         $cursor = (int) $progress->value('cursor');
         $candidates = DB::table('obfuscation_recovery_bundles')->where('kind', 'posting')
-            ->whereNotIn('state', RecoveryOwnership::INACTIVE_STATES)
+            ->whereIn('state', ['collecting', 'ready', 'publishing'])
+            // A window lives retentionHours from recording, so no live window covers a candidate whose posts are all older.
+            ->where('end_ms', '>=', now()->subHours(min($config->retentionHours, 876000))->getTimestampMs())
             ->whereNotNull('source_epoch')->whereNotNull('groups_id')->whereNotNull('capture_generation')
             ->orderByDesc('id');
         $remaining = (clone $candidates)->when($cursor > 0, fn (Builder $query) => $query->where('id', '<', $cursor))->lazy(100);
@@ -43,8 +51,8 @@ final class RecoveryGapPlanner
         $lastCandidate = null;
         try {
             foreach ($remaining->concat($wrapped) as $candidate) {
-                if (hrtime(true) >= $deadline) {
-                    return;
+                if (hrtime(true) >= $midpoint) {
+                    break;
                 }
                 $lastCandidate = (int) $candidate->id;
                 $envelope = (new RecoveryFrontierRebuild)->envelope($candidate);
@@ -57,8 +65,8 @@ final class RecoveryGapPlanner
                     $witnesses['left'] ?? $envelope['first_article'], $witnesses['right'] ?? $envelope['last_article'], false)
                     ->where('next_gap_at', '<=', $dueAt)->orderBy('next_gap_at')->orderBy('scan_id')->limit($limit)->get();
                 foreach ($windows as $window) {
-                    if (hrtime(true) >= $deadline) {
-                        return;
+                    if (hrtime(true) >= $midpoint) {
+                        break 2;
                     }
                     yield [$window, true];
                     if (--$limit === 0) {
