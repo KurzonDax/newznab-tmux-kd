@@ -298,8 +298,15 @@ final class RecoveryGapPlannerTest extends TestCase
         $this->window(1, 100, 5);
         $orphan = $this->window(501, 600, 120);
         $this->candidate(10, 90);
+        $fallbackQueries = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$fallbackQueries): void {
+            if (str_starts_with($query->sql, 'select * from "obfuscation_recovery_scan_windows" where "next_gap_at" <=')) {
+                $fallbackQueries++;
+            }
+        });
 
         $this->assertSame(1, (new RecoveryGapPlanner)->step(1));
+        $this->assertSame(0, $fallbackQueries);
         $this->assertSame(1, (int) DB::table('obfuscation_recovery_gaps')->sole()->requested_first);
         $this->assertSame(now()->subMinutes(120)->toDateTimeString(), DB::table('obfuscation_recovery_scan_windows')->where('scan_id', $orphan)->value('next_gap_at'));
     }

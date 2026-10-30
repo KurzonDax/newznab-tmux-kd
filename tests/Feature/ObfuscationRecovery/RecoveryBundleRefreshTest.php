@@ -9,11 +9,10 @@ use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
 use App\Services\ObfuscationRecovery\RecoveryBundleRefresh;
 use App\Services\ObfuscationRecovery\RecoveryScheduler;
 use App\Services\ObfuscationRecovery\RecoveryStage;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\IsolatedSqliteDatabase;
+use Tests\Support\ProductionTables;
 use Tests\TestCase;
 
 final class RecoveryBundleRefreshTest extends TestCase
@@ -26,9 +25,7 @@ final class RecoveryBundleRefreshTest extends TestCase
     {
         parent::setUp();
         $this->bootIsolatedDatabase();
-        Schema::create('usenet_groups', function (Blueprint $table): void {
-            $table->increments('id');
-        });
+        ProductionTables::fromAuthority()->create('usenet_groups', ['id']);
         (require database_path('migrations/2026_09_07_172435_add_obfuscation_recovery_storage.php'))->up();
         (require database_path('migrations/2026_09_13_002751_add_recovery_frontier_evidence.php'))->up();
         (require database_path('migrations/2026_09_13_155226_add_recovery_frontier_repair_allowances.php'))->up();
