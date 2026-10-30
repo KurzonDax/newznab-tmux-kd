@@ -328,7 +328,7 @@ class MovieService
      */
     public function updateMovieInfo(string $imdbId): bool
     {
-        $this->movieProviderOutcomes = ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'];
+        $this->movieProviderOutcomes = [];
         if ($this->echooutput && $this->service !== '') {
             cli()->primary('Fetching movie info from TMDB/Trakt/OMDB using IMDB id: '.$imdbId);
         }
@@ -564,6 +564,17 @@ class MovieService
         return false;
     }
 
+    /** The `Movie record fetch failed.` label for a provider lookup's outcome. */
+    private static function providerOutcomeLabel(ProviderOutcome $outcome): string
+    {
+        return match ($outcome) {
+            ProviderOutcome::Found => 'found',
+            ProviderOutcome::NotFound => 'not found',
+            ProviderOutcome::Rejected => 'rejected',
+            ProviderOutcome::Unavailable => 'unavailable',
+        };
+    }
+
     /**
      * Fetch movie information from TMDB using an IMDB ID.
      *
@@ -581,6 +592,7 @@ class MovieService
             now()->addDays(7),
             fn (): ProviderResult => $this->lookupTmdbMovie($tmdbClient, $imdbId, $lookupId),
         );
+        $this->movieProviderOutcomes['tmdb'] ??= self::providerOutcomeLabel($result->outcome);
 
         return $result->isFound() && is_array($result->value) ? $result->value : false;
     }
@@ -594,6 +606,8 @@ class MovieService
     private function lookupTmdbMovie(TmdbClient $tmdbClient, string $imdbId, string $lookupId): ProviderResult
     {
         if (! $tmdbClient->isConfigured()) {
+            $this->movieProviderOutcomes['tmdb'] = 'not configured';
+
             return ProviderResult::unavailable();
         }
 
@@ -802,6 +816,8 @@ class MovieService
     public function fetchTraktTVProperties(string $imdbId): array|false
     {
         if ($this->traktcheck === null) {
+            $this->movieProviderOutcomes['trakt'] = 'not configured';
+
             return false;
         }
 
@@ -812,6 +828,7 @@ class MovieService
             now()->addHours(6),
             fn (): ProviderResult => $this->lookupTraktMovie($imdbId),
         );
+        $this->movieProviderOutcomes['trakt'] ??= self::providerOutcomeLabel($result->outcome);
 
         return $result->isFound() && is_array($result->value) ? $result->value : false;
     }
@@ -886,6 +903,8 @@ class MovieService
     public function fetchOmdbAPIProperties(string $imdbId): array|false
     {
         if ($this->omdbapikey === null) {
+            $this->movieProviderOutcomes['omdb'] = 'not configured';
+
             return false;
         }
 
@@ -896,6 +915,7 @@ class MovieService
             now()->addHours(6),
             fn (): ProviderResult => $this->lookupOmdbMovie($imdbId),
         );
+        $this->movieProviderOutcomes['omdb'] ??= self::providerOutcomeLabel($result->outcome);
 
         return $result->isFound() && is_array($result->value) ? $result->value : false;
     }

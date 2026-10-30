@@ -13,6 +13,7 @@ use App\Models\Release;
 use App\Services\ImdbScraper;
 use App\Services\MetadataProcessing\MovieProcessingCandidateQuery;
 use App\Services\MovieService;
+use App\Services\ProviderGateway\ProviderResult;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
 use App\Services\TvProcessing\Providers\TraktProvider;
@@ -90,7 +91,7 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->assertFalse($service->updateMovieInfo('0137523'));
         Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
             'imdb_id' => '0137523',
-            'providers' => ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => \RuntimeException::class],
+            'providers' => ['tmdb' => 'not configured', 'trakt' => 'not configured', 'omdb' => \RuntimeException::class],
         ])->once();
         Log::shouldNotHaveReceived('warning', [\Mockery::on(fn ($message) => str_contains($message, 'secret'))]);
     }
@@ -167,8 +168,58 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->assertFalse(MovieProcessingCandidateQuery::query(lookupMode: 1)->exists());
         Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
             'imdb_id' => '0137523',
-            'providers' => ['tmdb' => 'not found', 'trakt' => 'not found', 'omdb' => 'not found'],
+            'providers' => ['tmdb' => 'not configured', 'trakt' => 'not configured', 'omdb' => 'not configured'],
         ])->times(4);
+    }
+
+    #[Test]
+    public function an_unanswered_tmdb_lookup_is_logged_as_unavailable(): void
+    {
+        $this->assertTmdbMovieResultIsLogged(ProviderResult::unavailable(), 'unavailable');
+    }
+
+    #[Test]
+    public function a_rejected_tmdb_lookup_is_logged_as_rejected(): void
+    {
+        $this->assertTmdbMovieResultIsLogged(ProviderResult::rejected(), 'rejected');
+    }
+
+    #[Test]
+    public function a_cached_tmdb_not_found_is_logged_as_not_found_without_asking_tmdb(): void
+    {
+        Log::spy();
+        Cache::put(MovieService::tmdbCacheKey('tt0137523'), false);
+        $tmdb = $this->mock(TmdbClient::class);
+        $tmdb->shouldReceive('isConfigured')->andReturnTrue();
+        $tmdb->shouldNotReceive('movie');
+
+        $this->assertFalse((new MovieService)->updateMovieInfo('0137523'));
+
+        Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
+            'imdb_id' => '0137523',
+            'providers' => ['tmdb' => 'not found', 'trakt' => 'not configured', 'omdb' => 'not configured'],
+        ])->once();
+    }
+
+    #[Test]
+    public function an_omdb_server_error_is_logged_as_unavailable(): void
+    {
+        Log::spy();
+        $omdb = \Mockery::mock(OMDbAPI::class);
+        $omdb->shouldReceive('fetch')->with('i', 'tt0137523')->once()->andReturn((object) [
+            'message' => 'Internal Server Error',
+            'data' => null,
+        ]);
+        $service = new MovieService;
+        $service->omdbapikey = 'omdb-key';
+        $service->omdbApi = $omdb;
+
+        $this->assertFalse($service->updateMovieInfo('0137523'));
+
+        Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
+            'imdb_id' => '0137523',
+            'providers' => ['tmdb' => 'not configured', 'trakt' => 'not configured', 'omdb' => 'unavailable'],
+        ])->once();
     }
 
     #[Test]
@@ -576,6 +627,26 @@ class MovieServiceTest extends ImdbScraperTestCase
         $this->setMovieServiceProperty($service, 'traktcheck', 'test-key');
 
         return $service;
+    }
+
+    /**
+     * Has a configured TMDB answer tt0137523 with this result and checks the label it logs.
+     *
+     * @param  ProviderResult<null>  $result
+     */
+    private function assertTmdbMovieResultIsLogged(ProviderResult $result, string $label): void
+    {
+        Log::spy();
+        $tmdb = $this->mock(TmdbClient::class);
+        $tmdb->shouldReceive('isConfigured')->andReturnTrue();
+        $tmdb->shouldReceive('movie')->with('tt0137523', ['credits', 'release_dates'])->once()->andReturn($result);
+
+        $this->assertFalse((new MovieService)->updateMovieInfo('0137523'));
+
+        Log::shouldHaveReceived('warning')->with('Movie record fetch failed.', [
+            'imdb_id' => '0137523',
+            'providers' => ['tmdb' => $label, 'trakt' => 'not configured', 'omdb' => 'not configured'],
+        ])->once();
     }
 
     private function setMovieServiceProperty(MovieService $service, string $property, mixed $value): void
