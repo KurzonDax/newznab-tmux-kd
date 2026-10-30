@@ -1235,6 +1235,7 @@ SH;
         ]);
 
         $command = $this->respawnedCommand();
+        $this->assertStringNotContainsString('timeout -k', $command);
         $this->assertStringNotContainsString("timeout' -k", $command);
         $this->assertStringNotContainsString('timed out', $command);
         $this->assertStringNotContainsString('bounded=1', $command);
