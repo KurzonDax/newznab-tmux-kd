@@ -42,6 +42,8 @@ class NzbParserService
 
         $fileIndex = 0;
         $fingerprint = hash('sha256', $nzb);
+        // count() walks every sibling, so take it once rather than per file.
+        $fileCount = count($xml->file);
         foreach ($xml->file as $file) {
             // Subject.
             $title = (string) $file->attributes()->subject;
@@ -62,7 +64,7 @@ class NzbParserService
 
             $result[$i]['title'] = $title;
             $result[$i]['nzbFileIndex'] = $fileIndex++;
-            $result[$i]['nzbFileCount'] = count($xml->file);
+            $result[$i]['nzbFileCount'] = $fileCount;
             $result[$i]['membershipFingerprint'] = $fingerprint;
             $result[$i]['declaredSegmentTotal'] = preg_match('/\([0-9]+\/([1-9][0-9]*)\)$/D', $title, $declared) === 1 ? (int) $declared[1] : 0;
             $result[$i]['segmentNumbersValid'] = true;

@@ -64,4 +64,50 @@ XML;
 
         $this->assertSame([0], $files[0]['segmentNumbers']);
     }
+
+    public function test_file_list_parsing_scales_linearly_with_file_count(): void
+    {
+        $parser = new NzbParserService;
+        $bestSeconds = [];
+
+        foreach ([10000, 40000] as $fileCount) {
+            $nzb = $this->singleSegmentNzb($fileCount);
+            $bestSeconds[$fileCount] = INF;
+
+            for ($run = 0; $run < 3; $run++) {
+                $started = hrtime(true);
+                $files = $parser->parseNzbFileList($nzb);
+                $bestSeconds[$fileCount] = min($bestSeconds[$fileCount], (hrtime(true) - $started) / 1e9);
+
+                $this->assertCount($fileCount, $files);
+                $this->assertSame([$fileCount], array_values(array_unique(array_column($files, 'nzbFileCount'))));
+            }
+        }
+
+        $this->assertLessThan(
+            8,
+            $bestSeconds[40000] / $bestSeconds[10000],
+            sprintf('10,000 files parsed in %.3f s, 40,000 in %.3f s.', $bestSeconds[10000], $bestSeconds[40000]),
+        );
+    }
+
+    private function singleSegmentNzb(int $fileCount): string
+    {
+        $files = '';
+        for ($i = 1; $i <= $fileCount; $i++) {
+            $files .= sprintf(
+                '<file poster="poster@example.com" date="1700000000" subject="[%1$d/%2$d] &quot;f%1$d.bin&quot; yEnc (1/1)">'
+                .'<groups><group>alt.binaries.test</group></groups>'
+                .'<segments><segment bytes="750000" number="1">seg-%1$d@example.com</segment></segments>'
+                ."</file>\n",
+                $i,
+                $fileCount,
+            );
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8"?>'."\n"
+            .'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n"
+            .$files
+            .'</nzb>';
+    }
 }
