@@ -20,6 +20,27 @@ class VideoFrameExtractor
     private const float FLAT_FRAME_LUMA_STDDEV = 8.0;
 
     /**
+     * Frame widths tried for a moovless still rebuilt from x264 text, most common
+     * first. The list covers 99.44% of the measured H.264 tracks.
+     *
+     * @var list<int>
+     */
+    private const array MOOVLESS_WIDTHS = [
+        3840, 1920, 1280, 960, 720, 1440, 854, 4096, 640, 2560, 1080,
+        704, 980, 2048, 2880, 768, 3200, 2160, 1024, 1756, 4320, 848,
+    ];
+
+    /** How many of the widths the two-pass pic_init_qp search repeats. */
+    private const int MOOVLESS_QP_SEARCH_WIDTHS = 6;
+
+    /** Macroblock rows written while the real count is unknown. */
+    private const int MOOVLESS_PROBE_ROWS = 256;
+
+    private const int MOOVLESS_MINIMUM_ROWS = 8;
+
+    private const string DECODER_ERROR_PATTERN = '/error while decoding|out of range|cabac|mb_type|mb_skip|unavailable|negative|overread|bytestream|decode_slice|invalid|illegal|non-existing|missing/i';
+
+    /**
      * @var Closure(list<string>, int): string
      */
     private readonly Closure $commandRunner;
@@ -98,6 +119,174 @@ class VideoFrameExtractor
         }
 
         return false;
+    }
+
+    /**
+     * Decode a still from an H.264 MP4 head that has no reachable moov. Kept out
+     * of {@see extractRepresentativeFrame()} because that method also checks clips.
+     */
+    public function extractMoovlessFrame(string $videoPath, string $framePath): bool
+    {
+        $streamPath = $framePath.'.h264';
+
+        try {
+            $head = is_file($videoPath) ? file_get_contents($videoPath, false, null, 0, MoovlessH264Stream::HEAD_BYTES) : false;
+            $stream = $head === false ? null : MoovlessH264Stream::fromHead($head);
+            if ($stream === null) {
+                return false;
+            }
+
+            $settings = $stream->usesEncoderText()
+                ? $this->searchForRebuiltSettings($stream, $streamPath)
+                : $stream->inBandSettings();
+            if ($settings === null) {
+                return false;
+            }
+
+            foreach (array_reverse($stream->keyframeGroups()) as $group) {
+                file_put_contents($streamPath, $settings.$group);
+                $output = $this->runMoovlessFrameCommand($streamPath, $framePath, []);
+                if (is_file($framePath)
+                    && ! $this->hasDecoderError($output, [$streamPath, $framePath])
+                    && ! str_contains($output, 'concealing')
+                    && $this->isUsableFrame($framePath)
+                ) {
+                    return true;
+                }
+            }
+
+            file_put_contents($streamPath, ($stream->usesEncoderText() ? $settings : '').$stream->sliceStream());
+            $this->runMoovlessFrameCommand($streamPath, $framePath, ['-xerror']);
+
+            return $this->isUsableFrame($framePath);
+        } finally {
+            if (is_file($streamPath)) {
+                @unlink($streamPath);
+            }
+        }
+    }
+
+    /**
+     * x264's text has no frame size, but ffmpeg's count of missing macroblocks
+     * gives it: a width fits when the first keyframe decodes cleanly into whole
+     * rows, and that many rows is the real height.
+     */
+    private function searchForRebuiltSettings(MoovlessH264Stream $stream, string $streamPath): ?string
+    {
+        $picInitQp = $stream->picInitQp();
+        $fit = $this->widestFit($stream, $streamPath, self::MOOVLESS_WIDTHS, $picInitQp);
+
+        if ($fit === null && $stream->usesTwoPassRateControl()) {
+            $widths = array_slice(self::MOOVLESS_WIDTHS, 0, self::MOOVLESS_QP_SEARCH_WIDTHS);
+            for ($picInitQp = 10; $picInitQp <= 40; $picInitQp++) {
+                $fit = $this->widestFit($stream, $streamPath, $widths, $picInitQp);
+                if ($fit !== null) {
+                    break;
+                }
+            }
+        }
+
+        return $fit === null ? null : $stream->rebuiltSettings($fit['width'], $fit['rows'], $picInitQp);
+    }
+
+    /**
+     * @param  list<int>  $widths
+     * @return array{width: int, rows: int}|null
+     */
+    private function widestFit(MoovlessH264Stream $stream, string $streamPath, array $widths, int $picInitQp): ?array
+    {
+        $firstGroup = $stream->keyframeGroups()[0];
+        $widest = null;
+
+        foreach ($widths as $width) {
+            file_put_contents($streamPath, $stream->rebuiltSettings($width, self::MOOVLESS_PROBE_ROWS, $picInitQp).$firstGroup);
+            $output = ($this->commandRunner)([
+                $this->ffmpegBinary(),
+                '-hide_banner',
+                '-nostdin',
+                '-v',
+                'info',
+                '-f',
+                'h264',
+                '-i',
+                $streamPath,
+                '-frames:v',
+                '1',
+                '-f',
+                'null',
+                '-',
+            ], $this->timeoutSeconds());
+
+            $rows = $this->rowsFromProbe($output, $width, $streamPath);
+            if ($rows !== null && ($widest === null || $width > $widest['width'])) {
+                $widest = ['width' => $width, 'rows' => $rows];
+            }
+        }
+
+        return $widest;
+    }
+
+    private function rowsFromProbe(string $output, int $width, string $streamPath): ?int
+    {
+        if ($this->hasDecoderError($output, [$streamPath])
+            || preg_match('/concealing (\d+) DC/', $output, $matches) !== 1
+        ) {
+            return null;
+        }
+
+        $macroblockWidth = intdiv($width + 15, 16);
+        $decoded = ($macroblockWidth * self::MOOVLESS_PROBE_ROWS) - (int) $matches[1];
+        if ($decoded <= 0 || $decoded % $macroblockWidth !== 0) {
+            return null;
+        }
+
+        $rows = intdiv($decoded, $macroblockWidth);
+
+        return $rows >= self::MOOVLESS_MINIMUM_ROWS ? $rows : null;
+    }
+
+    /**
+     * A path in ffmpeg's Input and Output lines is not a decoder error, and a
+     * release guid in it can spell one of the words.
+     *
+     * @param  list<string>  $paths
+     */
+    private function hasDecoderError(string $output, array $paths): bool
+    {
+        return preg_match(self::DECODER_ERROR_PATTERN, str_replace($paths, '', $output)) === 1;
+    }
+
+    /**
+     * @param  list<string>  $inputOptions
+     */
+    private function runMoovlessFrameCommand(string $streamPath, string $framePath, array $inputOptions): string
+    {
+        if (is_file($framePath)) {
+            @unlink($framePath);
+        }
+
+        return ($this->commandRunner)([
+            $this->ffmpegBinary(),
+            '-hide_banner',
+            '-nostdin',
+            '-v',
+            'info',
+            '-y',
+            ...$inputOptions,
+            '-f',
+            'h264',
+            '-i',
+            $streamPath,
+            '-frames:v',
+            '300',
+            '-fps_mode',
+            'passthrough',
+            '-q:v',
+            '2',
+            '-update',
+            '1',
+            $framePath,
+        ], $this->timeoutSeconds());
     }
 
     /**

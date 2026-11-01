@@ -587,6 +587,12 @@ normal pending preview/password state. The command also requires an available
 NZB, the normal additional-processing size bounds, and a root category whose
 Preview Generation toggle is enabled.
 
+When normal frame extraction fails, `getSample()` tries a moovless still: one
+frame decoded from the head by walking H.264 units in `mdat`, with settings from
+`mdat` or from x264's options text. A release that gets one has a preview, so it
+leaves the `releases:requeue-missing-video-previews` selection, including one
+whose tail fetch failed for a temporary reason. It gets no clip.
+
 ## Obfuscated recovery
 
 Obfuscated recovery (`app/Services/ObfuscationRecovery/`) is an opt-in,

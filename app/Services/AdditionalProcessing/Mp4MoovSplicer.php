@@ -14,6 +14,16 @@ final readonly class Mp4MoovSplicer
         return $this->mdatHeader($head) !== null;
     }
 
+    /**
+     * Where the first top-level mdat's payload starts, only when no moov precedes it.
+     */
+    public function mdatPayloadOffset(string $head): ?int
+    {
+        $mdat = $this->mdatHeader($head);
+
+        return $mdat === null ? null : $mdat['offset'] + $mdat['headerSize'];
+    }
+
     public function splice(string $head, string $tail, bool $atSegmentCap = false): Mp4MoovSpliceResult
     {
         $mdat = $this->mdatHeader($head);

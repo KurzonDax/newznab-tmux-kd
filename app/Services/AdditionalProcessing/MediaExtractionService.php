@@ -75,16 +75,26 @@ class MediaExtractionService
         $fileName = $tmpPath.'zzzz'.random_int(5, 12).random_int(5, 12).'.jpg';
 
         try {
+            $isMoovless = false;
             if (! $this->videoFrameExtractor->extractRepresentativeFrame($fileLocation, $fileName)) {
-                return false;
+                if (! $this->videoFrameExtractor->extractMoovlessFrame($fileLocation, $fileName)) {
+                    return false;
+                }
+                $isMoovless = true;
             }
 
-            return $this->releaseImage->saveExtractedImage(
+            $saved = $this->releaseImage->saveExtractedImage(
                 $guid,
                 $fileName,
                 $this->releaseImage->imgSavePath,
                 ImageAssetProfile::Preview,
             )->success;
+
+            if ($isMoovless && $saved) {
+                Log::debug('Moovless still stored', ['guid' => $guid]);
+            }
+
+            return $saved;
         } catch (\Throwable $e) {
             if ($this->config->debugMode) {
                 Log::error($e->getMessage(), ['exception' => $e]);

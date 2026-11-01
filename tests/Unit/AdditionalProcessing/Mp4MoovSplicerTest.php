@@ -12,6 +12,34 @@ use PHPUnit\Framework\TestCase;
 final class Mp4MoovSplicerTest extends TestCase
 {
     #[Test]
+    public function the_mdat_payload_offset_follows_a_32_and_a_64_bit_header(): void
+    {
+        $before = $this->atom('ftyp', 'isom0000').$this->atom('free', 'padding');
+        $splicer = new Mp4MoovSplicer;
+
+        $this->assertSame(strlen($before) + 8, $splicer->mdatPayloadOffset($before.pack('N', 4096).'mdat'.'video'));
+        $this->assertSame(
+            strlen($before) + 16,
+            $splicer->mdatPayloadOffset($before.pack('N', 1).'mdat'.pack('N2', 0, 4096).'video'),
+        );
+    }
+
+    #[Test]
+    public function the_mdat_payload_offset_has_the_same_null_cases_as_needs_tail(): void
+    {
+        $splicer = new Mp4MoovSplicer;
+
+        foreach ([
+            'no mdat' => $this->atom('ftyp', 'isom0000').$this->atom('free', 'padding'),
+            'moov first' => $this->atom('moov', 'metadata').pack('N', 4096).'mdat',
+            'truncated' => 'ftyp',
+        ] as $case => $head) {
+            $this->assertFalse($splicer->needsTail($head), $case);
+            $this->assertNull($splicer->mdatPayloadOffset($head), $case);
+        }
+    }
+
+    #[Test]
     public function it_splices_a_valid_tail_moov_onto_an_mdat_first_head(): void
     {
         $head = $this->atom('ftyp', 'isom0000')
