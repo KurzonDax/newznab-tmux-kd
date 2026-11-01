@@ -66,6 +66,25 @@ final class SecondaryProviderScanTest extends TestCase
         );
     }
 
+    public function test_a_secondary_real_size_replaces_the_0_bytes_the_primary_listed(): void
+    {
+        $this->scanner(1, [$this->header(101, 1, 0), $this->header(102, 2, 0), $this->header(103, 3, 500)])
+            ->scan($this->group(), 101, 103, HeaderScanDirection::Head);
+        $this->assertSame(500, (int) DB::table('collections')->value('filesize'));
+
+        $this->scanner(2, [$this->header(9001, 2, 700), $this->header(9002, 3, 999), $this->header(9003, 4, 800)])
+            ->scan($this->group(), 9001, 9003, HeaderScanDirection::Head);
+
+        $this->assertSame(
+            [1 => 0, 2 => 700, 3 => 500, 4 => 800],
+            DB::table('parts')->orderBy('partnumber')->pluck('size', 'partnumber')
+                ->mapWithKeys(fn (mixed $size, mixed $part): array => [(int) $part => (int) $size])->all(),
+        );
+        $this->assertSame(2000, (int) DB::table('binaries')->value('partsize'));
+        $this->assertSame(4, (int) DB::table('binaries')->value('currentparts'));
+        $this->assertSame(2000, (int) DB::table('collections')->value('filesize'));
+    }
+
     public function test_a_secondary_scan_records_no_missed_parts_and_captures_nothing_for_recovery(): void
     {
         // The recovery migrations seed a few rows of their own.
@@ -210,10 +229,10 @@ final class SecondaryProviderScanTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function header(int $article, int $part): array
+    private function header(int $article, int $part, int $bytes = 740000): array
     {
         return ['Number' => (string) $article, 'Subject' => 'Example.Post.Name yEnc ('.$part.'/4)', 'From' => 'fixture@example.invalid',
-            'Message-ID' => '<part'.$part.'-1700000000000@nyuu>', 'Date' => 'Tue, 14 Nov 2023 22:13:20 +0000', 'Bytes' => 740000, 'Xref' => ''];
+            'Message-ID' => '<part'.$part.'-1700000000000@nyuu>', 'Date' => 'Tue, 14 Nov 2023 22:13:20 +0000', 'Bytes' => $bytes, 'Xref' => ''];
     }
 }
 

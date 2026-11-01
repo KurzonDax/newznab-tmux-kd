@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Enums\CollectionDeletionReason;
+use App\Enums\CollectionFileCheckStatus;
 use App\Enums\CollectionSweepOutcome;
 use App\Models\Settings;
 use App\Services\CollectionCleanupService;
@@ -237,6 +238,83 @@ class ReleaseFormationSelectionTest extends TestCase
         $processing->formReleases(2);
 
         $this->assertSame([1, 2, 3, 4, 5, 6, 7, 9, 13, 21], $creation->formed());
+    }
+
+    public function test_a_collection_that_is_not_quiet_waits_for_its_0_size_parts(): void
+    {
+        $this->formationMinimum(1000);
+        $this->sizedWithZeroPart(1, 100);
+        $this->sizedWithZeroPart(2, 5000);
+        $this->waiting(3, ['filecheck' => 2]);
+        $this->zeroSizePart(3);
+        $creation = $this->recordingCreation();
+
+        (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false)->formReleases(1);
+
+        $this->assertSame([], $creation->formed());
+        $this->assertSame([1, 2, 3], DB::table('collections')->orderBy('id')->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+    }
+
+    public function test_correcting_the_last_0_size_part_ends_the_hold(): void
+    {
+        $this->sizedWithZeroPart(1, 5000);
+        $creation = $this->recordingCreation();
+        $processing = (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false);
+
+        $processing->formReleases(1);
+        $this->assertSame([], $creation->formed());
+
+        DB::table('parts')->where('size', 0)->update(['size' => 4900]);
+        $processing->formReleases(1);
+        $this->assertSame([1], $creation->formed());
+    }
+
+    public function test_a_collection_with_no_0_size_part_forms_as_before(): void
+    {
+        $this->waiting(1, ['filecheck' => 3, 'filesize' => 100]);
+        $creation = $this->recordingCreation();
+
+        (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false)->formReleases(1);
+
+        $this->assertSame([1], $creation->formed());
+    }
+
+    public function test_a_quiet_collection_corrected_within_the_delay_is_still_held(): void
+    {
+        $this->formationMinimum(1000);
+        $this->sizedWithZeroPart(1, 100, ['last_seen_head_postdate' => '2026-01-01 10:00:00']);
+        $creation = $this->recordingCreation();
+
+        (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false)->formReleases(1);
+
+        $this->assertSame([], $creation->formed());
+        $this->assertTrue(DB::table('collections')->where('id', 1)->exists());
+    }
+
+    public function test_a_quiet_collection_past_the_delay_goes_on_with_its_stored_total(): void
+    {
+        $this->formationMinimum(1000);
+        $old = ['last_seen_head_postdate' => '2026-01-01 10:00:00', 'last_seen_at' => $this->databaseNow('-2 hours')];
+        $this->sizedWithZeroPart(1, 5000, $old);
+        $this->sizedWithZeroPart(2, 100, $old);
+        $creation = $this->recordingCreation();
+
+        (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false)->formReleases(1);
+
+        $this->assertSame([1], $creation->formed());
+        $this->assertFalse(DB::table('collections')->where('id', 2)->exists());
+    }
+
+    public function test_a_collection_at_filesize_0_stays_untouched(): void
+    {
+        $this->formationMinimum(1000);
+        $this->sizedWithZeroPart(1, 0);
+        $creation = $this->recordingCreation();
+
+        (new ReleaseProcessingService(releaseCreationService: $creation))->setEchoCLI(false)->formReleases(1);
+
+        $this->assertSame([], $creation->formed());
+        $this->assertSame(CollectionFileCheckStatus::Sized->value, (int) DB::table('collections')->where('id', 1)->value('filecheck'));
     }
 
     public function test_stuck_maintenance_deletes_exactly_the_collections_quiet_past_the_timeout(): void
@@ -515,6 +593,26 @@ class ReleaseFormationSelectionTest extends TestCase
             'partnumber' => 1, 'size' => 100]);
     }
 
+    /** @param  array<string, mixed>  $attributes */
+    private function sizedWithZeroPart(int $id, int $filesize, array $attributes = []): void
+    {
+        $this->waiting($id, ['filecheck' => CollectionFileCheckStatus::Sized->value, 'filesize' => $filesize, ...$attributes]);
+        $this->zeroSizePart($id);
+    }
+
+    /** A second part of the collection's binary, stored at 0 bytes. */
+    private function zeroSizePart(int $id): void
+    {
+        DB::table('parts')->insert(['binaries_id' => DB::table('binaries')->where('collections_id', $id)->value('id'),
+            'number' => 1000 + $id, 'messageid' => 'zero-'.$id.'@example.invalid', 'partnumber' => 2, 'size' => 0]);
+    }
+
+    private function formationMinimum(int $bytes): void
+    {
+        DB::table('settings')->insert(['name' => 'minsizetoformrelease', 'value' => (string) $bytes]);
+        Settings::forgetCachedSettings();
+    }
+
     private function recoveryOwns(int $collectionId): void
     {
         if (! Schema::hasTable('obfuscation_recovery_publications')) {
@@ -547,7 +645,7 @@ class ReleaseFormationSelectionTest extends TestCase
             public function createSelectedCollections(int $groupId, array $collectionIds, bool $echoCLI): array
             {
                 array_push($this->formed, ...DB::table('collections')->whereIn('id', $collectionIds)
-                    ->where('filecheck', 3)->pluck('id')->map(static fn ($id): int => (int) $id)->all());
+                    ->where('filecheck', 3)->where('filesize', '>', 0)->pluck('id')->map(static fn ($id): int => (int) $id)->all());
 
                 return ['added' => 0, 'dupes' => 0];
             }

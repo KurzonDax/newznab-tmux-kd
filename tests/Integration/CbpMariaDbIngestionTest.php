@@ -1284,6 +1284,179 @@ final class CbpMariaDbIngestionTest extends TestCase
         $this->assertSame([2, 1, CollectionSweepOutcome::Resting], [$result->examined, $result->deleted, $result->outcome]);
     }
 
+    public function test_a_real_size_replaces_a_stored_0_and_the_totals_follow(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $storage->store([$this->fileHeader(3001, 'alpha', 1, 2, 0), $this->fileHeader(3002, 'alpha', 2, 2, 100)], $group);
+        $this->assertSame(['alpha' => [2, 100, 1]], $this->binaryCounts());
+        $filecheck = (int) DB::table('collections')->value('filecheck');
+
+        $real = [$this->fileHeader(9001, 'alpha', 1, 2, 700)];
+        $this->assertSame([], $storage->store($real, $group)->uniqueFailedNumbers());
+
+        $this->assertSame(['alpha' => [2, 800, 1]], $this->binaryCounts());
+        $this->assertSame(800, (int) DB::table('collections')->value('filesize'));
+        $this->assertSame($filecheck, (int) DB::table('collections')->value('filecheck'));
+        $this->assertSame(3001, (int) DB::table('parts')->where('partnumber', 1)->value('number'));
+        $this->assertBinaryCountsEqualStoredParts();
+
+        // Offered real again: the stored size is no longer 0, so the totals do not double.
+        $this->assertSame([], $storage->store($real, $group)->uniqueFailedNumbers());
+        $this->assertSame(['alpha' => [2, 800, 1]], $this->binaryCounts());
+        $this->assertSame(800, (int) DB::table('collections')->value('filesize'));
+    }
+
+    public function test_a_stored_real_size_is_never_overwritten(): void
+    {
+        $storage = $this->countedStorage();
+        $group = ['id' => 1, 'name' => 'alt.binaries.test'];
+        $storage->store([$this->fileHeader(3101, 'alpha', 1, 2, 500)], $group);
+
+        foreach ([0, 900] as $bytes) {
+            $this->assertSame([], $storage->store([$this->fileHeader(9101, 'alpha', 1, 2, $bytes)], $group)->uniqueFailedNumbers());
+            $this->assertSame(500, (int) DB::table('parts')->value('size'));
+            $this->assertSame(['alpha' => [1, 500, 0]], $this->binaryCounts());
+        }
+    }
+
+    public function test_a_rolled_back_correction_leaves_the_row_at_0(): void
+    {
+        $this->insertCollectionTree(1, now(), now(), 1);
+        DB::table('parts')->update(['size' => 0]);
+        $handler = new PartHandler(2);
+
+        DB::beginTransaction();
+        $handler->addPart(1, $this->fileHeader(3201, 'alpha', 1, 9, 700));
+        $this->assertTrue($handler->flush());
+        $this->assertSame(700, (int) DB::table('parts')->value('size'));
+        DB::rollBack();
+
+        $this->assertSame(0, (int) DB::table('parts')->value('size'));
+    }
+
+    public function test_a_chunk_runs_a_correction_only_for_a_stored_0_and_never_locks_by_update(): void
+    {
+        $handler = new PartHandler(2);
+        $this->insertCollectionTree(1, now(), now(), 1);
+        $statements = [];
+        DB::listen(static function (QueryExecuted $query) use (&$statements): void {
+            $statements[] = $query->sql;
+        });
+        $run = function (array $headers) use ($handler, &$statements): array {
+            $handler->reset();
+            $statements = [];
+            foreach ($headers as $number => [$part, $bytes]) {
+                $handler->addPart(1, $this->fileHeader($number, 'alpha', $part, 9, $bytes));
+            }
+            $handler->flush();
+
+            return [
+                'selects' => array_values(array_filter($statements, static fn (string $sql): bool => str_starts_with($sql, 'SELECT') && str_contains($sql, 'FROM parts'))),
+                'corrections' => array_values(array_filter($statements, static fn (string $sql): bool => str_contains($sql, 'ON DUPLICATE KEY UPDATE size'))),
+            ];
+        };
+
+        // All new: no read of parts and no correction.
+        $new = $run([3301 => [10, 0], 3302 => [11, 0], 3303 => [12, 0], 3304 => [13, 300]]);
+        $this->assertSame([], $new['selects']);
+        $this->assertSame([], $new['corrections']);
+
+        // Duplicates with real stored sizes: the existing read and no correction.
+        $real = $run([3304 => [13, 999]]);
+        $this->assertCount(1, $real['selects']);
+        $this->assertSame([], $real['corrections']);
+
+        // Three duplicates at 0 in sub-chunks of 2: one correction per sub-chunk.
+        $zero = $run([3301 => [12, 100], 3302 => [10, 100], 3303 => [11, 100]]);
+        $this->assertCount(2, $zero['corrections']);
+        foreach ($statements as $sql) {
+            $this->assertStringStartsNotWith('UPDATE parts', $sql);
+            if (str_contains($sql, 'parts')) {
+                $this->assertStringNotContainsString('FOR UPDATE', $sql);
+            }
+        }
+        $this->assertSame([10 => 100, 11 => 100, 12 => 100, 13 => 300], DB::table('parts')->where('partnumber', '>=', 10)->orderBy('partnumber')
+            ->pluck('size', 'partnumber')->map(static fn ($size): int => (int) $size)->all());
+    }
+
+    public function test_a_correction_locks_only_its_own_row(): void
+    {
+        $this->insertCollectionTree(1, now(), now(), 1);
+        $handler = new PartHandler(500);
+        foreach ([3 => 0, 4 => 50] as $part => $bytes) {
+            $handler->addPart(1, $this->fileHeader(3400 + $part, 'alpha', $part, 9, $bytes));
+        }
+        $handler->flush();
+        $handler->reset();
+        config(['database.connections.sweep_peer' => config('database.connections.mariadb')]);
+        $peer = DB::connection('sweep_peer');
+        $peer->statement('SET SESSION innodb_lock_wait_timeout=1');
+
+        DB::beginTransaction();
+        try {
+            $handler->addPart(1, $this->fileHeader(3403, 'alpha', 3, 9, 700));
+            $this->assertTrue($handler->flush());
+            $this->assertSame(700, (int) DB::table('parts')->where('partnumber', 3)->value('size'));
+
+            $next = $peer->select('SELECT partnumber FROM parts WHERE binaries_id = 1 AND partnumber = 4 FOR UPDATE NOWAIT');
+            $this->assertCount(1, $next);
+            $peer->table('parts')->insert(['binaries_id' => 1, 'number' => 3499, 'messageid' => '<3499@example.test>', 'partnumber' => 5, 'size' => 1]);
+            $this->assertSame(1, $peer->table('parts')->where('partnumber', 5)->count());
+        } finally {
+            DB::rollBack();
+            DB::disconnect('sweep_peer');
+        }
+    }
+
+    public function test_the_awaiting_sizes_guard_is_served_by_indexes(): void
+    {
+        $dropCursorTables = static function (): void {
+            DB::statement('DROP TABLE IF EXISTS usenet_group_provider_cursors');
+            DB::statement('DROP TABLE IF EXISTS usenet_group_provider_ingested_ranges');
+        };
+        $dropCursorTables();
+        (require database_path('migrations/2026_10_02_000000_create_usenet_group_provider_cursors.php'))->up();
+        DB::statement('DROP TABLE IF EXISTS releases');
+        DB::statement('CREATE TABLE releases (id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, collectionhash BINARY(20) NULL,
+            UNIQUE KEY ux_releases_collectionhash (collectionhash)) ENGINE=InnoDB');
+        try {
+            DB::table('usenet_groups')->where('id', 1)->update(['last_record_postdate' => now()]);
+            DB::table('usenet_group_provider_cursors')->insert([
+                ['usenet_groups_id' => 1, 'provider' => 'second', 'provider_host' => 'a.example.invalid', 'last_record' => 1, 'last_record_postdate' => now(), 'last_advanced_at' => now()],
+                ['usenet_groups_id' => 1, 'provider' => 'third', 'provider_host' => 'b.example.invalid', 'last_record' => 1, 'last_record_postdate' => now(), 'last_advanced_at' => now()],
+            ]);
+            DB::table('releases')->insert([['collectionhash' => sha1('one', true)], ['collectionhash' => sha1('two', true)]]);
+            foreach ([40, 41, 42, 43] as $id) {
+                $this->insertCollectionTree($id, now(), now(), 1, CollectionFileCheckStatus::Sized);
+            }
+            DB::table('collections')->update(['filesize' => 100, 'last_seen_head_postdate' => now()]);
+            DB::table('parts')->update(['size' => 0]);
+
+            $captured = [];
+            DB::listen(static function (QueryExecuted $query) use (&$captured): void {
+                if (str_contains($query->sql, 'p.size = 0')) {
+                    $captured[] = $query;
+                }
+            });
+            $processing = app(ReleaseProcessingService::class)->setEchoCLI(false);
+            $held = (new \ReflectionMethod(ReleaseProcessingService::class, 'collectionsAwaitingPartSizes'))->invoke($processing, [40, 41, 42, 43]);
+            sort($held);
+
+            $this->assertSame([40, 41, 42, 43], $held);
+            $this->assertCount(1, $captured);
+            $plan = DB::select('EXPLAIN '.$captured[0]->sql, $captured[0]->bindings);
+            $this->assertNotEmpty($plan);
+            foreach ($plan as $row) {
+                $this->assertNotSame('ALL', $row->type, json_encode($row, JSON_THROW_ON_ERROR));
+                $this->assertNotNull($row->key, json_encode($row, JSON_THROW_ON_ERROR));
+            }
+        } finally {
+            DB::statement('DROP TABLE IF EXISTS releases');
+            $dropCursorTables();
+        }
+    }
+
     public function test_a_late_collection_is_promoted_after_fifteen_quiet_minutes(): void
     {
         DB::statement('DROP TABLE IF EXISTS releases');

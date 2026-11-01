@@ -167,17 +167,79 @@ final class PartHandler
             return true;
         }
 
-        $existingKeys = $this->existingPartKeys($parts);
+        $storedSizes = $this->existingPartKeys($parts);
+        $corrections = [];
         foreach ($parts as $part) {
             $key = $this->partKey((int) $part['binaries_id'], (int) $part['partnumber']);
-            if (! isset($existingKeys[$key])) {
+            if (! isset($storedSizes[$key])) {
+                $this->failedPartNumbers[] = $part['number'];
+            } elseif ($storedSizes[$key] === 0 && (int) $part['size'] > 0) {
+                $corrections[] = $part;
+            }
+        }
+
+        if (! $this->correctStoredSizes($corrections)) {
+            $this->insertFailed = true;
+            foreach ($pendingParts as $part) {
                 $this->failedPartNumbers[] = $part['number'];
             }
+
+            $this->parts = [];
+
+            return false;
         }
 
         $this->parts = [];
 
         return empty($this->failedPartNumbers);
+    }
+
+    /**
+     * A provider can list a part at 0 bytes that another lists with its real size. Replace
+     * the stored 0, and nothing else: a stored real size stays, and an offered 0 is never
+     * passed here. Sorted so that every chunk takes these row locks in one order.
+     *
+     * @param  list<PartRow>  $corrections
+     */
+    private function correctStoredSizes(array $corrections): bool
+    {
+        if ($corrections === []) {
+            return true;
+        }
+
+        usort($corrections, static fn (array $a, array $b): int => [(int) $a['binaries_id'], (int) $a['partnumber']]
+            <=> [(int) $b['binaries_id'], (int) $b['partnumber']]);
+        $conflict = DB::getDriverName() === 'sqlite'
+            ? 'ON CONFLICT(binaries_id, partnumber) DO UPDATE SET size = CASE WHEN size = 0 THEN excluded.size ELSE size END'
+            : 'ON DUPLICATE KEY UPDATE size = IF(size = 0, VALUES(size), size)';
+
+        try {
+            foreach (array_chunk($corrections, $this->chunkSize) as $chunk) {
+                $bindings = [];
+                foreach ($chunk as $row) {
+                    array_push($bindings, $row['binaries_id'], $row['number'], $row['messageid'], $row['partnumber'], $row['size']);
+                }
+                $placeholders = implode(',', array_fill(0, \count($chunk), '(?,?,?,?,?)'));
+                DB::affectingStatement("INSERT INTO parts (binaries_id, number, messageid, partnumber, size) VALUES {$placeholders} {$conflict}", $bindings);
+            }
+        } catch (\Throwable $e) {
+            $this->lastException = $e;
+            if (config('app.debug') === true) {
+                SqlError::logFailure('Parts size correction failed', $e);
+            }
+
+            return false;
+        }
+
+        if (self::returnsStoredRows()) {
+            foreach ($corrections as $row) {
+                $binaryId = (int) $row['binaries_id'];
+                $tally = $this->storedByBinary[$binaryId] ?? ['parts' => 0, 'bytes' => 0];
+                $this->storedByBinary[$binaryId] = ['parts' => $tally['parts'], 'bytes' => $tally['bytes'] + (int) $row['size']];
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -237,7 +299,7 @@ final class PartHandler
 
     /**
      * @param  list<PartRow>  $parts
-     * @return array<string, true>
+     * @return array<string, int> Stored size by part key
      */
     private function existingPartKeys(array $parts): array
     {
@@ -267,12 +329,12 @@ final class PartHandler
             }
 
             $rows = DB::select(
-                "SELECT binaries_id, partnumber FROM parts WHERE (binaries_id, partnumber) IN ({$tuples})",
+                "SELECT binaries_id, partnumber, size FROM parts WHERE (binaries_id, partnumber) IN ({$tuples})",
                 $bindings
             );
 
             foreach ($rows as $row) {
-                $keys[$this->partKey((int) $row->binaries_id, (int) $row->partnumber)] = true;
+                $keys[$this->partKey((int) $row->binaries_id, (int) $row->partnumber)] = (int) $row->size;
             }
         }
 
