@@ -40,6 +40,7 @@ use Illuminate\Support\Facades\Log;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Support\ObfuscationRecovery\SyntheticPosting;
 use Tests\TestCase;
 
 class ReleaseProcessorTest extends TestCase
@@ -2197,6 +2198,729 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function a_stored_mdat_first_fragment_is_spliced_from_the_first_and_last_segments_of_the_final_part(): void
+    {
+        // part02 has 6 segments, 550 bytes: five of 100 then one of 50. The
+        // video ends 20 bytes before that, where the end block starts.
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+        $finalTail = str_repeat('t', 130 - strlen($moov)).$moov.str_repeat('e', 20);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 6)],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload($finalTail)],
+            listings: [$finalFirst => [$this->storedVideoEntry(530)]],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTail, DownloadKind::CompressedTail],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p2s1>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<p2s5>', '<p2s6>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovFoundCount);
+        $this->assertSame(0, $result->mp4TailMetrics->moovMissingCount);
+        $this->assertSame(2, $result->mp4TailMetrics->tailsFetched);
+        $this->assertSame(250, $result->mp4TailMetrics->tailBytes);
+    }
+
+    #[Test]
+    public function the_budget_toggle_off_still_splices_and_makes_no_top_up_request(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3), $this->rarPart(3, 3)],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload(str_repeat('t', 72).$moov)],
+            listings: [$finalFirst => [$this->storedVideoEntry(200)]],
+        );
+
+        $this->assertNotContains(DownloadKind::CompressedTopUp, array_column($downloadCalls->calls, 'kind'));
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function the_budget_toggle_on_re_splices_after_its_first_extraction_and_after_each_top_up(): void
+    {
+        // 1200 bytes over 30 s is 40 B/s. At 7.5 s the target needs 900 bytes,
+        // but the anchor only has 300 left; at 15 s it needs 600 from part02.
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, , $fragmentPath, $extraction] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 6), $this->rarPart(3, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 600)),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300, ['size' => 1200])]],
+            extractSizes: [300, 300, 600, 1200],
+            budgetEnabled: true,
+            decodableDurations: [7.5, 15.0, 30.0],
+            anchorEntryOverrides: ['size' => 1200],
+        );
+
+        $this->assertSame(
+            [
+                DownloadKind::Compressed,
+                DownloadKind::CompressedTail,
+                DownloadKind::CompressedTail,
+                DownloadKind::CompressedTopUp,
+                DownloadKind::CompressedTopUp,
+            ],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[3]['messageIds']);
+        $this->assertSame(
+            ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s5>', '<p2s6>'],
+            $downloadCalls->calls[4]['messageIds'],
+            'Progress is measured on the raw extraction, whose size the moov never inflates.',
+        );
+        $this->assertSame(
+            [
+                $this->splicedFragment(300, $moov),
+                $this->splicedFragment(600, $moov),
+                $this->splicedFragment(1200, $moov),
+            ],
+            $extraction->decodableProbeFiles,
+        );
+        $this->assertSame([300 + strlen($moov)], $extraction->headProbeSizes);
+        $this->assertSame($this->splicedFragment(1200, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_top_up_extraction_that_makes_no_progress_leaves_the_fragment_spliced(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+                $this->successfulDownload(str_repeat('b', 300)),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300, ['size' => 1200])]],
+            extractSizes: [300, 300, 300],
+            budgetEnabled: true,
+            decodableDurations: [7.5],
+            anchorEntryOverrides: ['size' => 1200],
+        );
+
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function tail_bytes_count_against_the_byte_ceiling(): void
+    {
+        // 300 head + 100 first segment + 200 tail leave 200 of the 800 ceiling.
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 9), $this->rarPart(2, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+                $this->successfulDownload(str_repeat('b', 200)),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300, ['size' => 1200])]],
+            extractSizes: [300, 300, 500],
+            configOverrides: ['previewMaxFetchBytes' => 800],
+            budgetEnabled: true,
+            decodableDurations: [7.5, 12.5],
+            anchorEntryOverrides: ['size' => 1200],
+        );
+
+        $this->assertSame(['<p1s4>', '<p1s5>'], $downloadCalls->calls[3]['messageIds']);
+    }
+
+    #[Test]
+    public function the_top_up_stops_before_the_segments_fetched_for_the_tail(): void
+    {
+        // A single part: the tail took its last two segments, so the top-up
+        // may only have the two between them and the head.
+        $moov = $this->validMoovAtom();
+
+        [$downloadCalls] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 7)],
+            responses: [
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+                $this->successfulDownload(str_repeat('b', 200)),
+            ],
+            listings: [],
+            extractSizes: [300, 300, 500],
+            budgetEnabled: true,
+            decodableDurations: [7.5, 12.5],
+            anchorEntryOverrides: ['size' => 1200, 'next_offset' => 700, 'range' => '10-299'],
+        );
+
+        $this->assertSame(['<p1s6>', '<p1s7>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<p1s4>', '<p1s5>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertCount(3, $downloadCalls->calls, 'No volume may be left with a hole where the tail segments were.');
+    }
+
+    #[Test]
+    public function the_top_up_never_opens_a_part_the_tail_read(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 5), $this->rarPart(2, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+                $this->successfulDownload(str_repeat('b', 200)),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300, ['size' => 1200])]],
+            extractSizes: [300, 300, 500],
+            budgetEnabled: true,
+            decodableDurations: [7.5, 12.5],
+            anchorEntryOverrides: ['size' => 1200],
+        );
+
+        $this->assertSame(['<p1s4>', '<p1s5>'], $downloadCalls->calls[3]['messageIds']);
+        $this->assertCount(4, $downloadCalls->calls);
+    }
+
+    /**
+     * @return array<string, array{bool}>
+     */
+    public static function tailFetchOutcomes(): array
+    {
+        return ['the tail is fetched' => [true], 'the tail fetch fails' => [false]];
+    }
+
+    #[Test]
+    #[DataProvider('tailFetchOutcomes')]
+    public function with_the_budget_toggle_off_no_working_volume_remains_when_the_sweep_runs(bool $tailFetched): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [, , , $extraction] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $tailFetched ? $this->successfulDownload(str_repeat('t', 172).$moov) : $this->failedDownload(),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300)]],
+        );
+
+        $this->assertSame(['preview-archive.part001.rar'], array_keys($extraction->workingVolumes));
+        $this->assertSame([], $extraction->workingVolumesAtSweep);
+    }
+
+    #[Test]
+    public function the_working_volume_follows_the_sets_numbering(): void
+    {
+        $anchorHead = substr(SyntheticPosting::rar([2000, 2000], 'movie.mp4', newNumbering: false)['volumes'][0], 0, 300);
+
+        [, , , $extraction] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 3)],
+            responses: [],
+            listings: [],
+            anchorHead: $anchorHead,
+        );
+
+        $this->assertSame(['preview-archive.rar'], array_keys($extraction->workingVolumes));
+        $this->assertSame([], $extraction->workingVolumesAtSweep);
+    }
+
+    #[Test]
+    public function no_entry_of_the_videos_size_in_the_last_two_parts_stops_after_their_first_segments(): void
+    {
+        // An entry with the video's name but another video's size.
+        $finalFirst = str_repeat('F', 100);
+        $previousFirst = str_repeat('P', 100);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 6), $this->rarPart(3, 6)],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload($previousFirst)],
+            listings: [
+                $finalFirst => [$this->storedVideoEntry(300, ['size' => 4999])],
+                $previousFirst => [$this->storedVideoEntry(300, ['name' => 'other.mp4', 'size' => 4998])],
+            ],
+        );
+
+        $this->assertSame(['<p3s1>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<p2s1>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertCount(3, $downloadCalls->calls);
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovMissingCount);
+        $this->assertSame(0, $result->mp4TailMetrics->moovFoundCount);
+    }
+
+    #[Test]
+    public function a_final_part_listing_the_video_under_another_name_is_used(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3)],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload(str_repeat('t', 172).$moov)],
+            listings: [$finalFirst => [$this->storedVideoEntry(300, ['name' => 'a8f3c1.bin'])]],
+        );
+
+        $this->assertSame(['<p2s2>', '<p2s3>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_previous_part_alone_holding_the_video_is_spliced_with_no_tail_from_the_final_part(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+        $previousFirst = str_repeat('P', 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 4), $this->rarPart(3, 4)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload($previousFirst),
+                $this->successfulDownload(str_repeat('t', 172).$moov),
+            ],
+            listings: [
+                $finalFirst => [$this->storedVideoEntry(300, ['size' => 77])],
+                $previousFirst => [$this->storedVideoEntry(400)],
+            ],
+        );
+
+        $this->assertSame(
+            [['<p3s1>'], ['<p2s1>'], ['<p2s3>', '<p2s4>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function the_moov_of_a_file_after_the_video_in_the_final_part_is_not_used(): void
+    {
+        // part02 is 400 bytes: the video ends at 300, and the file after it
+        // has a moov of its own in the last two segments.
+        $moov = $this->validMoovAtom();
+        $otherMoov = $this->mp4Atom('moov', $this->mp4Atom('mvhd', 'other-header'));
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 4)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('v', 100).str_repeat('o', 100 - strlen($otherMoov)).$otherMoov),
+                $this->successfulDownload(str_repeat('v', 100 - strlen($moov)).$moov),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(300)]],
+        );
+
+        $this->assertSame(
+            [['<p2s1>'], ['<p2s3>', '<p2s4>'], ['<p2s2>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+            'With nothing of the video left in the first tail, the tail grows into the segment before it.',
+        );
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>, array<string, mixed>, string, int}>
+     */
+    public static function fragmentsThatFetchNoTail(): array
+    {
+        return [
+            'compressed entry' => [['compressed' => 1], [], 'mdat-first', 0],
+            'entry with a password' => [['pass' => 1], [], 'mdat-first', 0],
+            'fast-start fragment' => [[], [], 'fast-start', 1],
+            'non-MP4 fragment' => [[], [], 'matroska', 1],
+            'tail fetch switched off' => [[], ['mp4TailFetch' => false], 'mdat-first', 0],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $entryOverrides
+     * @param  array<string, mixed>  $configOverrides
+     */
+    #[Test]
+    #[DataProvider('fragmentsThatFetchNoTail')]
+    public function an_ineligible_entry_or_fragment_makes_no_tail_request(
+        array $entryOverrides,
+        array $configOverrides,
+        string $fragment,
+        int $extractions,
+    ): void {
+        [$downloadCalls, $result] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3)],
+            responses: [],
+            listings: [],
+            extractSizes: array_fill(0, $extractions, 300),
+            configOverrides: $configOverrides,
+            fragmentHead: match ($fragment) {
+                'fast-start' => $this->mp4Atom('ftyp', 'isom0000').$this->validMoovAtom().pack('N', 400).'mdat',
+                'matroska' => "\x1A\x45\xDF\xA3matroska",
+                default => $this->mdatFirstHead(),
+            },
+            anchorEntryOverrides: $entryOverrides,
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        $this->assertSame(0, $result->mp4TailMetrics->tailsFetched);
+        $this->assertSame(0, $result->mp4TailMetrics->moovMissingCount);
+        $this->assertSame(0, $result->mp4TailMetrics->moovFoundCount);
+    }
+
+    #[Test]
+    public function a_final_part_whose_tail_is_not_contiguous_makes_no_tail_request_and_records_the_gap(): void
+    {
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [
+                $this->rarPart(1, 6),
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>'], 'segmentNumbers' => [1], 'partstotal' => '62'],
+            ],
+            responses: [],
+            listings: [],
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+        $this->assertSame(0, $result->mp4TailMetrics->moovMissingCount);
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_par2_last_candidate_is_skipped_for_the_volume_before_it(): void
+    {
+        $moov = $this->validMoovAtom();
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [
+                $this->rarPart(1, 6),
+                $this->rarPart(2, 3),
+                // The planner takes this for an archive part: .rar appears in its subject.
+                ['title' => 'release.rar [3/3] "release.vol00+01.PAR2" yEnc', 'segments' => ['<par2s1>', '<par2s2>']],
+            ],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload(str_repeat('t', 172).$moov)],
+            listings: [$finalFirst => [$this->storedVideoEntry(300)]],
+        );
+
+        $this->assertSame(
+            [['<p2s1>'], ['<p2s2>', '<p2s3>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_single_part_set_reads_the_tail_from_the_anchor(): void
+    {
+        $moov = $this->validMoovAtom();
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 8)],
+            responses: [$this->successfulDownload(str_repeat('t', 130 - strlen($moov)).$moov.str_repeat('e', 20))],
+            listings: [],
+            anchorEntryOverrides: ['next_offset' => 730, 'range' => '10-299'],
+        );
+
+        $this->assertSame(
+            [['<p1s1>', '<p1s2>', '<p1s3>'], ['<p1s7>', '<p1s8>']],
+            array_column($downloadCalls->calls, 'messageIds'),
+        );
+        $this->assertSame(DownloadKind::CompressedTail, $downloadCalls->calls[1]['kind']);
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_single_part_set_already_held_whole_requests_nothing_more(): void
+    {
+        // The moov at the end of the 300 bytes the anchor's fetch already holds.
+        $moov = $this->validMoovAtom();
+        $anchorHead = str_repeat('a', 300 - strlen($moov) - 20).$moov.str_repeat('e', 20);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 3)],
+            responses: [],
+            listings: [],
+            anchorHead: $anchorHead,
+            anchorEntryOverrides: ['next_offset' => 280, 'range' => '10-279'],
+        );
+
+        $this->assertCount(1, $downloadCalls->calls);
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function previousPartTrailers(): array
+    {
+        return ['a 20-byte trailer' => [20], 'a trailer larger than the first tail' => [230]];
+    }
+
+    #[Test]
+    #[DataProvider('previousPartTrailers')]
+    public function a_moov_split_across_two_parts_splices_with_exact_bytes(int $trailerBytes): void
+    {
+        // The headers before the video in the final part and the trailer after
+        // it in the previous part both sit in the middle of the moov's bytes:
+        // the splice only finds a whole moov if the join drops both exactly.
+        $moov = $this->mp4Atom('moov', $this->mp4Atom('mvhd', str_repeat('m', 300)));
+        $previousPart = str_repeat('h', 40).str_repeat('v', 200).substr($moov, 0, 150).str_repeat('T', $trailerBytes);
+        $finalPart = str_repeat('H', 70).substr($moov, 150).str_repeat('E', 20);
+        $previousSegments = str_split($previousPart, 100);
+        $finalSegments = str_split($finalPart, 100);
+        $this->assertCount(3, $finalSegments);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, count($previousSegments)), $this->rarPart(3, 3)],
+            responses: array_map($this->successfulDownload(...), [
+                $finalSegments[0],
+                $finalSegments[1].$finalSegments[2],
+                $previousSegments[0],
+                ...$this->batchesFromTheEnd(array_slice($previousSegments, 1), 2),
+            ]),
+            listings: [
+                $finalSegments[0] => [$this->storedVideoEntry(strlen($finalPart) - 20, ['range' => '70-99'])],
+                $previousSegments[0] => [$this->storedVideoEntry(strlen($previousPart) - $trailerBytes, ['range' => '40-99'])],
+            ],
+        );
+
+        $this->assertSame(['<p2s1>'], $downloadCalls->calls[3]['messageIds']);
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovFoundCount);
+    }
+
+    #[Test]
+    public function the_join_takes_the_final_parts_bytes_up_to_next_offset_not_the_end_of_range(): void
+    {
+        // RarInfo clamps range to its 1 MiB read window: a real entry read
+        // range 112-1048575 with next_offset 3260986.
+        $nextOffset = 3260986;
+        $moovPayload = str_repeat('m', $nextOffset - 112 + 50 - 16);
+        $moov = $this->mp4Atom('moov', $this->mp4Atom('mvhd', $moovPayload));
+        $finalPart = str_repeat('H', 112).substr($moov, 50).str_repeat('E', 20);
+        $finalFirst = substr($finalPart, 0, 2000000);
+        $previousTail = str_repeat('v', 130).substr($moov, 0, 50).str_repeat('T', 20);
+        $previousFirst = str_repeat('P', 2000000);
+
+        [, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3), $this->rarPart(3, 2)],
+            responses: array_map($this->successfulDownload(...), [
+                $finalFirst,
+                substr($finalPart, 2000000),
+                $previousFirst,
+                $previousTail,
+            ]),
+            listings: [
+                $finalFirst => [$this->storedVideoEntry($nextOffset, ['range' => '112-1048575'])],
+                $previousFirst => [$this->storedVideoEntry(2000180, ['range' => '10-1048575'])],
+            ],
+        );
+
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    /**
+     * @return array<string, array{list<int>, list<int>}>
+     */
+    public static function incompleteParts(): array
+    {
+        // Starting at segment 2 keeps the tail contiguous but the head not.
+        return [
+            'incomplete final part' => [[2, 3, 4], [1, 2, 3, 4]],
+            'incomplete previous part' => [[1, 2, 3], [2, 3, 4, 5]],
+        ];
+    }
+
+    /**
+     * @param  list<int>  $finalNumbers
+     * @param  list<int>  $previousNumbers
+     */
+    #[Test]
+    #[DataProvider('incompleteParts')]
+    public function an_incomplete_part_never_joins(array $finalNumbers, array $previousNumbers): void
+    {
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [
+                $this->rarPart(1, 6),
+                $this->rarPart(2, 4) + ['segmentNumbers' => $previousNumbers, 'partstotal' => (string) max($previousNumbers)],
+                $this->rarPart(3, 3) + ['segmentNumbers' => $finalNumbers, 'partstotal' => (string) max($finalNumbers)],
+            ],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload(str_repeat('t', 180))],
+            listings: [$finalFirst => [$this->storedVideoEntry(280)]],
+        );
+
+        $this->assertCount(3, $downloadCalls->calls, 'The final part is read whole; the previous part is never touched.');
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovMissingCount);
+    }
+
+    #[Test]
+    public function an_incomplete_final_part_with_the_video_only_in_the_previous_part_never_joins(): void
+    {
+        $finalFirst = str_repeat('F', 100);
+        $previousFirst = str_repeat('P', 100);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [
+                $this->rarPart(1, 6),
+                $this->rarPart(2, 4),
+                $this->rarPart(3, 3) + ['segmentNumbers' => [2, 3, 4], 'partstotal' => '4'],
+            ],
+            responses: [$this->successfulDownload($finalFirst), $this->successfulDownload($previousFirst)],
+            listings: [$previousFirst => [$this->storedVideoEntry(400)]],
+        );
+
+        $this->assertCount(3, $downloadCalls->calls);
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovMissingCount);
+    }
+
+    #[Test]
+    public function a_tail_that_never_yields_a_moov_stops_at_the_segment_cap(): void
+    {
+        // The held first segment counts: 1 + 2 + 2 is the cap of 5.
+        $finalFirst = str_repeat('F', 100);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 10)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 200)),
+                $this->successfulDownload(str_repeat('t', 200)),
+            ],
+            listings: [$finalFirst => [$this->storedVideoEntry(1000)]],
+            configOverrides: ['mp4TailMaxSegments' => 5],
+        );
+
+        $this->assertSame(
+            [['<p2s1>'], ['<p2s9>', '<p2s10>'], ['<p2s7>', '<p2s8>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovMissingCount);
+    }
+
+    #[Test]
+    public function the_segment_cap_covers_the_tail_segments_of_both_parts(): void
+    {
+        // Final part: 1 + 2 whole. Previous part: its first segment, then only
+        // the 1 segment left of the cap of 5.
+        $finalFirst = str_repeat('F', 100);
+        $previousFirst = str_repeat('P', 100);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 6), $this->rarPart(3, 3)],
+            responses: [
+                $this->successfulDownload($finalFirst),
+                $this->successfulDownload(str_repeat('t', 200)),
+                $this->successfulDownload($previousFirst),
+                $this->successfulDownload(str_repeat('t', 100)),
+            ],
+            listings: [
+                $finalFirst => [$this->storedVideoEntry(300)],
+                $previousFirst => [$this->storedVideoEntry(600)],
+            ],
+            configOverrides: ['mp4TailMaxSegments' => 5],
+        );
+
+        $this->assertSame(
+            [['<p3s1>'], ['<p3s2>', '<p3s3>'], ['<p2s1>'], ['<p2s6>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+        $this->assertSame(1, $result->mp4TailMetrics->moovMissingCount);
+    }
+
+    #[Test]
+    public function the_anchor_as_previous_part_requests_none_of_its_held_head_again(): void
+    {
+        // A two-part set: the part before the final one is the anchor, whose
+        // first three segments are already held.
+        $moov = $this->mp4Atom('moov', $this->mp4Atom('mvhd', str_repeat('m', 100)));
+        $anchorHead = str_repeat('a', 300);
+        $finalPart = str_repeat('H', 70).substr($moov, 40).str_repeat('E', 20);
+        $finalFirst = substr($finalPart, 0, 100);
+
+        [$downloadCalls, , $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 5), $this->rarPart(2, 2)],
+            responses: array_map($this->successfulDownload(...), [
+                $finalFirst,
+                substr($finalPart, 100),
+                str_repeat('v', 160).substr($moov, 0, 40).str_repeat('T', 20),
+            ]),
+            listings: [$finalFirst => [$this->storedVideoEntry(strlen($finalPart) - 20, ['range' => '70-99'])]],
+            anchorHead: $anchorHead,
+            anchorEntryOverrides: ['next_offset' => 500, 'range' => '10-299'],
+        );
+
+        $this->assertSame(
+            [['<p2s1>'], ['<p2s2>'], ['<p1s4>', '<p1s5>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame($this->splicedFragment(300, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function an_unavailable_group_during_the_tail_stops_the_candidates_and_keeps_the_fragment(): void
+    {
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 3)],
+            responses: [['success' => false, 'data' => null, 'groupUnavailable' => true, 'error' => 'gone']],
+            listings: [],
+        );
+
+        $this->assertCount(2, $downloadCalls->calls);
+        $this->assertSame(ProcessingOutcome::GroupUnavailable, $result->outcome);
+        $this->assertSame($this->rawFragment(300), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
+    public function a_real_stored_rar_set_splits_its_moov_across_its_last_two_volumes(): void
+    {
+        // Real RAR4 headers and the real listing and extraction: three 3000-byte
+        // volumes in 500-byte segments, the moov filling the third volume and
+        // starting in the second. Volume payloads start 61 bytes in.
+        $overhead = 59 + strlen('movie.mp4');
+        $moov = $this->mp4Atom('moov', $this->mp4Atom('mvhd', str_repeat('m', 3084)));
+        $padding = str_repeat('x', 3 * (3000 - $overhead) - strlen($this->mdatFirstHead()) - strlen($moov));
+        $volumes = SyntheticPosting::rar(
+            [3000, 3000, 3000],
+            'movie.mp4',
+            $this->mdatFirstHead().$padding.$moov,
+        )['volumes'];
+        $previousSegments = str_split($volumes[1], 500);
+        $finalSegments = str_split($volumes[2], 500);
+
+        [$downloadCalls, $result, $fragmentPath] = $this->processStoredRarVideo(
+            parts: [$this->rarPart(1, 6), $this->rarPart(2, 6), $this->rarPart(3, 6)],
+            responses: array_map($this->successfulDownload(...), [
+                $finalSegments[0],
+                ...$this->batchesFromTheEnd(array_slice($finalSegments, 1), 2),
+                $previousSegments[0],
+                implode('', array_slice($previousSegments, -2)),
+            ]),
+            listings: [],
+            anchorHead: substr($volumes[0], 0, 1500),
+            realArchiveService: new ArchiveExtractionService($this->makeConfig()),
+        );
+
+        $this->assertSame(
+            [['<p3s1>'], ['<p3s5>', '<p3s6>'], ['<p3s3>', '<p3s4>'], ['<p3s2>'], ['<p2s1>'], ['<p2s5>', '<p2s6>']],
+            array_column(array_slice($downloadCalls->calls, 1), 'messageIds'),
+        );
+        $this->assertSame(1, $result->mp4TailMetrics->moovFoundCount);
+        $this->assertSame($this->splicedFragment(1500 - 61, $moov), file_get_contents($fragmentPath));
+    }
+
+    #[Test]
     public function an_unreadable_demux_with_a_known_bitrate_still_tops_up(): void
     {
         // 40 B/s and 0.0 s decodable: the whole 1200-byte target is wanted.
@@ -2826,6 +3550,7 @@ class ReleaseProcessorTest extends TestCase
      * @param  array<string, mixed>  $configOverrides
      * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $initialResponse
      * @param  string  $fragmentHead  Real atom bytes every extracted fragment starts with; the rest is padding.
+     * @param  array<string, list<array<string, mixed>>>  $listings  What listArchiveContents returns, by the exact bytes it is given; anything else lists nothing. Empty keeps the single movie.mkv listing.
      * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string, RecordingPreviewExtraction}
      */
     private function processCompressedTopUpCandidate(
@@ -2840,6 +3565,9 @@ class ReleaseProcessorTest extends TestCase
         ?array $decodableDurations = null,
         ?array $initialResponse = null,
         string $fragmentHead = '',
+        array $listings = [],
+        string $fragmentName = 'movie.mkv',
+        ?ArchiveExtractionService $realArchiveService = null,
     ): array {
         File::ensureDirectoryExists($this->releaseTempPath);
         $config = $this->makeConfig(array_merge([
@@ -2864,7 +3592,7 @@ class ReleaseProcessorTest extends TestCase
             ->times(1 + count($responses))
             ->andReturnUsing($downloadCalls->download(...));
 
-        $fragmentPath = $this->releaseTempPath.'unrar/movie.mkv';
+        $fragmentPath = $this->releaseTempPath.'unrar/'.$fragmentName;
         $extractIndex = 0;
         $extraction = new RecordingPreviewExtraction;
         $declaredDuration = $probeResult?->durationSeconds ?? 30.0;
@@ -2875,32 +3603,41 @@ class ReleaseProcessorTest extends TestCase
             static fn (int $size): float => $size / $bytesPerSecond,
             $extractSizes,
         );
-        $archiveService = Mockery::mock(ArchiveExtractionService::class);
-        $archiveService->shouldReceive('processCompressedData')->once()->andReturn([
-            'success' => true,
-            'files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]],
-            'hasPassword' => false,
-            'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
-            'archiveMarker' => 'r',
-            'dataSummary' => [],
-        ]);
-        $archiveService->shouldReceive('listArchiveContents')
-            ->zeroOrMoreTimes()
-            ->andReturn(['files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]], 'hasPassword' => false]);
-        $archiveService->shouldReceive('extractSpecificFileToPath')
-            ->times(count($extractSizes))
-            ->andReturnUsing(function (string $archivePath) use (&$extractIndex, $extractSizes, $fragmentPath, $fragmentHead, $extraction): string {
-                $extraction->recordExtraction($archivePath);
-                File::ensureDirectoryExists(dirname($fragmentPath));
-                $size = $extractSizes[$extractIndex];
-                file_put_contents($fragmentPath, substr($fragmentHead.str_repeat('x', $size), 0, $size));
-                $extractIndex++;
+        $archiveService = $realArchiveService;
+        if ($archiveService === null) {
+            $archiveService = Mockery::mock(ArchiveExtractionService::class);
+            $archiveService->shouldReceive('processCompressedData')->once()->andReturn([
+                'success' => true,
+                'files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]],
+                'hasPassword' => false,
+                'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
+                'archiveMarker' => 'r',
+                'dataSummary' => [],
+            ]);
+            $archiveService->shouldReceive('listArchiveContents')
+                ->zeroOrMoreTimes()
+                ->andReturnUsing(static fn (string $data): array => [
+                    'files' => $listings === []
+                        ? [['name' => 'movie.mkv', 'size' => $videoEntrySize]]
+                        : ($listings[$data] ?? []),
+                    'hasPassword' => false,
+                ]);
+            $archiveService->shouldReceive('extractSpecificFileToPath')
+                ->times(count($extractSizes))
+                ->andReturnUsing(function (string $archivePath) use (&$extractIndex, $extractSizes, $fragmentPath, $fragmentHead, $extraction): string {
+                    $extraction->recordExtraction($archivePath);
+                    File::ensureDirectoryExists(dirname($fragmentPath));
+                    $size = $extractSizes[$extractIndex];
+                    file_put_contents($fragmentPath, substr($fragmentHead.str_repeat('x', $size), 0, $size));
+                    $extractIndex++;
 
-                return $fragmentPath;
-            });
+                    return $fragmentPath;
+                });
+        }
 
         $releaseManager = Mockery::mock(ReleaseFileManager::class);
         $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $releaseManager->shouldReceive('processReleaseNameFromRar')->zeroOrMoreTimes()->andReturnFalse();
         $releaseManager->shouldReceive('addFileInfo')
             ->zeroOrMoreTimes()
             ->andReturnUsing(static function (array $file, ReleaseProcessingContext $context): bool {
@@ -2913,7 +3650,11 @@ class ReleaseProcessorTest extends TestCase
         $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
         $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($this->releaseTempPath);
         $tempWorkspace->shouldReceive('clearDirectory')->once()->with($this->releaseTempPath, false)->andReturnNull();
-        $tempWorkspace->shouldReceive('listFiles')->zeroOrMoreTimes()->andReturn([]);
+        $tempWorkspace->shouldReceive('listFiles')->zeroOrMoreTimes()->andReturnUsing(function () use ($extraction): array {
+            $extraction->workingVolumesAtSweep = glob($this->releaseTempPath.'preview-archive.*') ?: [];
+
+            return [];
+        });
 
         $processor = new ReleaseProcessor(
             $config,
@@ -2979,6 +3720,120 @@ class ReleaseProcessorTest extends TestCase
         $ftyp = $this->mp4Atom('ftyp', 'isom0000');
 
         return $ftyp.pack('N', $moovEnd - strlen($ftyp)).'moov';
+    }
+
+    /**
+     * Drive one release whose anchor part lists a stored mdat-first MP4 through
+     * the compressed path, with the budget toggle off unless a test turns it on.
+     * The anchor's head is listed unless $listings says otherwise.
+     *
+     * @param  list<array<string, mixed>>  $parts
+     * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses
+     * @param  array<string, list<array<string, mixed>>>  $listings
+     * @param  list<int>  $extractSizes
+     * @param  array<string, mixed>  $configOverrides
+     * @param  list<float|null>|null  $decodableDurations
+     * @param  array<string, mixed>  $anchorEntryOverrides
+     * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string, RecordingPreviewExtraction}
+     */
+    private function processStoredRarVideo(
+        array $parts,
+        array $responses,
+        array $listings,
+        array $extractSizes = [300],
+        array $configOverrides = [],
+        bool $budgetEnabled = false,
+        ?array $decodableDurations = null,
+        array $anchorEntryOverrides = [],
+        ?string $anchorHead = null,
+        ?string $fragmentHead = null,
+        ?ArchiveExtractionService $realArchiveService = null,
+    ): array {
+        $anchorHead ??= str_repeat('a', 300);
+
+        return $this->processCompressedTopUpCandidate(
+            nzbFiles: $parts,
+            initialData: $anchorHead,
+            responses: $responses,
+            extractSizes: $extractSizes,
+            configOverrides: $configOverrides,
+            budgetEnabled: $budgetEnabled,
+            decodableDurations: $decodableDurations ?? [],
+            fragmentHead: $fragmentHead ?? $this->mdatFirstHead(),
+            listings: [$anchorHead => [$this->storedVideoEntry(600, $anchorEntryOverrides)], ...$listings],
+            fragmentName: 'movie.mp4',
+            realArchiveService: $realArchiveService,
+        );
+    }
+
+    /**
+     * @return array{title: string, segments: list<string>}
+     */
+    private function rarPart(int $part, int $segments): array
+    {
+        return [
+            'title' => sprintf('release.part%02d.rar', $part),
+            'segments' => array_map(static fn (int $segment): string => "<p{$part}s{$segment}>", range(1, $segments)),
+        ];
+    }
+
+    /**
+     * Segment bytes as a tail reads them: batches from the last segment back.
+     *
+     * @param  list<string>  $segments
+     * @return list<string>
+     */
+    private function batchesFromTheEnd(array $segments, int $batchSize): array
+    {
+        $batches = [];
+        while ($segments !== []) {
+            $batches[] = implode('', array_splice($segments, -$batchSize));
+        }
+
+        return $batches;
+    }
+
+    /**
+     * What the extraction of a fragment of $bytes leaves when nothing splices it.
+     */
+    private function rawFragment(int $bytes): string
+    {
+        return $this->mdatFirstHead().str_repeat('x', $bytes - strlen($this->mdatFirstHead()));
+    }
+
+    /**
+     * The first bytes of an MP4 written with its moov at the end of the file.
+     */
+    private function mdatFirstHead(): string
+    {
+        return $this->mp4Atom('ftyp', 'isom0000').pack('N', 1 << 30).'mdat';
+    }
+
+    /**
+     * What a fragment of $rawBytes (mdatFirstHead() then padding) becomes with
+     * the moov spliced on: its mdat is cut to the bytes held.
+     */
+    private function splicedFragment(int $rawBytes, string $moov): string
+    {
+        return $this->mp4Atom('ftyp', 'isom0000').pack('N', $rawBytes - 16).'mdat'.str_repeat('x', $rawBytes - 24).$moov;
+    }
+
+    /**
+     * A listArchiveContents entry for a video stored in a part.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function storedVideoEntry(int $nextOffset, array $overrides = []): array
+    {
+        return array_merge([
+            'name' => 'movie.mp4',
+            'size' => 5000,
+            'compressed' => 0,
+            'pass' => 0,
+            'range' => '10-'.($nextOffset - 1),
+            'next_offset' => $nextOffset,
+        ], $overrides);
     }
 
     private function validMoovAtom(): string
@@ -3111,6 +3966,7 @@ final class StubVideoDecodableLengthProbe extends VideoDecodableLengthProbe
     {
         if ($this->extraction !== null) {
             $this->extraction->decodableProbeSizes[] = (int) filesize($path);
+            $this->extraction->decodableProbeFiles[] = (string) file_get_contents($path);
         }
 
         return array_shift($this->durations);
@@ -3130,6 +3986,12 @@ final class RecordingPreviewExtraction
 
     /** @var list<int> Fragment size at each head probe. */
     public array $headProbeSizes = [];
+
+    /** @var list<string> Fragment bytes at each decodable-length probe. */
+    public array $decodableProbeFiles = [];
+
+    /** @var list<string>|null The working volumes really on disk when the extracted-files sweep listed the directory. */
+    public ?array $workingVolumesAtSweep = null;
 
     public function recordExtraction(string $archivePath): void
     {

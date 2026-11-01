@@ -55,6 +55,7 @@ final readonly class AdditionalWorkPlanner
                         $duplicateMessageIdCount,
                     );
                     if ($archiveMessageIds !== []) {
+                        $archiveSegmentNumbers = $this->segmentNumbers($file);
                         $archiveCandidates[] = new ArchiveCandidate(
                             title: $title,
                             messageIds: $archiveMessageIds,
@@ -66,7 +67,12 @@ final readonly class AdditionalWorkPlanner
                             ),
                             contiguousHeadSegments: $this->contiguousHeadSegmentCount(
                                 $segments,
-                                $this->segmentNumbers($file),
+                                $archiveSegmentNumbers,
+                            ),
+                            tailContiguous: $this->tailIsContiguous(
+                                $archiveSegmentNumbers,
+                                min($this->config->mp4TailMaxSegments, count($segments)),
+                                (int) ($file['partstotal'] ?? 0),
                             ),
                         );
                     }

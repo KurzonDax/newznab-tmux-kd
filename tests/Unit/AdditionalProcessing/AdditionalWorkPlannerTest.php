@@ -253,6 +253,65 @@ class AdditionalWorkPlannerTest extends TestCase
     }
 
     #[Test]
+    public function an_archive_part_whose_tail_never_reaches_the_declared_total_is_not_tail_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig(['mp4TailMaxSegments' => 3]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.part02.rar',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s5>', '<s6>'],
+            'segmentNumbers' => [1, 2, 3, 4, 5, 6],
+            'partstotal' => '8',
+        ]], 'alt.binaries.test');
+
+        $this->assertFalse($plan->archiveCandidates[0]->tailContiguous, 'The real end of the part was never posted.');
+    }
+
+    #[Test]
+    public function an_archive_part_with_gaps_inside_its_tail_window_is_not_tail_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig(['mp4TailMaxSegments' => 3]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.part02.rar',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>', '<s6>', '<s8>'],
+            'segmentNumbers' => [1, 2, 3, 4, 6, 8],
+            'partstotal' => '8',
+        ]], 'alt.binaries.test');
+
+        $this->assertFalse($plan->archiveCandidates[0]->tailContiguous);
+    }
+
+    #[Test]
+    public function an_archive_part_with_a_gap_before_its_tail_window_is_tail_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig(['mp4TailMaxSegments' => 3]));
+
+        $plan = $planner->plan([[
+            'title' => 'release.part02.rar',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s5>', '<s6>', '<s7>', '<s8>', '<s9>'],
+            'segmentNumbers' => [1, 2, 3, 5, 6, 7, 8, 9],
+            'partstotal' => '9',
+        ]], 'alt.binaries.test');
+
+        $this->assertTrue($plan->archiveCandidates[0]->tailContiguous);
+        $this->assertSame(3, $plan->archiveCandidates[0]->contiguousHeadSegments);
+    }
+
+    #[Test]
+    public function an_archive_part_without_segment_numbering_is_tail_contiguous(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig());
+
+        $plan = $planner->plan([[
+            'title' => 'release.part02.rar',
+            'segments' => ['<s1>', '<s2>', '<s3>', '<s4>'],
+        ]], 'alt.binaries.test');
+
+        $this->assertTrue($plan->archiveCandidates[0]->tailContiguous, 'The gate may only skip provably pointless fetches.');
+    }
+
+    #[Test]
     public function it_reports_book_floods_and_releases_without_supported_candidates(): void
     {
         $planner = new AdditionalWorkPlanner($this->makeConfig());

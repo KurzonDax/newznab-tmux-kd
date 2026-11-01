@@ -140,7 +140,7 @@ Moving a release out of a root's *Other* subcategory once post-processing has re
 _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name categorization; it refines or refiles the current result.
 
 **moov splice**:
-A temporary inspection copy of a bare non-faststart MP4/MOV, combining its downloaded beginning with its ending metadata so Preview Generation and Mediainfo refinement can inspect it without retrieving the complete media file. It does not apply to media inside archives.
+A temporary inspection copy of a non-faststart MP4/MOV, combining its downloaded beginning with its ending metadata so Preview Generation and Mediainfo refinement can inspect it without retrieving the complete media file. It covers bare posts and entries stored uncompressed in a RAR set, whose ending metadata is read from the set's last volumes. It does not apply to compressed archive entries.
 _Avoid_: "repaired MP4", "full download" — the stored release is unchanged and most media bytes remain unfetched.
 
 **Moovless still**:

@@ -20,6 +20,11 @@ final class PostedFileClassifier
         return preg_match('/\.7z(?:\.\d{3,})?$/i', self::postedFilename($subject)) === 1;
     }
 
+    public static function isPar2(string $subject): bool
+    {
+        return str_ends_with(strtolower(self::postedFilename($subject)), '.par2');
+    }
+
     /**
      * @param  array<int|string, string>|null  $matches
      */

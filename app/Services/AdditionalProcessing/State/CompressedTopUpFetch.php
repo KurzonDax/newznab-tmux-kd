@@ -26,6 +26,8 @@ final class CompressedTopUpFetch
      * @param  bool  $oldVolumeNumbers  Working volumes are named .rar/.r00/.r01 rather than .part001.rar.
      * @param  int  $anchorSegmentsHeld  Segments of the anchor part held so far.
      * @param  string  $fragmentPath  The longest fragment extraction has produced.
+     * @param  int  $fragmentBytes  Its size as extracted, before any moov is spliced on.
+     * @param  string|null  $splicedMoov  The moov recovered from the archive's tail; every re-extraction overwrites the splice, so it goes back on after each.
      */
     public function __construct(
         public readonly ArchiveCandidate $anchor,
@@ -40,6 +42,7 @@ final class CompressedTopUpFetch
         public int $fetchedBytes,
         public string $fragmentPath,
         public int $fragmentBytes,
+        public readonly ?string $splicedMoov = null,
     ) {
         $this->currentVolumePath = $firstVolumePath;
     }

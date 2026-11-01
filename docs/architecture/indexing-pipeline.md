@@ -564,8 +564,8 @@ candidate. Bare MP4/MOV posts written without faststart place the top-level
 `moov` atom after `mdat`, so that beginning has media bytes but no track tables,
 codec configuration, or duration. After the normal head download, the processor
 walks top-level atoms and activates tail recovery only for an MP4/MOV whose
-`mdat` appears before `moov`. MKV, AVI, faststart MP4, and archived media keep
-their existing paths.
+`mdat` appears before `moov`. MKV, AVI, faststart MP4, and media inside compressed
+archive entries keep their existing paths.
 
 The planner retains the last configured segment set from the same NZB file. A
 triggered release downloads that tail as the distinct `media-info-tail` request,
@@ -575,6 +575,37 @@ head's 32- or 64-bit `mdat` size, and appends the metadata as a temporary
 processor fetches preceding segments in NZB order until it succeeds or reaches
 `ADDITIONAL_MP4_TAIL_MAX_SEGMENTS`; failure falls back to the unchanged
 head-only behavior. `ADDITIONAL_MP4_TAIL_FETCH` is the single feature toggle.
+
+An MP4 stored uncompressed in a RAR set keeps its bytes in order, so its `moov` is
+readable in the last volume. Once per release, on the first archive candidate
+whose head lists a video entry, the forward archive pass extracts the entry's
+fragment through its own working volume, which never reaches the extracted-files
+sweep. A stored, unencrypted `mdat`-first fragment then gets a tail from the final
+part: the last archive candidate that is not a `.par2`, or the anchor itself in a
+single-part set. This does not depend on the dynamic budget toggle.
+
+Volumes can list one video under different names, and a set can hold several
+videos, so entries are matched by `size`, never by name. Each request is a
+`compressed-tail` download. The final part's first segment is listed first; it
+counts toward `ADDITIONAL_MP4_TAIL_MAX_SEGMENTS`, as does every tail segment across
+both parts. A final part with no entry of the video's size contributes nothing, and
+when the candidate before it has none either the recovery stops. A final part whose
+tail is not contiguous fetches nothing and records `segment-gaps`.
+
+The tail is read from the end of the part and grows by the head segment count. Bytes
+past the entry's `next_offset` are dropped before each splice, so a following file
+cannot supply its `moov`. When the whole final part holds no `moov`, or only the
+previous part holds the video, and both parts are complete from segment 1, the
+`moov` is taken as split: the previous part's video bytes are joined to the final
+part's, which run from the start of the entry's `range` to `next_offset`. RarInfo
+clamps `range` to its read window, so `next_offset` always marks the end of the
+bytes. Tail bytes are never appended to the working volumes.
+
+A splice overwrites the fragment at its existing path for the sweep to clip. When
+the budget is on, each extraction overwrites the splice, so the fragment is
+re-spliced after every one and progress is measured on the raw extraction. Tail
+bytes count against the `preview_max_fetch_mb` ceiling, and top-ups stop before
+the first segment the tail fetched. Any failure leaves the unspliced fragment.
 
 Batch logs and profiles expose `mp4-tail-fetched`, `mp4-moov-found`,
 `mp4-moov-missing`, and `mp4-tail-bytes`; CLI streams show `(mp4T …)`, `(moov+)`,
