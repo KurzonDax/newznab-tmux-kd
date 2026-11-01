@@ -27,14 +27,7 @@ final readonly class AdditionalWorkPlanner
         }
         $sampleMessageIds = [];
         $jpgMessageIds = [];
-        $mediaInfoMessageIds = [];
-        $mediaInfoTailMessageIds = [];
-        $mediaInfoTailExpansionMessageIds = [];
-        $mediaInfoExpansionMessageIds = [];
-        $mediaInfoContiguousHeadSegments = 0;
-        $mediaInfoTailContiguous = true;
-        $mediaInfoFileSizeBytes = 0;
-        $mediaInfoSourceFilename = null;
+        $mediaInfoFields = [];
         $archiveCandidates = [];
         $bookFileCount = 0;
         $duplicateMessageIdCount = 0;
@@ -106,42 +99,11 @@ final readonly class AdditionalWorkPlanner
                     );
                 }
 
-                if ($this->config->processMediaInfo && $mediaInfoMessageIds === [] && $segments !== []
+                if ($this->config->processMediaInfo && ($mediaInfoFields['mediaInfoMessageIds'] ?? []) === [] && $segments !== []
                     && ! PostedFileClassifier::isExplicitVideoSample($title, $this->config->videoFileRegex)
                     && PostedFileClassifier::matchesTerminalExtension($title, $this->config->videoFileRegex)
                 ) {
-                    $mediaInfoMessageIds = $this->extractSegments(
-                        $segments,
-                        $this->config->segmentsToDownload,
-                        $seenMessageIds,
-                        $duplicateMessageIdCount,
-                    );
-                    $tailCandidates = $this->extractTailSegments(
-                        $segments,
-                        $this->config->mp4TailMaxSegments,
-                    );
-                    $initialTailCount = min($this->config->segmentsToDownload, count($tailCandidates));
-                    $mediaInfoTailMessageIds = $initialTailCount > 0
-                        ? array_slice($tailCandidates, -$initialTailCount)
-                        : [];
-                    $mediaInfoTailExpansionMessageIds = array_slice(
-                        $tailCandidates,
-                        0,
-                        count($tailCandidates) - $initialTailCount,
-                    );
-                    $mediaInfoExpansionMessageIds = $this->extractExpansionSegments(
-                        $segments,
-                        count($mediaInfoMessageIds),
-                    );
-                    $segmentNumbers = $this->segmentNumbers($file);
-                    $mediaInfoContiguousHeadSegments = $this->contiguousHeadSegmentCount($segments, $segmentNumbers);
-                    $mediaInfoTailContiguous = $this->tailIsContiguous(
-                        $segmentNumbers,
-                        min($this->config->mp4TailMaxSegments, count($segments)),
-                        (int) ($file['partstotal'] ?? 0),
-                    );
-                    $mediaInfoFileSizeBytes = max((int) ($file['size'] ?? 0), 0);
-                    $mediaInfoSourceFilename = PostedFileClassifier::postedFilename($title);
+                    $mediaInfoFields = $this->mediaInfoFields($file, $seenMessageIds, $duplicateMessageIdCount);
                 }
             } catch (\ErrorException $e) {
                 Log::debug($e->getMessage(), ['exception' => $e]);
@@ -156,7 +118,7 @@ final readonly class AdditionalWorkPlanner
         $hasKnownCandidate = $archiveCandidates !== []
             || $sampleMessageIds !== []
             || $jpgMessageIds !== []
-            || $mediaInfoMessageIds !== [];
+            || ($mediaInfoFields['mediaInfoMessageIds'] ?? []) !== [];
         $unknownPayloadCandidates = [];
         if (! $hasKnownCandidate && $this->config->payloadSniffing) {
             $unknownPayloadCandidates = $this->unknownPayloadSelector->select(
@@ -174,16 +136,9 @@ final readonly class AdditionalWorkPlanner
         }
 
         return new AdditionalWorkPlan(
+            ...$mediaInfoFields,
             sampleMessageIds: $sampleMessageIds,
             jpgMessageIds: $jpgMessageIds,
-            mediaInfoMessageIds: $mediaInfoMessageIds,
-            mediaInfoTailMessageIds: $mediaInfoTailMessageIds,
-            mediaInfoTailExpansionMessageIds: $mediaInfoTailExpansionMessageIds,
-            mediaInfoExpansionMessageIds: $mediaInfoExpansionMessageIds,
-            mediaInfoContiguousHeadSegments: $mediaInfoContiguousHeadSegments,
-            mediaInfoTailContiguous: $mediaInfoTailContiguous,
-            mediaInfoFileSizeBytes: $mediaInfoFileSizeBytes,
-            mediaInfoSourceFilename: $mediaInfoSourceFilename,
             archiveCandidates: $archiveCandidates,
             unknownPayloadCandidates: $unknownPayloadCandidates,
             bookFileCount: $bookFileCount,
@@ -191,6 +146,78 @@ final readonly class AdditionalWorkPlanner
             duplicateMessageIdCount: $duplicateMessageIdCount,
             unsupportedReasons: $unsupportedReasons,
         );
+    }
+
+    /**
+     * The plan with its media-info fields pointed at one file: a sniffed
+     * video, which the subject-based selection above could not recognise.
+     *
+     * @param  array<string, mixed>  $file
+     */
+    public function withMediaInfoFile(AdditionalWorkPlan $plan, array $file): AdditionalWorkPlan
+    {
+        $seenMessageIds = [];
+        $duplicateMessageIdCount = 0;
+
+        return new AdditionalWorkPlan(...[
+            ...get_object_vars($plan),
+            ...$this->mediaInfoFields($file, $seenMessageIds, $duplicateMessageIdCount),
+        ]);
+    }
+
+    /**
+     * @param  array<int|string, mixed>  $file
+     * @param  array<string, true>  $seenMessageIds
+     * @return array{
+     *     mediaInfoMessageIds: list<string>,
+     *     mediaInfoTailMessageIds: list<string>,
+     *     mediaInfoTailExpansionMessageIds: list<string>,
+     *     mediaInfoExpansionMessageIds: list<string>,
+     *     mediaInfoContiguousHeadSegments: int,
+     *     mediaInfoTailContiguous: bool,
+     *     mediaInfoFileSizeBytes: int,
+     *     mediaInfoSourceFilename: string,
+     * }
+     */
+    private function mediaInfoFields(array $file, array &$seenMessageIds, int &$duplicateMessageIdCount): array
+    {
+        $segments = is_array($file['segments'] ?? null) ? $file['segments'] : [];
+        $mediaInfoMessageIds = $this->extractSegments(
+            $segments,
+            $this->config->segmentsToDownload,
+            $seenMessageIds,
+            $duplicateMessageIdCount,
+        );
+        $tailCandidates = $this->extractTailSegments(
+            $segments,
+            $this->config->mp4TailMaxSegments,
+        );
+        $initialTailCount = min($this->config->segmentsToDownload, count($tailCandidates));
+        $segmentNumbers = $this->segmentNumbers($file);
+
+        return [
+            'mediaInfoMessageIds' => $mediaInfoMessageIds,
+            'mediaInfoTailMessageIds' => $initialTailCount > 0
+                ? array_slice($tailCandidates, -$initialTailCount)
+                : [],
+            'mediaInfoTailExpansionMessageIds' => array_slice(
+                $tailCandidates,
+                0,
+                count($tailCandidates) - $initialTailCount,
+            ),
+            'mediaInfoExpansionMessageIds' => $this->extractExpansionSegments(
+                $segments,
+                count($mediaInfoMessageIds),
+            ),
+            'mediaInfoContiguousHeadSegments' => $this->contiguousHeadSegmentCount($segments, $segmentNumbers),
+            'mediaInfoTailContiguous' => $this->tailIsContiguous(
+                $segmentNumbers,
+                min($this->config->mp4TailMaxSegments, count($segments)),
+                (int) ($file['partstotal'] ?? 0),
+            ),
+            'mediaInfoFileSizeBytes' => max((int) ($file['size'] ?? 0), 0),
+            'mediaInfoSourceFilename' => PostedFileClassifier::postedFilename((string) ($file['title'] ?? '')),
+        ];
     }
 
     private function isSupportFile(string $title): bool

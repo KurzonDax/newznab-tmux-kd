@@ -8,13 +8,16 @@ use App\Enums\ImagerySkipArtifact;
 use App\Enums\NzbParseFailure;
 use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
+use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
+use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
 use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
+use App\Services\AdditionalProcessing\State\CompressedTopUpFetch;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
@@ -29,6 +32,7 @@ use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
 use App\Services\Releases\ReleaseBrowseService;
 use App\Services\TempWorkspaceService;
+use dariusiii\rarinfo\RarInfo;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -476,6 +480,7 @@ class ReleaseProcessor
         $deferredArchives = [];
         $deferredPar2 = [];
         $sidecarEvidence = new SidecarEvidence;
+        $firstVideoHandled = false;
 
         foreach ($context->workPlan->unknownPayloadCandidates as $candidate) {
             if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
@@ -534,12 +539,21 @@ class ReleaseProcessor
                 continue;
             }
 
+            if (in_array($classification, [PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi], true)) {
+                if ($firstVideoHandled) {
+                    $this->processSniffedVideo($payload, $classification, $context);
+                } else {
+                    $firstVideoHandled = true;
+                    $this->processFirstSniffedVideo($candidate, $payload, $classification, $context);
+                    if ($context->groupUnavailable) {
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
             match ($classification) {
-                PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi => $this->processSniffedVideo(
-                    $payload,
-                    $classification,
-                    $context,
-                ),
                 PayloadClassification::Text => $this->processSniffedNfo($payload, $context),
                 PayloadClassification::Unknown => null,
             };
@@ -582,6 +596,60 @@ class ReleaseProcessor
         } finally {
             File::delete($path);
         }
+    }
+
+    /**
+     * The first sniffed video follows the named-file flow: it fetches the rest
+     * of the head window, the sniffed article being its first segment. When
+     * there is no rest, or it cannot be fetched, the held article stands alone.
+     */
+    private function processFirstSniffedVideo(
+        UnknownPayloadCandidate $candidate,
+        string $payload,
+        PayloadClassification $classification,
+        ReleaseProcessingContext $context,
+    ): void {
+        if ($context->foundMediaInfo && $context->foundSample && $context->foundVideo) {
+            $this->processSniffedVideo($payload, $classification, $context);
+
+            return;
+        }
+
+        $context->workPlan = $this->workPlanner->withMediaInfoFile(
+            $context->workPlan,
+            $context->nzbContents[$candidate->sourceIndex],
+        );
+        $context->mediaInfoMessageIDs = $context->workPlan->mediaInfoMessageIds;
+
+        $remainingIds = array_values(array_diff($context->mediaInfoMessageIDs, [$candidate->firstMessageId]));
+        if ($remainingIds === []) {
+            $this->processSniffedVideo($payload, $classification, $context);
+
+            return;
+        }
+
+        $result = $this->downloadService->download(
+            DownloadKind::MediaInfo,
+            $remainingIds,
+            $context->releaseGroupName,
+            $context->release->id,
+        );
+        if ($result['groupUnavailable']) {
+            $context->groupUnavailable = true;
+            $this->output->echoGroupUnavailable();
+
+            return;
+        }
+
+        if ($result['success'] && is_string($result['data'])
+            && $this->downloadService->meetsMinimumSize($payload.$result['data'])
+        ) {
+            $this->processMainVideoHead($payload.$result['data'], $context);
+
+            return;
+        }
+
+        $this->processSniffedVideo($payload, $classification, $context);
     }
 
     private function processSniffedVideo(
@@ -673,59 +741,7 @@ class ReleaseProcessor
             );
 
             if ($result['success'] && is_string($result['data']) && $this->downloadService->meetsMinimumSize($result['data'])) {
-                $this->output->echoMediaInfoDownload();
-                $headData = $result['data'];
-                $needsMoovSplice = $this->config->mp4TailFetch
-                    && $this->payloadSniffer->classify($headData)->classification === PayloadClassification::Mp4
-                    && $this->mp4MoovSplicer->needsTail($headData);
-                $fileLocation = $context->tmpPath.'media.avi';
-                File::put($fileLocation, $headData);
-                $splice = $needsMoovSplice ? $this->spliceMp4Tail($headData, $context) : null;
-                if ($splice !== null) {
-                    $fileLocation = $context->tmpPath.'media.mp4';
-                    File::put($fileLocation, $splice['data']);
-                }
-
-                // Dynamic segment budget: for a bare non-faststart MP4 the
-                // duration is unknowable before the moov splice, so a failed
-                // splice means no top-up. After a splice the tail window is
-                // already on disk, so the top-up must stop before it.
-                if (! $needsMoovSplice || $splice !== null) {
-                    $fetchedTailIds = $splice !== null && $context->workPlan !== null
-                        ? $context->workPlan->expandedMediaInfoTailMessageIds($this->config->mp4TailMaxSegments)
-                        : [];
-                    $topUpData = $this->dynamicBudgetTopUp($context, $fileLocation, $headData, $fetchedTailIds);
-                    if ($topUpData !== null) {
-                        if ($splice !== null) {
-                            $merged = $this->mp4MoovSplicer->splice($headData.$topUpData, $splice['moov'], true);
-                            if ($merged->status === Mp4MoovSpliceStatus::Spliced && $merged->data !== null) {
-                                File::put($fileLocation, $merged->data);
-                            }
-                        } else {
-                            File::put($fileLocation, $headData.$topUpData);
-                        }
-                    }
-                }
-
-                if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo(
-                    $fileLocation,
-                    $context->release->id,
-                    $this->mediaInfoContext(
-                        $context->workPlan?->mediaInfoSourceFilename,
-                        MediaInfoSourceCompleteness::Partial,
-                    ),
-                )) {
-                    $context->markFound('mediaInfo');
-                    $this->output->echoMediaInfoAdded();
-                }
-                if (! $context->foundSample && $this->mediaService->getSample($fileLocation, $context->tmpPath, $context->release->guid)) {
-                    $context->markFound('sample');
-                    $this->output->echoSampleCreated();
-                }
-                if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid, (int) $context->release->categories_id)) {
-                    $context->markFound('video');
-                    $this->output->echoVideoCreated();
-                }
+                $this->processMainVideoHead($result['data'], $context);
             } elseif (! $result['success']) {
                 $this->output->echoMediaInfoFailure();
             }
@@ -755,6 +771,66 @@ class ReleaseProcessor
             } elseif (! $result['success']) {
                 $this->output->echoJpgFailure();
             }
+        }
+    }
+
+    /**
+     * The named-file flow once a main video's head window is on hand: splice a
+     * tail moov, top up the dynamic budget, then produce the artifacts.
+     */
+    private function processMainVideoHead(string $headData, ReleaseProcessingContext $context): void
+    {
+        $this->output->echoMediaInfoDownload();
+        $needsMoovSplice = $this->config->mp4TailFetch
+            && $this->payloadSniffer->classify($headData)->classification === PayloadClassification::Mp4
+            && $this->mp4MoovSplicer->needsTail($headData);
+        $fileLocation = $context->tmpPath.'media.avi';
+        File::put($fileLocation, $headData);
+        $splice = $needsMoovSplice ? $this->spliceMp4Tail($headData, $context) : null;
+        if ($splice !== null) {
+            $fileLocation = $context->tmpPath.'media.mp4';
+            File::put($fileLocation, $splice['data']);
+        }
+
+        // Dynamic segment budget: for a bare non-faststart MP4 the
+        // duration is unknowable before the moov splice, so a failed
+        // splice means no top-up. After a splice the tail window is
+        // already on disk, so the top-up must stop before it.
+        if (! $needsMoovSplice || $splice !== null) {
+            $fetchedTailIds = $splice !== null && $context->workPlan !== null
+                ? $context->workPlan->expandedMediaInfoTailMessageIds($this->config->mp4TailMaxSegments)
+                : [];
+            $topUpData = $this->dynamicBudgetTopUp($context, $fileLocation, $headData, $fetchedTailIds);
+            if ($topUpData !== null) {
+                if ($splice !== null) {
+                    $merged = $this->mp4MoovSplicer->splice($headData.$topUpData, $splice['moov'], true);
+                    if ($merged->status === Mp4MoovSpliceStatus::Spliced && $merged->data !== null) {
+                        File::put($fileLocation, $merged->data);
+                    }
+                } else {
+                    File::put($fileLocation, $headData.$topUpData);
+                }
+            }
+        }
+
+        if (! $context->foundMediaInfo && $this->mediaService->getMediaInfo(
+            $fileLocation,
+            $context->release->id,
+            $this->mediaInfoContext(
+                $context->workPlan?->mediaInfoSourceFilename,
+                MediaInfoSourceCompleteness::Partial,
+            ),
+        )) {
+            $context->markFound('mediaInfo');
+            $this->output->echoMediaInfoAdded();
+        }
+        if (! $context->foundSample && $this->mediaService->getSample($fileLocation, $context->tmpPath, $context->release->guid)) {
+            $context->markFound('sample');
+            $this->output->echoSampleCreated();
+        }
+        if (! $context->foundVideo && $this->mediaService->getVideo($fileLocation, $context->tmpPath, $context->release->guid, (int) $context->release->categories_id)) {
+            $context->markFound('video');
+            $this->output->echoVideoCreated();
         }
     }
 
@@ -847,14 +923,14 @@ class ReleaseProcessor
     }
 
     /**
-     * Dynamic segment budget (see GLOSSARY.md): probe the fetched head for the
-     * overall bitrate, then fetch just enough additional head segments to
-     * reach the target duration, under the hard byte ceiling covering the
-     * total fetched for this file. Returns the fetched top-up bytes, or null
-     * when the fixed-count behavior stands (toggle off, unknown bitrate,
-     * target already met, ceiling reached, or segment gaps).
-     */
-    /**
+     * Dynamic segment budget (see GLOSSARY.md): when the head stops inside a
+     * fast-start moov, first fetch the rest of the moov. Then probe for the
+     * overall bitrate and fetch just enough additional head segments to reach
+     * the target duration, under the hard byte ceiling covering the total
+     * fetched for this file. Returns every fetched top-up byte, or null when
+     * the fixed-count behavior stands (toggle off, unknown bitrate, target
+     * already met, ceiling reached, or segment gaps).
+     *
      * @param  list<string>  $tailWindowMessageIds  Segment ids already fetched for the MP4 tail; the top-up pool stops before the first of them so no byte is fetched twice.
      */
     private function dynamicBudgetTopUp(
@@ -887,42 +963,162 @@ class ReleaseProcessor
             return null;
         }
 
+        $moovEnd = $this->mp4MoovSplicer->moovEndOffset($headData);
+        $moovData = '';
+        $segmentsHeld = count($context->mediaInfoMessageIDs);
+        if ($moovEnd !== null && $moovEnd > strlen($headData)) {
+            if (($this->config->previewMaxFetchBytes > 0 && $moovEnd > $this->config->previewMaxFetchBytes)
+                || ($plan->mediaInfoFileSizeBytes > 0 && $moovEnd > $plan->mediaInfoFileSizeBytes)
+            ) {
+                return null;
+            }
+
+            $moovFetch = $this->fetchHeadToMoovEnd($context, $plan, $headData, $moovEnd, $expansionPool);
+            $moovData = $moovFetch['data'];
+            if (strlen($headData.$moovData) < $moovEnd) {
+                return $moovData === '' ? null : $moovData;
+            }
+
+            File::put($probeFileLocation, $headData.$moovData);
+            $segmentsHeld += $moovFetch['segments'];
+            $expansionPool = array_slice($expansionPool, $moovFetch['segments']);
+        }
+
+        $topUpData = $moovData.$this->fetchHeadToTargetDuration(
+            $context,
+            $plan,
+            $probeFileLocation,
+            $headData.$moovData,
+            $segmentsHeld,
+            $moovEnd,
+            $expansionPool,
+        );
+
+        return $topUpData === '' ? null : $topUpData;
+    }
+
+    /**
+     * The moov phase of the dynamic budget: fetch until the head holds the
+     * whole fast-start moov. The data falls short of the moov end when a bound
+     * stopped the phase; ffmpeg can read nothing from the file before that.
+     *
+     * @param  list<string>  $expansionPool
+     * @return array{data: string, segments: int}
+     */
+    private function fetchHeadToMoovEnd(
+        ReleaseProcessingContext $context,
+        AdditionalWorkPlan $plan,
+        string $headData,
+        int $moovEnd,
+        array $expansionPool,
+    ): array {
+        $headSegmentCount = count($context->mediaInfoMessageIDs);
+        $perSegmentBytes = $headSegmentCount > 0 ? intdiv(strlen($headData), $headSegmentCount) : 0;
+        $fetched = '';
+        $fetchedSegments = 0;
+
+        while ($perSegmentBytes > 0 && ($bytesHeld = strlen($headData) + strlen($fetched)) < $moovEnd) {
+            $segmentsByCeiling = $this->config->previewMaxFetchBytes > 0
+                ? intdiv(max($this->config->previewMaxFetchBytes - $bytesHeld, 0), $perSegmentBytes)
+                : PHP_INT_MAX;
+            $segmentCount = min(
+                (int) ceil(($moovEnd - $bytesHeld) / $perSegmentBytes),
+                $segmentsByCeiling,
+                count($expansionPool) - $fetchedSegments,
+            );
+            if ($segmentCount <= 0) {
+                break;
+            }
+
+            if ($headSegmentCount + $fetchedSegments + $segmentCount > $plan->mediaInfoContiguousHeadSegments) {
+                $context->recordSegmentGapSkip();
+                $this->output->echoSegmentGapSkip();
+
+                break;
+            }
+
+            $download = $this->downloadService->download(
+                DownloadKind::MediaInfoTopUp,
+                array_slice($expansionPool, $fetchedSegments, $segmentCount),
+                $context->releaseGroupName,
+                $context->release->id,
+            );
+            if ($download['groupUnavailable']) {
+                $context->groupUnavailable = true;
+                $this->output->echoGroupUnavailable();
+
+                break;
+            }
+            if (! $download['success'] || ! is_string($download['data'])) {
+                break;
+            }
+
+            $fetched .= $download['data'];
+            $fetchedSegments += $segmentCount;
+            $this->output->echoDynamicTopUpFetched(strlen($download['data']));
+        }
+
+        return ['data' => $fetched, 'segments' => $fetchedSegments];
+    }
+
+    /**
+     * The duration phase of the dynamic budget: probe the file for the overall
+     * bitrate and fetch the head segments the target duration still needs.
+     * Playable bytes count from the end of a fast-start moov.
+     *
+     * @param  list<string>  $expansionPool
+     * @return string The bytes fetched; empty when the bytes held stand.
+     */
+    private function fetchHeadToTargetDuration(
+        ReleaseProcessingContext $context,
+        AdditionalWorkPlan $plan,
+        string $probeFileLocation,
+        string $heldData,
+        int $segmentsHeld,
+        ?int $moovEnd,
+        array $expansionPool,
+    ): string {
+        if ($expansionPool === []) {
+            return '';
+        }
+
         $bytesPerSecond = $this->headProbe
             ->probe($probeFileLocation, $this->config)
             ?->bytesPerSecond($plan->mediaInfoFileSizeBytes);
         if ($bytesPerSecond === null || $bytesPerSecond <= 0) {
             // Unknown bitrate: keep the fixed-count behavior rather than guess.
-            return null;
+            return '';
         }
 
-        $headSegmentCount = count($context->mediaInfoMessageIDs);
-        $perSegmentBytes = $headSegmentCount > 0 ? intdiv(strlen($headData), $headSegmentCount) : 0;
+        $perSegmentBytes = $segmentsHeld > 0 ? intdiv(strlen($heldData), $segmentsHeld) : 0;
         if ($perSegmentBytes <= 0) {
-            return null;
+            return '';
         }
 
-        $neededBytes = (int) ceil($bytesPerSecond * $this->config->previewTargetSeconds) - strlen($headData);
+        $neededBytes = (int) ceil($bytesPerSecond * $this->config->previewTargetSeconds)
+            + ($moovEnd ?? 0)
+            - strlen($heldData);
         if ($neededBytes <= 0) {
-            return null;
+            return '';
         }
 
-        $alreadyFetchedBytes = strlen($headData) + $context->mp4TailMetrics->tailBytes;
+        $alreadyFetchedBytes = strlen($heldData) + $context->mp4TailMetrics->tailBytes;
         $segmentsByTarget = (int) ceil($neededBytes / $perSegmentBytes);
         $segmentsByCeiling = $this->config->previewMaxFetchBytes > 0
             ? intdiv(max($this->config->previewMaxFetchBytes - $alreadyFetchedBytes, 0), $perSegmentBytes)
             : PHP_INT_MAX;
         $segmentCount = min($segmentsByTarget, $segmentsByCeiling, count($expansionPool));
         if ($segmentCount <= 0) {
-            return null;
+            return '';
         }
 
         // Contiguity gate: gaps inside the needed head range make the top-up
         // pointless — the decoder stops at the first missing byte.
-        if ($headSegmentCount + $segmentCount > $plan->mediaInfoContiguousHeadSegments) {
+        if ($segmentsHeld + $segmentCount > $plan->mediaInfoContiguousHeadSegments) {
             $context->recordSegmentGapSkip();
             $this->output->echoSegmentGapSkip();
 
-            return null;
+            return '';
         }
 
         $download = $this->downloadService->download(
@@ -935,10 +1131,10 @@ class ReleaseProcessor
             $context->groupUnavailable = true;
             $this->output->echoGroupUnavailable();
 
-            return null;
+            return '';
         }
         if (! $download['success'] || ! is_string($download['data'])) {
-            return null;
+            return '';
         }
 
         $this->output->echoDynamicTopUpFetched(strlen($download['data']));
@@ -1054,8 +1250,9 @@ class ReleaseProcessor
      * posted order — re-extracting after each fetch until the fragment covers
      * the target duration or a bound hits: the byte ceiling, the part
      * ceiling, no next part, or extraction that stops progressing (a
-     * compressed-mode archive a partial fetch cannot extend).
-     *
+     * compressed-mode archive a partial fetch cannot extend). A fast-start
+     * moov the fragment stops inside is fetched first, under the same bounds,
+     * because nothing can be probed before it is whole.
      *
      * @param  list<string>  $triedCompressedMids
      * @return bool Whether this candidate carried a video entry and the budget was spent on it; false leaves later candidates free to try.
@@ -1089,7 +1286,8 @@ class ReleaseProcessor
             return true;
         }
 
-        $firstVolumePath = $this->previewArchiveVolumePath($context->tmpPath, 1);
+        $oldVolumeNumbers = $this->usesOldVolumeNumbers($initialData);
+        $firstVolumePath = $this->previewArchiveVolumePath($context->tmpPath, 1, $oldVolumeNumbers);
 
         try {
             File::put($firstVolumePath, $initialData);
@@ -1101,60 +1299,78 @@ class ReleaseProcessor
                 return true;
             }
 
-            $fragmentBytes = (int) File::size($fragmentPath);
-            $decodableSeconds = $this->decodableLengthProbe->demuxedSeconds($fragmentPath, $this->config);
-            if ($decodableSeconds === null) {
-                $this->logCompressedProbeFailed($context, $fragmentPath, 'duration unavailable');
+            $fetchedMessageIds = array_fill_keys($triedCompressedMids, true);
+            $fetch = new CompressedTopUpFetch(
+                anchor: $anchor,
+                videoEntryName: $videoEntry['name'],
+                perSegmentBytes: $perSegmentBytes,
+                fetchedMessageIds: $fetchedMessageIds,
+                pendingSegments: $this->unfetchedMessageIds($anchor->expansionMessageIds, $fetchedMessageIds),
+                nextParts: $plan->archivePartsAfter($anchor),
+                firstVolumePath: $firstVolumePath,
+                oldVolumeNumbers: $oldVolumeNumbers,
+                anchorSegmentsHeld: count($anchor->messageIds),
+                fetchedBytes: strlen($initialData),
+                fragmentPath: $fragmentPath,
+                fragmentBytes: (int) File::size($fragmentPath),
+            );
 
-                return true;
+            $moovEnd = $this->mp4MoovSplicer->moovEndOffset(File::get($fragmentPath));
+            if ($moovEnd !== null && $moovEnd > $fetch->fragmentBytes) {
+                if ($this->config->previewMaxFetchBytes > 0 && $moovEnd > $this->config->previewMaxFetchBytes) {
+                    $this->logCompressedProbeFailed($context, $fragmentPath, 'moov past byte ceiling');
+
+                    return true;
+                }
+                if ($videoEntry['size'] > 0 && $moovEnd > $videoEntry['size']) {
+                    $this->logCompressedProbeFailed($context, $fragmentPath, 'moov past file end');
+
+                    return true;
+                }
+                if (! $this->fetchCompressedMoov($context, $moovEnd, $fetch)) {
+                    return true;
+                }
             }
-            if ($decodableSeconds >= $this->config->previewTargetSeconds) {
+
+            $decodableSeconds = $this->decodableLengthProbe->demuxedSeconds($fetch->fragmentPath, $this->config);
+            if ($decodableSeconds !== null && $decodableSeconds >= $this->config->previewTargetSeconds) {
                 $this->logCompressedTargetMet($context, $decodableSeconds);
 
                 return true;
             }
 
             $bytesPerSecond = $this->headProbe
-                ->probe($fragmentPath, $this->config)
+                ->probe($fetch->fragmentPath, $this->config)
                 ?->bytesPerSecond($videoEntry['size']);
             if ($bytesPerSecond === null || $bytesPerSecond <= 0) {
                 // Unknown bitrate: keep the fixed-fetch behavior rather than guess.
-                $this->logCompressedProbeFailed($context, $fragmentPath, 'bitrate unavailable');
+                $this->logCompressedProbeFailed(
+                    $context,
+                    $fetch->fragmentPath,
+                    $decodableSeconds === null ? 'duration unavailable' : 'bitrate unavailable',
+                );
 
                 return true;
             }
 
-            // Contiguity gate: a numbering gap inside the range this part
-            // would contribute makes every fetch provably pointless — the
-            // archive stream stops extending at the first missing byte.
-            $anchorSegmentsNeeded = min(
-                $this->segmentsForRemainingDuration($decodableSeconds, $bytesPerSecond, $perSegmentBytes),
-                count($anchor->expansionMessageIds),
-            );
-            if (count($anchor->messageIds) + $anchorSegmentsNeeded > $anchor->contiguousHeadSegments) {
-                $context->recordSegmentGapSkip();
-                $this->output->echoSegmentGapSkip();
+            // A moov with no mdat bytes behind it demuxes nothing yet; the
+            // known bitrate still says how much more to fetch.
+            $decodableSeconds ??= 0.0;
 
-                return true;
-            }
-
-            $this->fetchCompressedTopUp(
+            if ($this->skipForAnchorGap(
                 $context,
-                $anchor,
-                $videoEntry['name'],
-                $firstVolumePath,
-                $perSegmentBytes,
-                $bytesPerSecond,
-                $decodableSeconds,
-                $fragmentBytes,
-                strlen($initialData),
-                $triedCompressedMids,
-            );
+                $fetch,
+                $this->segmentsForRemainingDuration($decodableSeconds, $bytesPerSecond, $perSegmentBytes),
+            )) {
+                return true;
+            }
+
+            $this->fetchCompressedTopUp($context, $bytesPerSecond, $decodableSeconds, $fetch);
         } finally {
             // The working volume files must not survive into the
             // extracted-files sweep, which would treat them as freshly
             // extracted nested archives.
-            foreach (File::glob($context->tmpPath.'preview-archive.part*.rar') as $volumePath) {
+            foreach (File::glob($context->tmpPath.'preview-archive.*') as $volumePath) {
                 File::delete($volumePath);
             }
         }
@@ -1163,120 +1379,52 @@ class ReleaseProcessor
     }
 
     /**
-     * The fetch loop of the compressed dynamic budget; every bound that stops
-     * it leaves the longest fragment extraction could produce on disk for the
-     * extracted-files sweep to clip.
+     * Fetch until the fragment holds the whole fast-start moov: ffmpeg can
+     * neither read a duration nor a bitrate before that.
      *
-     * @param  list<string>  $alreadyFetchedMessageIds
+     * @return bool Whether the moov is covered; a bound that stops the phase leaves the fragment on disk.
+     */
+    private function fetchCompressedMoov(
+        ReleaseProcessingContext $context,
+        int $moovEnd,
+        CompressedTopUpFetch $fetch,
+    ): bool {
+        while ($fetch->fragmentBytes < $moovEnd) {
+            $segmentsWanted = (int) ceil(($moovEnd - $fetch->fragmentBytes) / $fetch->perSegmentBytes);
+            if ($this->skipForAnchorGap($context, $fetch, $segmentsWanted)
+                || ! $this->growCompressedFragment($context, $segmentsWanted, $fetch)
+            ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * The duration phase of the compressed dynamic budget; every bound that
+     * stops it leaves the longest fragment extraction could produce on disk
+     * for the extracted-files sweep to clip.
      */
     private function fetchCompressedTopUp(
         ReleaseProcessingContext $context,
-        ArchiveCandidate $anchor,
-        string $videoEntryName,
-        string $firstVolumePath,
-        int $perSegmentBytes,
         float $bytesPerSecond,
         float $decodableSeconds,
-        int $fragmentBytes,
-        int $fetchedBytes,
-        array $alreadyFetchedMessageIds,
+        CompressedTopUpFetch $fetch,
     ): void {
-        $fetchedMessageIds = array_fill_keys($alreadyFetchedMessageIds, true);
-        $queue = $this->unfetchedMessageIds($anchor->expansionMessageIds, $fetchedMessageIds);
-        $nextParts = $context->workPlan?->archivePartsAfter($anchor) ?? [];
-        $partsUsed = 1;
-        $currentVolume = 1;
-        $currentVolumePath = $firstVolumePath;
-
         while ($decodableSeconds < $this->config->previewTargetSeconds) {
             $segmentsWanted = $this->segmentsForRemainingDuration(
                 $decodableSeconds,
                 $bytesPerSecond,
-                $perSegmentBytes,
+                $fetch->perSegmentBytes,
             );
-            if ($this->config->previewMaxFetchBytes > 0) {
-                $segmentsWanted = min(
-                    $segmentsWanted,
-                    intdiv(max($this->config->previewMaxFetchBytes - $fetchedBytes, 0), $perSegmentBytes),
-                );
-                if ($segmentsWanted <= 0) {
-                    break;
-                }
-            }
-
-            if ($queue === []) {
-                if ($nextParts === [] || $partsUsed >= $this->config->previewMaxRarParts) {
-                    break;
-                }
-                $part = array_shift($nextParts);
-                $allPartSegments = [...$part->messageIds, ...$part->expansionMessageIds];
-                $partSegments = $this->unfetchedMessageIds($allPartSegments, $fetchedMessageIds);
-                $usableSegments = $this->unfetchedMessageIds(
-                    array_slice($allPartSegments, 0, max($part->contiguousHeadSegments, 0)),
-                    $fetchedMessageIds,
-                );
-                if (min($segmentsWanted, count($partSegments)) > count($usableSegments)) {
-                    // A numbering gap sits inside the range this part would
-                    // need to contribute (#290 semantics): bytes past it can
-                    // never be contiguous, so keep what extraction yielded.
-                    $context->recordSegmentGapSkip();
-                    $this->output->echoSegmentGapSkip();
-                    break;
-                }
-                if (count($usableSegments) < count($partSegments)) {
-                    // A gap after the needed range: this part's contiguous
-                    // head is still usable, but nothing beyond it can be.
-                    $nextParts = [];
-                }
-                $partsUsed++;
-                $currentVolume++;
-                $currentVolumePath = $this->previewArchiveVolumePath($context->tmpPath, $currentVolume);
-                File::put($currentVolumePath, '');
-                $queue = $usableSegments;
-
-                continue;
-            }
-
-            $batch = array_splice($queue, 0, min($segmentsWanted, count($queue)));
-            foreach ($batch as $messageId) {
-                $fetchedMessageIds[$messageId] = true;
-            }
-            $download = $this->downloadService->download(
-                DownloadKind::CompressedTopUp,
-                $batch,
-                $context->releaseGroupName,
-                $context->release->id,
-                $anchor->title,
-            );
-            if ($download['groupUnavailable']) {
-                $context->groupUnavailable = true;
-                $this->output->echoGroupUnavailable();
-                break;
-            }
-            if (! $download['success'] || ! is_string($download['data'])) {
+            if (! $this->growCompressedFragment($context, $segmentsWanted, $fetch)) {
                 break;
             }
 
-            File::append($currentVolumePath, $download['data']);
-            $fetchedBytes += strlen($download['data']);
-            $this->output->echoDynamicTopUpFetched(strlen($download['data']));
-
-            $grownPath = $this->extractPreviewFragment($firstVolumePath, $videoEntryName, $context);
-            if ($grownPath === null) {
-                $this->logCompressedExtractionFailed($context, 'top-up extraction produced no fragment');
-                break;
-            }
-
-            $grownBytes = (int) File::size($grownPath);
-            if ($grownBytes <= $fragmentBytes) {
-                $this->logCompressedExtractionFailed($context, 'top-up extraction made no progress', $grownBytes);
-                break;
-            }
-            $fragmentBytes = $grownBytes;
-
-            $probedSeconds = $this->decodableLengthProbe->demuxedSeconds($grownPath, $this->config);
+            $probedSeconds = $this->decodableLengthProbe->demuxedSeconds($fetch->fragmentPath, $this->config);
             if ($probedSeconds === null) {
-                $this->logCompressedProbeFailed($context, $grownPath, 'duration unavailable');
+                $this->logCompressedProbeFailed($context, $fetch->fragmentPath, 'duration unavailable');
                 break;
             }
             $decodableSeconds = $probedSeconds;
@@ -1284,6 +1432,137 @@ class ReleaseProcessor
                 $this->logCompressedTargetMet($context, $decodableSeconds);
             }
         }
+    }
+
+    /**
+     * One fetch-and-extract step, in the order every phase shares: the byte
+     * ceiling, then the rest of the anchor part, then later parts under the
+     * part ceiling and the gap gate, then the no-progress stop.
+     *
+     * @return bool Whether the fragment grew; false means a bound stopped the fetch.
+     */
+    private function growCompressedFragment(
+        ReleaseProcessingContext $context,
+        int $segmentsWanted,
+        CompressedTopUpFetch $fetch,
+    ): bool {
+        if ($this->config->previewMaxFetchBytes > 0) {
+            $segmentsWanted = min(
+                $segmentsWanted,
+                intdiv(max($this->config->previewMaxFetchBytes - $fetch->fetchedBytes, 0), $fetch->perSegmentBytes),
+            );
+            if ($segmentsWanted <= 0) {
+                return false;
+            }
+        }
+
+        while ($fetch->pendingSegments === []) {
+            if ($fetch->nextParts === [] || $fetch->partsUsed >= $this->config->previewMaxRarParts) {
+                return false;
+            }
+            $part = array_shift($fetch->nextParts);
+            $allPartSegments = [...$part->messageIds, ...$part->expansionMessageIds];
+            $partSegments = $this->unfetchedMessageIds($allPartSegments, $fetch->fetchedMessageIds);
+            $usableSegments = $this->unfetchedMessageIds(
+                array_slice($allPartSegments, 0, max($part->contiguousHeadSegments, 0)),
+                $fetch->fetchedMessageIds,
+            );
+            if (min($segmentsWanted, count($partSegments)) > count($usableSegments)) {
+                // A numbering gap sits inside the range this part would
+                // need to contribute (#290 semantics): bytes past it can
+                // never be contiguous, so keep what extraction yielded.
+                $context->recordSegmentGapSkip();
+                $this->output->echoSegmentGapSkip();
+
+                return false;
+            }
+            if (count($usableSegments) < count($partSegments)) {
+                // A gap after the needed range: this part's contiguous
+                // head is still usable, but nothing beyond it can be.
+                $fetch->nextParts = [];
+            }
+            $fetch->partsUsed++;
+            $fetch->currentVolume++;
+            $fetch->currentVolumePath = $this->previewArchiveVolumePath(
+                $context->tmpPath,
+                $fetch->currentVolume,
+                $fetch->oldVolumeNumbers,
+            );
+            File::put($fetch->currentVolumePath, '');
+            $fetch->pendingSegments = $usableSegments;
+        }
+
+        $batch = array_splice($fetch->pendingSegments, 0, min($segmentsWanted, count($fetch->pendingSegments)));
+        foreach ($batch as $messageId) {
+            $fetch->fetchedMessageIds[$messageId] = true;
+        }
+        $download = $this->downloadService->download(
+            DownloadKind::CompressedTopUp,
+            $batch,
+            $context->releaseGroupName,
+            $context->release->id,
+            $fetch->anchor->title,
+        );
+        if ($download['groupUnavailable']) {
+            $context->groupUnavailable = true;
+            $this->output->echoGroupUnavailable();
+
+            return false;
+        }
+        if (! $download['success'] || ! is_string($download['data'])) {
+            return false;
+        }
+
+        if ($fetch->currentVolume === 1) {
+            $fetch->anchorSegmentsHeld += count($batch);
+        }
+        File::append($fetch->currentVolumePath, $download['data']);
+        $fetch->fetchedBytes += strlen($download['data']);
+        $this->output->echoDynamicTopUpFetched(strlen($download['data']));
+
+        $grownPath = $this->extractPreviewFragment($fetch->firstVolumePath, $fetch->videoEntryName, $context);
+        if ($grownPath === null) {
+            $this->logCompressedExtractionFailed($context, 'top-up extraction produced no fragment');
+
+            return false;
+        }
+
+        $grownBytes = (int) File::size($grownPath);
+        if ($grownBytes <= $fetch->fragmentBytes) {
+            $this->logCompressedExtractionFailed($context, 'top-up extraction made no progress', $grownBytes);
+
+            return false;
+        }
+        $fetch->fragmentPath = $grownPath;
+        $fetch->fragmentBytes = $grownBytes;
+
+        return true;
+    }
+
+    /**
+     * Contiguity gate: a numbering gap inside the range the anchor part would
+     * contribute makes every fetch provably pointless — the archive stream
+     * stops extending at the first missing byte. Records the skip when it hits.
+     */
+    private function skipForAnchorGap(
+        ReleaseProcessingContext $context,
+        CompressedTopUpFetch $fetch,
+        int $segmentsWanted,
+    ): bool {
+        if ($fetch->currentVolume !== 1) {
+            return false;
+        }
+
+        $expansionFetched = $fetch->anchorSegmentsHeld - count($fetch->anchor->messageIds);
+        $anchorSegmentsNeeded = min($segmentsWanted, count($fetch->anchor->expansionMessageIds) - $expansionFetched);
+        if ($fetch->anchorSegmentsHeld + $anchorSegmentsNeeded <= $fetch->anchor->contiguousHeadSegments) {
+            return false;
+        }
+
+        $context->recordSegmentGapSkip();
+        $this->output->echoSegmentGapSkip();
+
+        return true;
     }
 
     private function segmentsForRemainingDuration(
@@ -1390,9 +1669,33 @@ class ReleaseProcessor
         return null;
     }
 
-    private function previewArchiveVolumePath(string $tmpPath, int $volume): string
+    /**
+     * unrar finds a set's later volumes by the first volume's name, and which
+     * pattern it tries follows the set's numbering flag: an old-numbered set
+     * looks for .r00 next to its .rar, whatever else the file is called.
+     */
+    private function previewArchiveVolumePath(string $tmpPath, int $volume, bool $oldVolumeNumbers): string
     {
-        return $tmpPath.'preview-archive.part'.sprintf('%03d', $volume).'.rar';
+        if (! $oldVolumeNumbers) {
+            return $tmpPath.'preview-archive.part'.sprintf('%03d', $volume).'.rar';
+        }
+
+        return $tmpPath.'preview-archive.'.($volume === 1 ? 'rar' : sprintf('r%02d', $volume - 2));
+    }
+
+    /**
+     * Whether a first volume's main header marks an old-numbered RAR4 set.
+     */
+    private function usesOldVolumeNumbers(string $firstVolume): bool
+    {
+        if (! str_starts_with($firstVolume, "Rar!\x1A\x07\x00")
+            || strlen($firstVolume) < 12
+            || ord($firstVolume[9]) !== RarInfo::BLOCK_MAIN
+        ) {
+            return false;
+        }
+
+        return (unpack('v', $firstVolume, 10)[1] & RarInfo::MAIN_NEWNUMBERING) === 0;
     }
 
     private function processSevenZip(ArchiveCandidate $anchor, ReleaseProcessingContext $context, bool $sniffed = false): void

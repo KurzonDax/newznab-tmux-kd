@@ -10,7 +10,7 @@ paths:
 The [root authorization policy](../../AGENTS.md#scope-and-authorization) applies, including command-specific Artisan approval.
 
 ## Keep unknown-payload sniffing bounded and reusable
-Unknown-payload sniffing is fallback-only: run it only when the planner found no normal archive/media/direct candidate. Select a configured, byte-budgeted set and fetch exactly the first segment of each candidate. Route those same bytes to the existing archive, PAR2, media, or NFO handler; never redownload the sniffed segment.
+Unknown-payload sniffing is fallback-only: run it only when the planner found no normal archive/media/direct candidate. Select a configured, byte-budgeted set and fetch exactly the first segment of each candidate. Route those same bytes to the existing archive, PAR2, media, or NFO handler; never redownload the sniffed segment. The first video candidate may then continue into the named-file flow, never re-requesting that segment.
 
 ## The two candidate queries must stay exact complements
 `AudioCandidateQuery` and `AdditionalCandidateQuery` split the pending set between the `aud` and `add` workers. Everything they agree about lives in `ReleaseClaimant` — what "pending" means (`applyPendingPredicates()`), the stale-claim window (it lives in `ReleaseClaimWindow`; `ReleaseClaimant::applyClaimWindow()` delegates to it), claiming, and the bucket backlog — and `AudioRouting` decides which half each owns, one calling `applyAudioPath()` and the other `applyVideoPath()`. Neither query may restate any of that inline. A release claimable by neither sits pending forever; one claimable by both gets fetched twice.

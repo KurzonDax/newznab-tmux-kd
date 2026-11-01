@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\Unit\AdditionalProcessing;
 
 use App\Enums\NzbParseFailure;
+use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
+use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\NzbContentParser;
 use App\Services\Nzb\NzbParserService;
 use App\Services\Nzb\NzbService;
@@ -86,6 +88,42 @@ class NzbContentParserTest extends TestCase
         } finally {
             @unlink($path);
         }
+    }
+
+    public function test_an_nzb_whose_subject_ends_in_rar_returns_that_file_first_and_plans_the_later_volumes_in_order(): void
+    {
+        $path = sys_get_temp_dir().DIRECTORY_SEPARATOR.uniqid('nzb-rar-order-', true).'.nzb.gz';
+        $files = '';
+        foreach (['x.r01', 'x.r00', 'x.rar'] as $subject) {
+            $files .= '<file poster="p" date="1" subject="'.$subject.'"><groups><group>a.b</group></groups>'
+                .'<segments><segment bytes="1" number="1">'.$subject.'@x</segment></segments></file>';
+        }
+        file_put_contents($path, gzencode(
+            '<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'.$files.'</nzb>'
+        ));
+
+        try {
+            $nzb = $this->createStub(NzbService::class);
+            $nzb->method('nzbPath')->willReturn($path);
+
+            $contents = (new NzbContentParser($nzb, new NzbParserService))->parseNzb('guid-1')['contents'];
+        } finally {
+            @unlink($path);
+        }
+
+        $ordered = array_values($contents);
+        $this->assertSame('x.rar', $ordered[0]['title']);
+
+        $plan = (new AdditionalWorkPlanner($this->makeConfig()))->plan($ordered, 'alt.binaries.test');
+        $firstVolume = $plan->prioritizedArchiveCandidates()[0];
+        $this->assertSame('x.rar', $firstVolume->title);
+        $this->assertSame(
+            ['x.r00', 'x.r01'],
+            array_map(
+                static fn (ArchiveCandidate $candidate): string => $candidate->title,
+                $plan->archivePartsAfter($firstVolume),
+            ),
+        );
     }
 
     public function test_it_selects_configured_segments_from_a_bare_main_video_for_media_info(): void

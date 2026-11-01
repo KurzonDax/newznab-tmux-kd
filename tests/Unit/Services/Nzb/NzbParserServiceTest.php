@@ -91,6 +91,48 @@ XML;
         );
     }
 
+    public function test_a_subject_ending_exactly_in_rar_sorts_before_its_r_nn_volumes(): void
+    {
+        $files = (new NzbParserService)->parseNzbFileList(
+            $this->nzbWithSubjects(['x.4k.r60', 'x.4k.rar', 'x.4k.r00']),
+            ['no-file-key' => false, 'strip-count' => true],
+        );
+
+        $this->assertArrayHasKey('x.4k.part0.rar', $files);
+        $this->assertSame('x.4k.rar', $files['x.4k.part0.rar']['title']);
+
+        ksort($files, SORT_NATURAL);
+        $this->assertSame(['x.4k.part0.rar', 'x.4k.r00', 'x.4k.r60'], array_keys($files));
+    }
+
+    public function test_a_subject_ending_in_part_nn_rar_keeps_its_key(): void
+    {
+        $files = (new NzbParserService)->parseNzbFileList(
+            $this->nzbWithSubjects(['x.4k.part01.rar']),
+            ['no-file-key' => false, 'strip-count' => true],
+        );
+
+        $this->assertSame(['x.4k.part01.rar'], array_keys($files));
+    }
+
+    /**
+     * @param  list<string>  $subjects
+     */
+    private function nzbWithSubjects(array $subjects): string
+    {
+        $files = '';
+        foreach ($subjects as $index => $subject) {
+            $files .= '<file poster="poster@example.com" date="1700000000" subject="'.$subject.'">'
+                .'<groups><group>alt.binaries.test</group></groups>'
+                .'<segments><segment bytes="750000" number="1">seg-'.$index.'@example.com</segment></segments>'
+                ."</file>\n";
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8"?>'."\n"
+            .'<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'."\n"
+            .$files.'</nzb>';
+    }
+
     private function singleSegmentNzb(int $fileCount): string
     {
         $files = '';
