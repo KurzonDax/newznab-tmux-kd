@@ -275,6 +275,10 @@ final class ReleaseProcessingService
                     }
                     $this->reconcileIncompleteCollections($group, $chunk);
                     $this->processCollectionSizes($group, $chunk);
+                    $chunk = array_values(array_diff($chunk, $this->collectionsAwaitingPartSizes($chunk)));
+                    if ($chunk === []) {
+                        continue;
+                    }
                     $this->deleteUnwantedCollections($group, $chunk);
                     $created = $this->releaseCreationService->createSelectedCollections($group, $chunk, false);
                     $totals['releases'] += $created['added'];
@@ -304,6 +308,50 @@ final class ReleaseProcessingService
         return DB::table('collections')->where('groups_id', $group)->where('filecheck', $status)
             ->when(in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
                 static fn ($query) => $query->forceIndex('collections_formation_queue'));
+    }
+
+    /**
+     * Collections whose total is not to be trusted yet: they still hold a part stored at
+     * 0 bytes, and either are not quiet or took a stored header within the delay. A later
+     * real size can still replace that 0, so until then the total is only a partial sum,
+     * too low for the size check and for the release.
+     *
+     * The second clock is needed because the quiet predicate never reads last_seen_at for
+     * a scanned collection in an active group: a correction reaching a collection far
+     * behind the frontier would otherwise find it quiet already.
+     *
+     * @param  list<int>  $ids
+     * @return list<int>
+     */
+    private function collectionsAwaitingPartSizes(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+
+        $quiet = $this->formationQuietPredicate('c');
+        $recent = DatabaseClock::cutoff(now()->subHours($this->settings->collectionDelayTime));
+        $clock = SchemaCapabilities::hasColumn('collections', 'last_seen_at')
+            ? 'COALESCE(c.last_seen_at, c.dateadded, c.added)'
+            : 'c.dateadded';
+        $mariaDb = in_array(DB::getDriverName(), ['mysql', 'mariadb'], true);
+        $collectionIndex = $mariaDb ? ' FORCE INDEX (PRIMARY)' : '';
+        $binaryIndex = $mariaDb ? ' FORCE INDEX (ix_binaries_collection_filenumber)' : '';
+        $partIndex = $mariaDb ? ' FORCE INDEX (PRIMARY)' : '';
+        $join = $mariaDb ? 'STRAIGHT_JOIN' : 'JOIN';
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+        $rows = DB::select(
+            "SELECT c.id FROM collections c{$collectionIndex}
+            WHERE c.id IN ({$placeholders}) AND c.filesize > 0
+                AND (NOT ({$quiet['sql']}) OR {$clock} >= {$recent['sql']})
+                AND EXISTS (SELECT 1 FROM binaries b{$binaryIndex}
+                    {$join} parts p{$partIndex} ON p.binaries_id = b.id
+                    WHERE b.collections_id = c.id AND p.size = 0)",
+            [...$ids, ...$quiet['bindings'], ...$recent['bindings']],
+        );
+
+        return array_map(static fn (object $row): int => (int) $row->id, $rows);
     }
 
     /**

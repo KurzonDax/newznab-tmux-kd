@@ -29,7 +29,8 @@ A provider's header listing (XOVER) can leave posts out while the provider keeps
 connections. So header scanning reads every enabled provider and merges the results: a post
 missing from one provider's listing is filled in from another's, with no switchover step.
 Headers for the same post land in the same `collections`, `binaries` and `parts` rows whichever
-provider they came from, and a repeated part is ignored rather than counted twice.
+provider they came from, and a repeated part is ignored rather than counted twice, except that
+a real size replaces a stored size of 0.
 
 Article *numbers* are per-server, so each provider keeps its own positions:
 
@@ -54,6 +55,10 @@ Release formation waits for a secondary provider that is live and caught up: an 
 collection is not formed until every such provider has scanned past its newest header plus the
 release delay. A provider that has not completed a range for an hour, or whose position is more
 than the delay behind provider 1, holds nothing back.
+
+A collection formed from scanned headers that still has 0-size parts is held from the size check
+and from release creation until it is quiet and the delay has passed since its last stored
+header. A recovered collection is instead sized from its sealed plan (#1205).
 
 The pool itself still has no header API: `NntpProviderPool` and the `ProviderClient` interface
 expose no XOVER, group selection or backfill. A header scan picks its provider explicitly with
