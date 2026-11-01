@@ -25,6 +25,7 @@ use App\Services\ObfuscationRecovery\RecoveryEvidence;
 use App\Services\ObfuscationRecovery\RecoveryFrontierRebuild;
 use App\Services\ObfuscationRecovery\RecoveryFrontiers;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
+use App\Services\ObfuscationRecovery\RecoveryPlan;
 use App\Services\ObfuscationRecovery\RecoveryPositiveCoverage;
 use App\Services\ObfuscationRecovery\RecoveryPublicationCoverage;
 use App\Services\ObfuscationRecovery\RecoveryRunRefresh;
@@ -329,11 +330,14 @@ trait BuildsPortablePublication
         }
         NzbCreationCandidateQuery::flushCapabilityCache();
         if ($advertised === 'all_zero') {
-            DB::table('settings')->updateOrInsert(['name' => 'minsizetoformrelease'], ['value' => 1]);
+            // Every part totals 0, so the sealed plan's size is what the minimum judges.
+            $plannedBytes = RecoveryPlan::fromArray(json_decode(DB::table('obfuscation_recovery_bundles')->whereNotNull('sealed_plan')->value('sealed_plan'), true, flags: JSON_THROW_ON_ERROR))->decodedBytes();
+            DB::table('settings')->updateOrInsert(['name' => 'minsizetoformrelease'], ['value' => $plannedBytes + 1]);
             $report = app(RecoveryScheduler::class)->local(RecoveryStage::Publish, 1, 10);
             $this->assertSame(1, $report['policy_blocked'] ?? 0);
             $this->assertSame('minimum_size', DB::table('obfuscation_recovery_publications')->value('reason'));
             $this->assertSame(0, Release::query()->count());
+            $this->assertSame(0, (int) DB::table('collections')->value('filesize'));
 
             return ['root' => $root, 'nzb' => '', 'port' => $provider->port];
         }

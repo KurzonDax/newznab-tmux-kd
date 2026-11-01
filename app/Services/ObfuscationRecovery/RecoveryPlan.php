@@ -78,6 +78,11 @@ final readonly class RecoveryPlan
         return array_sum(array_map(static fn (RecoveryFilePlan $file): int => $file->totalParts, $this->files));
     }
 
+    public function decodedBytes(): int
+    {
+        return array_sum(array_map(static fn (RecoveryFilePlan $file): int => $file->decodedBytes, $this->files));
+    }
+
     public function declaredFiles(): int
     {
         return 0;

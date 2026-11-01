@@ -65,15 +65,16 @@ class ReleaseDuplicateAbsorber
         Release $anchor,
         Collection $collection,
         float $incomingCompletion,
+        int $incomingSize,
     ): DuplicateAbsorbResult {
         if (DB::transactionLevel() === 0 && ArtifactPublication::handles((string) $anchor->guid)) {
-            return DB::transaction(function () use ($anchor, $collection, $incomingCompletion): DuplicateAbsorbResult {
+            return DB::transaction(function () use ($anchor, $collection, $incomingCompletion, $incomingSize): DuplicateAbsorbResult {
                 $lockedSource = Collection::query()->whereKey($collection->id)->lockForUpdate()->first();
                 if ($lockedSource === null) {
                     return DuplicateAbsorbResult::deferred();
                 }
 
-                return $this->absorbCollection($anchor, $lockedSource, $incomingCompletion);
+                return $this->absorbCollection($anchor, $lockedSource, $incomingCompletion, $incomingSize);
             }, 3);
         }
         if (($receipt = app(ArtifactPublication::class)->duplicateReceipt((string) $anchor->guid, sourceId: (int) $collection->id)) !== null) {
@@ -112,7 +113,7 @@ class ReleaseDuplicateAbsorber
             $result = $this->absorbXml(
                 $freshAnchor,
                 $nzbXml,
-                (int) $collection->filesize,
+                $incomingSize,
                 (int) $collection->declaredfiles,
                 $incomingCompletion,
                 sourceIds: [(int) $collection->id],

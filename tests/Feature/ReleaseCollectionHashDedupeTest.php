@@ -678,9 +678,9 @@ final class RecordingDuplicateAbsorber extends ReleaseDuplicateAbsorber
         return parent::supportsReason($reason);
     }
 
-    public function absorbCollection(Release $anchor, Collection $collection, float $incomingCompletion): DuplicateAbsorbResult
+    public function absorbCollection(Release $anchor, Collection $collection, float $incomingCompletion, int $incomingSize): DuplicateAbsorbResult
     {
-        $result = parent::absorbCollection($anchor, $collection, $incomingCompletion);
+        $result = parent::absorbCollection($anchor, $collection, $incomingCompletion, $incomingSize);
         $this->outcomes[] = $result->outcome;
 
         return $result;

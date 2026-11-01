@@ -22,6 +22,7 @@ use App\Services\ObfuscationRecovery\RecoveryAlgorithm;
 use App\Services\ObfuscationRecovery\RecoveryArticle;
 use App\Services\ObfuscationRecovery\RecoveryArtifacts;
 use App\Services\ObfuscationRecovery\RecoveryBudget;
+use App\Services\ObfuscationRecovery\RecoveryCbpVerifier;
 use App\Services\ObfuscationRecovery\RecoveryConnection;
 use App\Services\ObfuscationRecovery\RecoveryDownload;
 use App\Services\ObfuscationRecovery\RecoveryEvidence;
@@ -500,6 +501,107 @@ final class RecoveryPublicationMariaDbTest extends TestCase
         $this->assertSame(0, (int) DB::table('releases')->value('declaredfiles'));
     }
 
+    public function test_headers_at_zero_bytes_publish_on_the_sealed_plan_size(): void
+    {
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 0);
+        DB::table('settings')->insert(['name' => 'minsizetoformrelease', 'value' => $plan->decodedBytes()]);
+        $this->assertSame('materialized', (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim));
+        $this->assertSame(0, (int) DB::table('collections')->value('filesize'));
+        $publication = app(RecoveryPublications::class)->register($plan);
+
+        $this->assertSame('created', app(ReleaseCreationService::class)->createRecovered($claim, $publication->id));
+        $release = Release::query()->firstOrFail();
+        $this->assertSame($plan->decodedBytes(), (int) $release->size);
+        $this->assertSame(0, (int) DB::table('collections')->value('filesize'));
+        (new RecoveryCbpVerifier($artifacts))->verify($publication->id, $plan);
+
+        DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['initialization_state' => 'complete']);
+        $this->assertTrue(app(NzbService::class)->createNzbForRelease($release)->success);
+        $this->assertSame('published', DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->value('state'));
+        $this->assertSame($plan->decodedBytes(), (int) DB::table('releases')->where('id', $release->id)->value('size'));
+    }
+
+    public function test_a_publication_blocked_on_minimum_size_publishes_on_its_next_run(): void
+    {
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 0);
+        DB::table('settings')->insert(['name' => 'minsizetoformrelease', 'value' => $plan->decodedBytes()]);
+        (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim);
+        $publication = app(RecoveryPublications::class)->register($plan);
+        DB::table('obfuscation_recovery_publications')->where('id', $publication->id)
+            ->update(['state' => 'policy_blocked', 'reason' => 'minimum_size']);
+
+        $this->assertSame('created', app(ReleaseCreationService::class)->createRecovered($claim, $publication->id));
+        $this->assertNull(DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->value('reason'));
+
+        DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->update(['initialization_state' => 'complete']);
+        $this->assertTrue(app(NzbService::class)->createNzbForRelease(Release::query()->firstOrFail())->success);
+        $this->assertSame('published', DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->value('state'));
+        $this->assertSame($plan->decodedBytes(), (int) Release::query()->value('size'));
+    }
+
+    public function test_a_plan_below_the_minimum_stays_blocked_on_minimum_size(): void
+    {
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 0);
+        DB::table('settings')->insert(['name' => 'minsizetoformrelease', 'value' => $plan->decodedBytes() + 1]);
+        (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim);
+        $publication = app(RecoveryPublications::class)->register($plan);
+
+        $this->assertSame('policy_blocked', app(ReleaseCreationService::class)->createRecovered($claim, $publication->id));
+        $row = DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->first();
+        $this->assertSame('policy_blocked', $row->state);
+        $this->assertSame('minimum_size', $row->reason);
+        $this->assertSame(0, DB::table('releases')->count());
+    }
+
+    public function test_real_header_sizes_keep_the_part_sum_as_the_release_size(): void
+    {
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 800000);
+        (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim);
+        $filesize = (int) DB::table('collections')->value('filesize');
+        $this->assertSame(4000000, $filesize);
+        $this->assertGreaterThan($plan->decodedBytes(), $filesize);
+        $publication = app(RecoveryPublications::class)->register($plan);
+
+        $this->assertSame('created', app(ReleaseCreationService::class)->createRecovered($claim, $publication->id));
+        $this->assertSame($filesize, (int) Release::query()->value('size'));
+    }
+
+    public function test_absorbing_a_collection_at_zero_writes_the_plan_size_onto_the_existing_release(): void
+    {
+        Schema::create('video_data', function (Blueprint $table): void {
+            $table->unsignedInteger('releases_id')->primary();
+        });
+        Schema::create('audio_data', function (Blueprint $table): void {
+            $table->increments('id');
+            $table->unsignedInteger('releases_id');
+            $table->unsignedInteger('audioid');
+            $table->unique(['releases_id', 'audioid']);
+        });
+        Schema::table('releases', function (Blueprint $table): void {
+            foreach (['proc_nfo', 'proc_files', 'proc_srr', 'proc_crc32', 'proc_uid', 'proc_hash16k', 'proc_par2', 'proc_srrdb', 'proc_xxx', 'proc_media_movie', 'pp_timeout_count'] as $name) {
+                $table->integer($name)->default(0);
+            }
+        });
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 0);
+        (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim);
+        $publication = app(RecoveryPublications::class)->register($plan);
+        $collection = DB::table('collections')->first();
+        $existingId = Release::insertRelease([
+            'name' => $collection->subject, 'searchname' => $collection->subject, 'totalpart' => 7, 'declaredfiles' => 7,
+            'groups_id' => 1, 'guid' => 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'postdate' => $collection->date,
+            'fromname' => 'existing-poster', 'size' => $plan->decodedBytes() - 1000, 'categories_id' => Category::OTHER_MISC,
+            'isrenamed' => 1, 'is_trusted_name' => true, 'predb_id' => 0, 'nzbstatus' => 1, 'completion' => 10.0,
+        ]);
+        $nzb = app(NzbService::class);
+        $release = Release::query()->findOrFail($existingId);
+        $xml = $nzb->buildNzbContentsForCollection($release, (int) $collection->id);
+        $this->assertIsString($xml);
+        file_put_contents($nzb->getNzbPath($release->guid, 0, true), gzencode(str_replace('Part1@fixture.invalid', 'different@fixture.invalid', $xml)));
+
+        $this->assertSame('absorbed', app(ReleaseCreationService::class)->createRecovered($claim, $publication->id));
+        $this->assertSame($plan->decodedBytes(), (int) DB::table('releases')->where('id', $existingId)->value('size'));
+    }
+
     public function test_filesystem_commit_before_database_rollback_is_adopted_with_the_existing_guid(): void
     {
         [$artifacts, $plan, $claim] = $this->fixture();
@@ -538,7 +640,8 @@ final class RecoveryPublicationMariaDbTest extends TestCase
     #[DataProvider('survivorInventories')]
     public function test_duplicate_policy_is_terminal_and_preserves_the_existing_release(string $inventory, string $proof): void
     {
-        [$artifacts, $plan, $claim] = $this->fixture();
+        // Encoded parts larger than the plan, as real ones are, so the collection's own size is the release's.
+        [$artifacts, $plan, $claim] = $this->fixture(advertisedBytes: 800000);
         (new RecoveryMaterialization($artifacts, app(HeaderStorageService::class), app(RecoveryWork::class)))->run($claim);
         $publication = app(RecoveryPublications::class)->register($plan);
         $collection = DB::table('collections')->first();
@@ -697,7 +800,7 @@ final class RecoveryPublicationMariaDbTest extends TestCase
     }
 
     /** @return array{RecoveryArtifacts,RecoveryPlan,RecoveryWorkClaim,list<array<string,mixed>>} */
-    private function fixture(): array
+    private function fixture(?int $advertisedBytes = null): array
     {
         $work = app(RecoveryWork::class);
         $work->enqueue(RecoveryStage::Publish, 'publication-fixture', 1, 'publish', []);
@@ -707,13 +810,13 @@ final class RecoveryPublicationMariaDbTest extends TestCase
         $artifacts = new RecoveryArtifacts($this->makeTempDirectory('publication-artifacts'));
         $this->app->instance(RecoveryArtifacts::class, $artifacts);
         $manifest = new RecoveryManifest($artifacts);
-        $artifact = $manifest->write($files, 'alt.fixture', 'epoch', 1, 1, static function (RecoveryFilePlan $file): array {
+        $artifact = $manifest->write($files, 'alt.fixture', 'epoch', 1, 1, static function (RecoveryFilePlan $file) use ($advertisedBytes): array {
             $rows = [];
             for ($part = 1; $part <= $file->totalParts; $part++) {
                 $index = $file->role === RecoveryFileRole::Index;
                 $id = $index ? $file->identity : 'Part'.$part.'@fixture.invalid';
                 $rows[] = (object) ['message_id' => $id, 'source_message_id' => '<'.$id.'>',
-                    'article_number' => 4000000000 + ($index ? 10 : $part), 'advertised_bytes' => 100 + $part,
+                    'article_number' => 4000000000 + ($index ? 10 : $part), 'advertised_bytes' => $advertisedBytes ?? 100 + $part,
                     'embedded_timestamp_ms' => 1700000000000 + ($index ? 10 : $part), 'source_epoch' => 'epoch',
                     'capture_generation' => 1, 'groups_id' => 1, 'metadata_conflict' => false,
                     'raw_subject' => 'opaque', 'poster_identity' => 'poster', 'source_date' => '2023-11-14T22:13:20Z',
