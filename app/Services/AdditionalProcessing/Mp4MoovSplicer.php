@@ -24,6 +24,46 @@ final readonly class Mp4MoovSplicer
         return $mdat === null ? null : $mdat['offset'] + $mdat['headerSize'];
     }
 
+    /**
+     * The offset just past the first top-level moov, read from its size field,
+     * when a fast-start head states it: its header lies inside $head and no
+     * mdat comes before it. The moov itself may run past the end of $head.
+     */
+    public function moovEndOffset(string $head): ?int
+    {
+        $length = strlen($head);
+        $offset = 0;
+
+        while ($offset + 8 <= $length) {
+            $size = $this->readUInt32($head, $offset);
+            $type = substr($head, $offset + 4, 4);
+            $headerSize = 8;
+
+            if ($size === 1) {
+                if ($offset + 16 > $length) {
+                    return null;
+                }
+                $size = $this->readUInt64($head, $offset + 8);
+                $headerSize = 16;
+            }
+
+            if ($type === 'moov') {
+                if ($size < $headerSize || $size > PHP_INT_MAX - $offset) {
+                    return null;
+                }
+
+                return $offset + $size;
+            }
+            if ($type === 'mdat' || $size < $headerSize || $size > $length - $offset) {
+                return null;
+            }
+
+            $offset += $size;
+        }
+
+        return null;
+    }
+
     public function splice(string $head, string $tail, bool $atSegmentCap = false): Mp4MoovSpliceResult
     {
         $mdat = $this->mdatHeader($head);

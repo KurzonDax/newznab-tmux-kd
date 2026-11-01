@@ -515,6 +515,11 @@ of each selection and classifies magic bytes as RAR/ZIP, PAR2, Matroska, MP4,
 AVI, text/NFO, or unknown. The already-downloaded bytes are passed directly to
 the existing archive, PAR2, media, or NFO handler; they are never downloaded a
 second time. Unknown bytes record the `unknown-payload` unsupported reason.
+The first candidate classified as video continues into the named-file flow: it
+fetches the rest of the head window without re-downloading the sniffed article,
+then gets the MP4 tail splice, the dynamic segment budget and the same
+artifacts. With no rest, or when that fetch fails, the held article goes to the
+media handler alone, as every later video candidate does.
 
 The fallback is enabled by `ADDITIONAL_PAYLOAD_SNIFFING`; candidate count,
 byte budget, and the small-file segment threshold have matching

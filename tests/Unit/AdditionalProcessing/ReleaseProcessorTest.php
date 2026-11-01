@@ -599,6 +599,13 @@ class ReleaseProcessorTest extends TestCase
             1,
             'medium.bin',
         )->andReturn(['success' => true, 'data' => "\x1A\x45\xDF\xA3video", 'groupUnavailable' => false, 'error' => null]);
+        $downloadService->shouldReceive('download')->once()->with(
+            DownloadKind::MediaInfo,
+            ['<video-second>'],
+            '',
+            1,
+        )->andReturn(['success' => true, 'data' => str_repeat('v', 60), 'groupUnavailable' => false, 'error' => null]);
+        $downloadService->shouldReceive('meetsMinimumSize')->once()->andReturnTrue();
         $nntp = Mockery::mock(NNTPService::class);
         $downloadService->shouldReceive('getNNTP')->once()->andReturn($nntp);
 
@@ -634,21 +641,18 @@ class ReleaseProcessorTest extends TestCase
         $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
 
         $mediaService = Mockery::mock(MediaExtractionService::class);
-        $mediaService->shouldReceive('processVideoFile')->once()->with(
-            Mockery::on(static fn (string $path): bool => File::get($path) === "\x1A\x45\xDF\xA3video"),
-            Mockery::type(ReleaseProcessingContext::class),
-            $tmpPath,
+        $mediaService->shouldReceive('getMediaInfo')->once()->with(
+            Mockery::on(static fn (string $path): bool => File::get($path) === "\x1A\x45\xDF\xA3video".str_repeat('v', 60)),
+            1,
             Mockery::on(static fn (MediaInfoProbeContext $probe): bool => $probe->sourceCompleteness === MediaInfoSourceCompleteness::Partial),
-        )->andReturnUsing(static function (string $path, ReleaseProcessingContext $context): array {
-            $context->foundMediaInfo = true;
-
-            return ['sample' => false, 'video' => false, 'mediaInfo' => true];
-        });
+        )->andReturnTrue();
 
         $output = Mockery::mock(ConsoleOutputService::class);
         $output->shouldReceive('echoReleaseStart')->once()->andReturnNull();
         $output->shouldReceive('setProcessTitle')->once()->andReturnNull();
         $output->shouldReceive('echoNfoFound')->once()->andReturnNull();
+        $output->shouldReceive('echoMediaInfoDownload')->once()->andReturnNull();
+        $output->shouldReceive('echoMediaInfoAdded')->once()->andReturnNull();
 
         $tempWorkspace = Mockery::mock(TempWorkspaceService::class);
         $tempWorkspace->shouldReceive('createReleaseTempFolder')->once()->andReturn($tmpPath);
@@ -680,6 +684,206 @@ class ReleaseProcessorTest extends TestCase
         $this->assertSame('Recovered.From.PAR2', $context->release->searchname);
         $this->assertTrue($context->foundMediaInfo);
         $this->assertFalse($context->releaseHasNoNFO);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function sniffedVideoFirstArticles(): array
+    {
+        return [
+            'fast-start MP4' => [pack('N', 16).'ftypisom0000'.pack('N', 24).'moov'.str_repeat('m', 16).str_repeat('v', 40)],
+            'Matroska' => ["\x1A\x45\xDF\xA3".str_repeat('k', 60)],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('sniffedVideoFirstArticles')]
+    public function a_sniffed_video_continues_into_the_named_flow_without_refetching_its_first_article(string $firstArticle): void
+    {
+        $rest = str_repeat('r', 100);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>'])],
+            [$this->successfulDownload($firstArticle), $this->successfulDownload($rest)],
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<a2>', '<a3>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame($firstArticle.$rest, $mediaCalls->mediaInfoFiles[0]['data']);
+        $this->assertSame($firstArticle.$rest, $mediaCalls->sampleFiles[0]['data']);
+        $this->assertSame($firstArticle.$rest, $mediaCalls->videoFiles[0]['data']);
+        $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertSame([], $mediaCalls->processVideoFiles);
+    }
+
+    #[Test]
+    public function an_mdat_first_sniffed_mp4_requests_the_tail(): void
+    {
+        $firstArticle = $this->mp4Atom('ftyp', 'isom0000').pack('N', 4096).'mdat'.str_repeat('v', 48);
+        $rest = str_repeat('r', 72);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>', '<a5>', '<a6>'], partsTotal: 6)],
+            [
+                $this->successfulDownload($firstArticle),
+                $this->successfulDownload($rest),
+                $this->successfulDownload('tail-prefix'.$this->validMoovAtom()),
+            ],
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo, DownloadKind::MediaInfoTail],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertStringEndsWith('media.mp4', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertStringEndsWith($this->validMoovAtom(), $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_sniffed_fast_start_mp4_gets_the_budget_with_the_first_article_counted_as_held(): void
+    {
+        // 3 held segments of 100 bytes; the moov ends at 450, two segments away.
+        // Leaving the first article out of the count makes that one segment.
+        $firstArticle = str_pad($this->fastStartHead(moovEnd: 450), 100, 'h');
+        $rest = str_repeat('r', 200);
+        $moovBytes = str_repeat('M', 200);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>', '<a5>', '<a6>'], sizeBytes: 600)],
+            [
+                $this->successfulDownload($firstArticle),
+                $this->successfulDownload($rest),
+                $this->successfulDownload($moovBytes),
+            ],
+            budgetEnabled: true,
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo, DownloadKind::MediaInfoTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<a4>', '<a5>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame($firstArticle.$rest.$moovBytes, $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_one_segment_sniffed_video_makes_no_empty_request(): void
+    {
+        $firstArticle = "\x1A\x45\xDF\xA3".str_repeat('k', 60);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>'])],
+            [$this->successfulDownload($firstArticle)],
+        );
+
+        $this->assertSame([DownloadKind::PayloadSniff], array_column($downloadCalls->calls, 'kind'));
+        $this->assertSame([$firstArticle], array_column($mediaCalls->processVideoFiles, 'data'));
+        $this->assertSame([], $mediaCalls->mediaInfoFiles);
+    }
+
+    #[Test]
+    public function a_failed_sniffed_remainder_falls_back_to_the_held_article(): void
+    {
+        $firstArticle = "\x1A\x45\xDF\xA3".str_repeat('k', 60);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>'])],
+            [$this->successfulDownload($firstArticle), $this->failedDownload()],
+            budgetEnabled: true,
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame([$firstArticle], array_column($mediaCalls->processVideoFiles, 'data'));
+        $this->assertSame([], $mediaCalls->mediaInfoFiles);
+    }
+
+    #[Test]
+    public function an_unavailable_group_during_the_sniffed_remainder_stops_the_candidates(): void
+    {
+        [$downloadCalls, $mediaCalls, $context] = $this->processSniffedVideoCandidates(
+            [
+                $this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>'], sizeBytes: 400),
+                $this->sniffedFile('later.bin', ['<b1>', '<b2>'], sizeBytes: 100),
+            ],
+            [
+                $this->successfulDownload("\x1A\x45\xDF\xA3".str_repeat('k', 60)),
+                ['success' => false, 'data' => null, 'groupUnavailable' => true, 'error' => 'group unavailable'],
+            ],
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertTrue($context->groupUnavailable);
+        $this->assertSame([], $mediaCalls->processVideoFiles);
+        $this->assertSame([], $mediaCalls->mediaInfoFiles);
+    }
+
+    #[Test]
+    public function a_later_sniffed_video_keeps_the_held_article_handler(): void
+    {
+        $first = "\x1A\x45\xDF\xA3".str_repeat('k', 60);
+        $second = "\x1A\x45\xDF\xA3".str_repeat('l', 60);
+        $rest = str_repeat('r', 100);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [
+                $this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>'], sizeBytes: 400),
+                $this->sniffedFile('later.bin', ['<b1>', '<b2>'], sizeBytes: 100),
+            ],
+            [
+                $this->successfulDownload($first),
+                $this->successfulDownload($rest),
+                $this->successfulDownload($second),
+            ],
+        );
+
+        $this->assertSame(
+            [DownloadKind::PayloadSniff, DownloadKind::MediaInfo, DownloadKind::PayloadSniff],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame([$first.$rest], array_column($mediaCalls->mediaInfoFiles, 'data'));
+        $this->assertSame([$second], array_column($mediaCalls->processVideoFiles, 'data'));
+    }
+
+    #[Test]
+    public function a_sniffed_title_with_no_extension_gets_the_window_and_previews_without_mediainfo(): void
+    {
+        $firstArticle = "\x1A\x45\xDF\xA3".str_repeat('k', 60);
+        $rest = str_repeat('r', 100);
+
+        [$downloadCalls, $mediaCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('a1b2c3d4e5f60718', ['<a1>', '<a2>', '<a3>', '<a4>'])],
+            [$this->successfulDownload($firstArticle), $this->successfulDownload($rest)],
+            ['processMediaInfo' => false],
+        );
+
+        $this->assertSame(['<a2>', '<a3>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame([], $mediaCalls->mediaInfoFiles);
+        $this->assertSame($firstArticle.$rest, $mediaCalls->sampleFiles[0]['data']);
+        $this->assertSame($firstArticle.$rest, $mediaCalls->videoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_sniffed_video_with_nothing_left_to_produce_fetches_no_head_window(): void
+    {
+        $firstArticle = "\x1A\x45\xDF\xA3".str_repeat('k', 60);
+
+        [$downloadCalls] = $this->processSniffedVideoCandidates(
+            [$this->sniffedFile('obfuscated.bin', ['<a1>', '<a2>', '<a3>', '<a4>'])],
+            [$this->successfulDownload($firstArticle)],
+            ['processMediaInfo' => false, 'processThumbnails' => false, 'processVideo' => false],
+        );
+
+        $this->assertSame([DownloadKind::PayloadSniff], array_column($downloadCalls->calls, 'kind'));
     }
 
     #[Test]
@@ -1076,6 +1280,166 @@ class ReleaseProcessorTest extends TestCase
         );
 
         $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    #[Test]
+    public function a_head_ending_inside_the_moov_tops_up_to_the_moov_end_plus_the_target(): void
+    {
+        // The moov ends at 180: 80 missing bytes at 50 bytes/segment is 2
+        // segments. At 200 bytes / 30 s the 30 s target is 200 playable bytes
+        // from the moov end: 180 + 200 - 200 held = 180, so 4 more segments.
+        $head = str_pad($this->fastStartHead(moovEnd: 180), 100, 'h');
+        $moovBytes = str_repeat('M', 100);
+        $playableBytes = str_repeat('P', 200);
+
+        [, $downloadCalls, $mediaCalls, , $probes] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 200),
+            $head,
+            [$this->successfulDownload($moovBytes), $this->successfulDownload($playableBytes)],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+            probeReadableFromBytes: 180,
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTopUp, DownloadKind::MediaInfoTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<s3>', '<s4>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<s5>', '<s6>', '<s7>', '<s8>'], $downloadCalls->calls[2]['messageIds']);
+        $requested = array_merge(...array_column($downloadCalls->calls, 'messageIds'));
+        $this->assertSame(array_values(array_unique($requested)), $requested, 'No message id may be requested twice.');
+        $this->assertSame([200], $probes->headProbeSizes, 'The probe must see the grown head.');
+        $this->assertStringEndsWith('media.avi', $mediaCalls->mediaInfoFiles[0]['path']);
+        $this->assertSame($head.$moovBytes.$playableBytes, $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_moov_inside_the_head_still_counts_playable_bytes_from_its_end(): void
+    {
+        // 10 B/s: 300 playable bytes from the moov end at 60, less the 100
+        // held, is 260: 6 segments where the plain target would ask for 4.
+        [, $downloadCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 300),
+            str_pad($this->fastStartHead(moovEnd: 60), 100, 'h'),
+            [$this->successfulDownload('TOPUP-DATA')],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(['<s3>', '<s4>', '<s5>', '<s6>', '<s7>', '<s8>'], $downloadCalls->calls[1]['messageIds']);
+    }
+
+    /**
+     * @return array<string, array{int, array<string, mixed>}>
+     */
+    public static function bareMoovEndsThatFetchNothing(): array
+    {
+        return [
+            'past the byte ceiling' => [400, ['previewMaxFetchBytes' => 150]],
+            'past the file size' => [120, ['previewMaxFetchBytes' => 0]],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     */
+    #[Test]
+    #[DataProvider('bareMoovEndsThatFetchNothing')]
+    public function a_bare_moov_end_past_a_limit_fetches_nothing(int $sizeBytes, array $configOverrides): void
+    {
+        $head = str_pad($this->fastStartHead(moovEnd: 180), 100, 'h');
+
+        [, $downloadCalls, $mediaCalls, , $probes] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File($sizeBytes),
+            $head,
+            configOverrides: $configOverrides,
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+        $this->assertSame([], $probes->headProbeSizes);
+        $this->assertSame($head, $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_gap_inside_the_bare_moov_range_skips_with_the_existing_reason(): void
+    {
+        $file = $this->tenSegmentMp4File(sizeBytes: 400);
+        // Contiguous through 3 segments; the 2 held plus the 2 the moov needs reach 4.
+        $file['segmentNumbers'] = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11];
+        $file['partstotal'] = '11';
+
+        [, $downloadCalls, , $result, $probes] = $this->processDynamicBudgetCandidate(
+            $file,
+            str_pad($this->fastStartHead(moovEnd: 180), 100, 'h'),
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame([DownloadKind::MediaInfo], array_column($downloadCalls->calls, 'kind'));
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+        $this->assertSame([], $probes->headProbeSizes);
+    }
+
+    #[Test]
+    public function the_bare_gap_gate_counts_the_segments_the_moov_phase_holds(): void
+    {
+        $file = $this->tenSegmentMp4File(sizeBytes: 200);
+        // Contiguous through 5: the moov phase holds 4, and the 4 the target wants reach 8.
+        $file['segmentNumbers'] = [1, 2, 3, 4, 5, 7, 8, 9, 10, 11];
+        $file['partstotal'] = '11';
+        $head = str_pad($this->fastStartHead(moovEnd: 180), 100, 'h');
+        $moovBytes = str_repeat('M', 100);
+
+        [, $downloadCalls, $mediaCalls, $result] = $this->processDynamicBudgetCandidate(
+            $file,
+            $head,
+            [$this->successfulDownload($moovBytes)],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(
+            [DownloadKind::MediaInfo, DownloadKind::MediaInfoTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+        $this->assertSame($head.$moovBytes, $mediaCalls->mediaInfoFiles[0]['data'], 'Bytes already fetched are kept.');
+    }
+
+    #[Test]
+    public function the_byte_ceiling_stops_the_bare_moov_phase_before_any_probe(): void
+    {
+        // Under a 190-byte ceiling only one whole segment fits after the
+        // 100-byte head, and 150 bytes do not reach the moov end at 180.
+        $head = str_pad($this->fastStartHead(moovEnd: 180), 100, 'h');
+        $moovBytes = str_repeat('M', 50);
+
+        [, $downloadCalls, $mediaCalls, , $probes] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 400),
+            $head,
+            [$this->successfulDownload($moovBytes)],
+            ['previewMaxFetchBytes' => 190],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame(['<s3>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertCount(2, $downloadCalls->calls);
+        $this->assertSame([], $probes->headProbeSizes);
+        $this->assertSame($head.$moovBytes, $mediaCalls->mediaInfoFiles[0]['data']);
+    }
+
+    #[Test]
+    public function a_failed_duration_fetch_keeps_the_bytes_the_moov_phase_fetched(): void
+    {
+        $head = str_pad($this->fastStartHead(moovEnd: 180), 100, 'h');
+        $moovBytes = str_repeat('M', 100);
+
+        [, , $mediaCalls] = $this->processDynamicBudgetCandidate(
+            $this->tenSegmentMp4File(sizeBytes: 200),
+            $head,
+            [$this->successfulDownload($moovBytes), $this->failedDownload()],
+            probeResult: new VideoHeadProbeResult(durationSeconds: 30.0),
+        );
+
+        $this->assertSame($head.$moovBytes, $mediaCalls->mediaInfoFiles[0]['data']);
     }
 
     #[Test]
@@ -1507,6 +1871,402 @@ class ReleaseProcessorTest extends TestCase
     }
 
     #[Test]
+    public function a_compressed_moov_past_the_fragment_is_fetched_before_any_probe_then_the_duration_target(): void
+    {
+        // The moov ends at 550: 250 missing bytes at 100 bytes/segment is
+        // exactly 3 segments. At 40 B/s the 20 s demuxed then need 400 more
+        // bytes, which the same fetch takes from part02.
+        [$downloadCalls, , $fragmentPath, $extraction] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s5>', '<p2s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 400)),
+            ],
+            extractSizes: [300, 600, 1000],
+            decodableDurations: [20.0, 30.0],
+            fragmentHead: $this->fastStartHead(moovEnd: 550),
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame([600, 1000], $extraction->decodableProbeSizes, 'Nothing may probe a fragment that ends inside the moov.');
+        $this->assertSame([600], $extraction->headProbeSizes);
+        $this->assertSame(1000, filesize($fragmentPath));
+    }
+
+    #[Test]
+    public function a_compressed_moov_that_is_already_covered_adds_no_moov_fetch(): void
+    {
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+            decodableDurations: [30.0],
+            fragmentHead: $this->fastStartHead(moovEnd: 250),
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+    }
+
+    /**
+     * @return array<string, array{int, array<string, mixed>, string}>
+     */
+    public static function compressedMoovEndsThatFetchNothing(): array
+    {
+        return [
+            'past the byte ceiling' => [5000, ['previewMaxFetchBytes' => 4000], 'moov past byte ceiling'],
+            'past the byte ceiling and the file end names the ceiling' => [5000, ['previewMaxFetchBytes' => 1000], 'moov past byte ceiling'],
+            'under the ceiling, past the entry size' => [1300, ['previewMaxFetchBytes' => 4000], 'moov past file end'],
+            'no ceiling, past the entry size' => [1300, ['previewMaxFetchBytes' => 0], 'moov past file end'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     */
+    #[Test]
+    #[DataProvider('compressedMoovEndsThatFetchNothing')]
+    public function a_compressed_moov_end_past_a_limit_fetches_nothing(int $moovEnd, array $configOverrides, string $reason): void
+    {
+        Log::spy();
+
+        [$downloadCalls, , , $extraction] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+            configOverrides: $configOverrides,
+            decodableDurations: [],
+            fragmentHead: $this->fastStartHead($moovEnd),
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        $this->assertSame([], $extraction->decodableProbeSizes);
+        Log::shouldHaveReceived('debug')->once()->withArgs(
+            static fn (string $message, array $details): bool => $message === 'Compressed preview top-up probe-failed'
+                && $details['reason'] === $reason,
+        );
+    }
+
+    #[Test]
+    public function the_compressed_moov_and_duration_phases_are_one_fetch(): void
+    {
+        // A 800-byte ceiling: 300 head + 300 moov leaves two whole segments for
+        // the duration phase, which would otherwise ask for four.
+        [$downloadCalls, , , $extraction] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>', '<p2s4>', '<p2s5>', '<p2s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 200)),
+            ],
+            extractSizes: [300, 600, 800],
+            configOverrides: ['previewMaxFetchBytes' => 800],
+            decodableDurations: [20.0, 26.0],
+            fragmentHead: $this->fastStartHead(moovEnd: 550),
+        );
+
+        $requested = array_merge(...array_column($downloadCalls->calls, 'messageIds'));
+        $this->assertSame(array_values(array_unique($requested)), $requested, 'No message id may be requested twice.');
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[1]['messageIds']);
+        $this->assertSame(['<p2s1>', '<p2s2>'], $downloadCalls->calls[2]['messageIds']);
+        $this->assertSame(
+            [
+                'preview-archive.part001.rar' => str_repeat('a', 300).str_repeat('b', 300),
+                'preview-archive.part002.rar' => str_repeat('c', 200),
+            ],
+            $extraction->workingVolumes,
+            'Each batch lands in its volume exactly once.',
+        );
+    }
+
+    #[Test]
+    public function the_anchor_gap_gate_counts_the_segments_the_moov_phase_already_holds(): void
+    {
+        // Contiguous through 7 segments. The moov phase holds 6 by then; the
+        // duration phase wants 4 more and 2 are left, reaching 8: a gap.
+        [$downloadCalls, $result] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                [
+                    'title' => 'release.part01.rar',
+                    'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>', '<p1s7>', '<p1s9>'],
+                    'segmentNumbers' => [1, 2, 3, 4, 5, 6, 7, 9],
+                    'partstotal' => '9',
+                ],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+            decodableDurations: [20.0],
+            fragmentHead: $this->fastStartHead(moovEnd: 550),
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertContains('segment-gaps', $result->unsupportedReasons);
+    }
+
+    /**
+     * Every case holds a moov the bound keeps from being covered.
+     *
+     * @return array<string, array{nzbFiles: array<int, array<string, mixed>>, moovEnd: int, configOverrides: array<string, mixed>, fetchSucceeds: bool, topUpFetches: int, extractSizes: list<int>, gapReason: bool}>
+     */
+    public static function compressedMoovPhaseBounds(): array
+    {
+        $part01 = ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']];
+        $part02 = ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']];
+
+        return [
+            'parts cap' => [
+                'nzbFiles' => [$part01, $part02],
+                'moovEnd' => 900,
+                'configOverrides' => ['previewMaxRarParts' => 1],
+                'fetchSucceeds' => true,
+                'topUpFetches' => 1,
+                'extractSizes' => [300, 600],
+                'gapReason' => false,
+            ],
+            'gap in the anchor part' => [
+                'nzbFiles' => [[
+                    'title' => 'release.part01.rar',
+                    'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s8>', '<p1s9>'],
+                    'segmentNumbers' => [1, 2, 3, 4, 8, 9],
+                    'partstotal' => '9',
+                ]],
+                'moovEnd' => 900,
+                'configOverrides' => [],
+                'fetchSucceeds' => true,
+                'topUpFetches' => 0,
+                'extractSizes' => [300],
+                'gapReason' => true,
+            ],
+            'gap in the next part' => [
+                'nzbFiles' => [$part01, [
+                    'title' => 'release.part02.rar',
+                    'segments' => ['<p2s1>', '<p2s2>', '<p2s4>', '<p2s5>'],
+                    'segmentNumbers' => [1, 2, 4, 5],
+                    'partstotal' => '5',
+                ]],
+                'moovEnd' => 1190,
+                'configOverrides' => [],
+                'fetchSucceeds' => true,
+                'topUpFetches' => 1,
+                'extractSizes' => [300, 600],
+                'gapReason' => true,
+            ],
+            'byte ceiling' => [
+                'nzbFiles' => [$part01, $part02],
+                'moovEnd' => 490,
+                'configOverrides' => ['previewMaxFetchBytes' => 500],
+                'fetchSucceeds' => true,
+                'topUpFetches' => 1,
+                'extractSizes' => [200, 400],
+                'gapReason' => false,
+            ],
+            'failed fetch' => [
+                'nzbFiles' => [$part01, $part02],
+                'moovEnd' => 900,
+                'configOverrides' => [],
+                'fetchSucceeds' => false,
+                'topUpFetches' => 1,
+                'extractSizes' => [300],
+                'gapReason' => false,
+            ],
+            'no progress' => [
+                'nzbFiles' => [$part01, $part02],
+                'moovEnd' => 900,
+                'configOverrides' => [],
+                'fetchSucceeds' => true,
+                'topUpFetches' => 1,
+                'extractSizes' => [300, 300],
+                'gapReason' => false,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $nzbFiles
+     * @param  array<string, mixed>  $configOverrides
+     * @param  list<int>  $extractSizes
+     */
+    #[Test]
+    #[DataProvider('compressedMoovPhaseBounds')]
+    public function a_bound_stops_the_compressed_moov_phase_and_leaves_the_fragment(
+        array $nzbFiles,
+        int $moovEnd,
+        array $configOverrides,
+        bool $fetchSucceeds,
+        int $topUpFetches,
+        array $extractSizes,
+        bool $gapReason,
+    ): void {
+        $response = $fetchSucceeds ? $this->successfulDownload(str_repeat('b', 200)) : $this->failedDownload();
+
+        [$downloadCalls, $result, $fragmentPath, $extraction] = $this->processCompressedTopUpCandidate(
+            nzbFiles: $nzbFiles,
+            initialData: str_repeat('a', 300),
+            responses: array_fill(0, $topUpFetches, $response),
+            extractSizes: $extractSizes,
+            configOverrides: $configOverrides,
+            decodableDurations: [],
+            fragmentHead: $this->fastStartHead($moovEnd),
+        );
+
+        $this->assertCount(1 + $topUpFetches, $downloadCalls->calls);
+        $this->assertSame([], $extraction->decodableProbeSizes, 'A moov that was never covered is not probed.');
+        $this->assertSame([], $extraction->headProbeSizes, 'A moov that was never covered is not probed.');
+        $this->assertFileExists($fragmentPath);
+        $this->assertSame($extractSizes[array_key_last($extractSizes)], filesize($fragmentPath));
+        if ($gapReason) {
+            $this->assertContains('segment-gaps', $result->unsupportedReasons);
+        } else {
+            $this->assertNotContains('segment-gaps', $result->unsupportedReasons);
+        }
+    }
+
+    /**
+     * @return array<string, array{string, list<string>}>
+     */
+    public static function firstVolumesAndTheirWorkingNames(): array
+    {
+        $rar4 = "Rar!\x1a\x07\x00\xcf\x90";
+        $oldNames = ['preview-archive.r00', 'preview-archive.r01', 'preview-archive.rar'];
+        $partNames = ['preview-archive.part001.rar', 'preview-archive.part002.rar', 'preview-archive.part003.rar'];
+
+        return [
+            'old-numbered RAR4' => [$rar4."\x73\x01\x01\x0d\x00", $oldNames],
+            'new-numbered RAR4' => [$rar4."\x73\x11\x01\x0d\x00", $partNames],
+            'RAR5' => ["Rar!\x1a\x07\x01\x00\x33\x92\xb5\xe5\x0a\x01\x05", $partNames],
+            'RAR4 marker with no main header at byte 9' => [$rar4."\x74\x01\x01\x0d\x00", $partNames],
+            'not a RAR' => ['just some bytes', $partNames],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $expectedVolumes
+     */
+    #[Test]
+    #[DataProvider('firstVolumesAndTheirWorkingNames')]
+    public function working_volumes_follow_the_sets_numbering_and_do_not_survive(string $firstVolumeHead, array $expectedVolumes): void
+    {
+        $firstVolume = str_pad($firstVolumeHead, 300, 'a');
+
+        [, , , $extraction] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.rar', 'segments' => ['<v1s1>', '<v1s2>', '<v1s3>']],
+                ['title' => 'release.r00', 'segments' => ['<v2s1>', '<v2s2>', '<v2s3>']],
+                ['title' => 'release.r01', 'segments' => ['<v3s1>', '<v3s2>', '<v3s3>']],
+            ],
+            initialData: $firstVolume,
+            responses: [
+                $this->successfulDownload(str_repeat('b', 300)),
+                $this->successfulDownload(str_repeat('c', 100)),
+            ],
+            extractSizes: [300, 600, 700],
+            decodableDurations: [30.0],
+            fragmentHead: $this->fastStartHead(moovEnd: 650),
+        );
+
+        $firstVolumeName = in_array('preview-archive.rar', $expectedVolumes, true)
+            ? 'preview-archive.rar'
+            : 'preview-archive.part001.rar';
+        $this->assertSame($expectedVolumes, array_keys($extraction->workingVolumes));
+        $this->assertSame($firstVolume, $extraction->workingVolumes[$firstVolumeName]);
+        foreach ($extraction->archivePaths as $archivePath) {
+            $this->assertSame($firstVolumeName, basename($archivePath), 'unrar is always pointed at the first volume.');
+        }
+        $this->assertSame([], glob($this->releaseTempPath.'preview-archive.*') ?: []);
+    }
+
+    #[Test]
+    public function an_unreadable_demux_with_a_known_bitrate_still_tops_up(): void
+    {
+        // 40 B/s and 0.0 s decodable: the whole 1200-byte target is wanted.
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+            decodableDurations: [null, 30.0],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        $this->assertSame(['<p1s4>', '<p1s5>', '<p1s6>'], $downloadCalls->calls[1]['messageIds']);
+    }
+
+    #[Test]
+    public function an_unreadable_demux_with_an_unknown_bitrate_makes_one_fetch(): void
+    {
+        Log::spy();
+
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [],
+            extractSizes: [300],
+            probeResult: null,
+            decodableDurations: [null],
+        );
+
+        $this->assertSame([DownloadKind::Compressed], array_column($downloadCalls->calls, 'kind'));
+        Log::shouldHaveReceived('debug')->once()->withArgs(
+            static fn (string $message, array $details): bool => $message === 'Compressed preview top-up probe-failed'
+                && $details['reason'] === 'duration unavailable',
+        );
+    }
+
+    #[Test]
+    public function an_unreadable_demux_inside_the_loop_still_stops_it(): void
+    {
+        Log::spy();
+
+        [$downloadCalls] = $this->processCompressedTopUpCandidate(
+            nzbFiles: [
+                ['title' => 'release.part01.rar', 'segments' => ['<p1s1>', '<p1s2>', '<p1s3>', '<p1s4>', '<p1s5>', '<p1s6>']],
+                ['title' => 'release.part02.rar', 'segments' => ['<p2s1>', '<p2s2>', '<p2s3>']],
+            ],
+            initialData: str_repeat('a', 300),
+            responses: [$this->successfulDownload(str_repeat('b', 300))],
+            extractSizes: [300, 600],
+            decodableDurations: [7.0, null],
+        );
+
+        $this->assertSame(
+            [DownloadKind::Compressed, DownloadKind::CompressedTopUp],
+            array_column($downloadCalls->calls, 'kind'),
+        );
+        Log::shouldHaveReceived('debug')->once()->withArgs(
+            static fn (string $message, array $details): bool => $message === 'Compressed preview top-up probe-failed'
+                && $details['reason'] === 'duration unavailable',
+        );
+    }
+
+    #[Test]
     public function it_skips_sample_downloads_and_ffmpeg_when_the_root_category_disables_preview_generation(): void
     {
         $config = $this->makeConfig([
@@ -1894,7 +2654,8 @@ class ReleaseProcessorTest extends TestCase
      * @param  array<string, mixed>  $file
      * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses  Download responses after the head download.
      * @param  array<string, mixed>  $configOverrides
-     * @return array{ReleaseProcessingContext, RecordingMp4DownloadCalls, RecordingMediaExtractionCalls, ReleaseProcessingResult}
+     * @param  int|null  $probeReadableFromBytes  The probe sees nothing until the file on disk reaches this size.
+     * @return array{ReleaseProcessingContext, RecordingMp4DownloadCalls, RecordingMediaExtractionCalls, ReleaseProcessingResult, RecordingPreviewExtraction}
      */
     private function processDynamicBudgetCandidate(
         array $file,
@@ -1903,8 +2664,10 @@ class ReleaseProcessorTest extends TestCase
         array $configOverrides = [],
         ?VideoHeadProbeResult $probeResult = null,
         bool $budgetEnabled = true,
+        ?int $probeReadableFromBytes = null,
     ): array {
         File::ensureDirectoryExists($this->releaseTempPath);
+        $probes = new RecordingPreviewExtraction;
         $config = $this->makeConfig(array_merge([
             'processMediaInfo' => true,
             'processThumbnails' => true,
@@ -1954,14 +2717,99 @@ class ReleaseProcessorTest extends TestCase
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
             freeDiskGuard: $this->permissiveDiskGuard(),
-            headProbe: new StubVideoHeadProbe($probeResult),
+            headProbe: new StubVideoHeadProbe($probeResult, $probes, $probeReadableFromBytes),
         );
 
         $context = $this->makeContext();
         $context->release->nfostatus = 1;
         $result = $processor->process($context, $this->mainTempPath);
 
-        return [$context, $downloadCalls, $mediaCalls, $result];
+        return [$context, $downloadCalls, $mediaCalls, $result, $probes];
+    }
+
+    /**
+     * @param  list<string>  $segments
+     * @return array<string, mixed>
+     */
+    private function sniffedFile(string $title, array $segments, int $sizeBytes = 300, ?int $partsTotal = null): array
+    {
+        return [
+            'title' => $title,
+            'segments' => $segments,
+            'size' => $sizeBytes,
+            'partsactual' => count($segments),
+            'partstotal' => (string) ($partsTotal ?? count($segments)),
+        ];
+    }
+
+    /**
+     * Drive a release whose NZB holds only obfuscated files. Every artifact
+     * is wanted unless $configOverrides says otherwise; the head window is 3.
+     *
+     * @param  list<array<string, mixed>>  $files
+     * @param  list<array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}>  $responses
+     * @param  array<string, mixed>  $configOverrides
+     * @return array{RecordingMp4DownloadCalls, RecordingMediaExtractionCalls, ReleaseProcessingContext}
+     */
+    private function processSniffedVideoCandidates(
+        array $files,
+        array $responses,
+        array $configOverrides = [],
+        bool $budgetEnabled = false,
+    ): array {
+        File::ensureDirectoryExists($this->releaseTempPath);
+        $config = $this->makeConfig(array_merge([
+            'processMediaInfo' => true,
+            'processThumbnails' => true,
+            'processVideo' => true,
+            'segmentsToDownload' => 3,
+            'mp4TailMaxSegments' => 2,
+        ], $configOverrides));
+        $nzbParser = Mockery::mock(NzbContentParser::class);
+        $nzbParser->shouldReceive('parseNzb')->once()->andReturn(['error' => null, 'contents' => $files]);
+
+        $downloadCalls = new RecordingMp4DownloadCalls($responses);
+        $downloadService = $this->scopedDownloadService();
+        $downloadService->shouldReceive('download')
+            ->times(count($responses))
+            ->andReturnUsing($downloadCalls->download(...));
+        $downloadService->shouldReceive('meetsMinimumSize')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing($downloadCalls->meetsMinimumSize(...));
+
+        $mediaCalls = new RecordingMediaExtractionCalls;
+        $mediaService = Mockery::mock(MediaExtractionService::class);
+        $mediaService->shouldReceive('getMediaInfo')->zeroOrMoreTimes()->andReturnUsing($mediaCalls->recordMediaInfo(...));
+        $mediaService->shouldReceive('getSample')->zeroOrMoreTimes()->andReturnUsing($mediaCalls->recordSample(...));
+        $mediaService->shouldReceive('getVideo')->zeroOrMoreTimes()->andReturnUsing($mediaCalls->recordVideo(...));
+        $mediaService->shouldReceive('processVideoFile')->zeroOrMoreTimes()->andReturnUsing($mediaCalls->recordProcessVideoFile(...));
+
+        $releaseManager = Mockery::mock(ReleaseFileManager::class);
+        $releaseManager->shouldReceive('processReleaseNameFromNzbContents')->once()->andReturnFalse();
+        $releaseManager->shouldReceive('finalizeRelease')->once()->andReturnNull();
+
+        $processor = new ReleaseProcessor(
+            $config,
+            $nzbParser,
+            new AdditionalWorkPlanner($config),
+            Mockery::mock(ArchiveExtractionService::class),
+            $mediaService,
+            $downloadService,
+            $releaseManager,
+            Mockery::mock(ReleaseFilesArchiveFallback::class),
+            $this->successfulTempWorkspace(),
+            new ConsoleOutputService,
+            previewPolicy: $this->stubPreviewPolicy(),
+            dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
+            freeDiskGuard: $this->permissiveDiskGuard(),
+            headProbe: new StubVideoHeadProbe(null),
+        );
+
+        $context = $this->makeContext();
+        $context->release->nfostatus = 1;
+        $processor->process($context, $this->mainTempPath);
+
+        return [$downloadCalls, $mediaCalls, $context];
     }
 
     /**
@@ -1977,7 +2825,8 @@ class ReleaseProcessorTest extends TestCase
      * @param  list<float|null>|null  $decodableDurations  Playable seconds after each extraction; defaults to the same ratio as the declared duration.
      * @param  array<string, mixed>  $configOverrides
      * @param  array{success: bool, data: string|null, groupUnavailable: bool, error: string|null}|null  $initialResponse
-     * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string}
+     * @param  string  $fragmentHead  Real atom bytes every extracted fragment starts with; the rest is padding.
+     * @return array{RecordingMp4DownloadCalls, ReleaseProcessingResult, string, RecordingPreviewExtraction}
      */
     private function processCompressedTopUpCandidate(
         array $nzbFiles,
@@ -1990,6 +2839,7 @@ class ReleaseProcessorTest extends TestCase
         int $videoEntrySize = 1200,
         ?array $decodableDurations = null,
         ?array $initialResponse = null,
+        string $fragmentHead = '',
     ): array {
         File::ensureDirectoryExists($this->releaseTempPath);
         $config = $this->makeConfig(array_merge([
@@ -2016,6 +2866,7 @@ class ReleaseProcessorTest extends TestCase
 
         $fragmentPath = $this->releaseTempPath.'unrar/movie.mkv';
         $extractIndex = 0;
+        $extraction = new RecordingPreviewExtraction;
         $declaredDuration = $probeResult?->durationSeconds ?? 30.0;
         $bytesPerSecond = $videoEntrySize > 0 && $declaredDuration > 0
             ? $videoEntrySize / $declaredDuration
@@ -2038,9 +2889,11 @@ class ReleaseProcessorTest extends TestCase
             ->andReturn(['files' => [['name' => 'movie.mkv', 'size' => $videoEntrySize]], 'hasPassword' => false]);
         $archiveService->shouldReceive('extractSpecificFileToPath')
             ->times(count($extractSizes))
-            ->andReturnUsing(function () use (&$extractIndex, $extractSizes, $fragmentPath): string {
+            ->andReturnUsing(function (string $archivePath) use (&$extractIndex, $extractSizes, $fragmentPath, $fragmentHead, $extraction): string {
+                $extraction->recordExtraction($archivePath);
                 File::ensureDirectoryExists(dirname($fragmentPath));
-                file_put_contents($fragmentPath, str_repeat('x', $extractSizes[$extractIndex]));
+                $size = $extractSizes[$extractIndex];
+                file_put_contents($fragmentPath, substr($fragmentHead.str_repeat('x', $size), 0, $size));
                 $extractIndex++;
 
                 return $fragmentPath;
@@ -2076,15 +2929,15 @@ class ReleaseProcessorTest extends TestCase
             previewPolicy: $this->stubPreviewPolicy(),
             dynamicBudgetPolicy: $this->stubDynamicBudgetPolicy($budgetEnabled),
             freeDiskGuard: $this->permissiveDiskGuard(),
-            headProbe: new StubVideoHeadProbe($probeResult),
-            decodableLengthProbe: new StubVideoDecodableLengthProbe($decodableDurations),
+            headProbe: new StubVideoHeadProbe($probeResult, $extraction),
+            decodableLengthProbe: new StubVideoDecodableLengthProbe($decodableDurations, $extraction),
         );
 
         $context = $this->makeContext();
         $context->release->nfostatus = 1;
         $result = $processor->process($context, $this->mainTempPath);
 
-        return [$downloadCalls, $result, $fragmentPath];
+        return [$downloadCalls, $result, $fragmentPath, $extraction];
     }
 
     /**
@@ -2116,6 +2969,16 @@ class ReleaseProcessorTest extends TestCase
     private function mp4Atom(string $type, string $payload): string
     {
         return pack('N', strlen($payload) + 8).$type.$payload;
+    }
+
+    /**
+     * The first bytes of a fast-start MP4 whose moov ends at $moovEnd.
+     */
+    private function fastStartHead(int $moovEnd): string
+    {
+        $ftyp = $this->mp4Atom('ftyp', 'isom0000');
+
+        return $ftyp.pack('N', $moovEnd - strlen($ftyp)).'moov';
     }
 
     private function validMoovAtom(): string
@@ -2214,25 +3077,67 @@ class ReleaseProcessorTest extends TestCase
 
 final class StubVideoHeadProbe extends VideoHeadProbe
 {
-    public function __construct(private readonly ?VideoHeadProbeResult $result)
-    {
+    /**
+     * @param  int|null  $readableFromBytes  Like ffmpeg on a fast-start MP4: no result until the probed file reaches this size (the moov end).
+     */
+    public function __construct(
+        private readonly ?VideoHeadProbeResult $result,
+        private readonly ?RecordingPreviewExtraction $extraction = null,
+        private readonly ?int $readableFromBytes = null,
+    ) {
         parent::__construct(static fn (): string => '');
     }
 
     public function probe(string $videoPath, ProcessingConfiguration $config): ?VideoHeadProbeResult
     {
-        return $this->result;
+        $size = (int) filesize($videoPath);
+        if ($this->extraction !== null) {
+            $this->extraction->headProbeSizes[] = $size;
+        }
+
+        return $this->readableFromBytes !== null && $size < $this->readableFromBytes ? null : $this->result;
     }
 }
 
 final class StubVideoDecodableLengthProbe extends VideoDecodableLengthProbe
 {
     /** @param list<float|null> $durations */
-    public function __construct(private array $durations) {}
+    public function __construct(
+        private array $durations,
+        private readonly ?RecordingPreviewExtraction $extraction = null,
+    ) {}
 
     public function demuxedSeconds(string $path, ProcessingConfiguration $config): ?float
     {
+        if ($this->extraction !== null) {
+            $this->extraction->decodableProbeSizes[] = (int) filesize($path);
+        }
+
         return array_shift($this->durations);
+    }
+}
+
+final class RecordingPreviewExtraction
+{
+    /** @var list<string> Archive path handed to each extraction. */
+    public array $archivePaths = [];
+
+    /** @var array<string, string> Working volumes on disk at the last extraction, by file name. */
+    public array $workingVolumes = [];
+
+    /** @var list<int> Fragment size at each decodable-length probe. */
+    public array $decodableProbeSizes = [];
+
+    /** @var list<int> Fragment size at each head probe. */
+    public array $headProbeSizes = [];
+
+    public function recordExtraction(string $archivePath): void
+    {
+        $this->archivePaths[] = $archivePath;
+        $this->workingVolumes = [];
+        foreach (glob(dirname($archivePath).'/preview-archive.*') ?: [] as $volume) {
+            $this->workingVolumes[basename($volume)] = (string) file_get_contents($volume);
+        }
     }
 }
 
@@ -2286,6 +3191,12 @@ final class RecordingMediaExtractionCalls
     /** @var list<array{path: string, data: string}> */
     public array $sampleFiles = [];
 
+    /** @var list<array{path: string, data: string}> */
+    public array $videoFiles = [];
+
+    /** @var list<array{path: string, data: string}> */
+    public array $processVideoFiles = [];
+
     public function recordMediaInfo(string $fileLocation, int $releaseId): bool
     {
         $this->mediaInfoFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
@@ -2298,5 +3209,22 @@ final class RecordingMediaExtractionCalls
         $this->sampleFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
 
         return true;
+    }
+
+    public function recordVideo(string $fileLocation, string $tmpPath, string $guid, int $categoriesId): bool
+    {
+        $this->videoFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
+
+        return true;
+    }
+
+    /**
+     * @return array{sample: bool, video: bool, mediaInfo: bool}
+     */
+    public function recordProcessVideoFile(string $fileLocation): array
+    {
+        $this->processVideoFiles[] = ['path' => $fileLocation, 'data' => (string) file_get_contents($fileLocation)];
+
+        return ['sample' => false, 'video' => false, 'mediaInfo' => false];
     }
 }

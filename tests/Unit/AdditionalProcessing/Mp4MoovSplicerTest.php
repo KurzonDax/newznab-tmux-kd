@@ -6,6 +6,7 @@ namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
 use App\Services\AdditionalProcessing\Mp4MoovSplicer;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -121,6 +122,64 @@ final class Mp4MoovSplicerTest extends TestCase
             Mp4MoovSpliceStatus::Missing,
             $splicer->splice($head, $tailBeginningInsideMoov, true)->status,
         );
+    }
+
+    #[Test]
+    public function the_moov_end_is_read_from_a_32_bit_size(): void
+    {
+        $ftyp = $this->atom('ftyp', 'isom0000');
+        $head = $ftyp.pack('N', 5000).'moov'.'the-head-stops-inside-the-moov';
+
+        $this->assertSame(strlen($ftyp) + 5000, (new Mp4MoovSplicer)->moovEndOffset($head));
+    }
+
+    #[Test]
+    public function the_moov_end_is_read_from_a_64_bit_size(): void
+    {
+        $ftyp = $this->atom('ftyp', 'isom0000');
+        $head = $ftyp.pack('N', 1).'moov'.pack('N2', 2, 16).'partial';
+
+        $this->assertSame(strlen($ftyp) + 8_589_934_608, (new Mp4MoovSplicer)->moovEndOffset($head));
+    }
+
+    #[Test]
+    public function the_moov_end_is_found_after_other_atoms_and_inside_a_complete_head(): void
+    {
+        $leading = $this->atom('ftyp', 'isom0000').$this->atom('free', 'padding');
+        $moov = $this->validMoov();
+        $head = $leading.$moov.pack('N', 2048).'mdat'.'video';
+
+        $this->assertSame(strlen($leading.$moov), (new Mp4MoovSplicer)->moovEndOffset($head));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function headsWithNoReadableMoovEnd(): array
+    {
+        $ftyp = pack('N', 16).'ftypisom0000';
+
+        return [
+            'mdat comes first' => [$ftyp.pack('N', 2048).'mdat'.'video'.pack('N', 100).'moov'],
+            'no moov header' => [$ftyp.pack('N', 12).'free'.'pad!'],
+            'moov header cut short' => [$ftyp.pack('N', 5000).'mo'],
+            '64-bit moov size cut short' => [$ftyp.pack('N', 1).'moov'.pack('N', 0)],
+            'earlier atom runs past the end' => [$ftyp.pack('N', 9000).'free'.'padding'.pack('N', 100).'moov'],
+            'earlier atom runs to the end of the file' => [$ftyp.pack('N', 0).'free'.'padding'.pack('N', 100).'moov'],
+            'moov size 0' => [$ftyp.pack('N', 0).'moov'.'partial'],
+            '64-bit moov size 0' => [$ftyp.pack('N', 1).'moov'.pack('N2', 0, 0).'partial'],
+            'moov size smaller than its header' => [$ftyp.pack('N', 7).'moov'.'partial'],
+            '64-bit moov size smaller than its header' => [$ftyp.pack('N', 1).'moov'.pack('N2', 0, 15).'partial'],
+            '64-bit moov size that would overflow' => [$ftyp.pack('N', 1).'moov'.pack('N2', 0x7FFFFFFF, 0xFFFFFFFF).'partial'],
+            'capped 64-bit moov size that would overflow' => [$ftyp.pack('N', 1).'moov'.pack('N2', 0xFFFFFFFF, 0xFFFFFFFF).'partial'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('headsWithNoReadableMoovEnd')]
+    public function the_moov_end_is_null_when_it_cannot_be_read(string $head): void
+    {
+        $this->assertNull((new Mp4MoovSplicer)->moovEndOffset($head));
     }
 
     private function validMoov(): string
