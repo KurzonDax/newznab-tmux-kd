@@ -14,5 +14,6 @@ enum DownloadKind: string
     case Jpg = 'jpg';
     case Compressed = 'compressed';
     case CompressedTopUp = 'compressed-top-up';
+    case CompressedTail = 'compressed-tail';
     case PayloadSniff = 'payload-sniff';
 }

@@ -10,6 +10,7 @@ use App\Models\UsenetGroup;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
 use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
+use App\Services\AdditionalProcessing\DTO\ArchiveMoovTail;
 use App\Services\AdditionalProcessing\DTO\ReleaseProcessingResult;
 use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use App\Services\AdditionalProcessing\Enums\DownloadKind;
@@ -17,6 +18,7 @@ use App\Services\AdditionalProcessing\Enums\Mp4MoovSpliceStatus;
 use App\Services\AdditionalProcessing\Enums\PayloadClassification;
 use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
+use App\Services\AdditionalProcessing\State\ArchivePartTail;
 use App\Services\AdditionalProcessing\State\CompressedTopUpFetch;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
@@ -1179,6 +1181,7 @@ class ReleaseProcessor
 
         $failed = $downloaded = 0;
         $topUpSpent = false;
+        $moovTail = null;
 
         foreach ($archiveCandidates as $archiveCandidate) {
             if ($downloaded >= $this->config->maximumRarSegments
@@ -1224,12 +1227,16 @@ class ReleaseProcessor
                     $reverse,
                     $archiveCandidate->title,
                 );
+                if (! $reverse) {
+                    $moovTail ??= $this->recoverArchiveMoovTail($context, $archiveCandidate, $result['data']);
+                }
                 if (! $reverse && ! $topUpSpent) {
                     $topUpSpent = $this->compressedDynamicTopUp(
                         $context,
                         $archiveCandidate,
                         $result['data'],
                         $triedCompressedMids,
+                        $moovTail,
                     );
                 }
                 if ($processed) {
@@ -1240,6 +1247,81 @@ class ReleaseProcessor
                 $this->output->echoCompressedFailure($failed);
             }
         }
+    }
+
+    /**
+     * Moov tail recovery for an MP4 stored in a RAR set (see GLOSSARY.md). This
+     * runs with the dynamic budget on or off, so it extracts through a working
+     * volume of its own, which must not survive into the extracted-files sweep.
+     * A splice overwrites the extracted fragment; any failure leaves it as it was.
+     *
+     * @return ArchiveMoovTail|null Null while the candidate lists no video, leaving later candidates free to try.
+     */
+    private function recoverArchiveMoovTail(
+        ReleaseProcessingContext $context,
+        ArchiveCandidate $anchor,
+        string $anchorHead,
+    ): ?ArchiveMoovTail {
+        $plan = $context->workPlan;
+        if ($plan === null
+            || ! $this->config->mp4TailFetch
+            || ($context->foundMediaInfo && $context->foundSample && $context->foundVideo)
+            || $context->releaseHasPassword
+        ) {
+            return null;
+        }
+
+        $videoEntry = $this->leadingArchiveVideoEntry($anchorHead);
+        if ($videoEntry === null) {
+            return null;
+        }
+        if ($videoEntry['compressed'] !== 0 || $videoEntry['pass'] !== 0 || ! ArchivePartTail::locatesVideo($videoEntry)) {
+            return new ArchiveMoovTail;
+        }
+
+        $workingVolume = $this->previewArchiveVolumePath(
+            $context->tmpPath,
+            1,
+            $this->usesOldVolumeNumbers($anchorHead),
+        );
+        try {
+            File::put($workingVolume, $anchorHead);
+            $fragmentPath = $this->extractPreviewFragment($workingVolume, $videoEntry['name'], $context);
+        } finally {
+            File::delete($workingVolume);
+        }
+        if ($fragmentPath === null) {
+            return new ArchiveMoovTail;
+        }
+
+        $fragment = File::get($fragmentPath);
+        if ($this->payloadSniffer->classify($fragment)->classification !== PayloadClassification::Mp4
+            || ! $this->mp4MoovSplicer->needsTail($fragment)
+        ) {
+            return new ArchiveMoovTail;
+        }
+
+        $fetcher = new ArchiveMoovTailFetcher(
+            $this->config,
+            $this->downloadService,
+            $this->archiveService,
+            $this->mp4MoovSplicer,
+            $this->output,
+            $context,
+            $fragment,
+            $videoEntry['size'],
+        );
+        $moovTail = $fetcher->fetch($plan, $anchor, new ArchivePartTail(
+            $anchor,
+            $anchorHead,
+            count($anchor->messageIds),
+            $videoEntry,
+        ));
+        if ($moovTail->splicedData !== null) {
+            File::put($fragmentPath, $moovTail->splicedData);
+        }
+
+        return $moovTail;
     }
 
     /**
@@ -1262,6 +1344,7 @@ class ReleaseProcessor
         ArchiveCandidate $anchor,
         string $initialData,
         array $triedCompressedMids,
+        ?ArchiveMoovTail $moovTail,
     ): bool {
         $plan = $context->workPlan;
         if ($plan === null
@@ -1299,20 +1382,29 @@ class ReleaseProcessor
                 return true;
             }
 
+            // The extraction overwrote any splice, so it counts as a growth.
+            $fragmentBytes = (int) File::size($fragmentPath);
+            $this->respliceMoov($fragmentPath, $moovTail?->moov);
+
             $fetchedMessageIds = array_fill_keys($triedCompressedMids, true);
+            $tailMessageIds = array_flip($moovTail->fetchedMessageIds ?? []);
             $fetch = new CompressedTopUpFetch(
                 anchor: $anchor,
                 videoEntryName: $videoEntry['name'],
                 perSegmentBytes: $perSegmentBytes,
                 fetchedMessageIds: $fetchedMessageIds,
-                pendingSegments: $this->unfetchedMessageIds($anchor->expansionMessageIds, $fetchedMessageIds),
-                nextParts: $plan->archivePartsAfter($anchor),
+                pendingSegments: $this->segmentsBeforeTail(
+                    $this->unfetchedMessageIds($anchor->expansionMessageIds, $fetchedMessageIds),
+                    $tailMessageIds,
+                ),
+                nextParts: $this->partsBeforeTail($plan->archivePartsAfter($anchor), $tailMessageIds),
                 firstVolumePath: $firstVolumePath,
                 oldVolumeNumbers: $oldVolumeNumbers,
                 anchorSegmentsHeld: count($anchor->messageIds),
-                fetchedBytes: strlen($initialData),
+                fetchedBytes: strlen($initialData) + $context->mp4TailMetrics->tailBytes,
                 fragmentPath: $fragmentPath,
-                fragmentBytes: (int) File::size($fragmentPath),
+                fragmentBytes: $fragmentBytes,
+                splicedMoov: $moovTail?->moov,
             );
 
             $moovEnd = $this->mp4MoovSplicer->moovEndOffset(File::get($fragmentPath));
@@ -1528,6 +1620,7 @@ class ReleaseProcessor
         }
 
         $grownBytes = (int) File::size($grownPath);
+        $this->respliceMoov($grownPath, $fetch->splicedMoov);
         if ($grownBytes <= $fetch->fragmentBytes) {
             $this->logCompressedExtractionFailed($context, 'top-up extraction made no progress', $grownBytes);
 
@@ -1537,6 +1630,61 @@ class ReleaseProcessor
         $fetch->fragmentBytes = $grownBytes;
 
         return true;
+    }
+
+    /**
+     * Put a recovered moov back on a fragment extraction just overwrote.
+     */
+    private function respliceMoov(string $fragmentPath, ?string $moov): void
+    {
+        if ($moov === null) {
+            return;
+        }
+
+        $merged = $this->mp4MoovSplicer->splice(File::get($fragmentPath), $moov, true);
+        if ($merged->status === Mp4MoovSpliceStatus::Spliced && $merged->data !== null) {
+            File::put($fragmentPath, $merged->data);
+        }
+    }
+
+    /**
+     * The tail bytes stay out of the working volumes, so the top-up pool stops
+     * before the first segment fetched for the tail: no segment is fetched
+     * twice, and no volume is left with a hole in it.
+     *
+     * @param  list<string>  $messageIds
+     * @param  array<string, int>  $tailMessageIds
+     * @return list<string>
+     */
+    private function segmentsBeforeTail(array $messageIds, array $tailMessageIds): array
+    {
+        $before = [];
+        foreach ($messageIds as $messageId) {
+            if (isset($tailMessageIds[$messageId])) {
+                break;
+            }
+            $before[] = $messageId;
+        }
+
+        return $before;
+    }
+
+    /**
+     * @param  list<ArchiveCandidate>  $parts
+     * @param  array<string, int>  $tailMessageIds
+     * @return list<ArchiveCandidate>
+     */
+    private function partsBeforeTail(array $parts, array $tailMessageIds): array
+    {
+        $before = [];
+        foreach ($parts as $part) {
+            if (array_intersect_key(array_flip($part->segmentIds()), $tailMessageIds) !== []) {
+                break;
+            }
+            $before[] = $part;
+        }
+
+        return $before;
     }
 
     /**
@@ -1655,14 +1803,19 @@ class ReleaseProcessor
      * The first video file the fetched archive head lists, or null when the
      * data is not a listable archive or holds no video.
      *
-     * @return array{name: string, size: int}|null
+     * @return array{name: string, size: int, compressed: int, pass: int, range?: mixed, next_offset?: mixed}|null
      */
     private function leadingArchiveVideoEntry(string $compressedData): ?array
     {
         foreach ($this->archiveService->listArchiveContents($compressedData)['files'] as $file) {
             $name = (string) ($file['name'] ?? '');
             if ($name !== '' && PostedFileClassifier::matchesTerminalExtension($name, $this->config->videoFileRegex)) {
-                return ['name' => $name, 'size' => max((int) ($file['size'] ?? 0), 0)];
+                return [
+                    'name' => $name,
+                    'size' => max((int) ($file['size'] ?? 0), 0),
+                    'compressed' => is_int($file['compressed'] ?? null) ? $file['compressed'] : 1,
+                    'pass' => is_int($file['pass'] ?? null) ? $file['pass'] : 1,
+                ] + array_intersect_key($file, ['range' => true, 'next_offset' => true]);
             }
         }
 
