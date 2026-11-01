@@ -94,7 +94,10 @@ final class RecoveryNzbCommit
             return;
         }
         $collection = DB::table('collections')->where('id', $publication->collections_id)->first();
-        $reason = $collection === null ? 'collection_missing' : (new RecoveryFormationPolicy)->blockedReason($collection);
+        $reason = $collection === null ? 'collection_missing' : (new RecoveryFormationPolicy)->blockedReason(
+            $collection,
+            plannedBytes: RecoveryPlan::fromArray(json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR))->decodedBytes(),
+        );
         if ($reason !== null) {
             DB::table('obfuscation_recovery_publications')->where('id', $publication->id)->where('state', 'created')
                 ->update(['state' => 'policy_blocked', 'reason' => $reason, 'updated_at' => now()]);

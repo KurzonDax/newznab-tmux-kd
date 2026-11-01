@@ -264,7 +264,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $collection = $this->collection(200);
         $nzb = new StubCollectionNzbService($this->nzbXml('new@example.test', 2, 2), NzbReplaceResult::success());
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
         $this->assertSame([], $nzb->buildCalls);
@@ -281,7 +281,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $collection = $this->phantomCollection(200, PhantomTrailingSets::baseFiles());
         $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::base()), NzbReplaceResult::success());
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection(Release::query()->findOrFail(1), $collection, (12 / 13) * 100);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection(Release::query()->findOrFail(1), $collection, (12 / 13) * 100, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
         $this->assertSame([], $nzb->buildCalls);
@@ -346,13 +346,13 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         );
         $absorber = new ReleaseDuplicateAbsorber($nzb);
 
-        $first = $absorber->absorbCollection($anchor, $collection, 100.0);
+        $first = $absorber->absorbCollection($anchor, $collection, 100.0, (int) $collection->filesize);
         $this->assertSame(DuplicateAbsorbOutcome::Failed, $first->outcome);
         $this->assertSame(1, $first->attempts);
         $this->assertStringContainsString('forced rename failure', $first->reason);
         $this->assertSame(1, (int) DB::table('collections')->where('id', 200)->value('absorb_attempts'));
 
-        $second = $absorber->absorbCollection($anchor, Collection::query()->findOrFail(200), 100.0);
+        $second = $absorber->absorbCollection($anchor, Collection::query()->findOrFail(200), 100.0, (int) $collection->filesize);
         $this->assertSame(2, $second->attempts);
         $this->assertSame(2, (int) DB::table('collections')->where('id', 200)->value('absorb_attempts'));
     }
@@ -368,7 +368,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             NzbReplaceResult::renameFailure('forced rename failure'),
         );
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::Deferred, $result->outcome);
         $this->assertSame([], $nzb->buildCalls, 'A deferred absorb must not render the incoming NZB.');
@@ -383,7 +383,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $collection = $this->collection(200);
         $nzb = new ThrowingReplaceNzbService(app(CollectionCleanupService::class));
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, 100.0, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::Failed, $result->outcome);
         $this->assertSame(1, $result->attempts);
@@ -403,7 +403,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             $incomingXml,
             NzbReplaceResult::tempFileOpenFailure('forced open failure'),
         ));
-        $failed = $failing->absorbCollection($anchor, $collection, 100.0);
+        $failed = $failing->absorbCollection($anchor, $collection, 100.0, (int) $collection->filesize);
         $this->assertSame(DuplicateAbsorbOutcome::Failed, $failed->outcome);
         $this->assertSame(1, $failed->attempts);
         $this->assertLessThan(ReleaseDuplicateAbsorber::MAX_ABSORB_ATTEMPTS, $failed->attempts);
@@ -416,6 +416,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
             Release::query()->findOrFail(1),
             Collection::query()->findOrFail(200),
             100.0,
+            2_000,
         );
 
         $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $retried->outcome);
@@ -532,7 +533,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $collection = $this->phantomCollection(200, PhantomTrailingSets::baseFiles());
         $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::base()), NzbReplaceResult::success());
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::Absorbed, $result->outcome);
         $this->assertSame([200], $nzb->buildCalls);
@@ -549,7 +550,7 @@ final class ReleaseDuplicateAbsorberTest extends TestCase
         $collection = $this->phantomCollection(200, $files);
         $nzb = new StubCollectionNzbService(PhantomTrailingSets::nzb(PhantomTrailingSets::subjects($files)), NzbReplaceResult::success());
 
-        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100);
+        $result = (new ReleaseDuplicateAbsorber($nzb))->absorbCollection($anchor, $collection, (12 / 13) * 100, (int) $collection->filesize);
 
         $this->assertSame(DuplicateAbsorbOutcome::NotBetter, $result->outcome);
         $this->assertSame([], $nzb->buildCalls);

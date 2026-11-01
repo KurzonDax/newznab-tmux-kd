@@ -158,7 +158,8 @@ final class RecoveryMaterialization
                 $this->pendingRelease($publication);
                 $state = 'created';
                 $collectionValues = ['filecheck' => CollectionFileCheckStatus::Inserted->value, 'releases_id' => $publication->releases_id];
-                $reason = (new RecoveryFormationPolicy)->blockedReason($collection);
+                $plan = RecoveryPlan::fromArray(json_decode($publication->sealed_plan, true, flags: JSON_THROW_ON_ERROR));
+                $reason = (new RecoveryFormationPolicy)->blockedReason($collection, plannedBytes: $plan->decodedBytes());
                 if ($reason !== null) {
                     $state = 'policy_blocked';
                 }

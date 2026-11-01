@@ -22,6 +22,7 @@ use App\Services\ObfuscationRecovery\RecoveryCollectionOwnership;
 use App\Services\ObfuscationRecovery\RecoveryCreationContext;
 use App\Services\ObfuscationRecovery\RecoveryFormationPolicy;
 use App\Services\ObfuscationRecovery\RecoveryOwnership;
+use App\Services\ObfuscationRecovery\RecoveryPlan;
 use App\Services\ObfuscationRecovery\RecoveryStage;
 use App\Services\ObfuscationRecovery\RecoverySurvivor;
 use App\Services\ObfuscationRecovery\RecoveryWorkClaim;
@@ -96,7 +97,8 @@ class ReleaseCreationService
             }
             $policy = new RecoveryFormationPolicy;
             $categoryId = $policy->initialCategory($collection);
-            $blocked = $policy->blockedReason($collection, $categoryId);
+            $plannedBytes = RecoveryPlan::fromArray($plan)->decodedBytes();
+            $blocked = $policy->blockedReason($collection, $categoryId, $plannedBytes);
             if ($blocked !== null) {
                 DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
                     ->update(['state' => 'policy_blocked', 'reason' => $blocked, 'updated_at' => now()]);
@@ -118,7 +120,7 @@ class ReleaseCreationService
             DB::table('obfuscation_recovery_publications')->where('id', $publicationId)
                 ->update(['state' => 'materialized', 'reason' => null, 'updated_at' => now()]);
             $this->createFromCollections((int) $collection->groups_id, 1, false,
-                new RecoveryCreationContext($publicationId, (int) $collection->id, $publication->guid, $categoryId));
+                new RecoveryCreationContext($publicationId, (int) $collection->id, $publication->guid, $categoryId, $plannedBytes));
 
             return DB::table('obfuscation_recovery_publications')->where('id', $publicationId)->value('state');
         }, 1);
@@ -141,7 +143,7 @@ class ReleaseCreationService
 
         $collectionsQuery = Collection::query()
             ->where('collections.filecheck', CollectionFileCheckStatus::Sized->value)
-            ->where('collections.filesize', '>', 0)
+            ->when($recovery === null, static fn ($query) => $query->where('collections.filesize', '>', 0))
             ->when($collectionIds !== null, static fn ($query) => $query->whereIn('collections.id', $collectionIds))
             ->when($collectionIds !== null && in_array(DB::getDriverName(), ['mysql', 'mariadb'], true),
                 static fn ($query) => $query->forceIndex('PRIMARY'));
@@ -193,6 +195,7 @@ class ReleaseCreationService
                     || ($recovery === null && CollectionOwnership::protects((int) $collection->id))) {
                     return;
                 }
+                $releaseSize = max((int) $collection->filesize, $recovery->plannedBytes ?? 0);
                 $cleanRelName = Utf8::clean(str_replace(['#', '@', '$', '%', '^', '§', '¨', '©', 'Ö'], '', $collection->subject));
                 $fromName = Utf8::clean(trim($collection->fromname, "'"));
 
@@ -235,7 +238,7 @@ class ReleaseCreationService
                     $cleanRelName,
                     $searchName,
                     $predbIdInt,
-                    (int) $collection->filesize
+                    $releaseSize
                 );
 
                 $articleRange = $articleRanges[(int) $collection->id] ?? null;
@@ -261,7 +264,7 @@ class ReleaseCreationService
                             'guid' => $recovery->guid ?? Str::uuid()->toString(),
                             'postdate' => $collection->date,
                             'fromname' => $fromName,
-                            'size' => $collection->filesize,
+                            'size' => $releaseSize,
                             'categories_id' => $determinedCategory['categories_id'] ?? Category::OTHER_MISC,
                             'isrenamed' => $properName === true ? 1 : 0,
                             'is_trusted_name' => $properName === true || $predbIdInt > 0,
@@ -320,6 +323,7 @@ class ReleaseCreationService
                                 $dupeCheck,
                                 $collection,
                                 ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
+                                $releaseSize,
                             );
                         } catch (\Throwable $exception) {
                             // Backstop for errors outside the absorber's outcome
@@ -377,7 +381,7 @@ class ReleaseCreationService
                         'absorbed' => $absorbed,
                         'new_searchname' => $searchName,
                         'existing_searchname' => $dupeCheck->searchname,
-                        'new_size' => (int) $collection->filesize,
+                        'new_size' => $releaseSize,
                         'existing_size' => (int) $dupeCheck->size,
                         'new_fromname' => $fromName,
                         'existing_fromname' => $dupeCheck->fromname,
