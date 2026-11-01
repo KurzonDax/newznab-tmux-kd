@@ -55,7 +55,7 @@ final class SyntheticPosting
     /** @param list<int> $sizes
      * @return array{content:string,volumes:list<string>}
      */
-    public static function rar(array $sizes, string $innerName = 'fixture.bin', ?string $innerContent = null): array
+    public static function rar(array $sizes, string $innerName = 'fixture.bin', ?string $innerContent = null, bool $newNumbering = true): array
     {
         $overhead = 59 + strlen($innerName);
         $content = $innerContent ?? self::bytes('archive-inner', array_sum($sizes) - count($sizes) * $overhead);
@@ -68,7 +68,7 @@ final class SyntheticPosting
             $piece = substr($content, $cursor, $size - $overhead);
             $cursor += strlen($piece);
             $last = $index === count($sizes) - 1;
-            $main = self::rarHeader(0x73, 0x0011 | ($index === 0 ? 0x0100 : 0), str_repeat("\0", 6));
+            $main = self::rarHeader(0x73, 0x0001 | ($newNumbering ? 0x0010 : 0) | ($index === 0 ? 0x0100 : 0), str_repeat("\0", 6));
             $flags = 0x8000 | ($index === 0 ? 0 : 1) | ($last ? 0 : 2);
             $extra = pack('VVCVVCCvV', strlen($piece), strlen($content), 3, crc32($last ? $content : $piece),
                 0x00210000, 20, 0x30, strlen($innerName), 0x81A4).$innerName;

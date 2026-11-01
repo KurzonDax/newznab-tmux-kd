@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit\AdditionalProcessing;
 
 use App\Services\AdditionalProcessing\AdditionalWorkPlanner;
+use App\Services\AdditionalProcessing\DTO\AdditionalWorkPlan;
 use App\Services\AdditionalProcessing\DTO\ArchiveCandidate;
 use App\Services\AdditionalProcessing\DTO\UnknownPayloadCandidate;
 use PHPUnit\Framework\Attributes\Test;
@@ -13,6 +14,50 @@ use PHPUnit\Framework\TestCase;
 class AdditionalWorkPlannerTest extends TestCase
 {
     use CreatesProcessingConfiguration;
+
+    #[Test]
+    public function pointing_the_plan_at_a_sniffed_file_sets_its_media_info_fields_and_keeps_every_other(): void
+    {
+        $planner = new AdditionalWorkPlanner($this->makeConfig([
+            'processMediaInfo' => true,
+            'segmentsToDownload' => 2,
+            'mp4TailMaxSegments' => 2,
+        ]));
+        $candidate = new UnknownPayloadCandidate('a1b2c3', '<first>', 3, 300, 100, 0);
+        $archive = new ArchiveCandidate('other.rar', ['<other>'], true, 7);
+        $plan = new AdditionalWorkPlan(
+            sampleMessageIds: ['<sample>'],
+            jpgMessageIds: ['<jpg>'],
+            archiveCandidates: [$archive],
+            unknownPayloadCandidates: [$candidate],
+            bookFileCount: 4,
+            bookFlood: true,
+            duplicateMessageIdCount: 5,
+            unsupportedReasons: ['book-flood'],
+        );
+
+        $updated = $planner->withMediaInfoFile($plan, [
+            'title' => 'a1b2c3',
+            'segments' => ['<first>', '<second>', '<third>'],
+            'size' => 300,
+        ]);
+
+        $this->assertSame(['<first>', '<second>'], $updated->mediaInfoMessageIds);
+        $this->assertSame(['<third>'], $updated->mediaInfoExpansionMessageIds);
+        $this->assertSame(['<second>', '<third>'], $updated->mediaInfoTailMessageIds);
+        $this->assertSame(300, $updated->mediaInfoFileSizeBytes);
+        $this->assertSame(3, $updated->mediaInfoContiguousHeadSegments);
+        $this->assertSame('a1b2c3', $updated->mediaInfoSourceFilename);
+
+        $this->assertSame(['<sample>'], $updated->sampleMessageIds);
+        $this->assertSame(['<jpg>'], $updated->jpgMessageIds);
+        $this->assertSame([$archive], $updated->archiveCandidates);
+        $this->assertSame([$candidate], $updated->unknownPayloadCandidates);
+        $this->assertSame(4, $updated->bookFileCount);
+        $this->assertTrue($updated->bookFlood);
+        $this->assertSame(5, $updated->duplicateMessageIdCount);
+        $this->assertSame(['book-flood'], $updated->unsupportedReasons);
+    }
 
     #[Test]
     public function it_builds_one_ordered_plan_for_direct_and_archive_candidates(): void

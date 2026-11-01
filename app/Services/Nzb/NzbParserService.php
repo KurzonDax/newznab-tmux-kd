@@ -56,8 +56,8 @@ class NzbParserService
                     // Change .rar and .par2 to be sorted before .part0x.rar and .volxxx+xxx.par2
                     if (str_contains($i, '.par2') && ! preg_match('#\.vol\d+\+\d+\.par2#i', $i)) {
                         $i = str_replace('.par2', '.vol0.par2', $i);
-                    } elseif (preg_match('#\.rar[^a-z0-9]#i', $i) && ! preg_match('#\.part\d+\.rar$#i', $i)) {
-                        $i = preg_replace('#\.rar(?:[^a-z0-9])#i', '.part0.rar', $i);
+                    } elseif (preg_match('#\.rar(?:[^a-z0-9]|$)#i', $i) && ! preg_match('#\.part\d+\.rar$#i', $i)) {
+                        $i = preg_replace('#\.rar(?:[^a-z0-9]|$)#i', '.part0.rar', $i);
                     }
                 }
             }
