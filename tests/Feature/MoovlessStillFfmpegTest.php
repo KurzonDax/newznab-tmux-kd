@@ -109,8 +109,9 @@ class MoovlessStillFfmpegTest extends TestCase
         $settings = "\x00\x00\x00\x01".$sps."\x00\x00\x00\x01".$pps;
 
         // The walker can take audio bytes for a keyframe. That group does not decode,
-        // and at a low bitrate its false length can hide a real keyframe, so what must
-        // hold is that everything decoded is a real keyframe, in order, last one included.
+        // and its false length can hide real keyframes. Which ones depends on the AAC
+        // bytes, which differ by CPU, so what must hold is that everything decoded is
+        // a real keyframe, in order.
         $decoded = [];
         foreach ($groups as $group) {
             $sha = $this->decodeToGraySha($settings.$group, 1280, 720);
@@ -121,7 +122,7 @@ class MoovlessStillFfmpegTest extends TestCase
 
         $keyframes = $this->keyframesOfCompleteFile($complete, 1280, 720);
         $this->assertSame(array_values(array_intersect($keyframes, $decoded)), $decoded);
-        $this->assertContains($keyframes[array_key_last($keyframes)], $decoded);
+        $this->assertNotSame([], $decoded);
     }
 
     #[Test]
