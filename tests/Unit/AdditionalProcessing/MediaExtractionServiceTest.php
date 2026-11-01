@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Unit\AdditionalProcessing;
 
+use App\Enums\ImageAssetProfile;
 use App\Models\MediaInfoProbe;
 use App\Services\AdditionalProcessing\Config\ProcessingConfiguration;
+use App\Services\AdditionalProcessing\DTO\VideoClipEncodeResult;
+use App\Services\AdditionalProcessing\FreeDiskGuard;
 use App\Services\AdditionalProcessing\MediaExtractionService;
 use App\Services\AdditionalProcessing\MediaTools;
+use App\Services\AdditionalProcessing\VideoClipEncoder;
 use App\Services\AdditionalProcessing\VideoFrameExtractor;
 use App\Services\MediaInfo\Contracts\MediaInfoSnapshotWriter;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
@@ -15,6 +19,8 @@ use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ReleaseExtraService;
 use App\Services\ReleaseImageService;
+use App\Services\Releases\ClipGenerationPolicy;
+use App\Support\Data\ImageProcessingResult;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Facade;
@@ -136,6 +142,170 @@ class MediaExtractionServiceTest extends TestCase
             $service->getMediaInfo($file, 42, $context),
             'The isolated unit container has no database for the legacy refinement that follows the snapshot write.',
         );
+    }
+
+    #[Test]
+    public function get_sample_saves_a_preview_from_the_moovless_fallback_after_normal_extraction_fails(): void
+    {
+        $file = $this->tmpPath.'head.mp4';
+        file_put_contents($file, 'mdat-first head');
+
+        $calls = [];
+        $frames = Mockery::mock(VideoFrameExtractor::class);
+        $frames->shouldReceive('extractRepresentativeFrame')->once()->with($file, Mockery::type('string'))
+            ->andReturnUsing(function (string $video, string $frame) use (&$calls): bool {
+                $calls[] = 'representative';
+                touch($frame);
+
+                return false;
+            });
+        $frames->shouldReceive('extractMoovlessFrame')->once()->with($file, Mockery::type('string'))
+            ->andReturnUsing(function (string $video, string $frame) use (&$calls): bool {
+                $calls[] = 'moovless';
+                touch($frame);
+
+                return true;
+            });
+
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->imgSavePath = $this->tmpPath.'preview/';
+        $images->shouldReceive('saveExtractedImage')->once()
+            ->with('moovless-guid', Mockery::type('string'), $images->imgSavePath, ImageAssetProfile::Preview)
+            ->andReturn(ImageProcessingResult::success('preview.jpg', 64, 64, 'image/jpeg'));
+
+        $log = Mockery::mock();
+        $log->shouldReceive('debug')->once()->with('Moovless still stored', ['guid' => 'moovless-guid']);
+        Log::swap($log);
+
+        $service = new MediaExtractionService(
+            $this->makeConfig(['processThumbnails' => true]),
+            $images,
+            Mockery::mock(ReleaseExtraService::class),
+            $frames,
+        );
+
+        $this->assertTrue($service->getSample($file, $this->tmpPath, 'moovless-guid'));
+        $this->assertSame(['representative', 'moovless'], $calls);
+    }
+
+    #[Test]
+    public function get_sample_does_not_try_the_fallback_when_normal_extraction_succeeds(): void
+    {
+        $file = $this->tmpPath.'head.mp4';
+        file_put_contents($file, 'playable file');
+
+        $frames = Mockery::mock(VideoFrameExtractor::class);
+        $frames->shouldReceive('extractRepresentativeFrame')->once()
+            ->andReturnUsing(static fn (string $video, string $frame): bool => touch($frame));
+        $frames->shouldNotReceive('extractMoovlessFrame');
+
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->imgSavePath = $this->tmpPath.'preview/';
+        $images->shouldReceive('saveExtractedImage')->once()
+            ->andReturn(ImageProcessingResult::success('preview.jpg', 64, 64, 'image/jpeg'));
+
+        $log = Mockery::mock();
+        $log->shouldNotReceive('debug');
+        Log::swap($log);
+
+        $service = new MediaExtractionService(
+            $this->makeConfig(['processThumbnails' => true]),
+            $images,
+            Mockery::mock(ReleaseExtraService::class),
+            $frames,
+        );
+
+        $this->assertTrue($service->getSample($file, $this->tmpPath, 'normal-guid'));
+    }
+
+    #[Test]
+    public function get_sample_saves_nothing_when_the_fallback_also_fails(): void
+    {
+        $file = $this->tmpPath.'head.mp4';
+        file_put_contents($file, 'mdat-first head');
+
+        $frames = Mockery::mock(VideoFrameExtractor::class);
+        $frames->shouldReceive('extractRepresentativeFrame')->once()
+            ->andReturnUsing(static fn (string $video, string $frame): bool => ! touch($frame));
+        $frames->shouldReceive('extractMoovlessFrame')->once()->andReturnFalse();
+
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->shouldNotReceive('saveExtractedImage');
+
+        $service = new MediaExtractionService(
+            $this->makeConfig(['processThumbnails' => true]),
+            $images,
+            Mockery::mock(ReleaseExtraService::class),
+            $frames,
+        );
+
+        $this->assertFalse($service->getSample($file, $this->tmpPath, 'no-still-guid'));
+    }
+
+    #[Test]
+    public function get_sample_does_not_log_a_moovless_still_it_failed_to_save(): void
+    {
+        $file = $this->tmpPath.'head.mp4';
+        file_put_contents($file, 'mdat-first head');
+
+        $frames = Mockery::mock(VideoFrameExtractor::class);
+        $frames->shouldReceive('extractRepresentativeFrame')->once()->andReturnFalse();
+        $frames->shouldReceive('extractMoovlessFrame')->once()
+            ->andReturnUsing(static fn (string $video, string $frame): bool => touch($frame));
+
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->imgSavePath = $this->tmpPath.'preview/';
+        $images->shouldReceive('saveExtractedImage')->once()
+            ->andReturn(ImageProcessingResult::failure('Image basename is invalid.'));
+
+        $log = Mockery::mock();
+        $log->shouldNotReceive('debug');
+        Log::swap($log);
+
+        $service = new MediaExtractionService(
+            $this->makeConfig(['processThumbnails' => true]),
+            $images,
+            Mockery::mock(ReleaseExtraService::class),
+            $frames,
+        );
+
+        $this->assertFalse($service->getSample($file, $this->tmpPath, 'unsaved-guid'));
+    }
+
+    #[Test]
+    public function checking_a_clip_for_a_usable_frame_never_reaches_the_moovless_fallback(): void
+    {
+        $source = $this->tmpPath.'source.mp4';
+        file_put_contents($source, 'source');
+        $clip = $this->tmpPath.'clip.mp4';
+        file_put_contents($clip, 'clip');
+
+        $frames = Mockery::mock(VideoFrameExtractor::class);
+        $frames->shouldReceive('extractRepresentativeFrame')->once()->with($clip, Mockery::type('string'))
+            ->andReturnUsing(static fn (string $video, string $frame): bool => ! touch($frame));
+        $frames->shouldNotReceive('extractMoovlessFrame');
+
+        $policy = Mockery::mock(ClipGenerationPolicy::class);
+        $policy->shouldReceive('enabledForCategory')->andReturnTrue();
+        $encoder = Mockery::mock(VideoClipEncoder::class);
+        $encoder->shouldReceive('encode')->once()->andReturn(new VideoClipEncodeResult($clip, 'mp4', 'video/mp4', 30, 4));
+        $disk = Mockery::mock(FreeDiskGuard::class);
+        $disk->shouldReceive('allows')->andReturnTrue();
+        $images = Mockery::mock(ReleaseImageService::class);
+        $images->vidSavePath = $this->tmpPath.'video/';
+
+        $service = new MediaExtractionService(
+            $this->makeConfig(['processVideo' => true]),
+            $images,
+            Mockery::mock(ReleaseExtraService::class),
+            $frames,
+            clipPolicy: $policy,
+            clipEncoder: $encoder,
+            freeDiskGuard: $disk,
+        );
+
+        $this->assertFalse($service->getVideo($source, $this->tmpPath, 'clip-guid', 5040));
+        $this->assertFileDoesNotExist($clip);
     }
 
     private function makeService(ProcessingConfiguration $config): MediaExtractionService

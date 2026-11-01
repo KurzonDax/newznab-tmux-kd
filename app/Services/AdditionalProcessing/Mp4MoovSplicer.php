@@ -15,6 +15,16 @@ final readonly class Mp4MoovSplicer
     }
 
     /**
+     * Where the first top-level mdat's payload starts, only when no moov precedes it.
+     */
+    public function mdatPayloadOffset(string $head): ?int
+    {
+        $mdat = $this->mdatHeader($head);
+
+        return $mdat === null ? null : $mdat['offset'] + $mdat['headerSize'];
+    }
+
+    /**
      * The offset just past the first top-level moov, read from its size field,
      * when a fast-start head states it: its header lies inside $head and no
      * mdat comes before it. The moov itself may run past the end of $head.

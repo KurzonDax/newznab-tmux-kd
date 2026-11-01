@@ -143,6 +143,10 @@ _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name cate
 A temporary inspection copy of a bare non-faststart MP4/MOV, combining its downloaded beginning with its ending metadata so Preview Generation and Mediainfo refinement can inspect it without retrieving the complete media file. It does not apply to media inside archives.
 _Avoid_: "repaired MP4", "full download" — the stored release is unchanged and most media bytes remain unfetched.
 
+**Moovless still**:
+A preview image decoded from an MP4 head with no `moov`, by walking `mdat` and using settings from `mdat` or x264's options text.
+_Avoid_: "repaired MP4", "preview clip" — it is one frame, and no clip comes from it.
+
 **Year-only movie fallback**:
 A low-confidence Movies/Other guess (`0.5`) for multi-token `Title.Year[.N]` names with no media markers. Movie post-processing may confirm the title and year; otherwise the release remains in Movies/Other.
 
