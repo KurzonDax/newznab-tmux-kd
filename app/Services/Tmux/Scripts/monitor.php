@@ -8,6 +8,8 @@
  * collecting statistics and spawning tasks in other panes.
  *
  * This is a simple wrapper that calls the tmux:monitor artisan command.
+ * The monitor inherits the terminal directly because a passthru() relay holds
+ * back the end of any frame longer than 4,096 bytes.
  */
 $artisan = escapeshellarg(dirname(__DIR__, 4).'/artisan');
 
@@ -15,5 +17,9 @@ $artisan = escapeshellarg(dirname(__DIR__, 4).'/artisan');
 $args = array_slice($argv ?? [], 1);
 $argString = implode(' ', array_map('escapeshellarg', $args));
 
-passthru("php {$artisan} tmux:monitor {$argString}", $exitCode);
-exit($exitCode);
+$process = proc_open("php {$artisan} tmux:monitor {$argString}", [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes);
+if (! is_resource($process)) {
+    exit(1);
+}
+
+exit(proc_close($process));
