@@ -1450,6 +1450,44 @@ SH;
     }
 
     /**
+     * A relay holds back whatever follows its 4,096-byte chunk until the
+     * monitor's next write, so the frame must arrive while the monitor is still
+     * running. Once the fake exits, even a relay delivers the remainder.
+     */
+    public function test_the_monitor_wrapper_delivers_a_whole_frame_longer_than_4096_bytes_while_the_monitor_keeps_running(): void
+    {
+        $root = $this->makeTempDirectory('nntmux-scripts').'/nntmux root';
+        $scripts = $root.'/app/Services/Tmux/Scripts';
+        mkdir($scripts, 0755, true);
+        copy(base_path('app/Services/Tmux/Scripts/monitor.php'), $scripts.'/monitor.php');
+        file_put_contents($root.'/artisan', <<<'PHP'
+            <?php
+            echo str_repeat('x', 5085);
+            $release = __DIR__.'/release';
+            for ($i = 0; $i < 150 && ! file_exists($release); $i++) {
+                usleep(100000);
+            }
+            exit(7);
+            PHP);
+
+        $process = new SymfonyProcess([PHP_BINARY, $scripts.'/monitor.php'], env: ['PATH' => dirname(PHP_BINARY).':'.getenv('PATH')]);
+        $process->start();
+
+        $deadline = microtime(true) + 5;
+        while (strlen($process->getOutput()) < 5085 && microtime(true) < $deadline) {
+            usleep(10000);
+        }
+
+        $this->assertSame(5085, strlen($process->getOutput()));
+        $this->assertTrue($process->isRunning());
+
+        touch($root.'/release');
+        $process->wait();
+
+        $this->assertSame(7, $process->getExitCode());
+    }
+
+    /**
      * The generated step really does kill a hung command, write one notice, and
      * let the chain continue. Needs coreutils `timeout`; skipped where absent.
      */
