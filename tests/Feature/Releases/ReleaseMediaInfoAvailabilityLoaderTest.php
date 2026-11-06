@@ -80,18 +80,34 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         self::assertLessThanOrEqual(9, $queries, 'Availability queries are bounded by source tables, not release count.');
     }
 
-    public function test_video_summaries_include_height_and_prefer_codec_with_format_as_fallback(): void
+    /**
+     * The chip's words (adult-redesign SPEC 5B.7, DATA-CONTRACT test 14): the video by its format
+     * first and its codec id second, the audio by the media info dialog's short name, both from
+     * MediaInfoNames; a codec-first lookup would read the stream numbers and four-character ids.
+     */
+    public function test_video_summaries_include_height_and_name_the_format_first_and_the_codec_id_second(): void
     {
         DB::table('video_data')->insert([
             ['releases_id' => 1, 'videoheight' => 1080, 'videocodec' => 'x264', 'videoformat' => 'AVC'],
             ['releases_id' => 2, 'videoheight' => 2160, 'videocodec' => null, 'videoformat' => 'HEVC'],
+            ['releases_id' => 3, 'videoheight' => 0, 'videocodec' => '27', 'videoformat' => 'AVC'],
+            ['releases_id' => 4, 'videoheight' => 0, 'videocodec' => 'hvc1', 'videoformat' => 'HEVC'],
+            ['releases_id' => 5, 'videoheight' => 0, 'videocodec' => 'avc1', 'videoformat' => 'AVC'],
+            ['releases_id' => 6, 'videoheight' => 0, 'videocodec' => 'V_MPEG4/ISO/AVC', 'videoformat' => ''],
+            ['releases_id' => 7, 'videoheight' => 0, 'videocodec' => 'WMV3', 'videoformat' => 'VC-1'],
+            ['releases_id' => 9, 'videoheight' => 0, 'videocodec' => 'WVC1', 'videoformat' => ''],
         ]);
-        $rows = [(object) ['id' => 1], (new Release)->setRawAttributes(['id' => 2])];
+        DB::table('audio_data')->insert([
+            ['releases_id' => 5, 'audioformat' => 'AAC LC', 'audiochannels' => '2'],
+            ['releases_id' => 7, 'audioformat' => 'MLP FBA 16-ch', 'audiochannels' => '8'],
+            ['releases_id' => 8, 'audioformat' => 'Vorbis', 'audiochannels' => '2'],
+        ]);
+        $rows = [(object) ['id' => 1], (new Release)->setRawAttributes(['id' => 2]), ...array_map(static fn (int $id): object => (object) ['id' => $id], range(3, 9))];
 
         (new ReleaseMediaInfoAvailabilityLoader)->load($rows);
 
-        self::assertSame('1080p · x264', $rows[0]->media_info_summary);
-        self::assertSame('2160p · HEVC', $rows[1]->media_info_summary);
+        self::assertSame(['1080p · H.264', '2160p · H.265', 'H.264', 'H.265', 'H.264 · AAC 2', 'H.264', 'VC-1 · TrueHD Atmos 8', 'Vorbis 2', 'WVC1'],
+            array_map(static fn (object $row): ?string => $row->media_info_summary, $rows));
         self::assertTrue($rows[0]->has_media_info);
         self::assertTrue($rows[1]->has_media_info);
     }
@@ -130,7 +146,7 @@ class ReleaseMediaInfoAvailabilityLoaderTest extends TestCase
         (new ReleaseMediaInfoAvailabilityLoader)->load($rows);
         $listening = false;
 
-        self::assertSame('AVC', $rows[0]->media_info_summary);
+        self::assertSame('H.264', $rows[0]->media_info_summary);
         self::assertNull($rows[1]->media_info_summary);
         self::assertTrue($rows[0]->has_media_info);
         self::assertTrue($rows[1]->has_media_info, 'A later stream still makes media info available.');

@@ -189,3 +189,90 @@ test('the Adult table keeps Size in ink and the date dim, and draws the picture 
     assert.match(app, /--chip-clip-fg-dark: oklch\(0\.87 0\.09 305\);/);
     assert.match(app, /\.dark \.chip-tone-clip \{ background-color: var\(--chip-clip-bg-dark\); color: var\(--chip-clip-fg-dark\); \}/);
 });
+
+// The Previews wall (issue #1218; docs/proposals/adult-redesign/SPEC.md 5B and the wall checks of prototype/check.mjs).
+
+function thumb(data) {
+    const link = {
+        focused: false,
+        focus() { this.focused = true; },
+        classList: { contains: () => false },
+        dataset: { guid: 'abc', releaseDisplayName: 'Studio.Scene.1080p', ...data },
+    };
+    const target = { closest: selector => (selector === '[data-thumb]' ? link : null) };
+    return { link, target };
+}
+
+test('a wall thumbnail opens the dialog as its own trigger, focused for the return: the clip, the preview or the sample', () => {
+    const cases = [
+        [{ videoUrl: '/preview/video/abc', videoType: 'video/mp4', posterUrl: '/covers/preview/abc.jpg', imageTitle: 'Video preview' }, [true, 'Video preview', '']],
+        [{ imageUrl: '/covers/preview/abc_thumb.jpg', fullUrl: '/covers/preview/abc.jpg', imageTitle: 'Image preview' }, [false, 'Image preview', '/covers/preview/abc.jpg']],
+        [{ imageUrl: '/covers/sample/abc_thumb.jpg', fullUrl: '', imageTitle: 'Sample image' }, [false, 'Sample image', '/covers/sample/abc_thumb.jpg']],
+    ];
+    for (const [data, [video, title, image]] of cases) {
+        const { dialog, click: handle } = imageDialog();
+        const { link, target } = thumb(data);
+        const event = click(target);
+        handle(event);
+        assert.equal(event.prevented, true, title + ': the wall stays');
+        assert.deepEqual([dialog.open, dialog.video, dialog.title, dialog.imageUrl, dialog.releaseName], [true, video, title, image, 'Studio.Scene.1080p']);
+        assert.equal(link.focused, true, title + ': focus returns to the thumbnail on close');
+    }
+});
+
+test('a Ctrl-, Cmd-, Shift- or middle click on a wall thumbnail follows its link to the details page', () => {
+    for (const keys of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {
+        const { dialog, click: handle } = imageDialog();
+        const { link, target } = thumb({ imageUrl: '/covers/preview/abc_thumb.jpg', imageTitle: 'Image preview' });
+        const event = click(target, keys);
+        handle(event);
+        assert.equal(event.prevented, false, JSON.stringify(keys));
+        assert.equal(dialog.open, false);
+        assert.equal(link.focused, false);
+    }
+});
+
+function switchScreen(href, other) {
+    const screen = nameSearchScreen(href);
+    const link = { href: other, getAttribute(name) { return name === 'href' ? this.href : null; }, setAttribute(name, value) { this[name] = value; } };
+    screen.component.screen.querySelector = selector => (selector === '[data-view-switch] a:not([aria-current])' ? link : null);
+    screen.component.syncViewSwitch();
+    return { ...screen, link };
+}
+
+test('the "Releases | Previews" switch carries the filters, the name search and the sort as they stand, on page 1', async () => {
+    const { component, field, link } = switchScreen('https://nntmux.test/adult?category%5B%5D=6040&page=3', 'https://nntmux.test/adult/previews');
+    assert.equal(link.href, 'https://nntmux.test/adult/previews?category%5B%5D=6040', 'on load: the address without its page');
+
+    await component.applyFilter({ detail: { name: 'resolution', values: ['1080p'] }, target: {} });
+    assert.equal(link.href, 'https://nntmux.test/adult/previews?category%5B%5D=6040&resolution%5B%5D=1080p', 'after a menu change');
+
+    field.value = 'Scene';
+    await component.applyNameSearch('Scene');
+    const url = new URL(link.href);
+    assert.deepEqual([url.pathname, url.searchParams.getAll('category[]'), url.searchParams.getAll('resolution[]'), url.searchParams.get('q'), url.searchParams.has('page')],
+        ['/adult/previews', ['6040'], ['1080p'], 'Scene', false], 'after a name search');
+
+    await component.applyNameSearch('');
+    assert.equal(new URL(link.href).searchParams.has('q'), false, 'an emptied search leaves the link');
+});
+
+test('the wall\'s switch points back at the list the same way, and a page without a switch is untouched', () => {
+    const { link } = switchScreen('https://nntmux.test/adult/previews?completion=95&q=Scene&page=2', 'https://nntmux.test/adult');
+    assert.equal(link.href, 'https://nntmux.test/adult?completion=95&q=Scene');
+    const { component } = nameSearchScreen('https://nntmux.test/tv?resolution%5B%5D=4k');
+    assert.doesNotThrow(() => component.syncViewSwitch());
+});
+
+test('the wall\'s card styles: four columns, the 16:9 cropped thumbnail, the clip tag in the dark clip tone, the buttons in one line', () => {
+    const css = readFileSync(new URL('../../resources/css/tv.css', import.meta.url), 'utf8');
+    assert.match(css, /\.adult-wall \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\); gap: 34px 18px;/);
+    assert.match(css, /\.adult-card-thumb \{ position: relative; display: block; aspect-ratio: 16 \/ 9; overflow: hidden; border-radius: 12px;/);
+    assert.match(css, /\.adult-card-thumb img \{ display: block; width: 100%; height: 100%; object-fit: cover; \}/);
+    assert.match(css, /\.adult-card-thumb:hover \{ box-shadow: var\(--tv-shadow\); transform: translateY\(-5px\); \}/);
+    assert.match(css, /\.adult-card-clip \{[^}]*background: var\(--chip-clip-bg-dark\); color: var\(--chip-clip-fg-dark\);/);
+    assert.match(css, /\.adult-card-thumb:hover \.adult-card-play, \.adult-card-thumb:focus-visible \.adult-card-play \{ opacity: 1;/);
+    assert.match(css, /\.adult-card-thumb\.is-no-picture \{[^}]*border: 1px dashed var\(--tv-line\); background: transparent; box-shadow: none;/);
+    assert.match(css, /\.adult-card \.tv-actions \{ display: flex; flex: none; gap: 6px; \}/);
+    assert.match(css, /\.adult-card-chips \.mediainfo-badge \{[^}]*text-overflow: ellipsis; white-space: nowrap; \}/);
+});

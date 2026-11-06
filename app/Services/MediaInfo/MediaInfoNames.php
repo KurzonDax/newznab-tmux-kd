@@ -12,10 +12,11 @@ namespace App\Services\MediaInfo;
  */
 final class MediaInfoNames
 {
-    /** Video, keyed by MediaInfo Format or legacy videoformat. */
+    /** Video, keyed by MediaInfo Format or legacy videoformat (vp09, av01 and x264 are stored spellings, adult-redesign DATA-CONTRACT 4.5). */
     public const VIDEO = [
         'AVC' => 'H.264', 'HEVC' => 'H.265', 'AV1' => 'AV1', 'MPEG Video' => 'MPEG-2',
         'MPEG-4 Visual' => 'MPEG-4 (Xvid/DivX)', 'VP9' => 'VP9', 'xvid' => 'MPEG-4 (Xvid/DivX)',
+        'vp09' => 'VP9', 'av01' => 'AV1', 'x264' => 'H.264',
     ];
 
     /** Video, keyed by codec id (the releases row chip's map). */
@@ -28,12 +29,16 @@ final class MediaInfoNames
         'E-AC-3' => 'Dolby Digital Plus', 'E-AC-3 JOC' => 'Dolby Digital Plus with Atmos', 'AC-3' => 'Dolby Digital',
         'AAC LC' => 'AAC', 'AAC LC SBR' => 'HE-AAC', 'DTS XLL' => 'DTS-HD Master Audio', 'DTS' => 'DTS',
         'MLP FBA' => 'Dolby TrueHD', 'FLAC' => 'FLAC', 'Opus' => 'Opus', 'MPEG Audio' => 'MP2/MP3', 'PCM' => 'PCM',
+        'MLP FBA 16-ch' => 'Dolby TrueHD with Atmos', 'DTS XLL X' => 'DTS:X', 'DTS ES XLL' => 'DTS-HD Master Audio',
+        'DTS XBR' => 'DTS-HD High Resolution Audio', 'DTS ES' => 'DTS-ES', 'DTS LBR' => 'DTS Express', 'AAC LC SBR PS' => 'HE-AAC v2',
     ];
 
-    /** Audio: the short name used in the glance row. */
+    /** Audio: the short name used in the glance row and on every Media Info chip. */
     public const AUDIO_SHORT = [
         'E-AC-3' => 'E-AC-3', 'E-AC-3 JOC' => 'E-AC-3 Atmos', 'AC-3' => 'AC-3', 'AAC LC' => 'AAC',
         'AAC LC SBR' => 'HE-AAC', 'DTS XLL' => 'DTS-HD MA', 'MLP FBA' => 'TrueHD',
+        'MLP FBA 16-ch' => 'TrueHD Atmos', 'DTS XLL X' => 'DTS:X', 'DTS ES XLL' => 'DTS-HD MA', 'DTS XBR' => 'DTS-HD HRA',
+        'DTS ES' => 'DTS-ES', 'DTS LBR' => 'DTS Express', 'AAC LC SBR PS' => 'HE-AAC v2', 'MPEG Audio' => 'MP2/MP3',
     ];
 
     public const CHANNELS = [1 => 'Mono', 2 => 'Stereo', 6 => '5.1', 8 => '7.1'];

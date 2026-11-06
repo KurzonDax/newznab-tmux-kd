@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Releases;
 
+use App\Services\MediaInfo\MediaInfoNames;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -69,10 +70,12 @@ final class ReleaseMediaInfoAvailabilityLoader
             $value = $existing || isset($available[$releaseId]);
             $video = $summarySources['video_data'][$releaseId] ?? null;
             $audio = $summarySources['audio_data'][$releaseId] ?? null;
+            // The Media Info chip's words on every screen (adult-redesign SPEC 5B.7): the media info dialog's names.
             $summary = implode(' · ', array_filter([
                 ($video->videoheight ?? 0) > 0 ? (int) $video->videoheight.'p' : null,
-                $video->videocodec ?? $video->videoformat ?? null,
-                trim(($audio->audioformat ?? '').' '.($audio->audiochannels ?? '')),
+                // A spelling the names table lacks shows as stored: an unnamed codec id with no format too.
+                $video === null ? null : MediaInfoNames::video($video->videoformat, $video->videocodec) ?? (trim((string) $video->videocodec) ?: null),
+                trim((MediaInfoNames::audio($audio->audioformat ?? null)['short'] ?? '').' '.($audio->audiochannels ?? '')),
             ], static fn (?string $value): bool => $value !== null && $value !== ''));
 
             if ($release instanceof Model) {

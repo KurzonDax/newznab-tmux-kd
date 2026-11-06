@@ -69,7 +69,10 @@ export function tvFilesDialog() {
  * when one is available, and plays only when asked; the player is built here and removed on
  * close. An Adult row's picture (data-picture: preview or sample) opens the dialog of
  * its row's matching chip, which takes focus so closing returns there; a Ctrl-, Cmd- or
- * Shift-click follows the picture's link to the details page as a browser does. A trigger with
+ * Shift-click follows the picture's link to the details page as a browser does. A Previews wall card's
+ * thumbnail (data-thumb, docs/proposals/adult-redesign/SPEC.md 5B.4) has no chip to borrow: it carries the
+ * Preview or Sample chip's data itself and opens the dialog as its own trigger, so closing returns focus to
+ * it; a modified or middle click follows its link the same way. A trigger with
  * data-open-full (the Adult details page's Sample picture) opens straight in the Full size state
  * when the image is larger than the dialog; its image stays hidden until it is measured and laid
  * out so, and a failed load shows the failed note at once.
@@ -194,6 +197,8 @@ export function tvImageDialog() {
             this._click = event => {
                 const picture = event.target.closest('[data-picture]');
                 if (picture) return this.showPicture(event, picture);
+                const thumb = event.target.closest('[data-thumb]');
+                if (thumb) return this.showThumb(event, thumb);
                 const trigger = event.target.closest('.preview-badge, .sample-badge');
                 if (!trigger) return undefined;
                 event.preventDefault();
@@ -209,6 +214,13 @@ export function tvImageDialog() {
             event.preventDefault();
             chip.focus();
             this.show(chip);
+        },
+
+        showThumb(event, thumb) {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.button > 0) return;
+            event.preventDefault();
+            thumb.focus();
+            this.show(thumb);
         },
 
         destroy() {

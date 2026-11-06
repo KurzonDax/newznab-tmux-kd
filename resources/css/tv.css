@@ -317,6 +317,47 @@
 .tv-feed.is-adult tbody td:nth-child(6) { color: var(--tv-dim); }
 .tv-feed.is-adult .tv-origin-pair { min-width: min-content; }
 .tv-feed.is-adult .tv-origin-poster { min-width: 96px; }
+/*
+ * The Adult Previews wall (docs/proposals/adult-redesign/SPEC.md 5B, the prototype's #/previews): the
+ * heading keeps the wider of "Adult releases" and "Adult previews", so the switch and the search stay
+ * put. Four columns inside the 1500px column, 18px across and 34px down. The card's thumbnail is a
+ * 16:9 box with the picture cropped to fill it, a hairline edge over it so a black frame keeps its
+ * shape, lifting 5px with the page shadow on hover as the wall tiles do; a clip's magenta tag and play
+ * button keep the dark clip-tone values in both themes because they sit on the picture. The name
+ * clamps to two lines; the chips are the list's, the resolution chip at the chip height and a long
+ * Media Info summary cut with an ellipsis; the foot holds the size over the date beside the list's
+ * buttons in one line.
+ */
+.tv-filters.is-adult h1 { min-width: 210px; }
+.adult-wall { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 34px 18px; margin: 18px 0 0; padding: 0; list-style: none; }
+.adult-card { display: flex; flex-direction: column; min-width: 0; }
+.adult-card-thumb { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: var(--tv-panel-alt); box-shadow: var(--tv-poster-shadow); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s; }
+.adult-card-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.adult-card-thumb::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--picture-edge); pointer-events: none; }
+.dark .adult-card-thumb::after { box-shadow: inset 0 0 0 1px var(--picture-edge-dark); }
+.adult-card-thumb:hover { box-shadow: var(--tv-shadow); transform: translateY(-5px); }
+.tv-screen .adult-card-thumb:focus-visible { outline: 2px solid var(--tv-accent); outline-offset: 3px; border-radius: 12px; }
+.adult-card-thumb.is-no-picture { display: grid; place-items: center; align-content: center; gap: 6px; border: 1px dashed var(--tv-line); background: transparent; box-shadow: none; color: var(--tv-dim); text-align: center; }
+.adult-card-thumb.is-no-picture::after { content: none; }
+.adult-card-thumb.is-no-picture:hover { box-shadow: none; transform: none; }
+.adult-card-clip { position: absolute; right: 8px; bottom: 8px; padding: 2px 9px; border-radius: 7px; background: var(--chip-clip-bg-dark); color: var(--chip-clip-fg-dark); font-size: 12px; font-weight: 600; line-height: 20px; font-variant-numeric: tabular-nums; }
+.adult-card-play { position: absolute; top: 50%; left: 50%; z-index: 1; display: grid; place-items: center; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: var(--chip-clip-play-hover); color: var(--picture-overlay-ink); font-size: 20px; box-shadow: var(--picture-play-shadow); opacity: 0; transform: scale(0.9); transition: opacity 0.2s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.adult-card-play i { margin-left: 3px; }
+.adult-card-thumb:hover .adult-card-play, .adult-card-thumb:focus-visible .adult-card-play { opacity: 1; transform: scale(1); }
+.adult-card-name { margin-top: 12px; }
+.adult-card-chips { align-items: center; gap: 6px; margin-top: 9px; }
+.adult-card-chips .resolution-chip { height: 28px; line-height: 28px; }
+.adult-card-chips .mediainfo-badge { display: block; max-width: 100%; min-width: 0; overflow: hidden; line-height: 28px; text-overflow: ellipsis; white-space: nowrap; }
+.adult-card-chips .mediainfo-badge i { margin-right: 6px; }
+.adult-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 12px; }
+.adult-card-facts { display: flex; flex-direction: column; min-width: 0; font-size: 13px; line-height: 1.4; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.adult-card-size { color: var(--tv-ink); }
+.adult-card-date { color: var(--tv-dim); }
+.adult-card .tv-actions { display: flex; flex: none; gap: 6px; }
+@media (prefers-reduced-motion: reduce) {
+    .adult-card-thumb, .adult-card-play { transition: none; }
+    .adult-card-thumb:hover { transform: none; }
+}
 
 /*
  * Book and PC releases (docs/proposals/books-console-pc-redesign/SPEC.md 5): the Adult list without

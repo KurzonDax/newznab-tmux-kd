@@ -144,6 +144,9 @@
     --picture-play-bg: rgb(10 10 14 / 72%);
     --picture-overlay-ink: #fff;
     --picture-play-shadow: 0 6px 18px -6px rgb(0 0 0 / 60%);
+    /* A hairline over a picture's edge, so a black frame keeps its shape on the page (the Adult Previews wall's thumbnail). */
+    --picture-edge: rgb(0 0 0 / 8%);
+    --picture-edge-dark: rgb(255 255 255 / 10%);
     --chip-completion-ok-bg: oklch(0.93 0.04 150);
     --chip-completion-ok-bg-dark: oklch(0.30 0.045 150);
     --chip-completion-ok-fg: oklch(0.38 0.09 150);

@@ -1,4 +1,10 @@
-{{-- The release chips of a chip line (SPEC section 4), in order; $chipPart names each chip's data-part, or returns null; every caller passes $clip, the row's video clip or null. The Imported chip (tv.partials.imported-chip) closes the release's own chips, after the chips a caller adds to these. --}}
+{{-- The release chips of a chip line (SPEC section 4), in order; $chipPart names each chip's data-part, or returns null; every caller passes $clip, the row's video clip or null. The Imported chip (tv.partials.imported-chip) closes the release's own chips, after the chips a caller adds to these.
+     The Adult Previews wall's card (adult-redesign SPEC 5B.4) passes $chipsOnCard, which keeps the Completion, Password and Media Info chips only,
+     and $mediaInfoChipTitle, the Media Info chip's tooltip; without them every other screen is as it was. --}}
+@php
+    $chipsOnCard ??= false;
+    $mediaInfoChipTitle ??= 'View media info';
+@endphp
 @if($row->completion !== null)
     <x-chip :variant="'completion-'.$row->completion['band']" :data-part="$chipPart($row->completion['band'] === 'mid' ? 'completion chip' : 'completion chip, '.$row->completion['band'])"
             :title="$row->completion['percent'].'% of this release\'s articles were seen by the indexer. '.($row->completion['repairing'] ? 'The site may still recover more of it.' : 'The site will not try to recover more of it.')">{{ $row->completion['percent'] }}% complete{{ $row->completion['repairing'] ? ' · late headers pending' : '' }}</x-chip>
@@ -8,8 +14,9 @@
 @endif
 @if($row->mediaInfo !== null)
     <x-chip variant="media" action icon="fas fa-circle-info" class="mediainfo-badge" :data-release-id="$row->id" :data-release-display-name="$row->name"
-            :data-part="$chipPart('media info chip')" title="View media info">{{ $row->mediaInfo }}</x-chip>
+            :data-part="$chipPart('media info chip')" :title="$mediaInfoChipTitle">{{ $row->mediaInfo }}</x-chip>
 @endif
+@unless($chipsOnCard)
 @if($row->nfo)
     <x-chip variant="nfo" action class="nfo-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-part="$chipPart('NFO chip')" title="View NFO">NFO</x-chip>
 @endif
@@ -18,3 +25,4 @@
     <x-chip variant="sample" action class="sample-badge" :data-guid="$row->guid" :data-release-display-name="$row->name" :data-image-url="$row->sample['thumb'] ?? ''"
             :data-full-url="$row->sample['full']" :data-part="$chipPart('Sample chip')" title="View sample image">Sample</x-chip>
 @endif
+@endunless

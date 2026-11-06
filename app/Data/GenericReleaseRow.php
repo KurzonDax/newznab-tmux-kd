@@ -34,7 +34,7 @@ final readonly class GenericReleaseRow
      * @param  string  $followTitle  the followed title's name
      * @param  int  $reports  the release's report count (the Reported chip)
      * @param  int  $publicResponses  the public staff responses (the Response chip)
-     * @param  array{url: string, type: string, poster: ?string}|null  $clip  the video clip, as the Adult list carries it
+     * @param  array{url: string, type: string, poster: ?string, seconds: ?int}|null  $clip  the video clip, as the Adult list carries it
      * @param  array{url: string, type: string, title: ?string, artist: ?string, seconds: ?int}|null  $listen  the playable audio preview, as the Audio list carries it (the Listen chip)
      * @param  string|null  $cover  the Listen dialog's cover: none on these lists
      * @param  array{shape: 'poster'|'square'|'wide', src: ?string, href: string, title: string, label: string, opens: 'preview'|'sample'|null}|null  $picture  the picture column's picture (GenericReleaseRows::picture()): `src` null is a name card of `title` and `label`, `opens` names the image dialog a wide picture opens; null for an empty cell

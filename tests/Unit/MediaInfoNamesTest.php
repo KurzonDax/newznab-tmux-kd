@@ -26,6 +26,12 @@ final class MediaInfoNamesTest extends TestCase
         yield 'unmapped shows the format' => ['VC-1', 'V_MS/VFW/FOURCC / WVC1', 'VC-1'];
         yield 'unmapped codec id alone shows nothing' => [null, 'V_MS/VFW/FOURCC / WVC1', null];
         yield 'an unmapped format wins over a mapped codec id' => ['Other Video', 'V_MPEGH/ISO/HEVC', 'Other Video'];
+        // the spellings production stores (adult-redesign DATA-CONTRACT 4.5, issue #1218)
+        yield 'vp09' => ['vp09', 'vp09', 'VP9'];
+        yield 'av01' => ['av01', 'av01', 'AV1'];
+        yield 'x264' => ['x264', null, 'H.264'];
+        yield 'a stream-number codec reads by its format' => ['AVC', '27', 'H.264'];
+        yield 'a four-character codec reads by its format' => ['HEVC', 'hvc1', 'H.265'];
     }
 
     #[DataProvider('videoCodecs')]
@@ -47,9 +53,17 @@ final class MediaInfoNamesTest extends TestCase
         yield 'MLP FBA' => ['MLP FBA', 'Dolby TrueHD', 'TrueHD', false];
         yield 'FLAC' => ['FLAC', 'FLAC', 'FLAC', false];
         yield 'Opus' => ['Opus', 'Opus', 'Opus', false];
-        yield 'MPEG Audio' => ['MPEG Audio', 'MP2/MP3', 'MPEG Audio', false];
+        yield 'MPEG Audio' => ['MPEG Audio', 'MP2/MP3', 'MP2/MP3', false];
         yield 'PCM' => ['PCM', 'PCM', 'PCM', false];
         yield 'unmapped shows the format' => ['Vorbis', 'Vorbis', 'Vorbis', false];
+        // the spellings production stores (adult-redesign DATA-CONTRACT 4.5, issue #1218)
+        yield 'MLP FBA 16-ch' => ['MLP FBA 16-ch', 'Dolby TrueHD with Atmos', 'TrueHD Atmos', false];
+        yield 'DTS XLL X' => ['DTS XLL X', 'DTS:X', 'DTS:X', false];
+        yield 'DTS ES XLL' => ['DTS ES XLL', 'DTS-HD Master Audio', 'DTS-HD MA', false];
+        yield 'DTS XBR' => ['DTS XBR', 'DTS-HD High Resolution Audio', 'DTS-HD HRA', false];
+        yield 'DTS ES' => ['DTS ES', 'DTS-ES', 'DTS-ES', false];
+        yield 'DTS LBR' => ['DTS LBR', 'DTS Express', 'DTS Express', false];
+        yield 'AAC LC SBR PS' => ['AAC LC SBR PS', 'HE-AAC v2', 'HE-AAC v2', false];
     }
 
     #[DataProvider('audioFormats')]

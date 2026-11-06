@@ -27,6 +27,11 @@ import { rowActions } from './tv-row-actions.js';
  * release-deleted from releaseDeleteDialog): the row leaves the page, which is not refilled, the pager
  * line's count drops by one and the selection follows; the last row on a page draws the list again at
  * the current address, as the basket does.
+ *
+ * The Adult list and its Previews wall (docs/proposals/adult-redesign/SPEC.md 5B.1) share a "Releases |
+ * Previews" switch (data-view-switch) above the reloaded list. The server renders its other half bare; the
+ * component gives it the address's query without the page on load and after every filter change and name
+ * search, so it carries the filters, the name search and the sort to the other page as they stand, page 1.
  */
 export function tvReleases() {
     return {
@@ -41,6 +46,16 @@ export function tvReleases() {
             this.screen = this.$el;
             this.loadedAt = Date.now();
             this.selectionChanged();
+            this.syncViewSwitch();
+        },
+
+        /** The view switch's other half: its own page with the address's filters, name search and sort, on page 1. */
+        syncViewSwitch() {
+            const link = this.screen.querySelector('[data-view-switch] a:not([aria-current])');
+            if (!link) return;
+            const target = new URL(link.getAttribute('href'), window.location.href);
+            target.search = firstPageUrl(window.location.href).search;
+            link.setAttribute('href', target.toString());
         },
 
         boxes(visibleOnly = false) {
@@ -127,6 +142,7 @@ export function tvReleases() {
                 return;
             }
             window.history.replaceState(null, '', url.toString());
+            this.syncViewSwitch();
             await this.reloadList(url);
             if (this.screen.dataset.scopeParam) this.announceScope();
         },
@@ -273,6 +289,7 @@ export function tvReleases() {
             const text = value.trim();
             const url = filterUrl(window.location.href, 'q', text === '' ? [] : [text], true);
             window.history.replaceState(null, '', url.toString());
+            this.syncViewSwitch();
             await this.reloadList(url);
         },
 
