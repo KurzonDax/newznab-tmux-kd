@@ -11,6 +11,7 @@ use App\Models\Settings;
 use App\Models\User;
 use App\Services\Releases\AdultReleaseList;
 use App\Services\Releases\ReleaseBrowseService;
+use App\Services\Releases\RememberedListFilters;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,8 @@ use Tests\TestCase;
 
 /**
  * The Adult releases screen, GET /adult (issue #887; docs/proposals/adult-redesign/SPEC.md 5,
- * DATA-CONTRACT.md 6 and the list checks of prototype/check.mjs).
+ * DATA-CONTRACT.md 6 and the list checks of prototype/check.mjs), and its Previews wall, GET
+ * /adult/previews (issue #1218; SPEC 5B, DATA-CONTRACT tests 11-14 and the wall checks).
  */
 final class AdultReleasesPageTest extends TestCase
 {
@@ -110,10 +112,13 @@ final class AdultReleasesPageTest extends TestCase
             ->assertDontSee('A.Movie.2024.1080p')
             ->assertSee('Showing 1–3 of 3 releases')->assertSee('2 hr ago')->assertSee('Sep 20, 2026')
             ->assertDontSee('style="', false)->assertDontSee('x-tv-search', false)->assertDontSee('data-watch-picker', false)
-            ->assertDontSee('class="segmented"', false)->assertDontSee('data-expand', false);
+            ->assertDontSee('data-expand', false);
         $html = (string) $response->getContent();
-        // the name search sits between the heading and the sort menu
-        $this->assertMatchesRegularExpression('/<h1 data-part="page title">Adult releases<\/h1>\s*(<!--.*?-->\s*)?<div class="tv-search tv-name-search">\s*<label>\s*<i class="fas fa-magnifying-glass" aria-hidden="true"><\/i>\s*'
+        // the "Releases | Previews" switch, then the name search, sit between the heading and the sort menu (SPEC 5B.1)
+        $this->assertMatchesRegularExpression('/<h1 data-part="page title">Adult releases<\/h1>\s*(<!--.*?-->\s*)*<div class="segmented" data-view-switch="data-view-switch" role="group" aria-label="View">\s*'
+            .'<a href="'.preg_quote(route('adult.releases'), '/').'" aria-current="page" data-part="view switch, current">Releases<\/a>\s*'
+            .'<a href="'.preg_quote(route('adult.previews'), '/').'" data-part="view switch, other">Previews<\/a>\s*<\/div>\s*'
+            .'<div class="tv-search tv-name-search">\s*<label>\s*<i class="fas fa-magnifying-glass" aria-hidden="true"><\/i>\s*'
             .'<input type="text" x-ref="nameSearch" value="" placeholder="Search release names" autocomplete="off" aria-label="Search release names"/s', $html);
         // hidden by a class that keeps its place: the base styles force display: none on [hidden]
         $this->assertSame(1, preg_match('/<button type="button" class="tv-name-search-clear is-hidden" x-ref="nameClear" aria-label="Clear the name search"[^>]*aria-hidden="true" tabindex="-1"\s*>/', $html));
@@ -355,10 +360,10 @@ final class AdultReleasesPageTest extends TestCase
             }
         }
 
-        // the list reads no clip length (SPEC 5.10)
+        // the list shows no clip length (SPEC 5.10); the seconds the wall's tag shows come with the one clip read (DATA-CONTRACT 4.3)
         DB::enableQueryLog();
-        $response = $this->page('/adult')->assertOk()->assertDontSee('Clip · ')->assertDontSee('clip-badge', false)->assertDontSee('>Clip<', false);
-        $this->assertSame(0, collect(DB::getQueryLog())->filter(static fn (array $query): bool => str_contains($query['query'], 'duration_seconds'))->count());
+        $response = $this->page('/adult')->assertOk()->assertDontSee('Clip · ')->assertDontSee('clip-badge', false)->assertDontSee('>Clip<', false)->assertDontSee('second video');
+        $this->assertSame(1, collect(DB::getQueryLog())->filter(static fn (array $query): bool => str_contains($query['query'], 'release_video_clips'))->count());
         DB::disableQueryLog();
 
         $row = $this->rowOf($response, 'Timed.Clip');
@@ -554,6 +559,297 @@ final class AdultReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('late headers pending', $noVerdict);
     }
 
+    /**
+     * DATA-CONTRACT test 11: the wall lists the visible Adult releases with haspreview = 1 or jpgstatus = 1, 40 a page, in
+     * the list's order for each sort, with and without a filter; pages past the middle are read mirrored and return the
+     * same ids as the unmirrored read.
+     */
+    public function test_the_wall_lists_only_visible_releases_with_a_picture_40_a_page_in_the_list_order_for_each_sort(): void
+    {
+        $facts = $this->filterFixture();
+        foreach ($facts as $id => &$fact) {
+            $fact['picture'] = $id % 3 === 0 || $id % 4 === 0;
+            DB::table('releases')->where('id', $id)->update(['haspreview' => $id % 3 === 0 ? 1 : 0, 'jpgstatus' => $id % 4 === 0 ? 1 : 0]);
+        }
+        unset($fact);
+        $wall = app(AdultReleaseList::class)->previews();
+        $this->assertSame([40, 50], [$wall->perPage(), app(AdultReleaseList::class)->perPage()]);
+        $cases = [
+            'no filter' => [new AdultReleaseFilters, static fn (array $fact): bool => $fact['picture']],
+            '1080p' => [new AdultReleaseFilters(resolutions: ['1080p']), static fn (array $fact): bool => $fact['picture'] && $fact['resolution'] === 2],
+            'name search' => [new AdultReleaseFilters(search: 'scene'), static fn (array $fact): bool => $fact['picture'] && str_contains(mb_strtolower($fact['name']), 'scene')],
+        ];
+        foreach ($cases as $case => [$filters, $keep]) {
+            foreach (array_keys(AdultReleaseFilters::SORTS) as $sort) {
+                $sorted = new AdultReleaseFilters($filters->categories, $filters->resolutions, ReleaseSort::from($sort), search: $filters->search);
+                $expected = $this->expectedOrder($facts, $keep, $sorted);
+                $total = $wall->count($sorted, [self::VR]);
+                $this->assertSame(count($expected), $total, $case);
+                $read = [];
+                foreach (range(1, max(1, (int) ceil($total / 40))) as $page) {
+                    $ids = $wall->pageIds($sorted->withPage($page), [self::VR], $total);
+                    $this->assertLessThanOrEqual(40, count($ids));
+                    $read = [...$read, ...$ids];
+                }
+                $this->assertSame($expected, $read, $case.', '.$sort);
+            }
+        }
+        $this->assertGreaterThan(80, count($this->expectedOrder($facts, $cases['no filter'][1], new AdultReleaseFilters)), 'three pages, the last past the middle');
+    }
+
+    /** DATA-CONTRACT test 11: the wall's pager line, last page and past-the-end redirect count 40 a page; the list still pages by 50. */
+    public function test_the_wall_pager_line_and_last_page_count_40_a_page(): void
+    {
+        $expected = [];
+        foreach (range(1, 105) as $index) {
+            $postdate = Carbon::parse('2026-01-01 00:00:00')->addHours($index)->toDateTimeString();
+            $expected[] = $this->adult('Pictured '.$index, ['postdate' => $postdate, 'haspreview' => $index % 2, 'jpgstatus' => 1 - $index % 2]);
+        }
+        $this->adult('Unpictured', ['postdate' => '2026-02-01 00:00:00']);
+        $order = array_reverse($expected);
+
+        foreach ([1 => [1, 40], 2 => [41, 80], 3 => [81, 105]] as $page => [$from, $to]) {
+            $response = $this->page('/adult/previews'.($page > 1 ? '?page='.$page : ''))->assertOk()
+                ->assertSee('Showing '.$from.'–'.$to.' of 105 releases')->assertSee('Page '.$page.' of 3');
+            $this->assertSame(array_slice($order, $from - 1, $to - $from + 1), $this->cardIds($response), 'page '.$page);
+        }
+        $this->page('/adult/previews?page=9')->assertRedirect(route('adult.previews', ['page' => 3]));
+        $this->page('/adult/previews')->assertSee('aria-label="Page 3"', false)->assertDontSee('aria-label="Page 4"', false)->assertSee('Go to page');
+        $this->page('/adult?page=2')->assertSee('Showing 51–100 of 106 releases')->assertSee('Page 2 of 3');
+    }
+
+    /** DATA-CONTRACT test 11: the wall's count is its rows' and is cached apart from the list's count. */
+    public function test_the_wall_count_matches_its_rows_and_is_cached_apart_from_the_list_count(): void
+    {
+        $this->adult('With.Preview', ['haspreview' => 1]);
+        $this->adult('With.Sample', ['jpgstatus' => 1]);
+        $this->adult('No.Picture.Flag');
+        $this->adult('Passworded.Preview', ['haspreview' => 1, 'passwordstatus' => 1]);
+        Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '0']);
+
+        $this->page('/adult/previews')->assertSee('Showing 1–2 of 2 releases');
+        $this->page('/adult')->assertSee('Showing 1–3 of 3 releases');
+        $this->adult('Later.Preview', ['haspreview' => 1, 'postdate' => '2026-09-01 00:00:00']);
+        $this->page('/adult/previews')->assertSee('Showing 1–2 of 2 releases');
+        ReleaseBrowseService::bumpCacheVersion();
+        $wall = $this->page('/adult/previews')->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Later.Preview', 'With.Preview', 'With.Sample'], DB::table('releases')->whereIn('id', $this->cardIds($wall))->orderBy('name')->pluck('name')->all());
+
+        // the fragment is the wall alone: the pager line, the cards and the bottom pager
+        $fragment = (string) $this->page('/adult/previews?_fragment=list&q=Preview')->assertOk()->assertSee('Showing 1–2 of 2 releases')->getContent();
+        $this->assertStringNotContainsString('<html', $fragment);
+        $this->assertStringNotContainsString('tv-filters', $fragment);
+        $this->assertStringNotContainsString('<table', $fragment);
+        $this->assertSame(2, substr_count($fragment, '<li class="adult-card" data-release-row>'));
+    }
+
+    /** SPEC 5B.2, appendix A: the wall's empty lines. */
+    public function test_the_wall_says_when_there_is_no_picture_and_names_the_filters_that_match_nothing(): void
+    {
+        $this->adult('No.Picture.Yet', ['resolution' => 2]);
+
+        $this->page('/adult/previews')->assertOk()->assertSee('Showing 0 releases')->assertSee('<p class="tv-empty">There are no adult releases with a picture yet.</p>', false)
+            ->assertDontSee('class="adult-wall"', false);
+        $this->opened('/adult/previews?resolution[]=1080p&q=Scene')->assertOk()->assertSee('<p class="tv-empty">No releases match 1080p · names containing “Scene”.</p>', false);
+    }
+
+    /**
+     * DATA-CONTRACT test 12: one remembered set of filters and sort for the list and the wall; Clear all on either clears
+     * both; the name search is never remembered; the switch is rendered bare (the page keeps it in step with the
+     * address) and opening the other page with what it carries leaves the remembered set as it was.
+     */
+    public function test_the_wall_and_the_list_share_one_remembered_set_of_filters_and_sort(): void
+    {
+        $this->adult('Studio.Scene.1080p', ['resolution' => 2, 'haspreview' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        // a change on the wall is remembered for the list
+        $this->page('/adult/previews?_fragment=list&resolution[]=1080p&q=Scene')->assertOk();
+        $this->assertSame(['resolution' => ['1080p']], $this->remembered($user));
+        $this->page('/adult')->assertRedirect(route('adult.releases', ['resolution' => ['1080p']]));
+        $this->page('/adult?q=Scene')->assertRedirect(route('adult.releases', ['resolution' => ['1080p'], 'q' => 'Scene']));
+        // and one on the list for the wall
+        $this->page('/adult?_fragment=list&completion=95&resolution[]=1080p&q=Scene')->assertOk();
+        $this->assertSame(['resolution' => ['1080p'], 'completion' => 95], $this->remembered($user));
+        $this->page('/adult/previews')->assertRedirect(route('adult.previews', ['resolution' => ['1080p'], 'completion' => 95]));
+
+        // the switch's other half is rendered bare on both pages, whatever the address carries
+        $query = ['resolution' => ['1080p'], 'completion' => 95, 'q' => 'Scene'];
+        $list = (string) $this->page('/adult?'.http_build_query($query))->assertOk()->getContent();
+        $this->assertStringContainsString('<a href="'.route('adult.previews').'" data-part="view switch, other">Previews</a>', $list);
+        $wall = $this->page('/adult/previews?'.http_build_query($query))->assertOk()
+            ->assertSee('<h1 data-part="page title">Adult previews</h1>', false)
+            ->assertSee('<a href="'.route('adult.releases').'" data-part="view switch, other">Releases</a>', false)
+            ->assertSee('<a href="'.route('adult.previews').'" aria-current="page" data-part="view switch, current">Previews</a>', false)
+            ->assertSee('data-view-switch', false)->assertSee('data-preference-root="xxx"', false)->assertSee('value="Scene"', false);
+        // what the switch carries after the change above opens the other page without changing the remembered set
+        $this->assertSame(['resolution' => ['1080p'], 'completion' => 95], $this->remembered($user));
+        $this->assertSame(['Studio.Scene.1080p'], DB::table('releases')->whereIn('id', $this->cardIds($wall))->pluck('name')->all());
+
+        // the sort is shared
+        $this->postJson('/profile/update-view', ['root' => 'xxx', 'sort' => 'newest'])->assertOk();
+        $this->page('/adult/previews?resolution[]=1080p', User::query()->findOrFail($user->id))->assertSee('<option value="newest" selected', false)->assertSee('Added Sep 13, 2026');
+
+        // Clear all on the wall clears both
+        $this->page('/adult/previews?clear=1', User::query()->findOrFail($user->id))->assertRedirect(route('adult.previews'));
+        $this->assertSame([], $this->remembered($user));
+        $this->page('/adult', User::query()->findOrFail($user->id))->assertOk();
+        $this->page('/adult/previews', User::query()->findOrFail($user->id))->assertOk()
+            ->assertSee('href="'.route('adult.previews', [RememberedListFilters::CLEAR => 1]).'"', false);
+    }
+
+    /**
+     * DATA-CONTRACT test 13: a card's thumbnail is the preview thumbnail, else the sample thumbnail, else the "No picture"
+     * tile; a preview of a release with a clip carries the clip tag, with or without seconds; the thumbnail is the dialog's
+     * own trigger with the Preview or Sample chip's data.
+     */
+    public function test_a_card_thumbnail_is_the_preview_else_the_sample_and_a_clip_preview_carries_its_tag(): void
+    {
+        $timed = $this->adult('Timed.Clip', ['haspreview' => 1, 'videostatus' => 1, 'postdate' => '2026-09-25 11:00:00']);
+        $untimed = $this->adult('Untimed.Clip', ['haspreview' => 1, 'videostatus' => 1, 'postdate' => '2026-09-25 10:00:00']);
+        $this->adult('Preview.Only', ['haspreview' => 1, 'jpgstatus' => 1, 'postdate' => '2026-09-25 09:00:00']);
+        $sampleClip = $this->adult('Sample.With.Clip', ['jpgstatus' => 1, 'videostatus' => 1, 'postdate' => '2026-09-25 08:00:00']);
+        $this->adult('Flags.Without.Files', ['haspreview' => 1, 'jpgstatus' => 1, 'postdate' => '2026-09-25 07:00:00']);
+        $this->adult('Nothing', ['postdate' => '2026-09-25 06:00:00']);
+        DB::table('release_video_clips')->insert([
+            ['releases_id' => $timed, 'extension' => 'mp4', 'mime' => 'video/mp4', 'duration_seconds' => 30],
+            ['releases_id' => $untimed, 'extension' => 'mp4', 'mime' => 'video/mp4', 'duration_seconds' => null],
+            ['releases_id' => $sampleClip, 'extension' => 'mp4', 'mime' => 'video/mp4', 'duration_seconds' => 12],
+        ]);
+        foreach (['Timed.Clip', 'Untimed.Clip', 'Preview.Only'] as $name) {
+            $this->image('preview', md5($name).'_thumb');
+        }
+        $this->image('preview', md5('Preview.Only'));
+        $this->image('sample', md5('Preview.Only').'_thumb');
+        $this->image('sample', md5('Sample.With.Clip').'_thumb');
+
+        $response = $this->page('/adult/previews')->assertOk()->assertSee('Showing 1–5 of 5 releases')->assertDontSee('title="Nothing"', false)
+            ->assertSeeInOrder(['title="Timed.Clip"', 'title="Untimed.Clip"', 'title="Preview.Only"', 'title="Sample.With.Clip"', 'title="Flags.Without.Files"'], false);
+        $details = static fn (string $name): string => e(route('details', md5($name)));
+
+        $card = $this->cardOf($response, 'Timed.Clip');
+        $this->assertStringContainsString('<a class="adult-card-thumb has-clip" href="'.$details('Timed.Clip').'" data-thumb data-guid="'.md5('Timed.Clip').'" data-release-display-name="Timed.Clip"', $card);
+        $this->assertStringContainsString('data-video-url="'.route('preview.video', md5('Timed.Clip')).'" data-video-type="video/mp4"', $card);
+        $this->assertStringContainsString('data-poster-url="'.$this->url('preview', md5('Timed.Clip').'_thumb').'"', $card);
+        $this->assertStringContainsString('data-image-title="Video preview" aria-label="Play the 30-second video clip of Timed.Clip"', $card);
+        $this->assertStringContainsString('<img src="'.$this->url('preview', md5('Timed.Clip').'_thumb').'" alt="" loading="lazy">', $card);
+        $this->assertStringContainsString('<span class="adult-card-clip" aria-hidden="true">Clip · 30 s</span>', $card);
+        $this->assertStringContainsString('<span class="adult-card-play" aria-hidden="true">', $card);
+
+        $card = $this->cardOf($response, 'Untimed.Clip');
+        $this->assertStringContainsString('aria-label="Play the video clip of Untimed.Clip"', $card);
+        $this->assertStringContainsString('<span class="adult-card-clip" aria-hidden="true">Clip</span>', $card);
+
+        $card = $this->cardOf($response, 'Preview.Only');
+        $this->assertStringContainsString('<a class="adult-card-thumb" href="'.$details('Preview.Only').'" data-thumb data-guid="'.md5('Preview.Only').'" data-release-display-name="Preview.Only"'
+            ."\n".'           data-image-url="'.$this->url('preview', md5('Preview.Only').'_thumb').'" data-full-url="'.$this->url('preview', md5('Preview.Only')).'" data-image-title="Image preview"', $card);
+        $this->assertStringContainsString('aria-label="View the preview image of Preview.Only"', $card);
+        $this->assertStringNotContainsString('adult-card-clip', $card);
+        $this->assertStringNotContainsString('data-video-url', $card);
+
+        // a sample opens the Sample dialog even when the release has a clip, as the list's picture does
+        $card = $this->cardOf($response, 'Sample.With.Clip');
+        $this->assertStringContainsString('data-image-url="'.$this->url('sample', md5('Sample.With.Clip').'_thumb').'" data-full-url="" data-image-title="Sample image"', $card);
+        $this->assertStringContainsString('aria-label="View the sample image of Sample.With.Clip"', $card);
+        $this->assertStringNotContainsString('adult-card-clip', $card);
+        $this->assertStringNotContainsString('data-video-url', $card);
+
+        // flagged but off disk: the list's dashed tile, a plain link to details
+        $card = $this->cardOf($response, 'Flags.Without.Files');
+        $this->assertMatchesRegularExpression('/<a class="adult-card-thumb tv-placeholder is-no-picture" href="'.preg_quote($details('Flags.Without.Files'), '/').'" tabindex="-1" aria-hidden="true">\s*'
+            .'<i class="fas fa-image" aria-hidden="true"><\/i>\s*<span class="tv-placeholder-label">No picture<\/span>\s*<\/a>/', $card);
+        $this->assertStringNotContainsString('<img', $card);
+        $this->assertStringNotContainsString('data-thumb', $card);
+    }
+
+    /**
+     * DATA-CONTRACT test 13 and SPEC 5B.4-5B.5: the card's name, its chips (resolution, Completion under 100%, Password,
+     * Media Info only, the Media Info tooltip naming the whole summary), its foot, and no selection.
+     */
+    public function test_a_card_shows_its_name_the_four_chip_kinds_its_size_and_date_and_the_buttons_without_selection(): void
+    {
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('video_data');
+        $tables->create('audio_data');
+        DB::table('usenet_groups')->insert(['id' => 1, 'name' => 'alt.binaries.test']);
+        Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
+        Cache::flush();
+        $id = $this->adult('Studio_Scene-[Part.1]', ['haspreview' => 1, 'jpgstatus' => 1, 'videostatus' => 1, 'completion' => 97, 'passwordstatus' => 1, 'nfostatus' => 1,
+            'is_imported' => 1, 'groups_id' => 1, 'fromname' => 'poster <p@example.invalid>', 'resolution' => 2, 'size' => 2587017379, 'postdate' => '2026-09-25 10:00:00',
+            'adddate' => '2026-09-25 11:30:00']);
+        DB::table('video_data')->insert(['releases_id' => $id, 'videoformat' => 'AVC', 'videocodec' => 'avc1', 'videoheight' => 1080]);
+        DB::table('audio_data')->insert(['releases_id' => $id, 'audioid' => 1, 'audioformat' => 'AAC LC', 'audiochannels' => '2']);
+        $this->image('preview', md5('Studio_Scene-[Part.1]').'_thumb');
+
+        $response = $this->page('/adult/previews')->assertOk()->assertDontSee('class="tv-bulk"', false)
+            ->assertDontSee('data-select', false)->assertDontSee('releaseDeleteDialog', false);
+        $this->assertSame(1, preg_match('/<ul class="adult-wall" aria-label="Releases">(.*?)<\/ul>/s', (string) $response->getContent(), $wall));
+        $this->assertStringNotContainsString('type="checkbox"', $wall[1], 'no select boxes on the wall');
+        $card = $this->cardOf($response, 'Studio_Scene-[Part.1]');
+        $this->assertStringContainsString('<a class="tv-release-name adult-card-name" href="'.e(route('details', md5('Studio_Scene-[Part.1]'))).'" title="Studio_Scene-[Part.1]">'
+            .'Studio_<wbr>Scene-<wbr>[Part.<wbr>1]<wbr></a>', $card);
+        preg_match('/<div class="tv-chips adult-card-chips">(.*?)<\/div>/s', $card, $chips);
+        $this->assertMatchesRegularExpression('/^\s*<span class="resolution-chip resolution-chip-1080"\s*>1080p<\/span>\s*<span [^>]*chip-tone-completion-ok[^>]*>\s*97% complete\s*<\/span>\s*'
+            .'<span [^>]*chip-tone-password[^>]*>.*?Password\s*<\/span>\s*<button [^>]*mediainfo-badge[^>]*>.*?H\.264 · AAC 2\.0\s*<\/button>\s*$/s', $chips[1]);
+        $this->assertStringContainsString('title="View media info: H.264 · AAC 2.0"', $chips[1]);
+        foreach (['chip-tone-nfo', 'preview-badge', 'sample-badge', 'tv-origin', 'chip-tone-imported', 'data-part'] as $absent) {
+            $this->assertStringNotContainsString($absent, $chips[1], $absent);
+        }
+        $this->assertMatchesRegularExpression('/<div class="adult-card-facts" title="Posted Sep 25, 2026, 10:00 AM · Added Sep 25, 2026, 11:30 AM">\s*<span class="adult-card-size">2.41 GB<\/span>\s*'
+            .'<span class="adult-card-date">Posted 2 hr ago<\/span>/', $card);
+        $this->assertSame(['download', 'copy', 'cart'], $this->actions($card));
+        $this->assertStringNotContainsString('data-part="row action', $card);
+        // the list's other chips stay on the list
+        $this->assertStringContainsString('View media info"', $this->rowOf($this->page('/adult'), 'Studio_Scene-[Part.1]'));
+    }
+
+    /** SPEC 5B.6: an admin's card has Delete right of Cart and the wall carries the list's confirmation; the date follows the Added sort. */
+    public function test_an_admin_gets_delete_on_every_card_and_the_confirmation_dialog(): void
+    {
+        $this->adult('Studio.Scene.One.1080p', ['haspreview' => 1, 'adddate' => '2026-09-25 11:30:00']);
+        $admin = $this->browserUser('Admin');
+        $admin->view_prefs = ['xxx' => ['sort' => 'newest']];
+        $admin->save();
+
+        $wall = $this->page('/adult/previews', User::query()->findOrFail($admin->id))->assertOk()
+            ->assertSee('x-on:release-deleted="releaseDeleted"', false)->assertDontSee('class="tv-bulk"', false)->assertDontSee('Delete selected');
+        $this->assertReleaseDeleteDialog((string) $wall->getContent());
+        $card = $this->cardOf($wall, 'Studio.Scene.One.1080p');
+        $this->assertSame(['download', 'copy', 'cart', 'delete'], $this->actions($card));
+        $this->assertStringNotContainsString('tv-action-slot', $card);
+        $this->assertStringContainsString('<span class="adult-card-date">Added 30 min ago</span>', $card);
+        // a wall drawn again in place keeps the buttons
+        $fragment = $this->page('/adult/previews?_fragment=list', User::query()->findOrFail($admin->id))->assertOk()->assertDontSee('releaseDeleteDialog', false);
+        $this->assertSame(['download', 'copy', 'cart', 'delete'], $this->actions($this->cardOf($fragment, 'Studio.Scene.One.1080p')));
+    }
+
+    /**
+     * DATA-CONTRACT test 14: the Media Info chip names the video by format first and the audio by the dialog's short name,
+     * on the list row and the wall card alike.
+     */
+    public function test_the_media_info_chip_reads_h264_and_aac_on_the_list_and_the_wall(): void
+    {
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('video_data');
+        $tables->create('audio_data');
+        $id = $this->adult('Plain.Names', ['haspreview' => 1]);
+        DB::table('video_data')->insert(['releases_id' => $id, 'videoformat' => 'AVC', 'videocodec' => 'avc1', 'videoheight' => 1080]);
+        DB::table('audio_data')->insert(['releases_id' => $id, 'audioid' => 1, 'audioformat' => 'AAC LC', 'audiochannels' => '2']);
+        $this->image('preview', md5('Plain.Names').'_thumb');
+
+        $this->assertMatchesRegularExpression('/mediainfo-badge[^>]*title="View media info">\s*<i [^>]*><\/i>\s*H\.264 · AAC 2\.0\s*<\/button>/', $this->rowOf($this->page('/adult'), 'Plain.Names'));
+        $this->assertMatchesRegularExpression('/mediainfo-badge[^>]*>\s*<i [^>]*><\/i>\s*H\.264 · AAC 2\.0\s*<\/button>/', $this->cardOf($this->page('/adult/previews'), 'Plain.Names'));
+        $this->page('/adult')->assertDontSee('avc1')->assertDontSee('AAC LC');
+    }
+
+    public function test_the_wall_needs_the_adult_permission(): void
+    {
+        $user = $this->browserUser();
+        $user->revokePermissionTo('view adult');
+        $this->page('/adult/previews', $user)->assertForbidden()->assertSee('Adult is hidden in your account preferences.');
+        $this->assertSame('/adult/previews', route('adult.previews', [], false));
+    }
+
     /** The response after the one redirect a bare open answers with while filters are remembered (#881). */
     private function opened(string $uri): TestResponse
     {
@@ -634,6 +930,29 @@ final class AdultReleasesPageTest extends TestCase
     private function guidOf(int $id): string
     {
         return (string) DB::table('releases')->where('id', $id)->value('guid');
+    }
+
+    /** @return list<int> the wall's cards' release ids, in page order (each card's Download link names its guid) */
+    private function cardIds(TestResponse $response): array
+    {
+        $guids = [];
+        foreach (array_slice(explode('<li class="adult-card" data-release-row>', (string) $response->getContent()), 1) as $card) {
+            $this->assertSame(1, preg_match('/getnzb\/([0-9a-f]{32})"/', $card, $match));
+            $guids[] = $match[1];
+        }
+        $ids = DB::table('releases')->whereIn('guid', $guids)->pluck('id', 'guid');
+
+        return array_map(static fn (string $guid): int => (int) $ids[$guid], $guids);
+    }
+
+    private function cardOf(TestResponse $response, string $name): string
+    {
+        foreach (explode('<li class="adult-card" data-release-row>', (string) $response->getContent()) as $card) {
+            if (str_contains($card, 'title="'.e($name).'"')) {
+                return strstr($card, '</li>', true) ?: $card;
+            }
+        }
+        $this->fail('No card for '.$name);
     }
 
     private function rowOf(TestResponse $response, string $name): string

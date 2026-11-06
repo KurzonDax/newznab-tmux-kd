@@ -229,6 +229,7 @@ Route::middleware(['auth', 'isVerified'])->group(function () {
         Route::get('movies/film/{movieinfoId}', [MovieFilmController::class, 'show'])->whereNumber('movieinfoId')->name('movies.film');
         // Adult-related routes
         Route::get('adult', [AdultReleasesController::class, 'index'])->name('adult.releases');
+        Route::get('adult/previews', [AdultReleasesController::class, 'previews'])->name('adult.previews');
         // Books and PC (docs/proposals/books-console-pc-redesign/SPEC.md 1): paths are case-sensitive
         Route::get('books', [ShelfReleasesController::class, 'books'])->name('books.releases');
         Route::get('pc', [ShelfReleasesController::class, 'pc'])->name('pc.releases');

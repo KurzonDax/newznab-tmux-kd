@@ -329,7 +329,10 @@ Measured reads: `DATA-CONTRACT.md` 4.5.
   can be bookmarked and Back works. The header's Adult menu and the home page's Adult shelf still open the list.
 - Heading **Adult previews**. The heading keeps the wider of the two headings' widths, so the switch and the search do
   not move when you switch.
-- The switch carries the current filters, the name search and the sort to the other page, and goes to page 1.
+- The switch carries the current filters, the name search and the sort to the other page, and goes to page 1. The
+  server renders its other half as the bare route; the page gives that link the address's query without the page on
+  load and after every filter change and name search (both reload only the list below the switch), so it carries the
+  set as it stands and opening the other page through it leaves the remembered set as it was (issue #1218).
 
 ### 5B.2 What is on the wall
 
@@ -340,7 +343,8 @@ Measured reads: `DATA-CONTRACT.md` 4.5.
   same rules for each. **One remembered set** of filters and sort serves the list and the wall (his pick): a change on
   either page is remembered for both, and Clear all on either clears both. The name search is never remembered.
 - **40 cards a page**, the list's numbered pager top and bottom and Go to page; the pager line and the "No releases
-  match …" line are the list's words, counting only the releases on the wall.
+  match …" line are the list's words, counting only the releases on the wall. With nothing set and no card the line
+  reads "There are no adult releases with a picture yet." (the prototype's words).
 
 ### 5B.3 Layout
 
@@ -359,12 +363,16 @@ Measured reads: `DATA-CONTRACT.md` 4.5.
    hover or keyboard focus. Clicking the thumbnail does what the list's picture does: a preview opens its Preview
    chip's dialog, which plays the clip when the release has one; a sample opens the Sample dialog. Ctrl-, Cmd- and
    Shift-click follow the link to the details page. Unlike the list's picture, the thumbnail is focusable and named
-   ("Play the 30-second video clip of …", "View the preview image of …"), since the card has no Preview or Sample
-   chip; closing the dialog returns focus to it.
+   ("Play the 30-second video clip of …", "View the preview image of …", "View the sample image of …"), since the card
+   has no Preview or Sample chip: the thumbnail is the dialog's trigger itself, carrying that chip's data, and closing
+   the dialog returns focus to it. A clip with no stored seconds reads "Clip" alone and "Play the video clip of …".
+   A release whose preview and sample thumbnails are both missing from disk shows the list's dashed "No picture" tile
+   in the 16:9 box, a plain link to the details page.
 2. **The release name**, bold, linked to the details page, at most two lines with the full name as its tooltip. Long
    scene names break after `.`, `_`, `-` and `]` before they break inside a word.
 3. **The chips**, the list's chips in the list's order: the resolution chip first, then the Completion warning (under
-   100%), Password, then the Media Info chip (opens the media info dialog; a long summary is cut with an ellipsis).
+   100%), Password, then the Media Info chip (opens the media info dialog; a long summary is cut with an ellipsis, so
+   its tooltip is "View media info: " and the full summary).
    NFO, Sample, the Preview chip, Imported and the group and poster chips are not on the card; they stay on the list
    and the details page. In both themes the chips look exactly as they do everywhere else (his rule: no look for one
    view only).
@@ -465,7 +473,8 @@ maintainer will look at the Movies > Other categorisation in a separate session.
   chip to reach the dialog by keyboard.
 - The wall's count and pages carry one condition the list's indexes do not hold (`DATA-CONTRACT.md` 4.5); the
   release filters, the index choice and the half-way mirrored read stay the list's.
-- The wall's pager line and empty line are the list's words; they count only releases with a picture.
+- The wall's pager line and empty line are the list's words; they count only releases with a picture. With nothing
+  set, the empty line is "There are no adult releases with a picture yet."
 
 ## Appendix B. Rejected: do not bring back
 

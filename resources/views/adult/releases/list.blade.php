@@ -3,7 +3,7 @@
     $byAdded = $filters->sortsByAdded();
     $chipBaseId = collect($rows)->first(fn ($row): bool => $row->hasChips())?->id;
 @endphp
-<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="\App\Data\AdultReleaseFilters::PER_PAGE" noun="release" :url="$pageUrl"
+<x-pager-line :page="$filters->page" :last-page="$lastPage" :total="$total" :per-page="$perPage" noun="release" :url="$pageUrl"
               :clear-all="route('adult.releases', [\App\Services\Releases\RememberedListFilters::CLEAR => 1])" :filtered="$filters->any()" />
 @if($rows === [])
     @php

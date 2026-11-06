@@ -291,6 +291,21 @@ final class TvReleasesPageTest extends TestCase
         $this->assertStringNotContainsString('nfo-badge', $this->rowOf($response, 'Middling'));
     }
 
+    /** Adult-redesign DATA-CONTRACT test 14 (issue #1218): every Media Info chip reads the media info dialog's plain names. */
+    public function test_the_media_info_chip_reads_the_plain_codec_names(): void
+    {
+        $tables = ProductionTables::fromAuthority();
+        $tables->create('video_data');
+        $tables->create('audio_data');
+        $id = $this->tv('Plain names');
+        DB::table('video_data')->insert(['releases_id' => $id, 'videoformat' => 'AVC', 'videocodec' => 'avc1', 'videoheight' => 1080]);
+        DB::table('audio_data')->insert(['releases_id' => $id, 'audioid' => 1, 'audioformat' => 'AAC LC', 'audiochannels' => '2']);
+
+        $row = $this->rowOf($this->page('/tv')->assertOk(), 'Plain names');
+        $this->assertMatchesRegularExpression('/mediainfo-badge[^>]*title="View media info">\s*<i [^>]*><\/i>\s*H\.264 · AAC 2\.0\s*<\/button>/', $row);
+        $this->assertStringNotContainsString('avc1', $row);
+    }
+
     public function test_the_list_has_no_files_or_grabs_column(): void
     {
         foreach (range(1, 5) as $index) {

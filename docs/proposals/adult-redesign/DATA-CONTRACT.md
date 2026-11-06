@@ -176,7 +176,9 @@ read); the worst case was also run on the untouched full-width copy (77 columns,
 - The Adult rows add a clip to the shared row facts: present when `videostatus = 1` (today's player plays it, fact 6),
   with its poster (`ReleaseRowFacts::clipPoster()`: the full-size Preview, else the Preview thumbnail, else the Sample
   thumbnail, each only when its file is on disk, whatever `haspreview` and `jpgstatus` say). The list's and the Similar
-  releases table's Preview chip shows no length (`SPEC.md` 5.10), so the lists read no seconds. The details page's tag
+  releases table's Preview chip shows no length (`SPEC.md` 5.10). The row's clip carries its seconds all the same, for
+  the Previews wall's tag (4.5): the one `release_video_clips` read of the page's ids (`ReleasePreviewDataLoader`)
+  selects `duration_seconds` beside the extension and type, and no seconds (null or 0) is none. The details page's tag
   reads a play icon and "N s" with the seconds from `release_video_clips.duration_seconds` when there is a row and a
   value; otherwise there is no tag and the preview's accessible name is "Preview, play the video preview".
 
@@ -224,8 +226,11 @@ visible with production's password setting `passwordstatus <= 0`), best of three
 - **40 a page.** `BandReleaseList::pageIds()` pages by `ReleaseListFilters::PER_PAGE` (50, `BandReleaseList.php:104-105`);
   the wall pages by 40, so the page size is a property of the list being read.
 - **Releases with a clip.** On production 17,030 Adult releases have a preview and a clip and 10 have a sample, no
-  preview and a clip; those 10 open the sample, as the list's picture does (`tv-dialogs-component.js` `showPicture()`
-  opens the row's Sample chip for a sample picture).
+  preview and a clip; those 10 open the sample, as the list's picture does (the card's thumbnail then carries the Sample
+  chip's data). The "Clip · N s" tag reads the seconds the row's clip carries (4.3); the 5 Adult clips with no seconds
+  on production (2026-11-06) all have `haspreview = 0`, and a clip without seconds reads "Clip".
+- **The fragment.** The wall answers `?_fragment=list` with its own list (the pager line, the cards and the bottom
+  pager), which the page reloads in place on every filter change, name search and the last card on a page deleted.
 
 **The Media Info chip names (`SPEC.md` 5B.7).** The chip's text comes from one place for every screen:
 `ReleaseMediaInfoAvailabilityLoader` builds `media_info_summary` from the first `video_data` row (height, then
@@ -284,14 +289,20 @@ resolution or no audio language read "Unknown", as TV and Movies do.
     and sub-category links open the Adult list.
 11. The wall lists only visible Adult releases with `haspreview = 1` or `jpgstatus = 1`, 40 a page, in the list's order for
     each sort; its count matches its rows and is cached apart from the list's count; a page past the middle returns the
-    same ids as the unmirrored read.
+    same ids as the unmirrored read. Page 2 reads "Showing 41–80 of N", the pager "Page X of ⌈N/40⌉", and a page past the
+    end redirects to the last page; with no filter set and no card the line reads "There are no adult releases with a
+    picture yet.", with one "No releases match …".
 12. The wall and the list share one remembered set of filters and sort: a filter or sort set on either is applied when the
-    other opens bare; Clear all on either clears both; the name search is never remembered.
-13. A wall card shows the release's preview thumbnail, else its sample thumbnail; a preview of a release with a clip carries
-    the clip tag; the card's chips are resolution, Completion (under 100%), Password and Media Info only.
+    other opens bare; Clear all on either clears both; the name search is never remembered. The switch's link carries the
+    name search and the filters as they stand after an in-page change, and opening the other page through it does not
+    change the remembered set.
+13. A wall card shows the release's preview thumbnail, else its sample thumbnail, else the "No picture" tile when both are
+    off disk; a preview of a release with a clip carries the clip tag, "Clip · 30 s" with seconds and "Clip" without; the
+    card's chips are resolution, Completion (under 100%), Password and Media Info only.
 14. The Media Info chip on every screen names the video by format first and codec id second and the audio by the media info
     dialog's short name: a release stored as `videocodec = avc1`, `videoformat = AVC`, `audioformat = AAC LC` with 2
-    channels reads "H.264 · AAC 2.0".
+    channels reads "H.264 · AAC 2.0"; `videoformat = AVC`, `videocodec = 27` reads "H.264" and `videoformat = HEVC`,
+    `videocodec = hvc1` reads "H.265", so a codec-first lookup cannot pass.
 
 ---
 

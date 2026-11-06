@@ -122,7 +122,8 @@ class ReleasePreviewDataLoaderTest extends TestCase
         (new ReleasePreviewDataLoader)->load([$row]);
         (new ReleasePreviewDataLoader)->load([$model]);
 
-        $kept = ['has_media_info', 'has_audio_preview', 'audio_preview_mime', 'audio_preview_title', 'audio_preview_artist', 'has_video_preview', 'video_preview_mime'];
+        $kept = ['has_media_info', 'has_audio_preview', 'audio_preview_mime', 'audio_preview_title', 'audio_preview_artist', 'has_video_preview', 'video_preview_mime',
+            'video_preview_seconds'];
         $this->assertSame(['id', ...$kept], array_keys(get_object_vars($row)));
         $this->assertSame(['id', ...$kept], array_keys($model->getAttributes()));
         $this->assertTrue($row->has_audio_preview);
@@ -138,6 +139,7 @@ class ReleasePreviewDataLoaderTest extends TestCase
             ['id' => 10, 'videostatus' => 1],
             ['id' => 20, 'videostatus' => 1],
             ['id' => 30, 'videostatus' => 0],
+            ['id' => 40, 'videostatus' => 1],
         ]);
         DB::table('release_video_clips')->insert([
             [
@@ -147,16 +149,30 @@ class ReleasePreviewDataLoaderTest extends TestCase
                 'duration_seconds' => 30,
                 'bytes' => 12345,
             ],
+            [
+                'releases_id' => 40,
+                'extension' => 'webm',
+                'mime' => 'video/webm',
+                'duration_seconds' => 0,
+                'bytes' => 12345,
+            ],
         ]);
 
         $withClip = (object) ['id' => 10];
         $legacyTranscode = (object) ['id' => 20];
         $withoutVideo = (object) ['id' => 30];
+        $zeroSeconds = (object) ['id' => 40];
 
-        (new ReleasePreviewDataLoader)->load([$withClip, $legacyTranscode, $withoutVideo]);
+        (new ReleasePreviewDataLoader)->load([$withClip, $legacyTranscode, $withoutVideo, $zeroSeconds]);
 
         $this->assertTrue($withClip->has_video_preview);
         $this->assertSame('video/mp4', $withClip->video_preview_mime);
+        // the Adult wall's "Clip · N s" tag (issue #1218): the clip's seconds, none when they are not stored or 0
+        $this->assertSame(30, $withClip->video_preview_seconds);
+        $this->assertNull($legacyTranscode->video_preview_seconds);
+        $this->assertNull($withoutVideo->video_preview_seconds);
+        $this->assertNull($zeroSeconds->video_preview_seconds);
+        $this->assertTrue($zeroSeconds->has_video_preview);
 
         $this->assertTrue($legacyTranscode->has_video_preview, 'A legacy OGV sample is still the video artifact.');
         $this->assertSame('video/ogg', $legacyTranscode->video_preview_mime);

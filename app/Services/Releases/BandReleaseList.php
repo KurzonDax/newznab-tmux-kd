@@ -44,6 +44,18 @@ abstract class BandReleaseList
     /** The prefix of the section's cache keys ("tv_releases"). */
     abstract protected function cachePrefix(): string;
 
+    /** How many releases a page of this list holds. */
+    public function perPage(): int
+    {
+        return ReleaseListFilters::PER_PAGE;
+    }
+
+    /** The prefix of the count's cache key: the section's, unless one section reads two lists (the Adult wall). */
+    protected function countCachePrefix(): string
+    {
+        return $this->cachePrefix();
+    }
+
     /**
      * The visible releases the filters keep, read from $index; selects nothing yet.
      *
@@ -75,7 +87,7 @@ abstract class BandReleaseList
     {
         sort($exclusions);
         $password = $this->releases->showPasswords();
-        $key = $this->cachePrefix().'_count:'.ReleaseBrowseService::cacheVersion().':'.md5($filters->countKey().'|'.implode(',', $exclusions).'|'.$password);
+        $key = $this->countCachePrefix().'_count:'.ReleaseBrowseService::cacheVersion().':'.md5($filters->countKey().'|'.implode(',', $exclusions).'|'.$password);
         $minutes = max(1, (int) config('nntmux.cache_expiry_short', 5)) * 2;
 
         return (int) Cache::remember($key, now()->addMinutes($minutes), fn (): int => $this->countVisible($filters, $exclusions));
@@ -101,8 +113,8 @@ abstract class BandReleaseList
      */
     public function pageIds(ReleaseListFilters $filters, array $exclusions, int $total): array
     {
-        $offset = ($filters->page - 1) * ReleaseListFilters::PER_PAGE;
-        $limit = min(ReleaseListFilters::PER_PAGE, $total - $offset);
+        $offset = ($filters->page - 1) * $this->perPage();
+        $limit = min($this->perPage(), $total - $offset);
         if ($limit <= 0) {
             return [];
         }

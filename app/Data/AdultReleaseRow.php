@@ -6,7 +6,7 @@ namespace App\Data;
 
 use App\Enums\ReleaseResolution;
 
-/** One release row of the Adult releases screen (docs/proposals/adult-redesign/SPEC.md 5.4-5.7 and 5.10), ready to render. */
+/** One release row of the Adult releases screen (docs/proposals/adult-redesign/SPEC.md 5.4-5.7 and 5.10) or card of the Previews wall (5B.4), ready to render. */
 final readonly class AdultReleaseRow
 {
     use ReleaseRowParts {
@@ -17,7 +17,7 @@ final readonly class AdultReleaseRow
      * @param  array{percent: int, band: string, repairing: bool}|null  $completion  null at 100% or when never measured
      * @param  array{thumb: ?string, full: ?string}|null  $preview
      * @param  array{thumb: ?string, full: ?string}|null  $sample
-     * @param  array{url: string, type: string, poster: ?string}|null  $clip  the video clip (videostatus = 1): today's player route, its type and its poster
+     * @param  array{url: string, type: string, poster: ?string, seconds: ?int}|null  $clip  the video clip (videostatus = 1): today's player route, its type, its poster and its seconds
      */
     public function __construct(
         public int $id,

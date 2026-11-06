@@ -55,7 +55,7 @@ final class ReleasePreviewDataLoader
 
         $clipsByReleaseId = ReleaseVideoClip::query()
             ->whereIn('releases_id', array_keys($rowsByReleaseId))
-            ->get(['releases_id', 'extension', 'mime'])
+            ->get(['releases_id', 'extension', 'mime', 'duration_seconds'])
             ->keyBy('releases_id');
 
         // Releases whose artifact predates Clips (or fell back to the small
@@ -74,9 +74,12 @@ final class ReleasePreviewDataLoader
             $audioTags = $audioTagsByReleaseId->get($releaseId);
             $audioPreviewMime = $audioTags?->playablePreviewMimeType();
             $videoPreviewMime = null;
+            $videoPreviewSeconds = null;
             if (isset($videoReleaseIds[$releaseId])) {
-                $videoPreviewMime = $clipsByReleaseId->get($releaseId)?->clipMimeType()
-                    ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'];
+                $clip = $clipsByReleaseId->get($releaseId);
+                $videoPreviewMime = $clip?->clipMimeType() ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'];
+                // The Adult wall's "Clip · N s" tag (adult-redesign SPEC 5B.4); no seconds (null or 0) is none.
+                $videoPreviewSeconds = (int) ($clip->duration_seconds ?? 0) > 0 ? (int) $clip->duration_seconds : null;
             }
             $attributes = [
                 'has_media_info' => $audioTags !== null && collect([
@@ -98,6 +101,7 @@ final class ReleasePreviewDataLoader
                 'audio_preview_artist' => $audioTags->performer ?? $audioTags?->album_performer,
                 'has_video_preview' => $videoPreviewMime !== null,
                 'video_preview_mime' => $videoPreviewMime,
+                'video_preview_seconds' => $videoPreviewSeconds,
             ];
 
             if ($release instanceof Model) {

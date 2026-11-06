@@ -147,6 +147,19 @@ final class AdultReleaseDetailsPageTest extends TestCase
         $response->assertSee('<i class="fas fa-user" aria-hidden="true"></i>granite41 &lt;granite41@example.invalid&gt;</a>', false);
     }
 
+    /** DATA-CONTRACT test 14 (issue #1218): the chip names the video by its format first and the audio by the dialog's short name. */
+    public function test_the_media_chip_reads_the_plain_codec_names_of_the_media_info_dialog(): void
+    {
+        $id = $this->adult('Plain.Names.XXX.1080p');
+        DB::table('video_data')->insert(['releases_id' => $id, 'videoformat' => 'AVC', 'videocodec' => 'avc1', 'videoheight' => 1080]);
+        DB::table('audio_data')->insert(['releases_id' => $id, 'audioid' => 1, 'audioformat' => 'AAC LC', 'audiochannels' => '2']);
+
+        $chips = $this->between($this->details($id)->assertOk(), '<div class="tv-chips tv-details-chips">', '<div class="tv-chips tv-details-origin">');
+        $this->assertStringContainsString('H.264 · AAC 2.0', $chips);
+        $this->assertStringNotContainsString('avc1', $chips);
+        $this->assertStringNotContainsString('AAC LC', $chips);
+    }
+
     public function test_the_cart_button_reads_in_cart_when_pressed(): void
     {
         $id = $this->adult('Some.Scene.XXX.1080p');

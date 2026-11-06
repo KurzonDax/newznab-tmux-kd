@@ -21,12 +21,6 @@ use Illuminate\Support\Facades\DB;
  */
 final class ReleaseRowFacts
 {
-    private const CODECS = [
-        'V_MPEG4/ISO/AVC' => 'H.264', 'AVC' => 'H.264', 'X264' => 'H.264', 'H264' => 'H.264',
-        'V_MPEGH/ISO/HEVC' => 'H.265', 'HEVC' => 'H.265', 'X265' => 'H.265', 'H265' => 'H.265',
-        'V_AV1' => 'AV1', 'AV1' => 'AV1', 'V_MPEG2' => 'MPEG-2', 'MPEG VIDEO' => 'MPEG-2',
-    ];
-
     private const CHANNELS = ['1' => '1.0', '2' => '2.0', '6' => '5.1', '8' => '7.1'];
 
     /** The chip's words when media info exists but has no codec or audio to name. */
@@ -112,10 +106,10 @@ final class ReleaseRowFacts
 
     /**
      * The row's video clip (videostatus = 1), as the Adult list carries it (DATA-CONTRACT 4.3): today's
-     * player route, its type and its poster; null without a clip. The shared loader
-     * (ReleasePreviewDataLoader) marks the release and its type.
+     * player route, its type, its poster and its seconds (null when none are stored); null without a
+     * clip. The shared loader (ReleasePreviewDataLoader) marks the release, its type and its seconds.
      *
-     * @return array{url: string, type: string, poster: ?string}|null
+     * @return array{url: string, type: string, poster: ?string, seconds: ?int}|null
      */
     public static function clip(object $release, string $guid): ?array
     {
@@ -127,6 +121,7 @@ final class ReleaseRowFacts
             'url' => route('preview.video', $guid),
             'type' => (string) ($release->video_preview_mime ?? ReleaseVideoClip::VIDEO_MIME_TYPES['ogv']),
             'poster' => self::clipPoster($guid),
+            'seconds' => isset($release->video_preview_seconds) ? (int) $release->video_preview_seconds : null,
         ];
     }
 
@@ -152,17 +147,15 @@ final class ReleaseRowFacts
         };
     }
 
-    /** Codec and audio in plain words: "V_MPEGH/ISO/HEVC · E-AC-3 6" reads "H.265 · E-AC-3 5.1". */
+    /**
+     * The chip's text: the summary (ReleaseMediaInfoAvailabilityLoader, already in plain words) without its
+     * height, the channel count as a layout: "1080p · H.265 · E-AC-3 6" reads "H.265 · E-AC-3 5.1".
+     */
     private function mediaInfo(?string $summary): string
     {
         $parts = array_values(array_filter(explode(' · ', (string) $summary), static fn (string $part): bool => $part !== '' && preg_match('/^\d+p$/', $part) !== 1));
-        $parts = array_map(static function (string $part): string {
-            if (isset(self::CODECS[strtoupper($part)])) {
-                return self::CODECS[strtoupper($part)];
-            }
-
-            return preg_replace_callback('/^(.*\S)\s+(\d+)$/', static fn (array $match): string => $match[1].' '.(self::CHANNELS[$match[2]] ?? $match[2]), $part) ?? $part;
-        }, $parts);
+        $parts = array_map(static fn (string $part): string => preg_replace_callback('/^(.*\S)\s+(\d+)$/',
+            static fn (array $match): string => $match[1].' '.(self::CHANNELS[$match[2]] ?? $match[2]), $part) ?? $part, $parts);
 
         return $parts === [] ? self::MEDIA_INFO_FALLBACK : implode(' · ', $parts);
     }
