@@ -11,18 +11,20 @@ implemented yet.
 |---|---|
 | Adult releases (list) | **Approved** on the maintainer's prototype, 2026-09-29 |
 | Release details (Adult) | **Approved** on the maintainer's prototype, 2026-09-29 |
+| Adult previews (wall) | **Approved** on the maintainer's prototype, 2026-11-06 (`SPEC.md` 5B, `#/previews` in the prototype) |
 
-The Adult design inherits the rules of both earlier sections (`SPEC.md` section 4). It has no wall and no
-title page: adult releases carry no title, performer or studio data.
+The Adult design inherits the rules of both earlier sections (`SPEC.md` section 4). It has no title page:
+adult releases carry no title, performer or studio data. Its wall (2026-11-06) is a second view of the list's releases,
+the ones with a picture, as cards.
 
 | Read | For |
 |---|---|
-| [`SPEC.md`](SPEC.md) | what the section is for, the two approved screens, every decision with the reasons, what was rejected |
+| [`SPEC.md`](SPEC.md) | what the section is for, the three approved screens, every decision with the reasons, what was rejected |
 | [`DATA-CONTRACT.md`](DATA-CONTRACT.md) | where every value the screens read is already stored (no new storage), which code writes it, and every read measured at full catalogue size |
 | [`DATA-NOTES.md`](DATA-NOTES.md) | facts measured on the restored catalogue that shaped the design |
 | [`evidence/`](evidence/) | the query-lab write-up the data contract cites |
 | [`INVENTORY.md`](INVENTORY.md) | every feature of today's Adult screens, with `path:line` |
-| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder pictures and no clips: `adult.html`, its behaviour checks (`check.mjs`) and 19 reference screens in both themes (`reference/`) |
+| [`prototype/`](prototype/) | the approved prototype on an **invented dataset** with placeholder pictures and no clips: `adult.html`, its behaviour checks (`check.mjs`) and 54 reference screens, 27 states in both themes, eight of them the wall (`reference/`) |
 
 ```bash
 cd docs/proposals/adult-redesign/prototype

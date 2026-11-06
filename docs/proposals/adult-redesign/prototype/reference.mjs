@@ -20,13 +20,21 @@ const states = [
   ['releases-picture-dialog', `${pics};document.querySelector('.feed td.art a[data-img]').click();${wait(700)}`],
   ['releases-media-info', `${pics};document.querySelector('.feed [data-mi]').click();${wait(900)}`],
   ['releases-clip-dialog', `${pics};document.querySelector('.feed [data-clip]').click();${wait(400)}`],
-  ['releases-delete-dialog', `document.querySelector('.feed [data-del]').click()`],
   ['details-clip', `location.hash='#/release/'+${FX}.clip;${wait(1200)}`],
   ['details-sample-full', `location.hash='#/release/'+(REL.find(r=>X(r).jpg&&PV.has('sample/'+X(r).guid+'.webp'))||{}).id;${wait(1200)};document.querySelector('.adpics [data-kind=sample]')?.click();${wait(1200)}`],
   ['details-similar', `location.hash='#/release/'+${FX}.similar;${wait(1200)};scrollTo(0,document.querySelector('.simrel')?.offsetTop-90||0)`],
   ['details-predb', `location.hash='#/release/'+${FX}.predb;${wait(1200)};scrollTo(0,300)`], ['details-no-picture', `location.hash='#/release/'+${FX}.nopic;${wait(1200)}`],
   ['details-media-tab', `location.hash='#/release/'+${FX}.clip;${wait(1200)};document.querySelector('[data-tab=media]').click();${wait(1200)}`],
-  ['details-pressed', `location.hash='#/release/'+${FX}.clip;${wait(1200)};document.querySelector('.dacts [data-cart]').click()`]];
+  ['releases-delete-dialog', `document.querySelector('.feed [data-del]').click()`],
+  ['details-pressed', `location.hash='#/release/'+${FX}.clip;${wait(1200)};document.querySelector('.dacts [data-cart]').click()`],
+  // the Previews wall (2026-11-06)
+  ['wall', `location.hash='#/previews';${wait(1500)}`], ['wall-lower-rows', `location.hash='#/previews';${wait(1200)};scrollTo(0,640);${wait(900)}`],
+  ['wall-sorted-added', `state.rsort='added_asc';location.hash='#/previews';${wait(1500)}`],
+  ['wall-filters-set', `state.res.add('1080p');state.comp='95';location.hash='#/previews';${wait(1500)}`],
+  ['wall-no-match', `state.q='nothing matches this';location.hash='#/previews';${wait(900)}`],
+  ['wall-clip-dialog', `location.hash='#/previews';${wait(1200)};document.querySelector('.card .thumb[data-clip]')?.click();${wait(500)}`],
+  ['wall-picture-dialog', `location.hash='#/previews';${wait(1200)};document.querySelector('.card .thumb[data-img]')?.click();${wait(900)}`],
+  ['wall-delete-dialog', `location.hash='#/previews';${wait(1200)};document.querySelector('.card [data-del]').click();${wait(300)}`]];
 for (const theme of ['dark', 'light']) for (const [name, pre] of states) {
   await send('Page.navigate', {url: URL_ + '?r=' + Math.random() + '#/'}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200);
   await js(`localStorage.clear()`); await send('Page.navigate', {url: URL_ + '?r=' + Math.random() + '#/'}); for (let i = 0; i < 60 && !(await js('!!window.READY')); i++) await sleep(200); await sleep(400);

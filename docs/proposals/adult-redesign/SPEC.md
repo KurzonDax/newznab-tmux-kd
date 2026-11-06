@@ -9,7 +9,7 @@ or behaves, the prototype wins. A sanitized copy of it, with an invented dataset
 art, is in `prototype/`.
 
 Status: the **Adult releases** list and the **Adult release details** page are **approved**
-(2026-09-29: "ok, I approve the adult pages"). Nothing in the application has been changed. How
+(2026-09-29: "ok, I approve the adult pages"); the **Adult previews** wall is **approved** (2026-11-06, section 5B). Nothing in the application has been changed. How
 each value is stored and read, with every query measured at full catalogue size, is the data
 contract that follows this document.
 
@@ -21,9 +21,10 @@ contract that follows this document.
 |---|---|---|---|
 | Adult releases (list) | `#/`, `#/p/N` | today's Adult browse page (`browse/xxx`: Table, Cards and Covers views) | approved |
 | Release details (Adult) | `#/release/<id>` | today's details page, for adult releases | approved |
+| Adult previews (wall) | `#/previews`, `#/previews/p/N` | nothing: a second view of the list (section 5B) | approved 2026-11-06 |
 
-Out of scope, by his decision: a covers view or wall ("It doesn't need a "covers" or "wall" view. At
-least not yet."); a title page (adult releases have no title entity); phone layouts (desktop only);
+Out of scope, by his decision: a covers view ("It doesn't need a "covers" or "wall" view. At
+least not yet."; on 2026-11-06 he asked for the wall, section 5B); a title page (adult releases have no title entity); phone layouts (desktop only);
 the rest of the site.
 
 Hard constraints from the repository (`AGENTS.md`), unchanged from TV and Movies:
@@ -47,6 +48,8 @@ Movie release lists remember each user's last dropdown filters; this section fol
 
 In his words: "Generally, I want the adult section to follow the same format that we've done for the
 tv and movie releases views. It doesn't need a "covers" or "wall" view. At least not yet."
+On 2026-11-06 he asked for the wall: "an alternate release listing that presents the releases in thumbnail wall like
+how videos are listed on YouTube" (section 5B).
 
 Adult releases carry **no title, performer or studio data** anywhere: the old adult metadata table
 was dropped upstream in February 2026 (`INVENTORY.md` section 6). A release has its name, size,
@@ -58,7 +61,8 @@ dates, sub-category, completion, media info, and sometimes a preview frame, a sa
 ## 3. Structure
 
 Two screens, as in TV and Movies without their title screens: a releases list and a release
-details page. There is no Releases / titles switch, no wall, no title page, no Follow.
+details page; and, since 2026-11-06, the previews wall, a second view of the list's releases behind a
+"Releases | Previews" switch (section 5B). There is no title page and no Follow.
 
 ---
 
@@ -309,6 +313,88 @@ An admin's buttons include Delete (5.11); a deleted row leaves this table and th
 
 ---
 
+## 5B. Adult previews wall (APPROVED 2026-11-06)
+
+His request, 2026-11-06: "an alternate release listing that presents the releases in thumbnail wall like how videos are
+listed on YouTube", each release a card with its preview picture, name, a Media Info chip, a resolution chip, the size,
+the posted or added date and the row's buttons; the list's filters and sorts; releases without a preview left out.
+Approved the same day ("I approve") on the maintainer's prototype; `prototype/adult.html#/previews` is the reference.
+Measured reads: `DATA-CONTRACT.md` 4.5.
+
+### 5B.1 Getting there
+
+- A **"Releases | Previews"** switch at the top of both pages, the Movie releases list's "Releases | Films" switch:
+  beside the heading, before the name search. The current page's half is coral.
+- The wall is its own page, **`/adult/previews`** in the app (`#/previews`, `#/previews/p/N` in the prototype), so it
+  can be bookmarked and Back works. The header's Adult menu and the home page's Adult shelf still open the list.
+- Heading **Adult previews**. The heading keeps the wider of the two headings' widths, so the switch and the search do
+  not move when you switch.
+- The switch carries the current filters, the name search and the sort to the other page, and goes to page 1.
+
+### 5B.2 What is on the wall
+
+- Every Adult release the list would show that has a **preview** picture, else a **sample** picture (his pick: the
+  sample fallback, +1,162 releases on production). A release with neither is not on the wall. The picture rule is the
+  list's (5.6): preview first, then sample.
+- The same name search, four filter cells (5.2, including Exclude Other, and the Completion menu's Imported only from #1049), the four sorts and the
+  same rules for each. **One remembered set** of filters and sort serves the list and the wall (his pick): a change on
+  either page is remembered for both, and Clear all on either clears both. The name search is never remembered.
+- **40 cards a page**, the list's numbered pager top and bottom and Go to page; the pager line and the "No releases
+  match …" line are the list's words, counting only the releases on the wall.
+
+### 5B.3 Layout
+
+- **Always four columns** inside the 1500 px page column every TV / Movies / Adult page uses (his pick, after being
+  told the column is capped: no fifth column). About 340 px cards at 1600 px windows; narrower windows keep four
+  narrower cards. Gaps 18 px across, 34 px down.
+- Desktop only.
+
+### 5B.4 The card, top to bottom
+
+1. **The thumbnail**: a 16:9 box, 12 px corners, the picture **cropped to fill it** (`object-fit: cover`, the list's
+   picture cell at card size; his pick C, "the most consistent look"), a 1 px hairline edge so a black frame keeps its
+   shape on the dark page; on hover it lifts 5 px with the page shadow, as the TV and Movies wall tiles do
+   (`.tv-tile:hover .tv-tile-art`). A preview of a release with a clip carries the details page's
+   magenta **"Clip · 30 s"** tag in the bottom-right corner, always shown, and a magenta play button in the middle on
+   hover or keyboard focus. Clicking the thumbnail does what the list's picture does: a preview opens its Preview
+   chip's dialog, which plays the clip when the release has one; a sample opens the Sample dialog. Ctrl-, Cmd- and
+   Shift-click follow the link to the details page. Unlike the list's picture, the thumbnail is focusable and named
+   ("Play the 30-second video clip of …", "View the preview image of …"), since the card has no Preview or Sample
+   chip; closing the dialog returns focus to it.
+2. **The release name**, bold, linked to the details page, at most two lines with the full name as its tooltip. Long
+   scene names break after `.`, `_`, `-` and `]` before they break inside a word.
+3. **The chips**, the list's chips in the list's order: the resolution chip first, then the Completion warning (under
+   100%), Password, then the Media Info chip (opens the media info dialog; a long summary is cut with an ellipsis).
+   NFO, Sample, the Preview chip, Imported and the group and poster chips are not on the card; they stay on the list
+   and the details page. In both themes the chips look exactly as they do everywhere else (his rule: no look for one
+   view only).
+4. **The foot**, aligned across the row: the size as the list writes it (2.41 GB, 12.3 GB, 734 MB) over the date,
+   "Posted …" or "Added …" following the sort, in the list's "12 min ago / 2 hr ago / Sep 16, 2026" form, with
+   "Posted … · Added …" in full as the tooltip; at the right the list's buttons in one line, in the list's colours:
+   Download, Copy NZB link, Cart, and for an admin Delete (5.11). Others see three buttons with no gap.
+
+### 5B.5 What the wall does not have
+
+No select boxes and no selection bar (his pick: one at a time on the wall, the list for several). No clip playing on
+hover. No Report or Details buttons.
+
+### 5B.6 Delete
+
+An admin's Delete works as on the list (5.11): the same confirmation; on success the card leaves the wall, the count
+drops by one, no card moves up from the next page, the focus goes to the next card's Delete.
+
+### 5B.7 Media Info chip names, on every screen
+
+His decision, 2026-11-06 ("yes, definitely needs to be fixed across the board everywhere that chip is shown in the
+app", and "Fix audio too"): the Media Info chip names a release's codecs in plain words wherever it appears (every
+release list, the details pages, Similar releases, the wall), the same names the media info dialog uses, from one
+shared table. Today the chip shows the stored codec id first, so production chips read "avc1 · AAC LC 2.0"; they
+become "H.264 · AAC 2.0". The video name is looked up by the stored format first and the codec id second, as the
+dialog does; the audio name is the dialog's short name. `DATA-CONTRACT.md` 4.5 lists the spellings found on
+production.
+
+---
+
 ## 6. Decisions taken before the screens were designed
 
 ### 6.1 Today's features
@@ -375,10 +461,21 @@ maintainer will look at the Movies > Other categorisation in a separate session.
 - Files "—" when not stored, on the details tab label, the facts grid and the Similar releases table.
 - The breadcrumb names the sub-category; VR releases read "VR".
 - Copy NZB link is TV's (TV `SPEC.md` appendix A): the v1 `t=get` URL with the user's API key.
+- The wall's thumbnail is focusable and named, unlike the list's picture, because the card has no Preview or Sample
+  chip to reach the dialog by keyboard.
+- The wall's count and pages carry one condition the list's indexes do not hold (`DATA-CONTRACT.md` 4.5); the
+  release filters, the index choice and the half-way mirrored read stay the list's.
+- The wall's pager line and empty line are the list's words; they count only releases with a picture.
 
 ## Appendix B. Rejected: do not bring back
 
-- A covers view or a wall for Adult (for now: "at least not yet"); the Cards view; the thumbnails toggle.
+- A covers view for Adult; the Cards view; the thumbnails toggle. (The wall, rejected "for now" on 2026-09-29, was
+  approved on 2026-11-06: section 5B.)
+- On the wall (2026-11-06): the whole picture with dark bars ("It makes everything look inconsistent because you have
+  images of different sizes scattered across the page"); a blurred copy of the picture filling the bars; solid
+  resolution chips on light-theme cards only ("We shouldn't be making up shit that's different in this view that is
+  inconsistent with how the rest of the app looks"); a fifth column at wide windows (the page column stays 1500 px);
+  clips playing on hover; select boxes and the selection bar.
 - The 88 × 132 poster slot for adult pictures (picture B).
 - A Source column, a Source filter and a source chip on the details page.
 - A separate Clip box beside the preview on the details page, in a magenta or a neutral fill.

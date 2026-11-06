@@ -30,10 +30,10 @@ const FX = await js(`fetch('ad/fixtures.json').then(r=>r.json())`);
 const TOTAL = await js('REL.length');
 
 // ---- the screen ----
-ok('heading "Adult releases", no Releases / wall switch (his call: no wall yet)', await js(`document.querySelector('.filters h1').textContent==='Adult releases'&&!document.querySelector('.filters .seg')`));
+ok('heading "Adult releases" and a "Releases | Previews" switch with Releases current (his call 2026-11-06)', await js(`document.querySelector('.filters h1').textContent==='Adult releases'&&[...document.querySelectorAll('.filters .seg a')].map(a=>a.textContent+(a.getAttribute('aria-current')?'*':'')).join('|')==='Releases*|Previews'`));
 ok('one release bar: Category, Resolution, Audio, Completion (no Source, his call)', await js(`[...document.querySelectorAll('.fbar .mbtn .k')].map(k=>k.textContent).join(',')`) === 'Category,Resolution,Audio,Completion');
 ok('the four cells are as wide as the Movies release bar cells', await js(`(()=>{const w=document.querySelector('.filters').getBoundingClientRect().width,movies=((w-12)/2-8)/5,c=[...document.querySelectorAll('.fbar .sfm')].map(e=>e.getBoundingClientRect().width);return c.length===4&&c.every(v=>Math.abs(v-movies)<1.5);})()`));
-ok('name search field "Search release names" beside the heading', await js(`document.querySelector('.filters h1').nextElementSibling.querySelector('input').placeholder==='Search release names'`));
+ok('name search field "Search release names" beside the heading and the switch', await js(`document.querySelector('.filters h1').nextElementSibling.nextElementSibling.querySelector('input').placeholder==='Search release names'`));
 ok('four sorts, Posted: newest first by default', await js(`[...document.querySelectorAll('[data-rsort] option')].map(o=>o.textContent).join('|')`) === 'Posted: newest first|Posted: oldest first|Added: newest first|Added: oldest first' && await js(`document.querySelector('[data-rsort]').value`) === 'posted_desc');
 ok('pager line shows every adult release', await count() === TOTAL && TOTAL > 1000, String(TOTAL));
 ok('50 releases a page, newest posted first', await js(`(()=>{const ids=${ROWIDS},t=ids.map(i=>BYID[i].t);return ids.length===50&&t.every((v,i)=>!i||t[i-1]>=v);})()`));
@@ -236,6 +236,65 @@ ok('delete: the Similar releases table has the trashcan right of Cart', await js
 await js(`document.querySelector('.rt tbody [data-del]').click()`); await sleep(150); await js(`document.querySelector('[data-delconfirm]').click()`); await sleep(300);
 ok('delete: from Similar releases, the row goes from that table and you stay on the page', await js(`document.querySelectorAll('.rt tbody tr').length`) === simN - 1 && await js(`location.hash`) === '#/release/' + simHost);
 await go('#/'); await sleep(200);
+
+// ---- Previews wall (his grilling, 2026-11-06; ADULT-DESIGN-RECORD 8) ----
+await js('localStorage.clear()'); await load(); await go('#/previews'); await sleep(300);
+const CARDS = `[...document.querySelectorAll('.wall4 .card')]`;
+const WALLN = await js(`REL.filter(r=>rowPic(r)).length`);
+ok('wall: heading "Adult previews", Previews current in the switch', await js(`document.querySelector('.filters h1').textContent==='Adult previews'&&document.querySelector('.filters .seg [aria-current=page]').textContent==='Previews'`));
+ok('wall: the same name search, four menus and four sorts as the list', await js(`[...document.querySelectorAll('.fbar .mbtn .k')].map(k=>k.textContent).join(',')`) === 'Category,Resolution,Audio,Completion' && await js(`[...document.querySelectorAll('[data-rsort] option')].length===4&&!!document.querySelector('#q')`));
+ok('wall: only releases with a preview or a sample (his pick: sample fallback)', await count() === WALLN && WALLN < TOTAL, WALLN + ' of ' + TOTAL);
+ok('wall: 40 cards a page', await js(`${CARDS}.length`) === 40);
+ok('wall: always 4 columns at 1600 px', await js(`new Set(${CARDS}.slice(0,8).map(c=>Math.round(c.getBoundingClientRect().left))).size`) === 4);
+await send('Emulation.setDeviceMetricsOverride', {width: 2560, height: 1300, deviceScaleFactor: 1, mobile: false}); await sleep(250);
+ok('wall: still 4 columns at 2560 px, inside the 1500 px column (his call)', await js(`new Set(${CARDS}.slice(0,8).map(c=>Math.round(c.getBoundingClientRect().left))).size===4&&document.querySelector('main').getBoundingClientRect().width<=1500`));
+await send('Emulation.setDeviceMetricsOverride', {width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false}); await sleep(250);
+ok('wall: every thumbnail is a 16:9 box with the picture cropped to fill it (his pick C)', await js(`${CARDS}.every(c=>{const t=c.querySelector('.thumb').getBoundingClientRect(),i=c.querySelector('.thumb img').getBoundingClientRect();return Math.abs(t.width/t.height-16/9)<0.02&&Math.abs(i.width-t.width)<1&&Math.abs(i.height-t.height)<1&&getComputedStyle(c.querySelector('.thumb img')).objectFit==='cover';})`));
+ok('wall: every picture has the same rounded corners, sample or preview (his call)', await js(`${CARDS}.every(c=>getComputedStyle(c.querySelector('.thumb')).borderTopLeftRadius==='12px')`));
+ok('wall: the Clip tag sits on the picture, not on a bar', await js(`${CARDS}.filter(c=>c.querySelector('.cliptag')).every(c=>{const p=c.querySelector('.thumb').getBoundingClientRect(),t=c.querySelector('.cliptag').getBoundingClientRect();return t.left>=p.left&&t.right<=p.right+0.5&&t.bottom<=p.bottom+0.5;})`));
+ok('wall: thumbnail = preview, else sample', await js(`${CARDS}.every(c=>{const r=BYID[c.dataset.row],x=X(r);return c.querySelector('.thumb img').getAttribute('src')===((x.pv&&imgFor(r,'preview'))||(x.jpg&&imgFor(r,'sample')));})`));
+ok('wall: a preview thumbnail with a clip carries the magenta Clip tag, others none (a sample opens the sample, as on the list)', await js(`${CARDS}.every(c=>{const r=BYID[c.dataset.row],x=X(r);return !!(x.clip&&x.pv&&imgFor(r,'preview'))===!!c.querySelector('.cliptag');})`));
+ok('wall: the name links to details, clamped to two lines, full name on hover', await js(`${CARDS}.every(c=>{const a=c.querySelector('.rname');return a.getAttribute('href')==='#/release/'+c.dataset.row&&a.title===BYID[c.dataset.row].name&&getComputedStyle(a).webkitLineClamp==='2';})`));
+ok('wall: chips are resolution first, then Completion, Password, Media info only (no NFO, Sample, Clip, Imported, group, poster)', await js(`${CARDS}.every(c=>{const ch=c.querySelector('.cchips');return ch.firstElementChild.matches('.res')&&!ch.querySelector('[data-nfo],[data-img],[data-clip],.origin,.k-sm,.k-pv');})`));
+ok('wall: chip order resolution, Completion, Password, Media info (the list\'s order)', await js(`${CARDS}.every(c=>{const k=[...c.querySelector('.cchips').children].map(e=>e.matches('.res')?'r':e.matches('.comp')?'c':e.matches('.k-mi')?'m':'p').join('');return /^r?c?p?m?$/.test(k);})`));
+ok('wall: no variation selector left on the page', await js(`!document.querySelector('.varsel')`));
+ok('wall: no checkboxes, no bulk bar', await js(`!document.querySelector('.wall4 input[type=checkbox],[data-selectall],.bulk')`));
+ok('wall: buttons Download, Copy link, Cart, admin Delete in one line', await js(`${CARDS}.every(c=>{const b=[...c.querySelectorAll('.iconacts button')];const y=new Set(b.map(x=>Math.round(x.getBoundingClientRect().top)));return b.length===4&&b[0].matches('[data-nzb]')&&b[1].matches('[data-copynzb]')&&b[2].matches('[data-cart]')&&b[3].matches('[data-del]')&&y.size===1;})`));
+ok('wall: size as the list writes it, date says Posted while sorting by Posted', await js(`${CARDS}.every(c=>{const r=BYID[c.dataset.row];return c.querySelector('.sz').textContent===gb(r.size)&&/^Posted /.test(c.querySelector('.dt').textContent);})`));
+ok('wall: newest posted first', await js(`(()=>{const t=${CARDS}.map(c=>BYID[c.dataset.row].t);return t.every((v,i)=>!i||t[i-1]>=v);})()`));
+ok('wall: no card content spills out of its card', await js(`${CARDS}.every(c=>c.scrollWidth<=c.clientWidth+1)`));
+{ const clipCard = await js(`${CARDS}.find(c=>c.querySelector('.cliptag'))?.dataset.row`), picCard = await js(`${CARDS}.find(c=>!X(BYID[c.dataset.row]).clip)?.dataset.row`);
+  if (clipCard) { await js(`document.querySelector('[data-row="${clipCard}"] .thumb').click()`); await sleep(250);
+    ok('wall: clicking a clip thumbnail opens the clip dialog and stays on the wall', await js(`document.querySelector('#modal [role=dialog]')?.getAttribute('aria-label')==='Video clip'&&location.hash==='#/previews'`)); await key('Escape'); await sleep(150);
+    ok('wall: closing it returns focus to the thumbnail', await js(`document.activeElement===document.querySelector('[data-row="${clipCard}"] .thumb')`)); }
+  else ok('wall: a clip card on page 1', false, 'none');
+  await go('#/previews'); await pick('cat', 'Imageset'); await close(); await sleep(200);
+  const pc = await js(`${CARDS}.find(c=>!X(BYID[c.dataset.row]).clip)?.dataset.row`);
+  if (pc) { await js(`document.querySelector('[data-row="${pc}"] .thumb').click()`); await sleep(250);
+    ok('wall: clicking a thumbnail without a clip opens its picture', await js(`/image$/.test(document.querySelector('#modal [role=dialog]')?.getAttribute('aria-label')||'')`)); await key('Escape'); await sleep(150); }
+  else ok('wall: a no-clip card (Imageset)', false, 'none');
+  void picCard; }
+ok('wall: a filter keeps you on the wall, page 1', await js(`location.hash==='#/previews'`));
+await js(`document.querySelector('.filters .seg a[href="#/"]').click()`); await sleep(300);
+ok('switch: the list keeps the Category filter set on the wall', await js(`state.cat.has('Imageset')&&!!document.querySelector('.feed')&&document.querySelector('[data-msel=cat]').classList.contains('set')`));
+await load(); await go('#/previews'); await sleep(200);
+ok('switch: one remembered filter set for the list and the wall (reload keeps it)', await js(`state.cat.has('Imageset')&&document.querySelector('[data-msel=cat]').classList.contains('set')`));
+await js(`document.querySelector('[data-clearall]').click()`); await sleep(200); await go('#/'); await sleep(200);
+ok('switch: Clear all on the wall clears the list too', await js(`!state.cat.size&&!document.querySelector('.fbar .msel.set')`));
+await go('#/previews'); await js(`(()=>{const s=document.querySelector('[data-rsort]');s.value='added_asc';s.dispatchEvent(new Event('change',{bubbles:true}));})()`); await sleep(300);
+ok('wall: Added sort shows "Added …" dates, oldest first, still on the wall', await js(`location.hash==='#/previews'&&${CARDS}.every(c=>/^Added /.test(c.querySelector('.dt').textContent))&&(()=>{const t=${CARDS}.map(c=>X(BYID[c.dataset.row]).added);return t.every((v,i)=>!i||t[i-1]<=v);})()`));
+await go('#/'); await sleep(200);
+ok('switch: the list keeps the sort chosen on the wall', await js(`document.querySelector('[data-rsort]').value==='added_asc'`));
+await js(`(()=>{const s=document.querySelector('[data-rsort]');s.value='posted_desc';s.dispatchEvent(new Event('change',{bubbles:true}));})()`); await sleep(200);
+await go('#/previews/p/3'); await sleep(200);
+ok('wall: page 3 in the URL, numbered pager top and bottom', await js(`document.querySelector('.pager.slim .pg').textContent.startsWith('Page 3 of')&&!!document.querySelector('.pager.bottom [aria-current=page]')&&document.querySelector('.pager.bottom [aria-current=page]').textContent==='3'`));
+{ const wid = await js(`document.querySelector('.wall4 .card').dataset.row`), before = await count();
+  await js(`document.querySelector('.wall4 .card [data-del]').click()`); await sleep(150); await js(`document.querySelector('[data-delconfirm]').click()`); await sleep(250);
+  ok('wall: an admin delete removes the card, the count drops by one, nothing pulled up', await js(`!document.querySelector('[data-row="${wid}"]')&&${CARDS}.length===39`) && await count() === before - 1);
+  ok('wall: the focus lands on the next card\'s trashcan', await js(`document.activeElement===document.querySelector('.wall4 .card [data-del]')`)); }
+await go('#/previews'); await js(`(()=>{const i=document.querySelector('#q');i.value='zzqqxxnomatch';i.dispatchEvent(new Event('input',{bubbles:true}));})()`); await sleep(500);
+ok('wall: no match reads "No releases match …" with the pager line at 0', await js(`/^No releases match /.test(document.querySelector('.empty')?.textContent||'')&&/Showing 0 releases/.test(document.querySelector('.pager.slim .sum').textContent)`));
+await js(`document.querySelector('[data-clearq]').click()`); await sleep(300);
 
 ok('no script errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 const fails = results.filter(r => r[0] === 'FAIL');

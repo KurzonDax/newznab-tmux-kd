@@ -5,7 +5,8 @@ and every read measured at full catalogue size. Written 2026-09-29 against maste
 `evidence/adult-data-contract.md` (the query lab's write-up; its scratch copy holds all 2,359,525 releases of the
 restored production catalogue with exactly production's list indexes).
 
-**The result: the Adult screens need no new table, column or index.** Every value they show or filter on is already
+**The result: the Adult screens need no new table, column or index**, the Previews wall approved on 2026-11-06 included
+(4.5, measured on production). Every value they show or filter on is already
 stored for every category by the TV and Movies work (#773 resolution and source, #827 list indexes, #828 audio
 languages) or by today's additional processing (pictures and clips). The slowest read is the count for Audio "a language
 and Unknown" (19.5 ms, cached like every count); the slowest page is a name search for a word no name contains, which
@@ -190,6 +191,62 @@ read); the worst case was also run on the untouched full-width copy (77 columns,
   read-only: 40 queries from random Adult names, median 1 ms, slowest 2 ms (`SHOW META`; the database fetch of the
   50 rows that follows is a primary-key read).
 
+### 4.5 The Previews wall (`SPEC.md` 5B, approved 2026-11-06)
+
+**No new table, column or index.** The wall is the list's query (`AdultReleaseList::visible()`, the chosen index, the
+half-way mirrored page read of `BandReleaseList::pageIds()`) with one more condition, the picture rule of `SPEC.md` 5.6
+as stored: `(releases.haspreview = 1 OR releases.jpgstatus = 1)`. Neither column is in any band index, so the count and
+the pages read the release rows; the measured cost below is that row read.
+
+Measured read-only on **production** on 2026-11-06 (master's schema and indexes, 42,787 Adult releases, 36,422
+visible with production's password setting `passwordstatus <= 0`), best of three, each read with the list's forced index:
+
+| Read | Index | ms | rows returned |
+|---|---|---:|---:|
+| the list's count, for comparison | band_count | 4.9 | 36,422 |
+| wall count | band_count | 55.1 | 22,935 |
+| wall count | band_posted | 46.6 | 22,935 |
+| wall page 1, posted newest | band_posted | 0.1 | 40 |
+| wall middle page (offset 11,427, the last read before mirroring) | band_posted | 18.9 | 40 |
+| wall last page (mirrored) | band_posted | 1.0 | 40 |
+| wall middle page, added newest | band_added | 17.9 | 40 |
+| wall count, Category Other only | band_cat_posted | 18.4 | 531 |
+| wall page 1, Category Other only | band_cat_posted | 0.6 | 40 |
+| wall page 1, Resolution 4K | band_res_posted | 0.1 | 40 |
+| wall count, a name search matching nothing | band_posted | 58.5 | 0 |
+
+- Counts are cached as the list's are (`BandReleaseList::count()`), under a key that must differ from the list's. The
+  cost grows with the visible Adult band: about 1.5 ms per thousand visible releases for the count.
+- **The flags agree with the files.** A row's picture is drawn only when its thumbnail file is on disk
+  (`ReleaseRowFacts.php:101-102`), while the wall filters on the flags. On production every one of the 22,936 releases
+  with `haspreview = 1` (21,774) or `jpgstatus = 1` (12,203) resolved its `_thumb` file with `getImageAssetUrl()`, so no
+  card is drawn without a picture.
+- **40 a page.** `BandReleaseList::pageIds()` pages by `ReleaseListFilters::PER_PAGE` (50, `BandReleaseList.php:104-105`);
+  the wall pages by 40, so the page size is a property of the list being read.
+- **Releases with a clip.** On production 17,030 Adult releases have a preview and a clip and 10 have a sample, no
+  preview and a clip; those 10 open the sample, as the list's picture does (`tv-dialogs-component.js` `showPicture()`
+  opens the row's Sample chip for a sample picture).
+
+**The Media Info chip names (`SPEC.md` 5B.7).** The chip's text comes from one place for every screen:
+`ReleaseMediaInfoAvailabilityLoader` builds `media_info_summary` from the first `video_data` row (height, then
+`videocodec ?? videoformat`, `ReleaseMediaInfoAvailabilityLoader.php:72-76`) and the first `audio_data` row
+(`audioformat` and `audiochannels`), and `ReleaseRowFacts::mediaInfo()` (`ReleaseRowFacts.php:156`) renames parts
+through its own 12-entry `CODECS` map (`:24`). The media info dialog names a stream's format and codec through
+`MediaInfoNames::video($format, $codec)` and `MediaInfoNames::audio($format)['short']` (`MediaInfoNames.php:62`, `:70`;
+`MediaInfoPresentationService.php:61-64`), format first. Production, 2026-11-06, read-only:
+
+- `video_data`: 364,145 rows. `videoformat` holds a format name on every row. By format: AVC 241,614 · HEVC 102,526 ·
+  AV1 10,332 · MPEG-4 Visual 5,744 · MPEG Video 3,029 · VC-1 764 · WMV2 63 · VP9 59 · xvid 52 · vp09 44 · av01 28 ·
+  V_QUICKTIME 5 · JPEG 4 · WMV1 3 · DV 3 · x264 2 · ProRes 2 · JPEG 2000 2 · YUV 1 · FLC 1 · mp43 1. `videocodec`, else `videoformat`, takes 49
+  values; the chip shows `videocodec` first today, so `avc1` (37,792), `XVID` (2,834), `DIVX` (2,224), `hvc1` (849), `hev1`
+  (641), `WMV3` (367), and stream-type numbers whose format is AVC (`27`, 359; `7`, 5), HEVC (`36`, 50), MPEG Video
+  (`2`, 54) and VC-1 (`234`, 12) reach the chip as stored.
+- `audio_data`: 576,142 rows. By format: E-AC-3 274,101 · AAC LC 142,463 · AC-3 49,215 · AAC LC SBR 37,929 ·
+  E-AC-3 JOC 31,791 · FLAC 11,354 · DTS XLL 8,708 · MPEG Audio 7,128 · Opus 3,691 · DTS 3,608 · MLP FBA 2,696 ·
+  MLP FBA 16-ch 1,534 · PCM 658 · WMA 475 · Vorbis 226 · TrueHD 137 · AAC LC SBR PS 118 · DTS XLL X 60 · DTS ES XLL 52 ·
+  DTS XBR 44 · DTS ES 43 · DTS LBR 24, then rarer spellings of under 20 rows each. `MediaInfoNames::AUDIO_SHORT` names
+  E-AC-3, E-AC-3 JOC, AC-3, AAC LC, AAC LC SBR, DTS XLL and MLP FBA; every other spelling shows as stored.
+
 ---
 
 ## 5. Filling what already exists
@@ -225,6 +282,16 @@ resolution or no audio language read "Unknown", as TV and Movies do.
    TV's or Movies'.
 10. The Adult sort is accepted and remembered by `UpdateReleaseViewRequest` for root `xxx`; the header menu's Adult root
     and sub-category links open the Adult list.
+11. The wall lists only visible Adult releases with `haspreview = 1` or `jpgstatus = 1`, 40 a page, in the list's order for
+    each sort; its count matches its rows and is cached apart from the list's count; a page past the middle returns the
+    same ids as the unmirrored read.
+12. The wall and the list share one remembered set of filters and sort: a filter or sort set on either is applied when the
+    other opens bare; Clear all on either clears both; the name search is never remembered.
+13. A wall card shows the release's preview thumbnail, else its sample thumbnail; a preview of a release with a clip carries
+    the clip tag; the card's chips are resolution, Completion (under 100%), Password and Media Info only.
+14. The Media Info chip on every screen names the video by format first and codec id second and the audio by the media info
+    dialog's short name: a release stored as `videocodec = avc1`, `videoformat = AVC`, `audioformat = AAC LC` with 2
+    channels reads "H.264 · AAC 2.0".
 
 ---
 
