@@ -54,6 +54,8 @@ svg.i{width:1.1em;height:1.1em;fill:none;stroke:currentColor;stroke-width:1.8;st
 /* filter bar */
 .filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:22px 0 6px}
 .filters h1{font:800 30px/1.1 Manrope,sans-serif;letter-spacing:-.025em;margin-right:6px}
+/* "Adult releases" and "Adult previews" differ by 6.5 px: the heading takes the wider one's width so the switch and the search stay put (critique 2026-11-06) */
+.filters h1{min-width:209px}
 .filters .grow{flex:1}
 .filters .search label{height:38px;border-radius:19px}
 .filters .search input{font-size:13.5px}
@@ -657,6 +659,37 @@ td.num{text-align:right;white-space:nowrap} th.num{text-align:right}
 .adpics .pvthumb .play svg{width:24px;height:24px;margin-left:3px;fill:currentColor}
 .adpics .pvthumb.hasclip:hover .play,.adpics .pvthumb.hasclip:focus-visible .play{background:oklch(0.55 0.17 305);transform:scale(1.06)}
 
+/* ---- Previews wall (2026-11-06, his grilling): the same releases as cards, four to a row inside the 1500 px column (he kept the
+   column; no fifth column), 40 a page. Only releases with a preview or, failing that, a sample. The thumbnail is a 16:9 box and
+   the picture is cropped to fill it, as the list's picture cell does (his pick C, 2026-11-06, "the most consistent look", over
+   the whole picture with dark bars and over a blurred fill): every card's picture is the same size. ---- */
+.wall4{list-style:none;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:34px 18px;margin:18px 0 0}
+.card{display:flex;flex-direction:column;min-width:0}
+.card .thumb{position:relative;display:block;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--panel2);box-shadow:0 8px 18px -10px rgb(0 0 0/.7);transition:transform .25s cubic-bezier(.16,1,.3,1)}
+.card .thumb img{display:block;width:100%;height:100%;object-fit:cover}
+/* a hairline edge over the picture: a black frame keeps its shape on the near-black page (critique 2026-11-06: 1.10:1 against the page) */
+.card .thumb::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgb(255 255 255/.10);pointer-events:none}
+:root[data-theme=light] .card .thumb::after{box-shadow:inset 0 0 0 1px rgb(0 0 0/.08)}
+.card .thumb:hover{transform:translateY(-5px);box-shadow:var(--shadow)}
+/* a thumbnail that plays a clip says so: the details page's magenta "Clip · 30 s" tag, always shown, and its play button on hover or focus.
+   They sit on the picture, so they keep the dark values in both themes; the play button sits above the hairline */
+.card .cliptag{position:absolute;right:8px;bottom:8px;padding:2px 9px;border-radius:7px;background:oklch(0.31 0.085 305);color:oklch(0.87 0.09 305);font-weight:600;font-size:12px;line-height:20px;font-variant-numeric:tabular-nums}
+.card .play{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:26px;background:oklch(0.55 0.17 305);color:#fff;box-shadow:0 6px 18px -6px rgb(0 0 0/.6);opacity:0;transform:scale(.9);transition:opacity .2s,transform .25s cubic-bezier(.16,1,.3,1)}
+.card .play svg{width:22px;height:22px;margin-left:3px;fill:currentColor}
+.card .thumb:hover .play,.card .thumb:focus-visible .play{opacity:1;transform:scale(1)}
+.card .thumb:focus-visible{outline:2px solid var(--acc);outline-offset:3px;border-radius:12px}
+.card .rname{margin-top:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.cchips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
+.cchips .rc{max-width:100%;min-width:0}
+.cchips .rc .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cchips .res{height:28px;line-height:28px}
+.cfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding-top:12px}
+.cfacts{display:flex;flex-direction:column;min-width:0;font-size:13px;line-height:1.4;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cfacts .sz{color:var(--ink)}
+.cfacts .dt{color:var(--dim)}
+/* the row's buttons in one line: the list's colours (Download coral, Copy link blue, Cart green, the admin's Delete red) */
+.card .iconacts.stack{display:flex;gap:6px;flex:none}
+
 </style>
 </head>
 <body>
@@ -719,7 +752,8 @@ const gb=b=>b>=1073741824?(b/1073741824).toFixed(b>=10737418240?1:2)+' GB':b>=10
 const shortDate=t=>new Date(t*1000).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'});
 const fullDate=t=>new Date(t*1000).toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('on'),2200);}
-const X=r=>{const a=RX.x[r.id]||[];return {guid:a[0]||'',group:a[1]||'',poster:a[2]||'',added:a[3]||r.t,nfo:!!a[4],jpg:!!a[5],pv:!!a[6],pw:!!a[7],pwChecked:true,cm:a[8]||0,files:a[9]||0,cat:a[10]||'Adult > Other',final:!!a[11],clip:a[12]||null};};
+const X=r=>{const a=RX.x[r.id]||[];return {guid:a[0]||'',group:a[1]||'',poster:a[2]||'',added:a[3]||r.t,nfo:!!a[4],jpg:!!a[5],pv:!!a[6],pw:!!a[7],pwChecked:true,cm:a[8]||0,files:a[9]||0,cat:a[10]||'Adult > Other',final:!!a[11],clip:a[12]||null,imported:r.id%61===0};};
+// imported: INVENTED for the prototype (the lab copy predates is_imported, #1049): about 1 release in 61, so "Imported only" has something to show
 const catOf=r=>X(r).cat.replace(/^Adult > /,'');
 // the picture a row shows: the preview frame, else the sample (today's order, ReleaseCoverBrowser::adult)
 const imgFor=(r,kind,full)=>{const g=X(r).guid,f=kind+'/'+g+'.webp',th=kind+'/'+g+'_thumb.webp';return full&&PV.has(f)?'ad/previews/'+f:PV.has(th)?'ad/previews/'+th:PV.has(f)?'ad/previews/'+f:null;};
@@ -728,7 +762,7 @@ const rowPic=r=>{const x=X(r);return (x.pv&&imgFor(r,'preview'))||(x.jpg&&imgFor
 /* ---------- filters ---------- */
 function matchRel(r){const q=state.q.trim().toLowerCase();
   return (!state.cat.size||state.cat.has(catOf(r)))&&(!state.res.size||state.res.has(r.res))
-   &&(!state.comp||r.comp>=+state.comp)&&(!state.aud.size||audOf(r).some(a=>state.aud.has(a)))&&(!q||r.name.toLowerCase().includes(q));}
+   &&(!state.comp||(state.comp==='imported'?X(r).imported:r.comp>=+state.comp))&&(!state.aud.size||audOf(r).some(a=>state.aud.has(a)))&&(!q||r.name.toLowerCase().includes(q));}
 // a release's audio languages (media info); none known reads Unknown, as Resolution and Source do
 const audOf=r=>RX.aud[r.id]||['Unknown'];
 const OPTS=()=>({cat:CATS.map(v=>[v,v]),res:[...RES,'Unknown'].map(v=>[v,v]),src:[...SRC,'Unknown'].map(v=>[v,v]),aud:AUDS.map(v=>[v,v])});
@@ -747,14 +781,18 @@ function menu(k){const [label,anyLabel]=LABELS[k],opts=OPTS()[k],set=state[k],on
   return `<div class="msel sfm${on.length?' set':''}${open?' open':''}" data-msel="${k}"><button class="mbtn" data-ddtoggle="${k}" aria-haspopup="true" aria-expanded="${open}" title="${exo?'Category: Exclude Other':on.length?esc(label+': '+on.map(o=>o[1]).join(', ')):''}">${lab(label,txt,!on.length)}${ic('chev')}</button>
   ${open?(search?`<div class="mmenu searchable" role="dialog" aria-label="${label}"><div class="msearch">${ic('search')}<input data-msearch="${k}" placeholder="Search ${SEARCH_NAME[k]||label.toLowerCase()}" aria-label="Search ${SEARCH_NAME[k]||label.toLowerCase()}" value="${esc(state.msq[k]||'')}" autocomplete="off"></div><div role="menu" aria-label="${label}">${items}</div></div>`
     :`<div class="mmenu" role="menu" aria-label="${label}">${items}</div>`):''}</div>`;}
+// the app's Completion menu (ReleaseListFilters::COMPLETIONS): menu item, cell text, empty-line words
+const COMPL={'100':['100% only','100%','100% complete'],'95':['95% or more','95%+','95%+ complete'],'imported':['Imported only','Imported','imported only']};
 function compMenu(){const on=state.comp,open=state.dd==='comp',item=(v,l)=>`<button class="mitem" data-cpick="${v}" role="menuitemradio" aria-checked="${(v==='any'&&!on)||v===on}"><span class="dot"></span>${l}</button>`;
-  return `<div class="msel sfm${on?' set':''}${open?' open':''}" data-msel="comp"><button class="mbtn" data-ddtoggle="comp" aria-haspopup="true" aria-expanded="${open}" title="${on?'Completion: '+(on==='100'?'100% only':'95% or more'):''}">${lab('Completion',on?(on==='100'?'100%':'95%+'):'any',!on)}${ic('chev')}</button>
-  ${open?`<div class="mmenu" role="menu" aria-label="Completion">${item('any','Any completion')}${item('100','100% only')}${item('95','95% or more')}</div>`:''}</div>`;}
+  return `<div class="msel sfm${on?' set':''}${open?' open':''}" data-msel="comp"><button class="mbtn" data-ddtoggle="comp" aria-haspopup="true" aria-expanded="${open}" title="${on?'Completion: '+COMPL[on][0]:''}">${lab('Completion',on?COMPL[on][1]:'any',!on)}${ic('chev')}</button>
+  ${open?`<div class="mmenu" role="menu" aria-label="Completion">${item('any','Any completion')}${Object.entries(COMPL).map(([v,[l]])=>item(v,l)).join('')}</div>`:''}</div>`;}
 function placeMenu(top){const m=$('.sfm .mmenu');if(!m)return;if(top!=null)m.scrollTop=top;else{const t=m.querySelector('[data-ddpick][aria-checked=true]'),sh=m.querySelector('.msearch')?.offsetHeight||0;if(t&&t.offsetTop+t.offsetHeight>m.clientHeight)m.scrollTop=t.offsetTop-sh-6;}m.style.left='';const over=m.getBoundingClientRect().right-(document.documentElement.clientWidth-16);if(over>0)m.style.left=-over+'px';}
 // the name search (his call 2026-09-29: keep today's "Search in Adult"): release names containing the words, as typed
 const nameSearch=()=>`<div class="search nsearch"><label><svg class="i"><use href="#i-search"/></svg><input id="q" type="text" placeholder="Search release names" autocomplete="off" aria-label="Search release names" value="${esc(state.q)}"><button class="clr" data-clearq aria-label="Clear the name search" title="Clear the name search"${state.q?'':' hidden tabindex="-1"'}>${ic('x')}</button></label></div>`;
 function filterBar(){
-  return `<div class="filters"><h1>Adult releases</h1>${nameSearch()}<span class="grow"></span>
+  const wall=onWall();
+  // "Releases | Previews" (his call 2026-11-06), Movies' "Releases | Films"; the filters and the sort carry over, the page goes back to 1
+  return `<div class="filters"><h1>${wall?'Adult previews':'Adult releases'}</h1><nav class="seg" aria-label="View"><a href="#/"${wall?'':' aria-current="page"'}>Releases</a><a href="#/previews"${wall?' aria-current="page"':''}>Previews</a></nav>${nameSearch()}<span class="grow"></span>
    <label class="sel sortsel"><select data-rsort aria-label="Sort releases">${[['posted_desc','Posted: newest first'],['posted_asc','Posted: oldest first'],['added_desc','Added: newest first'],['added_asc','Added: oldest first']].map(([k,l])=>`<option value="${k}" ${state.rsort===k?'selected':''}>${l}</option>`).join('')}</select>${ic('chev')}</label></div>
    <div class="mrow fbar one"><div class="fseg rel" role="group" aria-label="The release">${menu('cat')}${menu('res')}${menu('aud')}${compMenu()}</div></div>`;}
 
@@ -764,9 +802,10 @@ const niceCodec=c=>({'V_MPEG4/ISO/AVC':'H.264','AVC':'H.264','V_MPEGH/ISO/HEVC':
 const niceCh=c=>({'1':'1.0','2':'2.0','6':'5.1','8':'7.1'}[String(c)]||c);
 function miSummary(r){const sm=RX.summ[r.id];if(!sm)return null;return sm.split(' · ').map((x,i)=>{if(i===0)return niceCodec(x);const m=x.match(/^(.*?)\s+(\d+)$/);return m?m[1]+' '+niceCh(m[2]):x;}).join(' · ');}
 // chip order (TV SPEC 4): completion, Password, media info, NFO, Preview, Sample, Clip
-function chips(r){const x=X(r),pc=Math.floor(r.comp),mi=miSummary(r);
-  return (pc>=100||pc<=0?'':`<span class="rc comp ${pc>=95?'c-ok':pc>=75?'c-mid':'c-low'}" title="${pc}% of this release's articles were seen by the indexer. ${x.final?'Repair has finished: this is as complete as it will get.':'The site may still recover more of it.'}">${pc}% complete${x.final?'':' · still repairing'}</span>`)
-   +(x.pw?`<span class="rc">${ic('lock')}Password</span>`:'')
+const compChip=r=>{const x=X(r),pc=Math.floor(r.comp);return pc>=100||pc<=0?'':`<span class="rc comp ${pc>=95?'c-ok':pc>=75?'c-mid':'c-low'}" title="${pc}% of this release's articles were seen by the indexer. ${x.final?'Repair has finished: this is as complete as it will get.':'The site may still recover more of it.'}">${pc}% complete${x.final?'':' · still repairing'}</span>`;};
+const pwChip=r=>X(r).pw?`<span class="rc">${ic('lock')}Password</span>`:'';
+function chips(r){const x=X(r),mi=miSummary(r);
+  return compChip(r)+pwChip(r)
    +(mi!=null&&mi!==''?`<button class="rc k-mi" data-mi="${r.id}" title="View media info">${ic('info')}${esc(mi)}</button>`:'')
    +(x.nfo?`<button class="rc k-nfo" data-nfo="${r.id}" title="View NFO">NFO</button>`:'')
    +(x.pv?`<button class="rc k-pv" data-img="${r.id}" data-kind="preview" title="View preview image">Preview</button>`:'')
@@ -797,7 +836,7 @@ const nzbLink=r=>location.origin+'/api/v1/api?t=get&id='+encodeURIComponent(X(r)
 function copyText(t){window.__copied=t;if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(t).then(()=>true,()=>legacyCopy(t));return Promise.resolve(legacyCopy(t));}
 function legacyCopy(t){const a=document.createElement('textarea');a.value=t;a.setAttribute('readonly','');a.style.cssText='position:fixed;top:0;left:0;opacity:0';document.body.appendChild(a);a.select();let ok=false;try{ok=document.execCommand('copy');}catch(e){}a.remove();return ok;}
 const ago=t=>{const m=Math.max(1,Math.round((NOWALL-t)/60));return m<60?m+' min ago':m<1440?Math.round(m/60)+' hr ago':shortDate(t);};
-const filterText=()=>{const parts=['cat','res'].map(k=>k==='cat'&&isExo()?'excluding Other':[...state[k]].join(' or ')).filter(Boolean);if(state.comp)parts.push(state.comp==='100'?'100% complete':'95%+ complete');if(state.aud.size)parts.push([...state.aud].join(' or ')+' audio');if(state.q.trim())parts.push('names containing “'+state.q.trim()+'”');return parts.join(' · ');};
+const filterText=()=>{const parts=['cat','res'].map(k=>k==='cat'&&isExo()?'excluding Other':[...state[k]].join(' or ')).filter(Boolean);if(state.comp)parts.push(COMPL[state.comp][2]);if(state.aud.size)parts.push([...state.aud].join(' or ')+' audio');if(state.q.trim())parts.push('names containing “'+state.q.trim()+'”');return parts.join(' · ');};
 const barClear=html=>html.replace('class="pager slim"','class="pager slim fixed"').replace('</span>',`</span><button class="clearall" data-clearall ${anySet()?'':'tabindex="-1" aria-hidden="true"'}>Clear all</button>`);
 // the picture cell: the whole frame, 176 x 99 (his pick A, 2026-09-29, over the 88 x 132 poster slot)
 function picCell(x){const u=rowPic(x),xx=X(x),kind=xx.pv&&imgFor(x,'preview')?'preview':'sample';
@@ -823,6 +862,36 @@ function releasesView(){
   h+='</tbody></table>'+pager(state.page,pages,total,true);
   $('#app').innerHTML=h;
   syncSelectAll();
+}
+
+/* ---------- Previews wall (2026-11-06) ---------- */
+const WALL_PER=40;
+const onWall=()=>/^#\/previews(\/|$)/.test(location.hash);
+const listBase=()=>onWall()?'#/previews':'#/';
+// one card: the thumbnail (plays the clip, else opens the picture, as the list's picture does), the name to details, then
+// resolution, the Completion / Password warnings and Media info (the list's chip order, TV SPEC 4), then size and date beside the row's buttons
+// as the list's picture: a preview opens its Preview chip's dialog, which plays the clip when there is one; a sample opens the Sample
+// dialog even when the release has a clip (10 releases on production, 2026-11-06)
+function card(r){const x=X(r),u=rowPic(r),kind=x.pv&&imgFor(r,'preview')?'preview':'sample',clip=kind==='preview'?x.clip:null,sk=state.rsort.split('_')[0],mi=miSummary(r);
+  const marks=clip?`<span class="play" aria-hidden="true">${ic('play')}</span><span class="cliptag" aria-hidden="true">Clip${clip[1]?' · '+clip[1]+' s':''}</span>`:'';
+  const what=clip?`data-clip="${r.id}" aria-label="Play the ${clip[1]?clip[1]+'-second ':''}video clip of ${esc(r.name)}"`:`data-img="${r.id}" data-kind="${kind}" aria-label="View the ${kind} image of ${esc(r.name)}"`;
+  return `<li class="card" data-row="${r.id}">
+   <a class="thumb" href="#/release/${r.id}" ${what}><img src="${u}" alt="" loading="lazy">${marks}</a>
+   <a class="rname" href="#/release/${r.id}" title="${esc(r.name)}">${esc(r.name).replace(/([._\-\]])/g,'$1<wbr>')}</a>
+   <div class="cchips">${resChip(r.res)}${compChip(r)}${pwChip(r)}${mi?`<button class="rc k-mi" data-mi="${r.id}" title="View media info: ${esc(mi)}">${ic('info')}<span class="t">${esc(mi)}</span></button>`:''}</div>
+   <div class="cfoot"><div class="cfacts" title="Posted ${fullDate(r.t)} · Added ${fullDate(x.added)}"><span class="sz">${gb(r.size)}</span><span class="dt">${sk==='added'?'Added':'Posted'} ${ago(sk==='added'?x.added:r.t)}</span></div>${rowActions(r,true)}</div>
+  </li>`;}
+function wallView(){
+  const [sk,sd]=state.rsort.split('_'),tk=r=>sk==='added'?X(r).added:r.t,dir=sd==='asc'?1:-1;
+  const rs=REL.filter(r=>(!GONE.has(r.id)||held.has(r.id))&&rowPic(r)&&matchRel(r)).sort((a,b)=>(tk(a)-tk(b))*dir||a.id-b.id),pages=Math.max(1,Math.ceil(rs.length/WALL_PER));
+  state.page=Math.min(Math.max(1,state.page),pages);
+  const page=rs.slice((state.page-1)*WALL_PER,state.page*WALL_PER).filter(r=>!GONE.has(r.id)),total=rs.length-rs.filter(r=>GONE.has(r.id)).length;
+  let h=filterBar();
+  if(!page.length){$('#app').innerHTML=h+barClear(pager(1,1,0,false,'#/previews','release',WALL_PER))+`<p class="empty">${anySet()?'No releases match '+esc(filterText())+'.':'There are no adult releases with a picture yet.'}</p>`;return;}
+  h+=barClear(pager(state.page,pages,total,false,'#/previews','release',WALL_PER));
+  h+=`<ul class="wall4" aria-label="Releases">${page.map(card).join('')}</ul>`;
+  h+=pager(state.page,pages,total,true,'#/previews','release',WALL_PER);
+  $('#app').innerHTML=h;
 }
 
 /* ---------- release details: the Movies details page's no-film form (name as the heading, full width, no aside) ---------- */
@@ -957,8 +1026,9 @@ let CLIPCOUNT=0;
 /* ---------- routing + events ---------- */
 function route(){
   const rm=location.hash.match(/^#\/release\/(\d+)$/);if(rm){release(+rm[1]);return;}
+  const wm=location.hash.match(/^#\/previews(?:\/p\/(\d+))?$/);if(wm){state.page=wm[1]?+wm[1]:1;wallView();return;}
   const rp=location.hash.match(/^#\/p\/(\d+)$/);state.page=rp?+rp[1]:1;releasesView();}
-function firstPage(){state.page=1;if(location.hash!=='#/'&&location.hash!=='')location.hash='#/';else route();}
+function firstPage(){state.page=1;const b=listBase();if(location.hash!==b&&!(b==='#/'&&location.hash===''))location.hash=b;else route();}
 function rerender(){const y=scrollY;route();scrollTo(0,y);}
 let lastHash='';
 addEventListener('hashchange',()=>{state.dd=null;held=new Set();closeDialog();const rid=h=>(h.match(/^#\/release\/(\d+)/)||[])[1];
@@ -967,8 +1037,8 @@ addEventListener('hashchange',()=>{state.dd=null;held=new Set();closeDialog();co
 // the list remembers its last dropdown filters for the user (his call 2026-09-29; the app keeps them in the profile, here
 // localStorage stands in); the name search is never remembered, and neither is the page
 const saveFilters=()=>store.set('filters',JSON.stringify({cat:isExo()?'exo':[...state.cat],res:[...state.res],aud:[...state.aud],comp:state.comp}));
-function loadFilters(){try{const f=JSON.parse(store.get('filters','{}'));['cat','res','aud'].forEach(k=>{state[k]=new Set((k==='cat'&&f.cat==='exo'?EXO():(f[k]||[])).filter(v=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:AUDS).includes(v)));});state.comp=['100','95'].includes(f.comp)?f.comp:false;}catch(e){}}
-function afterFilter(){held=new Set();state.page=1;saveFilters();if(location.hash!=='#/'&&location.hash!=='')history.replaceState(null,'','#/');}
+function loadFilters(){try{const f=JSON.parse(store.get('filters','{}'));['cat','res','aud'].forEach(k=>{state[k]=new Set((k==='cat'&&f.cat==='exo'?EXO():(f[k]||[])).filter(v=>(k==='cat'?CATS:k==='res'?[...RES,'Unknown']:AUDS).includes(v)));});state.comp=['100','95','imported'].includes(f.comp)?f.comp:false;}catch(e){}}
+function afterFilter(){held=new Set();state.page=1;saveFilters();const b=listBase();if(location.hash!==b&&!(b==='#/'&&location.hash===''))history.replaceState(null,'',b);}
 document.addEventListener('click',e=>{
   const al=e.target.closest('[data-applink]');if(al){e.preventDefault();toast('Opens '+decodeURIComponent(al.dataset.applink)+', the existing list of all releases for it (not part of this prototype)');return;}
   if(e.target.closest('[data-full]')){toggleFull();return;}
@@ -990,12 +1060,12 @@ document.addEventListener('click',e=>{
   const cp=e.target.closest('[data-copynzb]');
   if(cp){const r=BYID[cp.dataset.copynzb];copyText(nzbLink(r)).then(ok=>{toast(ok?'NZB link copied. It contains your API key, so only paste it into your own downloader.':'Could not copy. The link is: '+nzbLink(r));if(ok){const svg=cp.querySelector('use');if(svg){svg.setAttribute('href','#i-check');setTimeout(()=>svg.setAttribute('href','#i-link'),1600);}}});return;}
   // a row picture: Ctrl / Cmd / Shift-click follows its link to the details page as a browser does; a plain click opens the image
-  const pa=e.target.closest('td.art a[data-img]');if(pa&&(e.metaKey||e.ctrlKey||e.shiftKey))return;
+  const pa=e.target.closest('td.art a[data-img],.card .thumb');if(pa&&(e.metaKey||e.ctrlKey||e.shiftKey))return;
   const u=e.target.closest('[data-nfo],[data-img],[data-mi],[data-files],[data-clip],[data-bulk]');
-  if(u){const d=u.dataset;
+  if(u){const d=u.dataset;if(u.tagName==='A')e.preventDefault();
     if(d.nfo){const r=BYID[d.nfo];needNfo().then(()=>openDialog('NFO',r,nfoHtml(r)));}
-    else if(d.img){e.preventDefault();const r=BYID[d.img];openDialog(d.kind==='sample'?'Sample image':'Preview image',r,imgHtml(r,d.kind));setupImg(u.dataset.fullnow!==undefined);if(pa){const chip=u.closest('tr')?.querySelector(`.rchips [data-img="${d.img}"][data-kind="${d.kind}"]`);if(chip)lastFocus=chip;}}
-    else if(d.clip){const r=BYID[d.clip];openDialog('Video clip',r,clipHtml(r));}
+    else if(d.img){e.preventDefault();const r=BYID[d.img];openDialog(d.kind==='sample'?'Sample image':'Preview image',r,imgHtml(r,d.kind));setupImg(u.dataset.fullnow!==undefined);if(pa&&u.closest('tr')){const chip=u.closest('tr').querySelector(`.rchips [data-img="${d.img}"][data-kind="${d.kind}"]`);if(chip)lastFocus=chip;}else if(pa)lastFocus=pa;}
+    else if(d.clip){const r=BYID[d.clip];openDialog('Video clip',r,clipHtml(r));if(pa)lastFocus=pa;}
     else if(d.mi){const r=BYID[d.mi];needMedia().then(()=>openDialog('Media information',r,mediaHtml(r)));}
     else if(d.files){const r=BYID[d.files];needFiles().then(()=>openDialog('Files',r,filesHtml(r)));}
     else if(d.bulk){const ids=[...state.sel];if(d.bulk==='cart'){ids.forEach(i=>state.cart.add(i));$('#cartn').textContent=state.cart.size;toast(ids.length+' added to the cart');}else if(d.bulk==='nzb')toast('Would download '+ids.length+' NZBs as one zip');state.sel.clear();rerender();}
