@@ -99,6 +99,15 @@ class FileNameCleaner
 
     private const SUBTITLE_EVIDENCE_TOKEN = 'e[ ._-]?sub|m[ ._-]?subs?';
 
+    /** Any one evidence token from the groups {@see self::EVIDENCE_TOKEN_PATTERNS} matches. */
+    private const EVIDENCE_TOKEN = '(?:'.self::RESOLUTION_EVIDENCE_TOKEN
+        .'|'.self::SOURCE_EVIDENCE_TOKEN
+        .'|'.self::CODEC_EVIDENCE_TOKEN
+        .'|'.self::AUDIO_CODEC_EVIDENCE_TOKEN
+        .'|'.self::CHANNEL_LAYOUT_EVIDENCE_TOKEN
+        .'|'.self::LANGUAGE_EVIDENCE_TOKEN
+        .'|'.self::SUBTITLE_EVIDENCE_TOKEN.')';
+
     private const QUALITY_SOURCE_SIGNAL = '/\b(480p|720p|1080p|2160p|4k|ntsc|pal|dvd(?:r|rip)?|webrip|web[ .-]?dl|bluray|bdrip|hdtv|hdrip|xvid|x264|x265|hevc|h\.?264|ts|cam|r5|proper|repack)\b/i';
 
     private const MAX_PERSISTED_SEARCH_NAME_LENGTH = 255;
@@ -470,7 +479,7 @@ class FileNameCleaner
         $replacementBody = $trimmedReplacement;
         $groupSuffix = '';
         $sceneGroup = $this->splitSceneGroupSuffix($trimmedReplacement);
-        if ($sceneGroup !== null) {
+        if ($sceneGroup !== null && $this->isGroupSuffix($sceneGroup)) {
             $replacementBody = $sceneGroup['body'];
             $groupSuffix = $sceneGroup['suffix'];
         }
@@ -497,6 +506,23 @@ class FileNameCleaner
         $boundedReplacement = rtrim(mb_substr($replacementBody, 0, $replacementLength));
 
         return implode(' ', array_filter([$boundedReplacement, $evidenceSuffix], static fn (string $part): bool => $part !== '')).$groupSuffix;
+    }
+
+    /**
+     * A hyphen suffix is always a group. A dotted final word is one only when the body before it
+     * ends in a complete evidence token and the word is not itself evidence; otherwise it is
+     * part of the name, such as a title word or a disc number.
+     *
+     * @param  array{body: string, suffix: string, group: string}  $sceneGroup
+     */
+    private function isGroupSuffix(array $sceneGroup): bool
+    {
+        if (! str_starts_with($sceneGroup['suffix'], '.')) {
+            return true;
+        }
+
+        return preg_match('/\b'.self::EVIDENCE_TOKEN.'$/i', $sceneGroup['body']) === 1
+            && preg_match('/^'.self::EVIDENCE_TOKEN.'$/i', $sceneGroup['group']) !== 1;
     }
 
     /**

@@ -83,6 +83,14 @@ final readonly class NamePolicy
             return NameDecision::reject(NameRejection::Promotional, $newTitle);
         }
 
+        // A group's own short file name never replaces a name ending in that group's tag, whichever
+        // guarded source carries it: donors skip plausibility and would spread it to every copy.
+        if ($applies(NameGuard::OwnGroupFileName)
+            && $candidate->preDbId === 0
+            && $this->startsWithOwnGroupTag($newTitle, (string) $release->searchname)) {
+            return NameDecision::reject(NameRejection::OwnGroupFileName, $newTitle);
+        }
+
         $categoryId = (int) ($release->categories_id ?? $release->categoryid ?? 0);
         $replacesXxxPostingLabel = $candidate->descriptiveTitle
             && $this->replacesXxxPostingLabel($release, $name, $candidate->source, $categoryId);
@@ -134,6 +142,16 @@ final readonly class NamePolicy
             (string) $release->searchname,
             (string) ($release->name ?? ''),
         );
+    }
+
+    /** Whether the title begins with the hyphen group tag the current name ends in. */
+    private function startsWithOwnGroupTag(string $title, string $currentName): bool
+    {
+        if (preg_match('/(?:-|\s-\s)(?<tag>[A-Za-z0-9]{2,15})$/', $currentName, $current) !== 1) {
+            return false;
+        }
+
+        return preg_match('/^'.preg_quote($current['tag'], '/').'[-._ ]/i', $title) === 1;
     }
 
     private function finalizeCandidate(object $release, string $name, NameSource $source, bool $descriptiveMediaTitle): string

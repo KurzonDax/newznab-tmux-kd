@@ -109,6 +109,69 @@ class NamePolicyTest extends TestCase
         ));
     }
 
+    public function test_a_groups_own_file_name_does_not_replace_that_groups_name(): void
+    {
+        $this->assertRejected(NameRejection::OwnGroupFileName, (new NamePolicy)->decide(
+            $this->release('All.Saints.S10E02.DVDRip.XviD-aAF'),
+            $this->candidate(NameSource::FileName, 'aaf-all.saints.s10e02.the.hardest.word'),
+        ));
+    }
+
+    public function test_a_donor_does_not_spread_a_groups_own_file_name(): void
+    {
+        $this->assertRejected(NameRejection::OwnGroupFileName, (new NamePolicy)->decide(
+            $this->release('All.Saints.S10E02.DVDRip.XviD-aAF'),
+            $this->candidate(NameSource::Crc32Donor, 'Aaf-All.Saints.S10e02.The.Hardest DVDRip XviD.Word'),
+        ));
+    }
+
+    public function test_a_numeric_group_tag_counts_as_the_groups_tag(): void
+    {
+        $this->assertRejected(NameRejection::OwnGroupFileName, (new NamePolicy)->decide(
+            $this->release('Bundesliga.2010.Week.7.Highlights.WS.PDTV.XviD-433'),
+            $this->candidate(NameSource::FileName, '433-bl2010w7hl.ws.pdtv.xvid'),
+        ));
+    }
+
+    public function test_a_spaced_hyphen_group_tag_counts_as_the_groups_tag(): void
+    {
+        $this->assertRejected(NameRejection::OwnGroupFileName, (new NamePolicy)->decide(
+            $this->release('Title BluRay - grp'),
+            $this->candidate(NameSource::FileName, 'grp-title.bluray.1080p'),
+        ));
+    }
+
+    public function test_a_par2_file_name_starting_with_the_groups_tag_and_a_space_is_rejected(): void
+    {
+        $decision = (new NamePolicy)->decide(
+            $this->release('About.Men.And.Women.S01E04.DVDRip.XviD-aAF'),
+            $this->candidate(NameSource::Par2File, 'aaf-amaws01e04.vol63+06.par2'),
+        );
+
+        $this->assertRejected(NameRejection::OwnGroupFileName, $decision);
+        $this->assertSame('Aaf DVDRip XviD-amaws01e04', $decision->title);
+    }
+
+    public function test_a_predb_backed_file_name_starting_with_the_groups_tag_is_not_refused_as_its_own_file_name(): void
+    {
+        $decision = (new NamePolicy)->decide(
+            $this->release('All.Saints.S10E02.DVDRip.XviD-aAF'),
+            $this->candidate(NameSource::FilePreDbFilenameMatch, 'aaf-all.saints.s10e02', 5),
+        );
+
+        $this->assertNotSame(NameRejection::OwnGroupFileName, $decision->rejection);
+    }
+
+    public function test_a_title_ending_in_the_same_group_tag_is_not_refused_as_its_own_file_name(): void
+    {
+        $decision = (new NamePolicy)->decide(
+            $this->release('Show.S01E01.720p.HDTV.x264-GRP'),
+            $this->candidate(NameSource::FileName, 'Show.S01E01.1080p.WEB-DL.x264-GRP'),
+        );
+
+        $this->assertNotSame(NameRejection::OwnGroupFileName, $decision->rejection);
+    }
+
     public function test_an_unguarded_source_is_accepted_as_its_writer_built_it(): void
     {
         $decision = (new NamePolicy)->decide(
