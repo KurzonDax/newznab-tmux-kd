@@ -8,7 +8,9 @@ use App\Enums\BlacklistConstants;
 use App\Enums\NzbImportStatus;
 use App\Facades\Search;
 use App\Models\Category;
+use App\Models\DecisionModelDecision;
 use App\Services\BlacklistService;
+use App\Services\Categorization\Arbitration\CategoryArbiter;
 use App\Services\Nzb\NzbImportService;
 use App\Services\Nzb\NzbService;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
@@ -17,6 +19,7 @@ use App\Support\ReleaseNameNormalizer;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -33,6 +36,9 @@ final class NzbImportServiceTest extends TestCase
     use IsolatedSqliteDatabase;
 
     private const string ARBITRATED_NAME = 'An Invented Evening With Nobody In Particular';
+
+    /** A posted album title that carries no category words of its own. */
+    private const string AUDIO_ALBUM_NAME = 'Lonely God (Deluxe Edition)';
 
     /**
      * @return array<string, string>
@@ -592,6 +598,150 @@ final class NzbImportServiceTest extends TestCase
         $decision = DB::table('decision_model_decisions')->sole();
         $this->assertNull($decision->subject_id);
         $this->assertSame([(int) $decision->id], array_column($this->decisionLinkFailures, 'decision_id'));
+    }
+
+    public function test_an_audio_only_import_with_no_name_category_is_filed_in_music_lossless(): void
+    {
+        $this->createArbitratedImportTables();
+
+        $this->assertSame(Category::MUSIC_LOSSLESS, $this->importAudioAlbum($this->hexNamedFiles('flac')));
+    }
+
+    public function test_an_archive_import_with_the_same_name_keeps_the_name_based_other_category(): void
+    {
+        $this->createArbitratedImportTables();
+
+        $this->assertSame(Category::OTHER_MISC, $this->importAudioAlbum(['Album.rar']));
+    }
+
+    public function test_an_nzb_category_meta_is_never_overridden_by_audio_only_files(): void
+    {
+        $this->createArbitratedImportTables();
+        $this->insertCategory(Category::OTHER_MISC, 'Misc', Category::STATUS_ACTIVE);
+
+        $this->assertSame(
+            Category::OTHER_MISC,
+            $this->importAudioAlbum($this->hexNamedFiles('flac'), headMeta: '<meta type="category">10</meta>'),
+        );
+    }
+
+    public function test_an_audio_only_import_named_outside_other_and_music_keeps_its_name_category(): void
+    {
+        $this->createArbitratedImportTables();
+
+        $this->assertSame(
+            Category::TV_HD,
+            $this->importAudioAlbum($this->hexNamedFiles('flac'), name: 'Invented.Show.S01E02.720p.HDTV.x264-GRP'),
+        );
+    }
+
+    public function test_an_audio_only_import_in_a_group_forced_to_another_root_keeps_its_name_category(): void
+    {
+        $this->createArbitratedImportTables();
+        DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => Category::XXX_ROOT]);
+
+        $this->assertSame(Category::XXX_OTHER, $this->importAudioAlbum($this->hexNamedFiles('flac')));
+    }
+
+    public function test_an_audio_only_import_hashed_in_a_group_forced_to_another_root_stays_hashed(): void
+    {
+        $this->createArbitratedImportTables();
+        DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => Category::XXX_ROOT]);
+
+        $this->assertSame(
+            Category::OTHER_HASHED,
+            $this->importAudioAlbum($this->hexNamedFiles('flac'), name: hash('sha256', 'invented album')),
+        );
+    }
+
+    public function test_an_audio_only_import_hashed_in_a_group_forced_to_music_is_filed_by_its_files(): void
+    {
+        $this->createArbitratedImportTables();
+        DB::table('usenet_groups')->where('id', 1)->update(['forced_root_categories_id' => Category::MUSIC_ROOT]);
+
+        $this->assertSame(
+            Category::MUSIC_MP3,
+            $this->importAudioAlbum($this->hexNamedFiles('mp3'), name: hash('sha256', 'invented album')),
+        );
+    }
+
+    public function test_an_audio_only_import_replaces_an_applied_decision_model_answer(): void
+    {
+        $this->createArbitratedImportTables();
+        $this->arbitrateCategoriesInShadow();
+        DB::table('settings')->where('name', 'decision_model_mode')->update(['value' => 'apply']);
+        // A base URL of its own, so the shadow fake's "Other" answer cannot match.
+        config(['decision-model.base_url' => 'https://decision-apply.example.test']);
+        Http::fake(['https://decision-apply.example.test/*' => Http::sequence()
+            ->push(['answers' => [
+                'root' => ['choice' => 'xxx', 'probabilities' => ['xxx' => 0.95], 'confidence' => 0.95],
+                'readable' => ['noul' => 0.97],
+                'adult' => ['noul' => 0.9],
+            ]])
+            ->push(['answers' => ['sub' => ['choice' => 'clipshd', 'probabilities' => ['clipshd' => 0.9], 'confidence' => 0.9]]]),
+        ]);
+        $this->app->forgetInstance(CategoryArbiter::class);
+
+        $this->assertSame(Category::MUSIC_LOSSLESS, $this->importAudioAlbum($this->hexNamedFiles('flac')));
+
+        // The decision row keeps what the model and the pipeline answered.
+        $decision = DecisionModelDecision::query()->sole();
+        $this->assertSame(
+            [true, (int) DB::table('releases')->value('id'), Category::XXX_CLIPHD, Category::OTHER_MISC],
+            [$decision->applied, $decision->subject_id, $decision->interpretation['category_id'] ?? null, $decision->pipeline_answer['category_id'] ?? null],
+        );
+    }
+
+    /**
+     * Import one NZB holding these posted files under the given name, and
+     * return the stored category.
+     *
+     * @param  list<string>  $filenames
+     */
+    private function importAudioAlbum(array $filenames, string $name = self::AUDIO_ALBUM_NAME, string $headMeta = ''): int
+    {
+        $this->duplicateImporter()->beginImport(
+            [$this->makeMultiFileNzb($filenames, $name, $headMeta)],
+            resultCallback: $this->collectResults($results),
+            releaseName: $name,
+        );
+
+        $this->assertSame(NzbImportStatus::Inserted, $results[0]['status'], (string) $results[0]['error']);
+
+        return (int) DB::table('releases')->sole()->categories_id;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function hexNamedFiles(string $extension): array
+    {
+        return array_map(
+            static fn (int $n): string => hash('sha256', 'invented-track-'.$n).'.'.$extension,
+            range(1, 32),
+        );
+    }
+
+    /**
+     * @param  list<string>  $filenames
+     */
+    private function makeMultiFileNzb(array $filenames, string $title, string $headMeta = ''): string
+    {
+        $files = '';
+        foreach (array_values($filenames) as $index => $filename) {
+            $subject = sprintf('[%d/%d] - "%s" yEnc (1/1)', $index + 1, \count($filenames), $filename);
+            $files .= '<file poster="poster@example.test" date="1700000000" subject="'.htmlspecialchars($subject, ENT_QUOTES).'">'
+                .'<groups><group>alt.test</group></groups>'
+                .'<segments><segment bytes="1000" number="1">'.bin2hex(random_bytes(6)).'@example.test</segment></segments>'
+                .'</file>';
+        }
+
+        $path = $this->makeTempPath('audio-import', '.nzb');
+        file_put_contents($path, '<nzb xmlns="http://www.newzbin.com/DTD/2003/nzb">'
+            .'<head><meta type="title">'.htmlspecialchars($title, ENT_QUOTES).'</meta>'.$headMeta.'</head>'
+            .$files.'</nzb>');
+
+        return $path;
     }
 
     /**

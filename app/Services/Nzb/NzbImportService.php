@@ -16,6 +16,7 @@ use App\Services\Categorization\CategorizationService;
 use App\Services\CollectionReconciliation\ArtifactPublication;
 use App\Services\ReleaseCleaningService;
 use App\Services\ReleaseRepair\RecoveryLease;
+use App\Services\Releases\ForcedRootPolicy;
 use App\Services\Releases\KeptReleases;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
@@ -575,7 +576,7 @@ class NzbImportService
 
         // Go through the NZB, get the details, look if it's blacklisted, look if we have the groups.
         foreach ($nzbXML->file as $file) {
-            $binary_names[] = $file['subject'];
+            $binary_names[] = (string) $file['subject'];
             $totalFiles++;
             $groupID = -1;
 
@@ -686,6 +687,7 @@ class NzbImportService
                 'completion' => $completionSignals->percentage(),
                 'declaredFiles' => $completionSignals->filesDeclared,
                 'nzbCategoryId' => $this->resolveNzbCategoryId($nzbXML),
+                'fileSubjects' => $binary_names,
                 'segmentMessageIds' => self::segmentMessageIds($nzbXML),
                 'nzbXml' => $nzbXML->asXML(),
             ]
@@ -868,7 +870,7 @@ class NzbImportService
         if (! \is_int($categoryId)) {
             // Every import is stored complete, so it is categorized as complete.
             $determinedCategory = $this->category->determineCategory($nzbDetails['groups_id'], $cleanName, $escapedFromName, completion: 100.0);
-            $categoryId = (int) $determinedCategory['categories_id'];
+            $categoryId = $this->audioOnlyCategory($nzbDetails, $determinedCategory) ?? (int) $determinedCategory['categories_id'];
         }
 
         $importHash = self::computeSegmentMessageIdHash($nzbDetails['segmentMessageIds'] ?? []);
@@ -954,6 +956,32 @@ class NzbImportService
         $this->category->attachDecisionToRelease($determinedCategory, $relID);
 
         return NzbImportStatus::Inserted;
+    }
+
+    /**
+     * The Music category for an NZB of only audio files whose name gave no
+     * category (the pipeline filed it under Other), unless a group forces a
+     * root other than Music.
+     *
+     * @param  array<string, mixed>  $nzbDetails
+     * @param  array<string, mixed>  $determinedCategory
+     */
+    private function audioOnlyCategory(array $nzbDetails, array $determinedCategory): ?int
+    {
+        $pipelineCategoryId = (int) ($determinedCategory['pipeline_categories_id'] ?? $determinedCategory['categories_id']);
+        if (Category::rootCategoryFor($pipelineCategoryId) !== Category::OTHER_ROOT) {
+            return null;
+        }
+
+        $groups = UsenetGroup::query()
+            ->where('id', $nzbDetails['groups_id'])
+            ->get(['id', 'forced_root_categories_id']);
+        $forcedRoot = (new ForcedRootPolicy)->select($nzbDetails['groups_id'], $groups);
+        if ($forcedRoot !== null && $forcedRoot !== Category::MUSIC_ROOT) {
+            return null;
+        }
+
+        return AudioOnlyImportCategory::categoryFor($nzbDetails['fileSubjects'] ?? []);
     }
 
     /**
