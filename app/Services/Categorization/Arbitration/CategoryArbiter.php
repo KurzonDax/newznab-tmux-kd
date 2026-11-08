@@ -12,6 +12,7 @@ use App\Services\DecisionModel\DecisionMode;
 use App\Services\DecisionModel\DecisionModelClient;
 use App\Services\DecisionModel\DecisionRunner;
 use App\Services\NameFixing\FileNameCleaner;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -68,13 +69,15 @@ final class CategoryArbiter
      * Arbitrate the passable's best result in place.
      *
      * @param  int|null  $releaseId  The stored release being categorized, when the caller named one.
+     * @param  float|null  $completion  The release's completion in percent, when the caller knows it;
+     *                                  otherwise it is read from the stored release.
      */
-    public function arbitrate(CategorizationPassable $passable, ?int $releaseId = null): void
+    public function arbitrate(CategorizationPassable $passable, ?int $releaseId = null, ?float $completion = null): void
     {
         try {
             $settings = $this->settings();
 
-            if (! $this->shouldAsk($passable, $settings)) {
+            if (! $this->shouldAsk($passable, $settings, $releaseId, $completion)) {
                 return;
             }
 
@@ -90,10 +93,11 @@ final class CategoryArbiter
 
     /**
      * The gate. Cheapest checks first: with the mode off this is one
-     * comparison, and the name is only examined for a release the pipeline
-     * was unsure of.
+     * comparison, the name is only examined for a release the pipeline was
+     * unsure of, and the stored release is only read for a name that would
+     * otherwise be sent.
      */
-    private function shouldAsk(CategorizationPassable $passable, CategoryArbitrationSettings $settings): bool
+    private function shouldAsk(CategorizationPassable $passable, CategoryArbitrationSettings $settings, ?int $releaseId, ?float $completion): bool
     {
         if ($settings->mode === DecisionMode::Off || ! $this->client->isUsable()) {
             return false;
@@ -111,7 +115,23 @@ final class CategoryArbiter
 
         return $this->names->isReadableReleaseTitle($name)
             && ! $this->names->isHashedOrGibberish($name)
-            && $this->looksLikeATitle($passable->context->preExtractionName);
+            && $this->looksLikeATitle($passable->context->preExtractionName)
+            && $this->isCompleteEnough($releaseId, $completion);
+    }
+
+    /**
+     * Whether the release is complete enough to ask about: the completion the
+     * caller gave, else the stored release's. A release of unknown completion
+     * is not.
+     */
+    private function isCompleteEnough(?int $releaseId, ?float $completion): bool
+    {
+        if ($completion === null && $releaseId !== null) {
+            $stored = DB::table('releases')->where('id', $releaseId)->value('completion');
+            $completion = is_numeric($stored) ? (float) $stored : null;
+        }
+
+        return $completion !== null && $completion >= DecisionRunner::MIN_RELEASE_COMPLETION;
     }
 
     /**

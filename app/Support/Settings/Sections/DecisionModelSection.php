@@ -31,7 +31,7 @@ final class DecisionModelSection implements SettingsSectionProvider
                 new SettingCard(
                     id: 'category-arbitration',
                     title: 'Category arbitration',
-                    description: 'Releases with a readable name that the categorizers could not place, or placed on a weak guess, are sent to the model. Nothing is sent while the model is disabled in the environment, and releases with hashed names or a confident category are never sent.',
+                    description: 'Releases with a readable name that the categorizers could not place, or placed on a weak guess, are sent to the model. Nothing is sent while the model is disabled in the environment, and releases with hashed names or a confident category are never sent. Releases under 95% complete are never sent.',
                     icon: 'fas fa-folder-tree',
                     settings: [
                         new SettingDefinition(
@@ -69,7 +69,7 @@ final class DecisionModelSection implements SettingsSectionProvider
                 new SettingCard(
                     id: 'music-album-check',
                     title: 'Music album check',
-                    description: 'For releases the music matcher has looked up, the model is asked which of the matcher\'s candidate albums the release is, or none of them, judging from the release name and its file names. Up to 50 releases are checked per music pass, newest first, including releases matched before this check existed. Nothing is sent while the model is disabled in the environment.',
+                    description: 'For releases the music matcher has looked up, the model is asked which of the matcher\'s candidate albums the release is, or none of them, judging from the release name and its file names. Up to 50 releases are checked per music pass, newest first, including releases matched before this check existed. Nothing is sent while the model is disabled in the environment. Releases under 95% complete are never sent.',
                     icon: 'fas fa-compact-disc',
                     settings: [
                         new SettingDefinition(

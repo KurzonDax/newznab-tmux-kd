@@ -86,6 +86,7 @@ class CategorizationPipeline
      * @param  bool  $debug  Whether to include debug information
      * @param  list<int>  $associatedGroupIds  Every normalized group associated with the release
      * @param  int|null  $releaseId  The stored release being categorized, when the caller named one
+     * @param  float|null  $completion  The release's completion in percent, when the caller knows it
      * @return array<string, mixed> The categorization result
      */
     public function categorize(
@@ -95,6 +96,7 @@ class CategorizationPipeline
         bool $debug = false,
         array $associatedGroupIds = [],
         ?int $releaseId = null,
+        ?float $completion = null,
     ): array {
         $releaseName = $this->nzbSplitUnwrapper->unwrap($releaseName) ?? $releaseName;
         $preExtractionName = $releaseName;
@@ -143,7 +145,7 @@ class CategorizationPipeline
 
         $this->applyTvTokenOverMovies($result);
         $this->applyForcedRootCategory($result);
-        $this->arbitrate($result, $releaseId);
+        $this->arbitrate($result, $releaseId, $completion);
 
         $this->logCategorization($result);
 
@@ -309,11 +311,11 @@ class CategorizationPipeline
      * for itself whether to ask at all and reports its own failures; whatever
      * still goes wrong here, the pipes' result stands.
      */
-    private function arbitrate(CategorizationPassable $result, ?int $releaseId): void
+    private function arbitrate(CategorizationPassable $result, ?int $releaseId, ?float $completion): void
     {
         try {
             $this->arbiter ??= app(CategoryArbiter::class);
-            $this->arbiter->arbitrate($result, $releaseId);
+            $this->arbiter->arbitrate($result, $releaseId, $completion);
         } catch (Throwable) {
             // Categorization never fails because of the model.
         }

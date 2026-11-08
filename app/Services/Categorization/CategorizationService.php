@@ -34,6 +34,8 @@ class CategorizationService
      * @param  bool  $debug  Whether to include debug information
      * @param  list<int>  $associatedGroupIds  Every normalized group associated with the release
      * @param  int|null  $releaseId  A persisted release whose junction groups should be included
+     * @param  float|null  $completion  The release's completion in percent, when the caller knows it,
+     *                                  such as a release about to be stored
      * @return array<string, mixed> The categorization result with category ID and optional debug info
      */
     public function determineCategory(
@@ -43,6 +45,7 @@ class CategorizationService
         bool $debug = false,
         array $associatedGroupIds = [],
         ?int $releaseId = null,
+        ?float $completion = null,
     ): array {
         if ($releaseId !== null) {
             $associatedGroupIds = array_values(array_unique([
@@ -55,7 +58,7 @@ class CategorizationService
             ]));
         }
 
-        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds, $releaseId);
+        return $this->pipeline->categorize($groupId, $releaseName, $poster, $debug, $associatedGroupIds, $releaseId, $completion);
     }
 
     /**

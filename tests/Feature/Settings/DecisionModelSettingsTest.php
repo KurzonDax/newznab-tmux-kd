@@ -103,6 +103,23 @@ final class DecisionModelSettingsTest extends TestCase
         $this->assertStringContainsString('name="decision_model_music_album_mode"', $rendered);
     }
 
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function cardsThatAskAboutReleases(): array
+    {
+        return ['category arbitration' => ['category-arbitration'], 'music album check' => ['music-album-check']];
+    }
+
+    #[DataProvider('cardsThatAskAboutReleases')]
+    public function test_the_card_says_releases_under_ninety_five_percent_complete_are_never_sent(string $card): void
+    {
+        $this->assertStringContainsString(
+            'Releases under 95% complete are never sent.',
+            (string) app(SettingsRegistry::class)->card('decision-model', $card)?->description,
+        );
+    }
+
     public function test_the_music_album_mode_offers_only_off_and_shadow(): void
     {
         $definition = app(SettingsRegistry::class)->definition('decision_model_music_album_mode');

@@ -245,11 +245,13 @@ class ReleaseCreationService
 
                 $releaseID = null;
                 if ($dupeCheck === null) {
+                    $completion = ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0;
                     $determinedCategory = $recovery !== null ? ['categories_id' => $recovery->categoryId] : $categorize->determineCategory(
                         $collection->groups_id,
                         $cleanedName,
                         $fromName,
                         associatedGroupIds: $releaseGroupIds[(int) $collection->id] ?? [],
+                        completion: $completion,
                     );
 
                     try {
@@ -270,7 +272,7 @@ class ReleaseCreationService
                             'is_trusted_name' => $properName === true || $predbIdInt > 0,
                             'predb_id' => $predbIdInt,
                             'nzbstatus' => NzbService::NZB_NONE,
-                            'completion' => ($completionSignals[(int) $collection->id] ?? null)?->percentage() ?? 0.0,
+                            'completion' => $completion,
                             'collectionhash' => $collectionHash,
                         ]);
                     } catch (UniqueConstraintViolationException $exception) {

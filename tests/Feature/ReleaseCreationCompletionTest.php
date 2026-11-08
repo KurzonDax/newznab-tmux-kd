@@ -14,6 +14,7 @@ use App\Services\Releases\CollectionCompletionMeasurer;
 use App\Services\Releases\ReleaseDuplicateAbsorber;
 use App\Services\Releases\ReleaseDuplicateFinder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\Support\ArbitratesCategoriesInShadow;
@@ -342,6 +343,20 @@ class ReleaseCreationCompletionTest extends TestCase
             (int) DB::table('decision_model_decisions')->sole()->subject_id,
         );
         $this->assertSame([], $this->decisionLinkFailures);
+    }
+
+    #[Test]
+    public function a_release_created_under_ninety_five_percent_complete_is_not_sent_to_the_model(): void
+    {
+        $this->arbitrateCategoriesInShadow();
+        $this->insertCollection(100, 'hash-arbitrated', 'An.Invented.Evening.With.Nobody.In.Particular');
+        $this->insertBinary(100, 1000, 'An.Invented.Evening.With.Nobody.In.Particular.mkv', declaredParts: 10, presentParts: 9);
+
+        $this->assertSame(['added' => 1, 'dupes' => 0], $this->service()->createReleases(null, 10, false));
+
+        $this->assertEqualsWithDelta(90.0, $this->completionOfFirstRelease(), 0.01);
+        $this->assertSame(0, DB::table('decision_model_decisions')->count());
+        Http::assertNothingSent();
     }
 
     #[Test]
