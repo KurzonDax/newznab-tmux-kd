@@ -19,6 +19,9 @@ enum NameGuard
     /** A readable current name is not replaced by a poorer one, unless the source skips plausibility. */
     case LessInformative;
 
+    /** A group's own short file name does not replace a name that ends in that group's tag, unless PreDB backs it. */
+    case OwnGroupFileName;
+
     /** A candidate equal to the current name is not a rename. */
     case SameName;
 

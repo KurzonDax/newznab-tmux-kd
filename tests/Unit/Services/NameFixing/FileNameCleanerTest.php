@@ -291,6 +291,74 @@ class FileNameCleanerTest extends TestCase
         );
     }
 
+    public function test_preserving_evidence_appends_tokens_when_the_dotted_body_does_not_end_in_evidence(): void
+    {
+        $cleaner = new FileNameCleaner;
+
+        $result = $cleaner->preserveEvidenceTokens(
+            'La.Liga.2010.Sevilla.Vs.Real.Madrid.cd1',
+            'La.Liga.2010.Sevilla.Vs.Real.Madrid.WS.PDTV.XviD-Hype',
+        );
+
+        $this->assertSame('La.Liga.2010.Sevilla.Vs.Real.Madrid.cd1 PDTV XviD', $result);
+        $this->assertSame($result, $cleaner->preserveEvidenceTokens($result, $result));
+    }
+
+    public function test_preserving_evidence_never_splices_tokens_before_a_final_title_word(): void
+    {
+        $this->assertSame(
+            'All.Saints.S10E02.The.Hardest.Word DVDRip XviD',
+            (new FileNameCleaner)->preserveEvidenceTokens(
+                'All.Saints.S10E02.The.Hardest.Word',
+                'All.Saints.S10E02.DVDRip.XviD-aAF',
+            ),
+        );
+    }
+
+    public function test_preserving_evidence_never_treats_a_dotted_evidence_token_as_a_group(): void
+    {
+        $this->assertSame(
+            'Malcolm.In.The.Middle.S03E11.1080p.WEBRip x265 EAC3 5.1',
+            (new FileNameCleaner)->preserveEvidenceTokens(
+                'Malcolm.In.The.Middle.S03E11.1080p.WEBRip',
+                'Malcolm.In.The.Middle.S03E11.1080p.WEBRip.10bit.x265.EAC3.5.1',
+            ),
+        );
+    }
+
+    /**
+     * @return array<string, array{string, string, string}>
+     */
+    public static function bodiesEndingInSeparatedEvidence(): array
+    {
+        return [
+            'channel layout' => [
+                'Movie.2010.1080p.BluRay.DTS.5.1.GROUP',
+                'Movie.2010.GERMAN.1080p.BluRay.x264-GROUP',
+                'Movie.2010.1080p.BluRay.DTS.5.1 x264 GERMAN.GROUP',
+            ],
+            'dotted codec' => [
+                'Show.S01E01.WEB-DL.H.264.GRP',
+                'Show.S01E01.1080p.WEB-DL.H.264-GRP',
+                'Show.S01E01.WEB-DL.H.264 1080p.GRP',
+            ],
+            'dotted audio codec' => [
+                'Show.S01E01.DTS.HD.MA.GRP',
+                'Show.S01E01.1080p.BluRay.DTS.HD.MA-GRP',
+                'Show.S01E01.DTS.HD.MA 1080p BluRay.GRP',
+            ],
+        ];
+    }
+
+    #[DataProvider('bodiesEndingInSeparatedEvidence')]
+    public function test_preserving_evidence_keeps_a_dotted_group_after_a_body_ending_in_separated_evidence(
+        string $replacement,
+        string $outgoing,
+        string $expected,
+    ): void {
+        $this->assertSame($expected, (new FileNameCleaner)->preserveEvidenceTokens($replacement, $outgoing));
+    }
+
     public function test_strictly_more_informative_names_must_not_trade_away_existing_signals(): void
     {
         $cleaner = new FileNameCleaner;

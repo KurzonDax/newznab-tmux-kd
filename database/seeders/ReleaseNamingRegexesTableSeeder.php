@@ -5964,7 +5964,7 @@ class ReleaseNamingRegexesTableSeeder extends Seeder
             243 => [
                 'id' => 744,
                 'group_regex' => '^alt\\.binaries\\.multimedia$',
-                'regex' => '/\\[[#]+\\]-\\[.+?\\]-\\[.+?\\]-\\[ (?P<match0>[\\w.,& \\()\\[\\]\\\'\\`-]{8,}?) \\][ -]\\[\\d+\\/\\d+\\][\-_\\s]{0,3}("|#34;).+?/',
+                'regex' => '/\\[[\\d#]+\\]-\\[.+?\\]-\\[.+?\\]-\\[ (?P<match0>[\\w.,& \\()\\[\\]\\\'\\`-]{8,}?) \\][ -]\\[\\d+\\/\\d+\\][\-_\\s]{0,3}("|#34;).+?/',
                 'status' => 1,
                 'description' => '//[####]-[FULL]-[#a.b.teevee@EFNet]-[ Tosh.0.S02E14.720p.HDTV.x264-aAF ]-[10/21] - "aaf-tosh.0.s02e14.720p.r07" yEnc',
                 'ordinal' => 10,

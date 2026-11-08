@@ -14,5 +14,6 @@ enum NameRejection: string
     case EpisodeOfLargerRelease = 'episode_of_larger_release';
     case Implausible = 'implausible';
     case LessInformative = 'less_informative';
+    case OwnGroupFileName = 'own_group_file_name';
     case SameName = 'same_name';
 }
