@@ -15,9 +15,7 @@ class MusicCategorizer extends AbstractCategorizer
 {
     protected int $priority = 40;
 
-    // Language patterns for foreign music
-    protected const FOREIGN_LANGUAGES = 'arabic|brazilian|bulgarian|cantonese|chinese|croatian|czech|danish|deutsch|dutch|estonian|finnish|flemish|french|german|greek|hebrew|hungarian|icelandic|indian|iranian|italian|japanese|korean|latin|latvian|lithuanian|macedonian|mandarin|nordic|norwegian|persian|polish|portuguese|romanian|russian|serbian|slovenian|spanish|spanisch|swedish|thai|turkish|ukrainian|vietnamese';
-
+    // Scene language tags for foreign music, matched uppercase between hyphens (-DE-)
     protected const LANGUAGE_CODES = 'ar|bg|bl|cs|cz|da|de|dk|el|es|et|fi|fr|ger|gr|heb|hr|hu|hun|is|it|ita|jp|jap|ko|kor|lt|lv|mk|nl|no|pl|pt|ro|rs|ru|se|sk|sl|sr|sv|th|tr|ua|vi|zh';
 
     public function getName(): string
@@ -68,7 +66,7 @@ class MusicCategorizer extends AbstractCategorizer
 
     protected function checkForeign(string $name): bool
     {
-        return (bool) preg_match('/(?:^|[\s\.\-_])(?:'.self::FOREIGN_LANGUAGES.'|'.self::LANGUAGE_CODES.')(?:$|[\s\.\-_])/i', $name);
+        return (bool) preg_match('/(?<=-)(?:'.strtoupper(self::LANGUAGE_CODES).')(?=-)/', $name);
     }
 
     protected function checkAudiobook(string $name): ?CategorizationResult

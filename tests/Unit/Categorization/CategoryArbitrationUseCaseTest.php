@@ -30,7 +30,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
 
         $this->assertSame('category_arbitration', $useCase->name());
         $this->assertSame(
-            'v4 2026-11-08: Audio > Video removed; concerts and music videos are films',
+            'v5 2026-11-08: Audio > Video removed; audio foreign = uppercase scene language tag only',
             $useCase->criteriaVersion(),
         );
     }

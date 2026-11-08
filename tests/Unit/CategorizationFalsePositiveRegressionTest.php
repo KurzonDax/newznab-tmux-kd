@@ -150,6 +150,47 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
+    #[DataProvider('musicForeignSceneTagNames')]
+    public function test_music_foreign_requires_an_uppercase_scene_language_tag(
+        string $name,
+        bool $categorizeForeign,
+        int $expectedCategory,
+        string $expectedMatchedBy,
+    ): void {
+        // Shape the context exactly as CategorizationPipeline::categorize() does.
+        $raw = (new NzbSplitUnwrapper)->unwrap($name) ?? $name;
+        $cleaned = (new ObfuscatedSubjectExtractor)->extract($raw) ?? $raw;
+        $context = new ReleaseContext($cleaned, 0, categorizeForeign: $categorizeForeign, preExtractionName: $raw);
+
+        $result = (new MusicCategorizer)->categorize($context);
+
+        $this->assertSame([$expectedCategory, $expectedMatchedBy], [$result->categoryId, $result->matchedBy]);
+    }
+
+    /**
+     * @return array<string, array{string, bool, int, string}>
+     */
+    public static function musicForeignSceneTagNames(): array
+    {
+        return [
+            'German scene tag' => ['Betontod-Antirockstars-DE-CD-FLAC-2011-CUSTODES', true, Category::MUSIC_FOREIGN, 'flac_foreign'],
+            'French scene tag' => ['Sophie_Tith-Jaime_ca-CD-FLAC-FR-2014-1nDD', true, Category::MUSIC_FOREIGN, 'flac_foreign'],
+            'Dutch scene tag' => ['3js-Dichter_Bij_De_Horizon-NL-CD-FLAC-2013-JLM', true, Category::MUSIC_FOREIGN, 'flac_foreign'],
+            'word no' => ['No Doubt - No Doubt (1992) FLAC', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'word Dr. No' => ['Monty Norman - Dr. No (1962) FLAC', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'word it' => ['The Proclaimers - Let\'s Hear It For The Dogs (2015) FLAC', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'uppercase word IT' => ['18. BURN IT DOWN.Flac', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'language name' => ['Acoustic Alchemy - Red Dust and Spanish Lace (1987) FLAC', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'words no and de' => ['Karol G - No Me Arrepiento de Sentir Tanto (2026) FLAC', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'uppercase word IT in other music' => ['Mark Wynter (LP) - (yenc) - Mark Wynter - Compilation - 17. IT CAN HAPPEN ANYDAY.MP3', true, Category::MUSIC_OTHER, 'music_other'],
+            'dotted tag' => ['Artist.Album.NL.2013.FLAC-GRP', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'tag at the start' => ['DE-Artist-Album-CD-FLAC-2011-GRP', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'tag at the end' => ['Artist-Album-CD-FLAC-2011-NL', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'lowercase tag' => ['Artist-Album-de-CD-FLAC-2011-GRP', true, Category::MUSIC_LOSSLESS, 'flac'],
+            'foreign categorization off' => ['Betontod-Antirockstars-DE-CD-FLAC-2011-CUSTODES', false, Category::MUSIC_LOSSLESS, 'flac'],
+        ];
+    }
+
     #[DataProvider('parenthesizedEpisodeQuality')]
     public function test_parenthesized_episode_names_keep_name_based_quality_selection(string $name, int $category): void
     {
