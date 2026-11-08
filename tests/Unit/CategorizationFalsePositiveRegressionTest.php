@@ -191,6 +191,34 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
+    #[DataProvider('losslessFormatAbbreviationNames')]
+    public function test_lossless_format_abbreviations_count_in_uppercase_or_as_extensions(
+        string $name,
+        int $expectedCategory,
+        string $expectedMatchedBy,
+    ): void {
+        $result = (new MusicCategorizer)->categorize(new ReleaseContext($name, 0));
+
+        $this->assertSame([$expectedCategory, $expectedMatchedBy], [$result->categoryId, $result->matchedBy]);
+    }
+
+    /**
+     * @return array<string, array{string, int, string}>
+     */
+    public static function losslessFormatAbbreviationNames(): array
+    {
+        return [
+            'uppercase WV' => ['Depeche Mode - Delta Machine (88765460631) (2013) WV', Category::MUSIC_LOSSLESS, 'lossless_format'],
+            'dotted Wv extension' => ['Simply Red - A New Flame Side 02.Wv', Category::MUSIC_LOSSLESS, 'lossless_format'],
+            'cleaned Wv extension' => ['Simply Red - A New Flame Side 02 Wv', Category::MUSIC_LOSSLESS, 'lossless_format'],
+            'cleaned wv extension' => ['Paul McCartney - The Boys Of Dungeon Lane BS wv', Category::MUSIC_LOSSLESS, 'lossless_format'],
+            'uppercase TAK' => ['Some Artist - Some Album (2020) TAK', Category::MUSIC_LOSSLESS, 'lossless_format'],
+            'Korean name Tak' => ['Baker.King.Kim.Tak.Gu.E01.100609.HDTV.XviD-HAN-[WITH S2]', Category::OTHER_MISC, 'no_match'],
+            'Czech word Tak' => ['Tak dlouho, jak bude potřeba', Category::OTHER_MISC, 'no_match'],
+            'Hindi word Tak' => ['Qayamat Se Qayamat Tak (1988)', Category::OTHER_MISC, 'no_match'],
+        ];
+    }
+
     #[DataProvider('parenthesizedEpisodeQuality')]
     public function test_parenthesized_episode_names_keep_name_based_quality_selection(string $name, int $category): void
     {
@@ -402,6 +430,9 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
             'multi episode S01E01-E02' => ['Show.Name.S01E01-E02.Pilot.1080p.WEB-DL.H.264-GROUP', 'alt.binaries.multimedia', Category::TV_WEBDL],
             'multi episode S01E01E02E03' => ['Show.Name.S01E01E02E03.720p.HDTV.x264-GROUP', 'alt.binaries.multimedia', Category::TV_HD],
             'multi episode plain' => ['Show.Name.S01E01E02.Some.Title-GROUP', 'alt.binaries.multimedia', Category::TV_OTHER],
+
+            // #1225 — a WavPack file extension survives subject cleaning
+            'wavpack file extension' => ['Simply Red - A New Flame Side 02.Wv', 'alt.binaries.multimedia', Category::MUSIC_LOSSLESS],
         ];
     }
 

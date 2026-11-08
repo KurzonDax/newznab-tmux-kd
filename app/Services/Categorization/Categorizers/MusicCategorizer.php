@@ -140,8 +140,13 @@ class MusicCategorizer extends AbstractCategorizer
             return $this->matched(Category::MUSIC_LOSSLESS, 0.85, 'flac');
         }
 
-        // Other lossless formats
-        if (preg_match('/\b(?:Monkey\'s[._ -]Audio|WavPack|WV|TAK|TTA|ALAC|Apple[._ -]Lossless)\b|\.(ape|wv|tak|tta)$/i', $name)) {
+        // Other lossless formats. The bare abbreviations count only in
+        // uppercase, so a word such as "Tak" inside a name stays out. An
+        // extension at the end of the name may follow a space as well as a
+        // dot, because subject cleaning turns ".Wv" into " Wv" before the
+        // categorizers run.
+        if (preg_match('/\b(?:Monkey\'s[._ -]Audio|WavPack|ALAC|Apple[._ -]Lossless)\b|[._ ](?:ape|wv|tak|tta)$/i', $name) ||
+            preg_match('/\b(?:WV|TAK|TTA)\b/', $name)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.85, 'lossless_format_foreign');
             }
