@@ -27,7 +27,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
 
     private const string ENDPOINT = 'https://decision.example.test/v1/systemone';
 
-    private const string CRITERIA_VERSION = 'v4 2026-11-08: Audio > Video removed; concerts and music videos are films';
+    private const string CRITERIA_VERSION = 'v5 2026-11-08: Audio > Video removed; audio foreign = uppercase scene language tag only';
 
     /** A readable name no categorizer matches: the pipeline files it Misc at 0.0. */
     private const string UNMATCHED_NAME = 'An.Invented.Evening.With.Nobody.In.Particular';

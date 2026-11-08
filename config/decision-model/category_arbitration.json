@@ -1,5 +1,5 @@
 {
-  "version": "v4 2026-11-08: Audio > Video removed; concerts and music videos are films",
+  "version": "v5 2026-11-08: Audio > Video removed; audio foreign = uppercase scene language tag only",
   "root": {
     "instructions": "Which kind of content is this Usenet release? Judge from the release name.",
     "criteria": {
@@ -59,7 +59,7 @@
       "criteria": {
         "audiobook": "An audiobook: Audiobook, Unabridged, Abridged, Narrated, Read By, Audible, M4B, Tantor, Blackstone",
         "podcast": "A podcast episode or series: Podcast, NPR, BBC Sounds, Wondery, Gimlet",
-        "foreign": "Music in or from a non-English market when the name says so: German, French, Italian, Spanish, Dutch, Russian, Japanese, Korean",
+        "foreign": "Music whose name carries an uppercase scene language tag between hyphens, such as -DE-, -FR- or -NL-. A language word such as French or German on its own is not enough.",
         "other": "Music that is none of the above"
       }
     },
