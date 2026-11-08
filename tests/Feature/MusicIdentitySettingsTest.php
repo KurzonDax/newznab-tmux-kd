@@ -18,8 +18,8 @@ final class MusicIdentitySettingsTest extends TestCase
      * The runtime controls the feature still has.
      *
      * `music_identity_shadow` was one of these until #443: its value reached a property nobody
-     * read, while the real shadow switch is `music-identity.application_mode` in config. The
-     * migration below still creates the row on an upgrade path, and a later migration drops it.
+     * read, and music identity has no shadow switch. The migration below still creates the row
+     * on an upgrade path, and a later migration drops it.
      *
      * @var array<string, string>
      */

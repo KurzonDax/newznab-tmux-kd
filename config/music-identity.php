@@ -13,8 +13,6 @@ return [
     'normalizer_version' => 'normalizer-v1',
     'scorer_version' => 'whole-release-v1',
     'policy_version' => 'shadow-v1',
-    'application_mode' => 'shadow',
-    'apply_decisions' => false,
     'worker_parallelism_max' => 8,
     'worker_batch_size' => 25,
     'lease_seconds' => 300,
