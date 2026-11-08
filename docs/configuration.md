@@ -226,11 +226,11 @@ settings say.
 | Setting | Default | Effect |
 | --- | --- | --- |
 | **Category arbitration** | | |
-| `decision_model_mode` | `off` | `shadow` asks the model about releases the categorizers were unsure of and logs its answer; `apply` also uses a confident answer. Any unknown value is off. Running processes pick up a change within a minute. |
+| `decision_model_mode` | `off` | `shadow` asks the model about releases the categorizers were unsure of and logs its answer; `apply` also uses a confident answer. Releases under 95% complete are never sent. Any unknown value is off. Running processes pick up a change within a minute. |
 | `decision_model_apply_threshold` | 0.80 | Model confidence (0 to 1) at or above which its answer is used in apply mode. An invalid value falls back to 0.80. |
 | `decision_model_arbitrate_below` | 0.70 | Categorizer confidence (0 to 1) below which a release is sent to the model. An invalid value falls back to 0.70. |
 | **Music album check** | | |
-| `decision_model_music_album_mode` | `off` | `shadow` asks the model, once per music pass for up to 50 releases, which of the matcher's candidate albums a release is, and logs the answer without changing anything. |
+| `decision_model_music_album_mode` | `off` | `shadow` asks the model, once per music pass for up to 50 releases, which of the matcher's candidate albums a release is, and logs the answer without changing anything. Releases under 95% complete are never sent. |
 
 ## Site-level configuration files
 

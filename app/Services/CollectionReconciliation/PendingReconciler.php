@@ -267,7 +267,7 @@ final class PendingReconciler
                 return 'formation_floor';
             }
             $categorize = $decision->independentVideos() ? null : new CategorizationService;
-            $categorization = $categorize?->determineCategory((int) $source->groups_id, $decision->label, $source->fromname)
+            $categorization = $categorize?->determineCategory((int) $source->groups_id, $decision->label, $source->fromname, completion: $decision->completion())
                 ?? ['categories_id' => Category::OTHER_MISC];
             $category = $categorization['categories_id'];
             $releaseId = (int) Release::insertRelease(['name' => $decision->label, ...Release::searchNameValues($decision->label),

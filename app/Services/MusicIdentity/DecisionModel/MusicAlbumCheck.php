@@ -106,14 +106,17 @@ class MusicAlbumCheck
     }
 
     /**
-     * Completed decisions with a titled stored candidate, not yet logged under
-     * the current criteria, newest first, below the id $before.
+     * Completed decisions with a titled stored candidate, on a release at
+     * least {@see DecisionRunner::MIN_RELEASE_COMPLETION}% complete, not yet
+     * logged under the current criteria, newest first, below the id $before.
      *
      * @return Collection<int, \stdClass>
      */
     private function unchecked(?int $criteriaId, ?int $before, int $chunk): Collection
     {
         return DB::table('release_music_identifications as i')
+            ->join('releases as r', 'r.id', '=', 'i.releases_id')
+            ->where('r.completion', '>=', DecisionRunner::MIN_RELEASE_COMPLETION)
             ->whereIn('i.state', self::checkedStates())
             ->whereExists(static function ($query): void {
                 $query->selectRaw('1')->from('release_music_candidate_attempts as c')

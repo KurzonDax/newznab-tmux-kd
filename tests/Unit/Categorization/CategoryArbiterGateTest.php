@@ -10,6 +10,7 @@ use App\Services\Categorization\Arbitration\CategoryArbiter;
 use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\Categorization\ReleaseContext;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -22,8 +23,8 @@ use Tests\TestCase;
 
 /**
  * Each condition that decides whether the model is asked at all, one at a
- * time: every test starts from a release that is asked about and changes one
- * thing.
+ * time: every test starts from a complete release that is asked about and
+ * changes one thing.
  */
 final class CategoryArbiterGateTest extends TestCase
 {
@@ -38,6 +39,7 @@ final class CategoryArbiterGateTest extends TestCase
 
         ProductionTables::fromAuthority()->create('decision_model_criteria', null);
         ProductionTables::fromAuthority()->create('decision_model_decisions', null);
+        ProductionTables::fromAuthority()->create('releases', ['id', 'completion']);
 
         DB::table('settings')->insert([
             ['name' => 'decision_model_mode', 'value' => 'shadow'],
@@ -297,9 +299,94 @@ final class CategoryArbiterGateTest extends TestCase
         $this->assertNull($passable->decisionId);
     }
 
-    private function arbitrate(CategorizationPassable $passable): void
+    public function test_a_release_just_under_the_completion_threshold_is_not_asked_about(): void
     {
-        app(CategoryArbiter::class)->arbitrate($passable);
+        $this->arbitrate($this->passable(), completion: 94.99);
+
+        $this->assertNothingAsked();
+    }
+
+    public function test_a_release_at_the_completion_threshold_is_asked_about(): void
+    {
+        $this->arbitrate($this->passable(), completion: 95.0);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_a_release_of_unknown_completion_is_not_asked_about(): void
+    {
+        $this->arbitrate($this->passable(), completion: null);
+
+        $this->assertNothingAsked();
+    }
+
+    public function test_a_stored_release_under_the_completion_threshold_is_not_asked_about(): void
+    {
+        DB::table('releases')->insert(['id' => 4107, 'completion' => 50]);
+
+        $this->arbitrate($this->passable(), releaseId: 4107, completion: null);
+
+        $this->assertNothingAsked();
+    }
+
+    public function test_a_stored_complete_release_is_asked_about(): void
+    {
+        DB::table('releases')->insert(['id' => 4107, 'completion' => 100]);
+
+        $this->arbitrate($this->passable(), releaseId: 4107, completion: null);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_a_completion_passed_in_wins_over_the_stored_one(): void
+    {
+        DB::table('releases')->insert(['id' => 4107, 'completion' => 50]);
+
+        $this->arbitrate($this->passable(), releaseId: 4107, completion: 100.0);
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_with_the_mode_off_the_release_is_not_read(): void
+    {
+        $this->setting('decision_model_mode', 'off');
+        DB::table('releases')->insert(['id' => 4107, 'completion' => 100]);
+
+        $this->assertSame(0, $this->releaseReadsWhile(fn () => $this->arbitrate($this->passable(), releaseId: 4107, completion: null)));
+        $this->assertNothingAsked();
+    }
+
+    public function test_for_an_unreadable_name_the_release_is_not_read(): void
+    {
+        DB::table('releases')->insert(['id' => 4107, 'completion' => 100]);
+
+        $this->assertSame(0, $this->releaseReadsWhile(fn () => $this->arbitrate($this->passable(name: 'd41d8cd98f00b204e9800998ecf8427e'), releaseId: 4107, completion: null)));
+        $this->assertNothingAsked();
+    }
+
+    /**
+     * Arbitrate a release of completion 100 unless a completion is given.
+     */
+    private function arbitrate(CategorizationPassable $passable, ?int $releaseId = null, ?float $completion = 100.0): void
+    {
+        app(CategoryArbiter::class)->arbitrate($passable, $releaseId, $completion);
+    }
+
+    /**
+     * How many queries against `releases` ran during the callback.
+     */
+    private function releaseReadsWhile(callable $callback): int
+    {
+        $reads = 0;
+        DB::listen(static function (QueryExecuted $query) use (&$reads): void {
+            if (preg_match('/\bfrom\s+["`]?releases["`]?(?:\s|$)/i', $query->sql) === 1) {
+                $reads++;
+            }
+        });
+
+        $callback();
+
+        return $reads;
     }
 
     private function passable(

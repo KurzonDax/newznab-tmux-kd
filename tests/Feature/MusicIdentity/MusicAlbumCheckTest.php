@@ -56,7 +56,7 @@ final class MusicAlbumCheckTest extends TestCase
 
         $tables = ProductionTables::fromAuthority();
         $tables->create('settings', ['name', 'value']);
-        $tables->create('releases', ['id', 'searchname', 'categories_id', 'musicinfo_id']);
+        $tables->create('releases', ['id', 'searchname', 'categories_id', 'musicinfo_id', 'completion']);
         $tables->create('release_files', ['releases_id', 'name']);
         $tables->create('decision_model_criteria', null);
         $tables->create('decision_model_decisions', null);
@@ -110,6 +110,23 @@ final class MusicAlbumCheckTest extends TestCase
         $this->assertSame([$h, $c, $b, $a], $this->loggedSubjects(after: $seeded));
         $this->assertSame(0, $this->check(), 'everything current is logged');
         Http::assertSentCount(4);
+    }
+
+    #[Test]
+    public function a_release_under_ninety_five_percent_complete_is_checked_only_once_it_reaches_ninety_five(): void
+    {
+        $this->answer('1', 0.9);
+        $id = $this->decision(IdentificationStatus::Unresolved, [[self::GROUP_A, 'Lenka', 'Good Days', '2026']], completion: 94.99);
+
+        $this->assertSame(0, $this->check());
+        Http::assertNothingSent();
+        $this->assertSame(0, DecisionModelDecision::query()->count());
+
+        DB::table('releases')->where('id', $this->releaseOf($id))->update(['completion' => 95]);
+
+        $this->assertSame(1, $this->check());
+        Http::assertSentCount(1);
+        $this->assertSame([$id], $this->loggedSubjects());
     }
 
     #[Test]
@@ -365,7 +382,8 @@ final class MusicAlbumCheckTest extends TestCase
 
     /**
      * A completed matcher decision with stored candidates, on a release of its own unless one
-     * is given; current under the configured version unless an older version is given.
+     * is given; current under the configured version unless an older version is given. A
+     * release of its own is 100% complete unless a completion is given.
      *
      * @param  list<array{?string, ?string, ?string, ?string}>  $candidates  release group, artist credit, title, date, in rank order
      * @return int the identification id
@@ -377,10 +395,11 @@ final class MusicAlbumCheckTest extends TestCase
         ?int $releaseId = null,
         string $version = 'music-identity-v1',
         string $searchname = 'Lenka - Good Days (2026) FLAC',
+        float $completion = 100.0,
     ): int {
         if ($releaseId === null) {
             $releaseId = $this->nextReleaseId++;
-            DB::table('releases')->insert(['id' => $releaseId, 'searchname' => $searchname, 'categories_id' => 3040, 'musicinfo_id' => null]);
+            DB::table('releases')->insert(['id' => $releaseId, 'searchname' => $searchname, 'categories_id' => 3040, 'musicinfo_id' => null, 'completion' => $completion]);
             DB::table('release_audio_evidence')->insert([
                 'releases_id' => $releaseId, 'revision' => 1, 'evidence_hash' => hash('sha256', (string) $releaseId), 'schema_version' => 1,
                 'provenance' => 'captured', 'release_snapshot' => '[]', 'archive_manifest_complete' => 1, 'nzb_manifest' => '[]',

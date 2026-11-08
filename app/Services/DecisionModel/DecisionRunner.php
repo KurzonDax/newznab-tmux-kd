@@ -16,6 +16,13 @@ use App\Services\DecisionModel\Exceptions\DecisionModelUnavailable;
  */
 final readonly class DecisionRunner
 {
+    /**
+     * The completion, in percent, a release must have reached before any use
+     * case asks the model about it. A release still collecting its pieces is
+     * asked again with every merge, so nothing is asked about it until then.
+     */
+    public const float MIN_RELEASE_COMPLETION = 95.0;
+
     /** A use case that keeps asking is broken; stop it rather than loop. */
     private const int MAX_REQUESTS = 5;
 

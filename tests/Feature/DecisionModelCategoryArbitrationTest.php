@@ -514,6 +514,8 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     }
 
     /**
+     * Categorize a release of completion 100 unless a completion is given.
+     *
      * @return array<string, mixed>
      */
     private function categorize(
@@ -521,8 +523,9 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         int $groupId = self::PLAIN_GROUP_ID,
         bool $debug = false,
         ?int $releaseId = null,
+        ?float $completion = 100.0,
     ): array {
-        return (new CategorizationService)->determineCategory($groupId, $name, 'poster@example.test', $debug, [], $releaseId);
+        return (new CategorizationService)->determineCategory($groupId, $name, 'poster@example.test', $debug, [], $releaseId, $completion);
     }
 
     private function mode(string $mode): void

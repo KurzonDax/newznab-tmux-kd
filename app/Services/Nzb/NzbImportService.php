@@ -866,7 +866,8 @@ class NzbImportService
         $categoryId = $nzbDetails['nzbCategoryId'];
         $determinedCategory = [];
         if (! \is_int($categoryId)) {
-            $determinedCategory = $this->category->determineCategory($nzbDetails['groups_id'], $cleanName, $escapedFromName);
+            // Every import is stored complete, so it is categorized as complete.
+            $determinedCategory = $this->category->determineCategory($nzbDetails['groups_id'], $cleanName, $escapedFromName, completion: 100.0);
             $categoryId = (int) $determinedCategory['categories_id'];
         }
 

@@ -1671,6 +1671,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
             'isrenamed' => 0,
             'guid' => str_repeat('d', 40),
             'leftguid' => 'd',
+            'completion' => 100,
         ]);
     }
 
@@ -1786,6 +1787,7 @@ class ReleaseNameFixedRecategorizationTest extends TestCase
                 $table->tinyInteger('haspreview')->default(0);
                 $table->tinyInteger('nzbstatus')->default(0);
                 $table->unsignedInteger('pp_timeout_count')->default(0);
+                $table->double('completion')->default(0);
             });
         }
 
