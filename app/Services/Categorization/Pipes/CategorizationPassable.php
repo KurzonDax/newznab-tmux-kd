@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Categorization\Pipes;
 
+use App\Services\Categorization\Arbitration\CategoryArbiter;
 use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\ReleaseContext;
 
@@ -104,6 +105,11 @@ class CategorizationPassable
 
         if ($this->decisionId !== null) {
             $returnValue['decision_id'] = $this->decisionId;
+        }
+
+        // An applied model answer keeps the pipeline's own category beside it.
+        if ($this->bestResult->matchedBy === CategoryArbiter::MATCHED_BY) {
+            $returnValue['pipeline_categories_id'] = (int) $this->bestResult->debug['pipeline_category_id'];
         }
 
         if ($this->debug) {

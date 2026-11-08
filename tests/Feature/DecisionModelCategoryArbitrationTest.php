@@ -137,6 +137,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $this->assertSame(Category::OTHER_MISC, $result['categories_id']);
         $this->assertSame('no_match', $result['debug']['matched_by']);
         $this->assertArrayNotHasKey('DecisionModel', $result['debug']['all_results']);
+        $this->assertArrayNotHasKey('pipeline_categories_id', $result);
         Http::assertSentCount(2);
 
         $row = DecisionModelDecision::query()->with('criteria')->sole();
@@ -178,6 +179,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $result = $this->categorize(self::UNMATCHED_NAME, debug: true);
 
         $this->assertSame(Category::TV_ANIME, $result['categories_id']);
+        $this->assertSame(Category::OTHER_MISC, $result['pipeline_categories_id']);
         $this->assertSame(Category::TV_ANIME, $result['debug']['final_category']);
         $this->assertSame(0.93, $result['debug']['final_confidence']);
         $this->assertSame('decision_model', $result['debug']['matched_by']);
@@ -208,7 +210,11 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $result = $this->categorize(self::UNMATCHED_NAME);
 
         $this->assertSame(
-            ['categories_id' => Category::BOOKS_EBOOK, 'decision_id' => DecisionModelDecision::query()->sole()->id],
+            [
+                'categories_id' => Category::BOOKS_EBOOK,
+                'decision_id' => DecisionModelDecision::query()->sole()->id,
+                'pipeline_categories_id' => Category::OTHER_MISC,
+            ],
             $result,
         );
     }
@@ -244,6 +250,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
 
         $this->assertSame(Category::OTHER_MISC, $result['categories_id']);
         $this->assertSame('no_match', $result['debug']['matched_by']);
+        $this->assertArrayNotHasKey('pipeline_categories_id', $result);
 
         $entry = $result['debug']['all_results']['DecisionModel'];
         $this->assertSame([null, false, 'root_below_threshold'], [$entry['category_id'], $entry['applied'], $entry['reason']]);
@@ -274,6 +281,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
         $result = $this->categorize('An Invented Evening Live 2019');
 
         $this->assertSame(Category::MUSIC_AUDIOBOOK, $result['categories_id']);
+        $this->assertSame(Category::MOVIE_OTHER, $result['pipeline_categories_id']);
 
         $row = DecisionModelDecision::query()->sole();
         $this->assertSame(
