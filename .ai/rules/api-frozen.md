@@ -36,3 +36,6 @@ hint" aliases (#313). #307 extends the same matching to
 music search (v1 `t=music`, v2 `/api/v2/audio`). The exception covers which releases match
 only: no route, parameter, field, attribute or value is added to any response, and nothing
 else follows from it.
+
+## Exception: the Audio > Video category row is deleted
+By explicit maintainer decision (#1222), the Audio > Video category (id 3020) is removed and its row deleted from `categories`. `t=caps` lists the rows of that table, so it stops listing 3020, and `cat=3020` matches nothing. No route, parameter, field, attribute or value is added or removed in code; the API code is untouched.

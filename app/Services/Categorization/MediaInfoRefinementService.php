@@ -18,8 +18,6 @@ use Illuminate\Support\Facades\Log;
 
 final class MediaInfoRefinementService
 {
-    private const int FEATURE_LENGTH_SECONDS = 65 * 60;
-
     /**
      * @param  array{containerformat?: mixed, videoformat?: mixed, videocodec?: mixed, videowidth?: mixed, videoheight?: mixed, videoduration?: mixed}|null  $video
      * @param  array{audioformat?: mixed}|null  $audio
@@ -31,15 +29,11 @@ final class MediaInfoRefinementService
         }
 
         if ($video !== null) {
-            if ($currentCategoryId === Category::MUSIC_OTHER) {
-                if ($this->isFeatureLengthHighDefinitionVideo($video)) {
-                    return null;
-                }
-
-                return new MediaInfoRefinementDecision(Category::MUSIC_VIDEO, 'video_music');
-            }
-
-            return $this->videoDecision($currentCategoryId, $video);
+            // Audio has no video subcategory: video in Audio Other is refined as Movies Other would be.
+            return $this->videoDecision(
+                $currentCategoryId === Category::MUSIC_OTHER ? Category::MOVIE_OTHER : $currentCategoryId,
+                $video,
+            );
         }
 
         if ($audio === null) {
@@ -117,9 +111,8 @@ final class MediaInfoRefinementService
 
     /**
      * A release pinned to a root by any associated group must stay in that root.
-     *
-     * The audio branch maps XXX_OTHER to MUSIC_*, which would quietly undo the
-     * selected forced root; video decisions from XXX_OTHER already stay in-root.
+     * The audio branch maps XXX_OTHER to MUSIC_*, and the video branch maps
+     * MUSIC_OTHER to MOVIE_*; either would quietly undo the selected forced root.
      */
     private function respectsForcedRootCategory(int $groupId, int $releaseId, int $targetCategoryId): bool
     {
@@ -207,38 +200,6 @@ final class MediaInfoRefinementService
             Category::XXX_OTHER => $isHighDefinition ? Category::XXX_X264 : Category::XXX_SD,
             default => throw new \LogicException('Unsupported video refinement category.'),
         }, $isHighDefinition ? 'video_hd' : 'video_sd');
-    }
-
-    /**
-     * @param  array{videowidth?: mixed, videoheight?: mixed, videoduration?: mixed}  $video
-     */
-    private function isFeatureLengthHighDefinitionVideo(array $video): bool
-    {
-        $width = max(0, (int) ($video['videowidth'] ?? 0));
-        $height = max(0, (int) ($video['videoheight'] ?? 0));
-        if ($width < 1280 && $height < 720) {
-            return false;
-        }
-
-        $durationSeconds = $this->formattedDurationSeconds($video['videoduration'] ?? null);
-
-        return $durationSeconds !== null && $durationSeconds >= self::FEATURE_LENGTH_SECONDS;
-    }
-
-    private function formattedDurationSeconds(mixed $duration): ?int
-    {
-        if (! is_string($duration) && ! is_numeric($duration)) {
-            return null;
-        }
-
-        $formattedDuration = trim((string) $duration);
-        if (preg_match('/^(?<hours>\d+)h:(?<minutes>[0-5]?\d)m:(?<seconds>[0-5]?\d)s$/i', $formattedDuration, $parts) !== 1) {
-            return null;
-        }
-
-        return ((int) $parts['hours'] * 3600)
-            + ((int) $parts['minutes'] * 60)
-            + (int) $parts['seconds'];
     }
 
     private function isHevc(string $format, string $codec): bool

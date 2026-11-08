@@ -27,7 +27,7 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
 
     private const string ENDPOINT = 'https://decision.example.test/v1/systemone';
 
-    private const string CRITERIA_VERSION = 'v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability';
+    private const string CRITERIA_VERSION = 'v4 2026-11-08: Audio > Video removed; concerts and music videos are films';
 
     /** A readable name no categorizer matches: the pipeline files it Misc at 0.0. */
     private const string UNMATCHED_NAME = 'An.Invented.Evening.With.Nobody.In.Particular';
@@ -269,11 +269,11 @@ final class DecisionModelCategoryArbitrationTest extends TestCase
     public function test_apply_overrules_a_weak_pipeline_guess(): void
     {
         $this->mode('apply');
-        $this->fakeAnswers(['audio', 0.9], ['video', 0.86]);
+        $this->fakeAnswers(['audio', 0.9], ['audiobook', 0.86]);
 
         $result = $this->categorize('An Invented Evening Live 2019');
 
-        $this->assertSame(Category::MUSIC_VIDEO, $result['categories_id']);
+        $this->assertSame(Category::MUSIC_AUDIOBOOK, $result['categories_id']);
 
         $row = DecisionModelDecision::query()->sole();
         $this->assertSame(

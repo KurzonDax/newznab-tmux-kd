@@ -48,7 +48,7 @@ class MusicPipe extends AbstractCategorizationPipe
             return null;
         }
 
-        foreach (['music_video', 'music_album', 'music_other', 'mp3'] as $matchedByPrefix) {
+        foreach (['music_album', 'music_other', 'mp3'] as $matchedByPrefix) {
             if (str_starts_with($result->matchedBy, $matchedByPrefix)) {
                 return 'movie_precedence';
             }

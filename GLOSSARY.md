@@ -107,11 +107,11 @@ The second stage of the image modal: the Full-size copy presented to fit entirel
 _Avoid_: "open in new tab" — that affordance was considered and scrapped.
 
 **Obfuscated-name routing**:
-An opt-in per-group setting (a toggle plus a default *root* category) that sends releases whose names look obfuscated or gibberish — but are **not** true MD5/SHA hashes — to the default root's *Other* subcategory (e.g. XXX/Other) instead of Other/Hashed. Off and unset for every group by default; never pre-populated. The routed root is a floor, not a lock: content pipes and Mediainfo refinement may still refine the subcategory, and audio-only content is refiled under Audio. Editable per group and via Edit Selected.
+An opt-in per-group setting (a toggle plus a default *root* category) that sends releases whose names look obfuscated or gibberish — but are **not** true MD5/SHA hashes — to the default root's *Other* subcategory (e.g. XXX/Other) instead of Other/Hashed. Off and unset for every group by default; never pre-populated. The routed root is a floor, not a lock: content pipes and Mediainfo refinement may still refine the subcategory, and audio-only content is refiled under Audio, and video content routed to Audio is refiled under Movies. Editable per group and via Edit Selected.
 _Avoid_: "strong group" — the concept lives in the setting, not in a hardcoded group-name list.
 
 **Routed floor**:
-The root selected by Obfuscated-name routing. Content evidence may refine within it, and audio-only Mediainfo evidence may cross it into Audio; unlike a Forced root, it is not an operator lock.
+The root selected by Obfuscated-name routing. Content evidence may refine within it, and audio-only Mediainfo evidence may cross it into Audio, and video evidence in Audio/Other may cross it into Movies; unlike a Forced root, it is not an operator lock.
 
 **Forced root**:
 An operator-selected root-category lock attached to a Usenet group. Any Forced root among a release's associated groups governs both categorization and audio routing, and derived content evidence never crosses it.
@@ -136,7 +136,7 @@ _Avoid_: treating a deferral as a failure — nothing was attempted.
 The bound on absorbs that were actually attempted and failed for one preserved incoming copy. At the cap the copy settles as an ordinary duplicate instead of retrying forever — a backstop for genuine storage failures, not the expected path.
 
 **Mediainfo refinement**:
-Moving a release out of a root's *Other* subcategory once post-processing has recorded what its media actually is. Video evidence (resolution, container, codec) refines within the same root; audio-only evidence (an audio track and no video track) refiles a Routed floor under Audio but never crosses a Forced root. It only ever acts on a `<root>/Other` release — a specific subcategory chosen from the name is never overridden — and only for the Movies, TV, XXX and Audio roots.
+Moving a release out of a root's *Other* subcategory once post-processing has recorded what its media actually is. Video evidence (resolution, container, codec) refines within the same root, except that video in Audio/Other is refiled under Movies, because Audio has no video subcategory; audio-only evidence (an audio track and no video track) refiles a Routed floor under Audio; neither move crosses a Forced root. It only ever acts on a `<root>/Other` release — a specific subcategory chosen from the name is never overridden — and only for the Movies, TV, XXX and Audio roots.
 _Avoid_: "recategorize from mediainfo" — the mediainfo never re-runs name categorization; it refines or refiles the current result.
 
 **moov splice**:

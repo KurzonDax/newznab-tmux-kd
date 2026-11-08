@@ -41,7 +41,7 @@ final class AudioReleasePageTest extends TestCase
 
     private const MP3 = 3010;
 
-    private const VIDEO = 3020;
+    private const PODCAST = 3050;
 
     private const LOSSLESS = 3040;
 
@@ -92,7 +92,7 @@ final class AudioReleasePageTest extends TestCase
             $tables->create($table);
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
-        foreach ([self::MP3 => 'MP3', self::VIDEO => 'Video', self::LOSSLESS => 'Lossless', self::CUSTOM => 'Vinyl rips', self::AUDIO_OTHER => 'Other'] as $id => $title) {
+        foreach ([self::MP3 => 'MP3', self::PODCAST => 'Podcast', self::LOSSLESS => 'Lossless', self::CUSTOM => 'Vinyl rips', self::AUDIO_OTHER => 'Other'] as $id => $title) {
             DB::table('categories')->insert(['id' => $id, 'title' => $title, 'root_categories_id' => 3000, 'status' => 1]);
         }
         DB::table('categories')->insert(['id' => self::EBOOK, 'title' => 'Ebook', 'root_categories_id' => 7000, 'status' => 1]);
@@ -551,12 +551,12 @@ final class AudioReleasePageTest extends TestCase
         $otherCase = $this->album('NAMA-FIBIR-2021-FLAC', ['album' => 'FIBIR', 'album_performer' => 'NAMA'], [], ['categories_id' => self::LOSSLESS, 'postdate' => '2026-09-22 10:00:00']);
         $byPerformer = $this->album('Nama-Fibir-Performer-MP3', ['album_performer' => null, 'performer' => 'nama'], [], ['postdate' => '2026-09-21 10:00:00']);
         $emptyAlbumArtist = $this->album('Nama-Fibir-Empty-Album-Artist-MP3', ['album_performer' => '', 'performer' => 'Nama'], [], ['postdate' => '2026-09-20 09:00:00']);
-        $this->album('Nama-Fibir-Hidden-Video', [], [], ['categories_id' => self::VIDEO, 'postdate' => '2026-09-23 10:00:00']);
+        $this->album('Nama-Fibir-Hidden-Video', [], [], ['categories_id' => self::PODCAST, 'postdate' => '2026-09-23 10:00:00']);
         $this->album('Nama-Fibir-Passworded-MP3', [], [], ['passwordstatus' => 1, 'postdate' => '2026-09-24 10:00:00']);
         $this->album('Nama-Fibir-Ebook', [], [], ['categories_id' => self::EBOOK, 'postdate' => '2026-09-24 10:00:00']);
         $this->album('Other-Fibir-2021-MP3', ['album_performer' => 'Other Artist'], [], ['postdate' => '2026-09-24 10:00:00']);
         $this->album('Nama-Other-2021-MP3', ['album' => 'Another'], [], ['postdate' => '2026-09-24 10:00:00']);
-        DB::table('user_excluded_categories')->insert(['users_id' => $this->user()->id, 'categories_id' => self::VIDEO]);
+        DB::table('user_excluded_categories')->insert(['users_id' => $this->user()->id, 'categories_id' => self::PODCAST]);
 
         $response = $this->details($current)->assertOk();
         $section = $this->between($response, '<section class="tv-siblings tv-list-end" id="releases" aria-labelledby="album-releases-heading" x-ref="releases" data-film-releases>', '</section>');
@@ -625,13 +625,13 @@ final class AudioReleasePageTest extends TestCase
         $lossless = $this->album('Nama-Fibir-FLAC', [], [], ['categories_id' => self::LOSSLESS, 'postdate' => '2026-09-19 10:00:00']);
         $other = $this->album('Nama-Fibir-Other', [], [], ['categories_id' => self::AUDIO_OTHER, 'postdate' => '2026-09-21 10:00:00']);
         $custom = $this->album('Nama-Fibir-Vinyl', [], [], ['categories_id' => self::CUSTOM, 'postdate' => '2026-09-22 10:00:00']);
-        $video = $this->album('Nama-Fibir-Video', [], [], ['categories_id' => self::VIDEO, 'postdate' => '2026-09-18 10:00:00']);
+        $podcast = $this->album('Nama-Fibir-Podcast', [], [], ['categories_id' => self::PODCAST, 'postdate' => '2026-09-18 10:00:00']);
 
         $descending = $this->between($this->page($current, '?sort=category'), 'data-film-releases>', '</section>');
-        $this->assertSame([$custom, $other, $lossless, $video, $current], $this->rowIds($descending));
+        $this->assertSame([$custom, $other, $podcast, $lossless, $current], $this->rowIds($descending));
         $this->assertSame(['category' => 'descending'], $this->sortedHeadings($descending));
         $ascending = $this->between($this->page($current, '?sort=category_asc'), 'data-film-releases>', '</section>');
-        $this->assertSame([$current, $video, $lossless, $other, $custom], $this->rowIds($ascending));
+        $this->assertSame([$current, $lossless, $podcast, $other, $custom], $this->rowIds($ascending));
         $this->assertSame(['category' => 'ascending'], $this->sortedHeadings($ascending));
     }
 
@@ -663,8 +663,8 @@ final class AudioReleasePageTest extends TestCase
 
     public function test_a_hidden_category_is_refused_and_a_comment_still_posts_to_the_details_url(): void
     {
-        $hidden = $this->album('Nama-Fibir-Video', [], [], ['categories_id' => self::VIDEO]);
-        DB::table('user_excluded_categories')->insert(['users_id' => $this->user()->id, 'categories_id' => self::VIDEO]);
+        $hidden = $this->album('Nama-Fibir-Video', [], [], ['categories_id' => self::PODCAST]);
+        DB::table('user_excluded_categories')->insert(['users_id' => $this->user()->id, 'categories_id' => self::PODCAST]);
         $this->details($hidden)->assertForbidden()->assertViewIs('errors.category-disabled')->assertDontSee('Nama-Fibir-Video');
 
         $id = $this->album('Nama-Fibir-MP3');

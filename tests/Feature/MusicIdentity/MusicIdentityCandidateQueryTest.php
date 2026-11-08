@@ -72,12 +72,12 @@ final class MusicIdentityCandidateQueryTest extends TestCase
         $this->release(3, Category::MUSIC_PODCAST, 'c');
         $this->release(4, Category::MUSIC_FOREIGN, 'd');
         $this->release(5, Category::MOVIE_HD, 'e', groupId: 2);
-        $this->release(6, Category::MUSIC_VIDEO, 'f');
+        $this->release(6, Category::MUSIC_OTHER, 'f');
         $this->release(7, Category::MUSIC_LOSSLESS, '0', claimToken: AudioRouting::DECLINED_TOKEN);
         $this->release(8, Category::MUSIC_OTHER, '1', groupId: 3);
 
         $this->assertSame(
-            [1, 2, 3, 4, 5],
+            [1, 2, 3, 4, 5, 6],
             MusicIdentityCandidateQuery::query()->orderBy('r.id')->pluck('r.id')->all(),
         );
     }
@@ -85,7 +85,7 @@ final class MusicIdentityCandidateQueryTest extends TestCase
     public function test_seed_join_preserves_exact_candidates_with_group_precedence_and_evidence(): void
     {
         $this->travelTo(Carbon::parse('2026-09-10 12:00:00'));
-        $categories = [Category::MUSIC_MP3, Category::MUSIC_VIDEO, Category::MOVIE_HD, Category::MUSIC_AUDIOBOOK];
+        $categories = [Category::MUSIC_MP3, Category::MUSIC_OTHER, Category::MOVIE_HD, Category::MUSIC_AUDIOBOOK];
         for ($id = 1; $id <= 64; $id++) {
             $this->release($id, $categories[$id % 4], dechex($id % 16), groupId: 1 + $id % 3,
                 claimToken: $id % 7 === 0 ? AudioRouting::DECLINED_TOKEN : null);

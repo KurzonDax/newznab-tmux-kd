@@ -37,7 +37,7 @@ final class AudioReleaseList extends ShelfReleaseList
     public const array BAND_CATEGORIES = [Category::MUSIC_ROOT, Category::MUSIC_ROOT + 999];
 
     /** The Category menu's order (SPEC 5.2): the site's order, Other last. */
-    public const CATEGORY_ORDER = [Category::MUSIC_MP3, Category::MUSIC_VIDEO, Category::MUSIC_AUDIOBOOK, Category::MUSIC_LOSSLESS, Category::MUSIC_PODCAST,
+    public const CATEGORY_ORDER = [Category::MUSIC_MP3, Category::MUSIC_AUDIOBOOK, Category::MUSIC_LOSSLESS, Category::MUSIC_PODCAST,
         Category::MUSIC_FOREIGN, Category::MUSIC_OTHER];
 
     protected function band(): int
