@@ -10,6 +10,7 @@ use App\Services\Categorization\Pipes\CategorizationPassable;
 use App\Services\Categorization\Pipes\MoviePipe;
 use App\Services\Categorization\Pipes\MusicPipe;
 use App\Services\Categorization\ReleaseContext;
+use App\Services\NameFixing\Extractors\ObfuscatedSubjectExtractor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -267,7 +268,7 @@ class CategorizeMovieTest extends TestCase
     /**
      * @return array<string, array{0: string}>
      */
-    public static function genuineMusicVideoProvider(): array
+    public static function concertAndClipNameProvider(): array
     {
         return [
             'tour concert film' => ['Taylor.Swift.The.Eras.Tour.2023.EXTENDED.1080p.WEBRip.x264.AAC5.1-YTS'],
@@ -276,16 +277,18 @@ class CategorizeMovieTest extends TestCase
         ];
     }
 
-    #[DataProvider('genuineMusicVideoProvider')]
-    public function test_genuine_music_video_tokens_categorize_as_music_video_in_music_pipe(string $releaseName): void
+    #[DataProvider('concertAndClipNameProvider')]
+    public function test_concert_and_clip_names_get_no_music_category_in_music_pipe(string $releaseName): void
     {
-        $context = new ReleaseContext(releaseName: $releaseName, groupId: 0);
+        // Built the way CategorizationPipeline hands names to its pipes: cleaned, with the raw name kept.
+        $cleanedName = (new ObfuscatedSubjectExtractor)->extract($releaseName) ?? $releaseName;
+        $context = new ReleaseContext(releaseName: $cleanedName, groupId: 0, preExtractionName: $releaseName);
         $passable = (new MusicPipe)->handle(
             new CategorizationPassable($context),
             fn (CategorizationPassable $result): CategorizationPassable => $result,
         );
 
-        $this->assertSame(Category::MUSIC_VIDEO, $passable->bestResult->categoryId);
+        $this->assertNotSame(Category::MUSIC_ROOT, Category::rootCategoryFor($passable->bestResult->categoryId));
     }
 
     /**

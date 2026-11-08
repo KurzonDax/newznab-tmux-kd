@@ -1,11 +1,11 @@
 {
-  "version": "v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability",
+  "version": "v4 2026-11-08: Audio > Video removed; concerts and music videos are films",
   "root": {
     "instructions": "Which kind of content is this Usenet release? Judge from the release name.",
     "criteria": {
-      "tv": "Episodic television: a series episode or season pack. Signs: S01E02, 1x05, 'Episode 8', 'Season 3', a daily-show date like 2026.08.14, HDTV/PDTV, sports events (NFL, UFC, F1, Olympics), documentary series, anime episodes from fansub groups in brackets like [SubsPlease] or [Moozzi2] followed by an episode number. Not for a film with a single year and no episode marker, and not for music concerts.",
-      "movies": "A feature film: a title followed by a release year, written with dots or with spaces (Inception.2010.1080p.BluRay.x264-SPARKS, 'The Imposter 2012 Bluray-1080p', 'Gangster (2006)'), usually with quality or source tokens such as 1080p, 2160p, BluRay, WEB-DL, DVDRip, x264, x265, CAM, telesync, or a language like German, FRENCH, Hindi, Telugu. Also DVD and Blu-ray disc images of films. Not for anything with a season or episode marker, not for adult studio scenes, not for concerts.",
-      "audio": "Music or spoken audio: albums, singles, discographies, FLAC, MP3, 320kbps, vinyl or CD rips, soundtracks, DJ mixes, music videos and concert films, audiobooks (Unabridged, Narrated, Audible, Read By), podcasts. Not for films, TV series or ebooks.",
+      "tv": "Episodic television: a series episode or season pack. Signs: S01E02, 1x05, 'Episode 8', 'Season 3', a daily-show date like 2026.08.14, HDTV/PDTV, sports events (NFL, UFC, F1, Olympics), documentary series, anime episodes from fansub groups in brackets like [SubsPlease] or [Moozzi2] followed by an episode number. Not for a film with a single year and no episode marker.",
+      "movies": "A feature film: a title followed by a release year, written with dots or with spaces (Inception.2010.1080p.BluRay.x264-SPARKS, 'The Imposter 2012 Bluray-1080p', 'Gangster (2006)'), usually with quality or source tokens such as 1080p, 2160p, BluRay, WEB-DL, DVDRip, x264, x265, CAM, telesync, or a language like German, FRENCH, Hindi, Telugu. Also DVD and Blu-ray disc images of films. Not for anything with a season or episode marker, not for adult studio scenes. Also concert films and music videos.",
+      "audio": "Music or spoken audio: albums, singles, discographies, FLAC, MP3, 320kbps, vinyl or CD rips, soundtracks, DJ mixes, audiobooks (Unabridged, Narrated, Audible, Read By), podcasts. Not for films, concert films, music videos, TV series or ebooks.",
       "xxx": "Adult pornographic content: an adult studio or site name (Brazzers, Vixen, Tushy, Blacked, OnlyFans, NaughtyAmerica, Kink, Playboy, ALSScan), a performer name followed by a scene title ('Esmi Lee - Coworker In Chastity'), fetish or femdom scene titles, the token XXX, a site-dated scene like Site.26.08.14.Performer.Name, VR adult, erotic image sets or adult magazines. Not for a mainstream film title with a year, and not for a series whose title merely contains a sexual word.",
       "games": "A console video game: PlayStation (PS2, PS3, PS4, PS5, PSP, PS Vita, CUSA or PPSA ids), Xbox (XBOX360, Xbox One, Series X), Nintendo (Wii, WiiU, 3DS, NDS, Switch, NSP, XCI), or retro ROM sets with region tags (USA, EUR, JPN, NTSC, PAL). Not for PC games.",
       "pc": "Computer software or a PC game: Windows, macOS or Linux applications with version numbers and tokens like x64, Multilingual, Portable, Keygen, Cracked, Patch, Setup, MSIX; operating system or software ISO images; iOS and Android apps (IPA, APK); PC games with tokens like CODEX, RUNE, GOG, Steam. Not for console games.",
@@ -59,7 +59,6 @@
       "criteria": {
         "audiobook": "An audiobook: Audiobook, Unabridged, Abridged, Narrated, Read By, Audible, M4B, Tantor, Blackstone",
         "podcast": "A podcast episode or series: Podcast, NPR, BBC Sounds, Wondery, Gimlet",
-        "video": "A music video, concert film, live show, tour or festival recording with video tokens such as 1080p, BluRay, x264, MKV, MP4",
         "foreign": "Music in or from a non-English market when the name says so: German, French, Italian, Spanish, Dutch, Russian, Japanese, Korean",
         "other": "Music that is none of the above"
       }
@@ -133,7 +132,6 @@
     "audio": {
       "audiobook": 3030,
       "podcast": 3050,
-      "video": 3020,
       "foreign": 3060,
       "other": 3999
     },

@@ -109,18 +109,18 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
-    #[DataProvider('episodicMusicVideoNames')]
-    public function test_direct_music_categorization_does_not_use_artist_fallback_for_episodes(string $name): void
+    #[DataProvider('episodicArtistTitleVideoNames')]
+    public function test_direct_music_categorization_gives_episodic_artist_title_videos_no_match(string $name): void
     {
         $result = (new MusicCategorizer)->categorize(new ReleaseContext($name, 0));
 
-        $this->assertNotContains($result->matchedBy, ['music_video_artist', 'music_video_foreign']);
+        $this->assertSame([Category::OTHER_MISC, 'no_match'], [$result->categoryId, $result->matchedBy]);
     }
 
     /**
      * @return array<string, array{string}>
      */
-    public static function episodicMusicVideoNames(): array
+    public static function episodicArtistTitleVideoNames(): array
     {
         return [
             'artist episode' => ['Some Artist - Some Title [S01E01] 1080p'],
@@ -128,25 +128,25 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
-    #[DataProvider('musicVideoControls')]
-    public function test_direct_music_categorization_preserves_music_video_matches(string $name, int $category, string $matchedBy): void
+    #[DataProvider('artistTitleVideoNames')]
+    public function test_direct_music_categorization_gives_artist_title_videos_no_match(string $name): void
     {
         $result = (new MusicCategorizer)->categorize(new ReleaseContext($name, 0));
 
-        $this->assertSame([$category, $matchedBy], [$result->categoryId, $result->matchedBy]);
+        $this->assertSame([Category::OTHER_MISC, 'no_match'], [$result->categoryId, $result->matchedBy]);
     }
 
     /**
-     * @return array<string, array{string, int, string}>
+     * @return array<string, array{string}>
      */
-    public static function musicVideoControls(): array
+    public static function artistTitleVideoNames(): array
     {
         return [
-            'artist title' => ['Some Artist - Some Title 1080p', Category::MUSIC_VIDEO, 'music_video_artist'],
-            'foreign artist title' => ['Some Artist - Some Title FRENCH 1080p', Category::MUSIC_FOREIGN, 'music_video_foreign'],
-            'coldplay live' => ['Coldplay - Live in Buenos Aires 2018 1080p BluRay x264', Category::MUSIC_VIDEO, 'music_video_artist'],
-            'official video' => ['Artist - Song Title (Official Video) 1080p', Category::MUSIC_VIDEO, 'music_video_artist'],
-            'explicit concert with episode' => ['Some Artist - Concert [S01E01] 1080p', Category::MUSIC_VIDEO, 'music_video'],
+            'artist title' => ['Some Artist - Some Title 1080p'],
+            'foreign artist title' => ['Some Artist - Some Title FRENCH 1080p'],
+            'coldplay live' => ['Coldplay - Live in Buenos Aires 2018 1080p BluRay x264'],
+            'official video' => ['Artist - Song Title (Official Video) 1080p'],
+            'explicit concert with episode' => ['Some Artist - Concert [S01E01] 1080p'],
         ];
     }
 
@@ -385,8 +385,7 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         return [
             'year-only movie versus compilation' => ['VA-Walk On By-2012', Category::MUSIC_OTHER],
             'year-only movie versus greatest hits' => ['MAGIC VA-More Greatest Hits Of The 80s -KMA-8CD-2000', Category::MUSIC_OTHER],
-            'unformatted live festival' => ['Madeleine Peyroux - Live at Cully Jazz Festival 2012', Category::MUSIC_VIDEO],
-            'single-track video' => ['Artist - Song Title 1080p', Category::MUSIC_VIDEO],
+            'unformatted live festival' => ['Madeleine Peyroux - Live at Cully Jazz Festival 2012', Category::MUSIC_OTHER],
         ];
     }
 
@@ -401,12 +400,12 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
     public function test_suppressed_music_result_remains_visible_in_debug_output(): void
     {
         $passable = $this->runPipeline(
-            'Grand.Tour.2024.1080p.MUBI.WEB-DL.DDP5.1.H.264-PMi',
+            'Greatest.Hits.2024.1080p.MUBI.WEB-DL.DDP5.1.H.264-PMi',
             'alt.binaries.multimedia',
         );
 
         $this->assertSame(
-            [Category::MUSIC_VIDEO, 0.9, 'music_video', 'movie_precedence'],
+            [Category::MUSIC_OTHER, 0.8, 'music_other', 'movie_precedence'],
             [
                 $passable->allResults['Music']['category_id'],
                 $passable->allResults['Music']['confidence'],

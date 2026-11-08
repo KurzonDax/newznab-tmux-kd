@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\MusicIdentity;
 
-use App\Models\Category;
 use App\Models\Release;
 use App\Services\AudioProcessing\AudioRouting;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
@@ -37,7 +36,6 @@ final class MusicIdentityCandidateQuery
             ->tap(static fn ($query) => RecoveryReleaseGate::excludePending($query, 'r'));
 
         AudioRouting::applyAudioPath($query);
-        $query->where('r.categories_id', '!=', Category::MUSIC_VIDEO);
 
         if ($groupId !== '') {
             $query->where('r.groups_id', $groupId);

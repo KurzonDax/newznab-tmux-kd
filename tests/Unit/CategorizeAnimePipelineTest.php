@@ -134,9 +134,9 @@ final class CategorizeAnimePipelineTest extends TestCase
         $this->assertSame(Category::TV_ANIME, $this->categoryFor($name));
     }
 
-    public function test_artist_title_video_without_a_bracket_tag_stays_music_video(): void
+    public function test_artist_title_video_without_a_bracket_tag_falls_to_other_misc(): void
     {
-        $this->assertSame(Category::MUSIC_VIDEO, $this->categoryFor('Some Artist - Some Title 1080p'));
+        $this->assertSame(Category::OTHER_MISC, $this->categoryFor('Some Artist - Some Title 1080p'));
     }
 
     private function categoryFor(string $releaseName): mixed

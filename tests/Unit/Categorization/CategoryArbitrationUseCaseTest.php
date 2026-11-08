@@ -30,7 +30,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
 
         $this->assertSame('category_arbitration', $useCase->name());
         $this->assertSame(
-            'v3 2026-10-16: name-only state, content-type subcategories with music video kept, foreign = no English audio (separate yes/no for tv and movies), subcategory accepted on its probability',
+            'v4 2026-11-08: Audio > Video removed; concerts and music videos are films',
             $useCase->criteriaVersion(),
         );
     }
@@ -100,7 +100,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         return [
             'tv' => ['tv', ['sub', 'foreign'], ['anime', 'sport', 'documentary', 'other']],
             'movies' => ['movies', ['sub', 'foreign'], ['3d', 'other']],
-            'audio' => ['audio', ['sub'], ['audiobook', 'podcast', 'video', 'foreign', 'other']],
+            'audio' => ['audio', ['sub'], ['audiobook', 'podcast', 'foreign', 'other']],
             'xxx' => ['xxx', ['sub'], ['vr', 'imageset', 'pack', 'clipshd', 'clipssd', 'other']],
             'games' => ['games', ['sub'], ['ps4', 'ps3', 'psvita', 'psp', 'xboxone', 'xbox360', 'xbox', 'wiiu', 'wii', '3ds', 'nds', 'other']],
             'pc' => ['pc', ['sub'], ['phone_ios', 'phone_android', 'phone_other', 'mac', 'games', 'iso', '0day', 'other']],
@@ -152,7 +152,6 @@ final class CategoryArbitrationUseCaseTest extends TestCase
             'root just below the threshold keeps the pipeline result' => ['tv', 0.7999, 'anime', 0.99, null, 'root_below_threshold'],
             'the other root keeps the pipeline result' => ['other', 0.99, null, null, null, 'root_other'],
             'a leaf below the threshold falls to the root Other' => ['movies', 0.93, '3d', 0.7999, Category::MOVIE_OTHER, 'accepted'],
-            'a confident music video is taken' => ['audio', 0.93, 'video', 0.90, Category::MUSIC_VIDEO, 'accepted'],
             'a confident leaf is taken' => ['xxx', 0.93, 'vr', 0.91, Category::XXX_VR, 'accepted'],
             'a missing subcategory answer falls to the root Other' => ['audio', 0.93, null, null, Category::MUSIC_OTHER, 'accepted'],
             'the books root falls to Books Unknown' => ['books', 0.88, null, null, Category::BOOKS_UNKNOWN, 'accepted'],
@@ -259,23 +258,23 @@ final class CategoryArbitrationUseCaseTest extends TestCase
     }
 
     /**
-     * Media probing refuses to promote feature-length high-definition video
-     * out of Audio Other, so only the model's answer files such a concert as
-     * a music video.
+     * Audio has no video subcategory, so a concert the model files under Audio
+     * lands in Audio Other, and media probing then refines its video stream
+     * exactly as it would in Movies Other.
      */
-    public function test_a_feature_length_hd_concert_is_filed_as_a_music_video_by_the_model_alone(): void
+    public function test_a_feature_length_hd_concert_in_audio_other_is_refined_to_movies_hd(): void
     {
         $media = ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '1h:30m:00s'];
-        $refinement = new MediaInfoRefinementService;
 
         $verdict = (new CategoryArbitrationUseCase)->interpret(
             $this->subject(new ReleaseContext(releaseName: 'Invented Band Live At Invented Arena 2019 1080p BluRay x264', groupId: 0)),
-            [$this->rootResponse('audio', 0.93), $this->secondResponse('video', 0.90, 0.70)],
+            [$this->rootResponse('audio', 0.93)],
         );
 
-        $this->assertSame(Category::MUSIC_VIDEO, $verdict->categoryId);
-        $this->assertNull($refinement->decisionFor(Category::MUSIC_VIDEO, $media, null), 'Probing leaves the music video alone.');
-        $this->assertNull($refinement->decisionFor(Category::MUSIC_OTHER, $media, null), 'Probing cannot recover it from Audio Other.');
+        $this->assertSame(Category::MUSIC_OTHER, $verdict->categoryId);
+        $decision = (new MediaInfoRefinementService)->decisionFor(Category::MUSIC_OTHER, $media, null);
+        $this->assertNotNull($decision);
+        $this->assertSame([Category::MOVIE_HD, 'video_hd'], [$decision->categoryId, $decision->rule]);
     }
 
     public function test_a_subcategory_answer_that_failed_falls_to_the_root_other(): void
@@ -296,6 +295,7 @@ final class CategoryArbitrationUseCaseTest extends TestCase
         return [
             'an invented key' => ['games', 'ps9'],
             'other where the root offers unknown instead' => ['books', 'other'],
+            'the removed audio video leaf' => ['audio', 'video'],
         ];
     }
 

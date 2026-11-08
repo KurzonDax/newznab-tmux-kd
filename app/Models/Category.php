@@ -103,8 +103,6 @@ class Category extends Model
 
     public const int MUSIC_MP3 = 3010;
 
-    public const int MUSIC_VIDEO = 3020;
-
     public const int MUSIC_AUDIOBOOK = 3030;
 
     public const int MUSIC_LOSSLESS = 3040;

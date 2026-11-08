@@ -103,9 +103,9 @@ class AudioCandidateQueryTest extends TestCase
         $this->assertSame([], $this->videoIds());
     }
 
-    public function test_a_music_video_release_in_a_plain_group_stays_on_the_video_path(): void
+    public function test_a_tv_release_in_a_plain_group_stays_on_the_video_path(): void
     {
-        // Anime posted to alt.binaries.multimedia lands in MUSIC_VIDEO, which is
+        // Anime posted to alt.binaries.multimedia can land in Audio > Other, which is
         // why the audio worker probes before committing -- but a release outside
         // 3xxx in a plain group never reaches it at all.
         $this->seedRelease(1, Category::TV_HD, groupId: 3);
@@ -117,7 +117,7 @@ class AudioCandidateQueryTest extends TestCase
     public function test_the_two_queries_partition_a_mixed_set_with_no_overlap_and_no_gap(): void
     {
         $this->seedRelease(1, Category::MUSIC_LOSSLESS, groupId: 1);
-        $this->seedRelease(2, Category::MUSIC_VIDEO, groupId: 3);
+        $this->seedRelease(2, Category::MUSIC_OTHER, groupId: 3);
         $this->seedRelease(3, Category::MOVIE_HD, groupId: 3);
         $this->seedRelease(4, Category::TV_HD, groupId: 2);
         $this->seedRelease(5, Category::OTHER_MISC, groupId: 3);

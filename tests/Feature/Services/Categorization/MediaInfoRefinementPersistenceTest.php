@@ -179,12 +179,59 @@ class MediaInfoRefinementPersistenceTest extends TestCase
         self::assertSame(Category::MUSIC_MP3, (int) Release::query()->findOrFail($releaseId)->categories_id);
     }
 
+    public function test_video_refinement_moves_an_audio_other_release_from_a_plain_group_to_movies(): void
+    {
+        $releaseId = $this->createAudioOtherVideoRelease($this->createGroup('alt.binaries.multimedia', null));
+        DB::table('releases')->where('id', $releaseId)->update(['musicinfo_id' => 7]);
+
+        $previewPolicy = Mockery::mock(PreviewGenerationPolicy::class);
+        $previewPolicy->shouldReceive('restoreOwedPreviews')->once()->with([$releaseId], false);
+
+        $decision = (new MediaInfoRefinementService($previewPolicy))->refine($releaseId);
+
+        self::assertNotNull($decision);
+        self::assertSame([Category::MOVIE_HD, 'video_hd'], [$decision->categoryId, $decision->rule]);
+        self::assertSame(Category::MOVIE_HD, (int) Release::query()->findOrFail($releaseId)->categories_id);
+        self::assertNull(DB::table('releases')->where('id', $releaseId)->value('musicinfo_id'), 'Leaving Audio clears the music link.');
+    }
+
+    public function test_video_refinement_cannot_pull_a_release_out_of_a_music_forced_root(): void
+    {
+        $releaseId = $this->createAudioOtherVideoRelease($this->createGroup('alt.binaries.sounds.misc', Category::MUSIC_ROOT));
+
+        $previewPolicy = Mockery::mock(PreviewGenerationPolicy::class);
+        $previewPolicy->shouldNotReceive('restoreOwedPreviews');
+
+        $service = new MediaInfoRefinementService($previewPolicy);
+
+        self::assertNull($service->refine($releaseId));
+        self::assertNull($service->refine($releaseId, true));
+        self::assertSame(Category::MUSIC_OTHER, (int) Release::query()->findOrFail($releaseId)->categories_id);
+    }
+
     private function createGroup(string $name, ?int $forcedRootCategoryId): int
     {
         return (int) DB::table('usenet_groups')->insertGetId([
             'name' => $name,
             'forced_root_categories_id' => $forcedRootCategoryId,
         ]);
+    }
+
+    private function createAudioOtherVideoRelease(int $groupId): int
+    {
+        $releaseId = (int) DB::table('releases')->insertGetId([
+            'categories_id' => Category::MUSIC_OTHER,
+            'groups_id' => $groupId,
+            'iscategorized' => 1,
+        ]);
+        VideoData::query()->create([
+            'releases_id' => $releaseId,
+            'videowidth' => 1920,
+            'videoheight' => 1080,
+            'videoformat' => 'AVC',
+        ]);
+
+        return $releaseId;
     }
 
     private function createAudioOnlyRelease(int $groupId): int
@@ -214,6 +261,7 @@ class MediaInfoRefinementPersistenceTest extends TestCase
                 $table->boolean('iscategorized')->default(false);
                 $table->string('searchname')->default('');
                 $table->unsignedInteger('videos_id')->default(0);
+                $table->integer('musicinfo_id')->nullable();
                 $table->integer('tv_episodes_id')->default(0);
                 $table->unsignedTinyInteger('resolution')->default(0);
                 $table->unsignedTinyInteger('source')->default(0);

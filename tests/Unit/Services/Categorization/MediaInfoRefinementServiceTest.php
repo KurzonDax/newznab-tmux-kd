@@ -37,8 +37,8 @@ class MediaInfoRefinementServiceTest extends TestCase
         yield 'tv SD by positive dimensions' => [Category::TV_OTHER, ['videowidth' => 640, 'videoheight' => 480], Category::TV_SD, 'video_sd'];
         yield 'xxx HD maps to x264' => [Category::XXX_OTHER, ['videoheight' => 720], Category::XXX_X264, 'video_hd'];
         yield 'xxx SD' => [Category::XXX_OTHER, ['videowidth' => 640], Category::XXX_SD, 'video_sd'];
-        yield 'music with video and no duration' => [Category::MUSIC_OTHER, ['videowidth' => 640], Category::MUSIC_VIDEO, 'video_music'];
-        yield 'music with short HD video' => [Category::MUSIC_OTHER, ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '00h:04m:00s'], Category::MUSIC_VIDEO, 'video_music'];
+        yield 'audio other with SD video goes to movies' => [Category::MUSIC_OTHER, ['videowidth' => 640], Category::MOVIE_SD, 'video_sd'];
+        yield 'audio other with short HD video goes to movies' => [Category::MUSIC_OTHER, ['videowidth' => 1920, 'videoheight' => 1080, 'videoduration' => '00h:04m:00s'], Category::MOVIE_HD, 'video_hd'];
     }
 
     /**
@@ -56,7 +56,7 @@ class MediaInfoRefinementServiceTest extends TestCase
     }
 
     #[Test]
-    public function feature_length_hd_video_does_not_promote_other_music_to_music_video(): void
+    public function feature_length_hd_video_in_audio_other_is_refined_to_movies_hd(): void
     {
         $decision = (new MediaInfoRefinementService)->decisionFor(
             Category::MUSIC_OTHER,
@@ -64,7 +64,48 @@ class MediaInfoRefinementServiceTest extends TestCase
             ['audioformat' => 'AC-3'],
         );
 
-        self::assertNull($decision);
+        self::assertNotNull($decision);
+        self::assertSame(Category::MOVIE_HD, $decision->categoryId);
+        self::assertSame('video_hd', $decision->rule);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function movieOtherVideoStreams(): iterable
+    {
+        foreach (self::videoMappings() as $label => [$currentCategoryId, $video]) {
+            if ($currentCategoryId === Category::MOVIE_OTHER) {
+                yield $label => [$video];
+            }
+        }
+
+        yield 'no dimensions' => [['videoformat' => 'AVC', 'containerformat' => 'Matroska']];
+    }
+
+    /**
+     * @param  array<string, mixed>  $video
+     */
+    #[Test]
+    #[DataProvider('movieOtherVideoStreams')]
+    public function video_in_audio_other_is_refined_exactly_as_movies_other(array $video): void
+    {
+        $service = new MediaInfoRefinementService;
+
+        self::assertEquals(
+            $service->decisionFor(Category::MOVIE_OTHER, $video, null),
+            $service->decisionFor(Category::MUSIC_OTHER, $video, null),
+        );
+    }
+
+    #[Test]
+    public function video_without_dimensions_in_audio_other_gets_no_decision(): void
+    {
+        self::assertNull((new MediaInfoRefinementService)->decisionFor(
+            Category::MUSIC_OTHER,
+            ['videoformat' => 'AVC', 'containerformat' => 'Matroska'],
+            null,
+        ));
     }
 
     /**

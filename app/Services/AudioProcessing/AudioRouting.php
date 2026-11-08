@@ -24,7 +24,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
  * The rule itself: a release is audio when its selected Forced root is Music,
  * or when no associated group has a Forced root and its category sits under
  * Music. Categories 3xxx are not a guarantee -- anime posted to
- * alt.binaries.multimedia lands in MUSIC_VIDEO -- so the audio worker still
+ * alt.binaries.multimedia can land in Audio > Other -- so the audio worker still
  * probes before committing, and hands back anything that turns out to be video
  * by writing the decline sentinel described on {@see self::DECLINED_TOKEN}.
  */

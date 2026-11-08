@@ -40,8 +40,6 @@ final class AudioReleasesPageTest extends TestCase
 
     private const MP3 = 3010;
 
-    private const VIDEO = 3020;
-
     private const AUDIOBOOK = 3030;
 
     private const LOSSLESS = 3040;
@@ -86,7 +84,7 @@ final class AudioReleasesPageTest extends TestCase
         }
         DB::table('root_categories')->insert([['id' => 3000, 'title' => 'Audio', 'status' => 1], ['id' => 7000, 'title' => 'Books', 'status' => 1]]);
         foreach ([self::AUDIO_OTHER => 'Other', self::FOREIGN => 'Foreign', self::PODCAST => 'Podcast', self::LOSSLESS => 'Lossless', self::AUDIOBOOK => 'Audiobook',
-            self::VIDEO => 'Video', self::MP3 => 'MP3'] as $id => $title) {
+            self::MP3 => 'MP3'] as $id => $title) {
             DB::table('categories')->insert(['id' => $id, 'title' => $title, 'root_categories_id' => 3000, 'status' => 1]);
         }
         DB::table('categories')->insert(['id' => self::EBOOK, 'title' => 'Ebook', 'root_categories_id' => 7000, 'status' => 1]);
@@ -632,7 +630,7 @@ final class AudioReleasesPageTest extends TestCase
         $response = $this->page('/audio')->assertOk()
             ->assertSee('href="'.route('audio.releases').'" class="public-menu-root">All Audio</a>', false)
             ->assertDontSee('href="'.url('/browse/audio').'"', false);
-        foreach ([self::MP3, self::VIDEO, self::AUDIOBOOK, self::LOSSLESS, self::PODCAST, self::FOREIGN, self::AUDIO_OTHER] as $category) {
+        foreach ([self::MP3, self::AUDIOBOOK, self::LOSSLESS, self::PODCAST, self::FOREIGN, self::AUDIO_OTHER] as $category) {
             $response->assertSee('href="'.e(route('audio.releases', ['category' => [$category]])).'"', false);
         }
         $this->assertMatchesRegularExpression('/<button[^>]*aria-controls="nav-menu-audio"\s+aria-current="true"/', (string) $response->getContent());

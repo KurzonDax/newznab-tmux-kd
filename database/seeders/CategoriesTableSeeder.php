@@ -252,15 +252,6 @@ class CategoriesTableSeeder extends Seeder
                 'minsizetoformrelease' => 0,
                 'maxsizetoformrelease' => 0,
             ],
-            30 => [
-                'id' => 3020,
-                'title' => 'Video',
-                'root_categories_id' => 3000,
-                'status' => 1,
-                'description' => null,
-                'minsizetoformrelease' => 0,
-                'maxsizetoformrelease' => 0,
-            ],
             31 => [
                 'id' => 3030,
                 'title' => 'Audiobook',
