@@ -45,10 +45,11 @@ categorizers and any forced root. It asks only when the mode is not off, the cli
 the release is not locked to Misc or categorized as Other → Hashed, the categorizers'
 confidence is below `decision_model_arbitrate_below` (default 0.70), the name is a readable,
 non-hashed title, and the release is at least 95% complete. Releases under 95% complete,
-including a release whose completion was never measured, are never sent. In apply mode the model's answer is used when its confidence is at or above
-`decision_model_apply_threshold` (default 0.80); a confident root with a less confident
-subcategory files the release in that root's Other category. The arbiter re-reads these settings
-at most once a minute, so a change reaches running processes within a minute.
+including a release whose completion was never measured, are never sent. In apply mode the
+model's answer is used when its confidence is at or above `decision_model_apply_threshold`
+(default 0.80); a confident root with a less confident subcategory files the release in that
+root's Other category. The arbiter re-reads these settings at most once a minute, so a change
+reaches running processes within a minute.
 
 ### Music album check
 
@@ -57,8 +58,8 @@ shelf pane's `ama` pass also runs at its end), after the bucket workers, and onl
 identity is active (MusicBrainz endpoint configured). In shadow mode it puts up to 50 current
 matcher decisions that have a titled candidate to the model per pass, newest first, once per
 criteria version, including releases matched before the check existed. Releases under 95%
-complete are never sent; one that later reaches 95% is picked up by a later pass. It changes nothing:
-no album link, name, category or cover. A decision whose answer the service rejected outright
+complete are never sent; one that later reaches 95% is picked up by a later pass. It changes
+nothing: no album link, name, category or cover. A decision whose answer the service rejected outright
 is logged with the reason and not asked again; when the service is down, busy or refusing the
 key, nothing is logged and the next pass retries.
 
