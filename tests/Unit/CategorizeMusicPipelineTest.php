@@ -83,6 +83,26 @@ final class CategorizeMusicPipelineTest extends TestCase
         $this->assertSame(Category::MUSIC_MP3, $this->categoryFor($name));
     }
 
+    /**
+     * @return array<string, array{string, int}>
+     */
+    public static function separatorDependentReleases(): array
+    {
+        return [
+            'wav extension' => ['Some Artist - Some Album.wav', Category::MUSIC_LOSSLESS],
+            'quoted mp3 file' => ['[1/12] - "Some Artist - Some Album.mp3" yEnc', Category::MUSIC_MP3],
+            'underscored Unabridged audiobook' => ['Some_Author_-_Some_Title_Unabridged_2020', Category::MUSIC_AUDIOBOOK],
+            'dotted V.A. compilation' => ['V.A. - Some Summer Hits', Category::MUSIC_OTHER],
+            'film remux ending in FLAC' => ['Some.Film.1968.1080p.BluRay.Remux.AVC.FLAC', Category::MOVIE_HD],
+        ];
+    }
+
+    #[DataProvider('separatorDependentReleases')]
+    public function test_shapes_that_need_posted_separators_reach_their_category(string $name, int $expected): void
+    {
+        $this->assertSame($expected, $this->categoryFor($name));
+    }
+
     private function categoryFor(string $releaseName): int
     {
         return (new CategorizationService)->determineCategory(0, $releaseName)['categories_id'];

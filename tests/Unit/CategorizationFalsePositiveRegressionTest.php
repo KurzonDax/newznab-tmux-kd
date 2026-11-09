@@ -191,6 +191,61 @@ class CategorizationFalsePositiveRegressionTest extends TestCase
         ];
     }
 
+    #[DataProvider('separatorDependentMusicNames')]
+    public function test_music_shapes_that_need_posted_separators_match_in_pipeline_shape(
+        string $name,
+        int $expectedCategory,
+        string $expectedMatchedBy,
+        float $expectedConfidence,
+    ): void {
+        // Shape the context exactly as CategorizationPipeline::categorize() does.
+        $raw = (new NzbSplitUnwrapper)->unwrap($name) ?? $name;
+        $cleaned = (new ObfuscatedSubjectExtractor)->extract($raw) ?? $raw;
+        $context = new ReleaseContext($cleaned, 0, categorizeForeign: true, preExtractionName: $raw);
+
+        $result = (new MusicCategorizer)->categorize($context);
+
+        $this->assertSame(
+            [$expectedCategory, $expectedMatchedBy, $expectedConfidence],
+            [$result->categoryId, $result->matchedBy, $result->confidence],
+        );
+    }
+
+    /**
+     * @return array<string, array{string, int, string, float}>
+     */
+    public static function separatorDependentMusicNames(): array
+    {
+        return [
+            'wav extension' => ['Some Artist - Some Album.wav', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'aiff extension' => ['Some Artist - Some Album.aiff', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'dsf extension' => ['Some Artist - Some Album.dsf', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'dff extension with DSD' => ['Some Artist - Some Album DSD.dff', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'dff extension alone' => ['Some Artist - Some Album.dff', Category::OTHER_MISC, 'no_match', 0.0],
+            'ape extension' => ['Some Artist - Some Album.ape', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'm4a extension with ALAC' => ['Some Artist - Some Album ALAC.m4a', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'tak extension with FLAC' => ['Some Artist - Some Album FLAC.tak', Category::MUSIC_LOSSLESS, 'lossless', 0.9],
+            'flac extension' => ['Some Artist - Some Album.flac', Category::MUSIC_LOSSLESS, 'flac', 0.85],
+            'quoted flac file' => ['"Some Album" [01/12] - "01 - Track.flac" yEnc', Category::MUSIC_LOSSLESS, 'flac', 0.85],
+            'film remux ending in FLAC' => ['Some.Film.1968.1080p.BluRay.Remux.AVC.FLAC', Category::MUSIC_LOSSLESS, 'flac', 0.85],
+            'audiobook ogg extension' => ['Some Author - Some Title Audiobook.ogg', Category::MUSIC_AUDIOBOOK, 'audiobook', 0.95],
+            'underscored Unabridged' => ['Some_Author_-_Some_Title_Unabridged_2020', Category::MUSIC_AUDIOBOOK, 'audiobook_pattern', 0.9],
+            'underscored AB' => ['Some_Author_-_Some_Title_AB_2020', Category::MUSIC_AUDIOBOOK, 'audiobook_pattern', 0.9],
+            'underscored kbps' => ['Some Artist - Some Album MP3 320_kbps', Category::MUSIC_MP3, 'mp3', 0.85],
+            'dotted CD Rip' => ['Some Artist - Some Album MP3 CD.Rip', Category::MUSIC_MP3, 'mp3', 0.85],
+            'quoted mp3 file' => ['[1/12] - "Some Artist - Some Album.mp3" yEnc', Category::MUSIC_MP3, 'mp3', 0.85],
+            'underscored FM show' => ['Some_Radio_FM_Show_MP3', Category::MUSIC_MP3, 'mp3', 0.85],
+            'underscored CD MP3' => ['Some Artist - Some Album CD_MP3', Category::MUSIC_MP3, 'mp3_bitrate', 0.8],
+            'H.264 video guard' => ['Some Artist - Live H.264 MP3 320kbps', Category::OTHER_MISC, 'no_match', 0.0],
+            'AAC2.0 video guard' => ['Some Artist - Concert AAC2.0 MP3 320kbps', Category::OTHER_MISC, 'no_match', 0.0],
+            'DDP5.1 video guard' => ['Some Artist - Concert DDP5.1 MP3 VBR', Category::OTHER_MISC, 'no_match', 0.0],
+            'mkv video guard' => ['Some Artist - Concert MP3 320kbps.mkv', Category::OTHER_MISC, 'no_match', 0.0],
+            'H.264 guard on bitrate' => ['Some Artist - Concert H.264 CD_MP3', Category::OTHER_MISC, 'no_match', 0.0],
+            'dotted V.A.' => ['V.A. - Some Summer Hits', Category::MUSIC_OTHER, 'music_other', 0.8],
+            'underscored year and group' => ['Somealbum_2020_GRP', Category::OTHER_MISC, 'no_match', 0.0],
+        ];
+    }
+
     #[DataProvider('losslessFormatAbbreviationNames')]
     public function test_lossless_format_abbreviations_count_in_uppercase_or_as_extensions(
         string $name,
