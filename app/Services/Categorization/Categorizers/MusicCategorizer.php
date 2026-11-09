@@ -13,6 +13,11 @@ use App\Services\Categorization\ReleaseContext;
  */
 class MusicCategorizer extends AbstractCategorizer
 {
+    // Subject cleaning turns every "_", and every "." before a letter or
+    // digit, into a space, so shapes that need those separators read
+    // $context->preExtractionName. A ".flac" ending is recognised only in
+    // its cleaned form (" flac"), so tests must build the context in
+    // pipeline shape.
     protected int $priority = 40;
 
     // Scene language tags for foreign music, matched uppercase between hyphens (-DE-)
@@ -41,7 +46,7 @@ class MusicCategorizer extends AbstractCategorizer
         $name = $context->releaseName;
 
         // Try each music category
-        if ($result = $this->checkAudiobook($name)) {
+        if ($result = $this->checkAudiobook($name, $context->preExtractionName)) {
             return $result;
         }
 
@@ -49,7 +54,7 @@ class MusicCategorizer extends AbstractCategorizer
             return $result;
         }
 
-        if ($result = $this->checkLossless($name, $context->categorizeForeign)) {
+        if ($result = $this->checkLossless($name, $context->categorizeForeign, $context->preExtractionName)) {
             return $result;
         }
 
@@ -57,7 +62,7 @@ class MusicCategorizer extends AbstractCategorizer
             return $result;
         }
 
-        if ($result = $this->checkOther($name, $context->categorizeForeign)) {
+        if ($result = $this->checkOther($name, $context->categorizeForeign, $context->preExtractionName)) {
             return $result;
         }
 
@@ -69,19 +74,20 @@ class MusicCategorizer extends AbstractCategorizer
         return (bool) preg_match('/(?<=-)(?:'.strtoupper(self::LANGUAGE_CODES).')(?=-)/', $name);
     }
 
-    protected function checkAudiobook(string $name): ?CategorizationResult
+    protected function checkAudiobook(string $name, string $preExtractionName): ?CategorizationResult
     {
         // Explicit audiobook indicators
         if (preg_match('/(?:^|[^a-zA-Z0-9])(?:Audiobook|Audio\s*Book|Talking\s*Book|ABEE|Audible)/i', $name)) {
             if (preg_match('/\b(?:Unabridged|Abridged|Narrated|Narrator|MP3|M4A|M4B|AAC|Read\s+By|Tantor|Blackstone|Brilliance|GraphicAudio|Penguin|Audible)\b/i', $name) ||
                 preg_match('/\d+\s*CDs|\d+\s*Hours|Spoken\s+Word/i', $name) ||
-                preg_match('/\.(mp3|m4a|m4b|aac|flac|ogg|wma)$/i', $name)) {
+                preg_match('/\.(mp3|m4a|m4b|aac|flac|ogg|wma)$/i', $preExtractionName)) {
                 return $this->matched(Category::MUSIC_AUDIOBOOK, 0.95, 'audiobook');
             }
         }
 
         // Audiobook patterns
         if (preg_match('/(?:[\(_\[])(?:Audiobook|AB|Unabridged)(?:[\)_\]])/i', $name) ||
+            preg_match('/(?:[\(_\[])(?:Audiobook|AB|Unabridged)(?:[\)_\]])/i', $preExtractionName) ||
             preg_match('/Read\s+By\s+[A-Z][a-z]+\s+[A-Z][a-z]+/i', $name)) {
             return $this->matched(Category::MUSIC_AUDIOBOOK, 0.9, 'audiobook_pattern');
         }
@@ -114,12 +120,12 @@ class MusicCategorizer extends AbstractCategorizer
         return null;
     }
 
-    protected function checkLossless(string $name, bool $categorizeForeign): ?CategorizationResult
+    protected function checkLossless(string $name, bool $categorizeForeign, string $preExtractionName): ?CategorizationResult
     {
         // Lossless format indicators
         if (preg_match('/(?<![a-zA-Z0-9])(?:FLAC|APE|WAV|ALAC|DSD|DSF|AIFF|PCM|Lossless)(?![a-zA-Z0-9])/i', $name)) {
             if (preg_match('/\b(?:24[Bb]it|96kHz|192kHz|Hi[- ]?Res|HD[- ]?Tracks|Vinyl[- ]?Rip|CD[- ]?Rip|HDtracks|Qobuz|Tidal|MQA|SACD)\b/i', $name) ||
-                preg_match('/\.(flac|ape|wav|aiff|dsf|dff|m4a|tak)$/i', $name)) {
+                preg_match('/\.(?:ape|wav|aiff|dsf|dff|m4a|tak)$/i', $preExtractionName)) {
 
                 if ($categorizeForeign && $this->checkForeign($name)) {
                     return $this->matched(Category::MUSIC_FOREIGN, 0.9, 'lossless_foreign');
@@ -130,8 +136,9 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         // FLAC patterns
-        if (preg_match('/\[(19|20)\d\d\][._ -]\[FLAC\]|([\(\[])flac([\)\]])|FLAC\-(19|20)\d\d\-[a-z0-9]{1,12}|\.flac"|(19|20)\d\d\sFLAC|[._ -]FLAC.+(19|20)\d\d[._ -]| FLAC$/i', $name) ||
-            preg_match('/\d{3,4}kbps[._ -]FLAC|\[FLAC\]|\(FLAC\)|FLACME|FLAC[._ -]\d{3,4}(kbps)?|WEB[._ -]FLAC/i', $name)) {
+        if (preg_match('/\[(19|20)\d\d\][._ -]\[FLAC\]|([\(\[])flac([\)\]])|FLAC\-(19|20)\d\d\-[a-z0-9]{1,12}|(19|20)\d\d\sFLAC|[._ -]FLAC.+(19|20)\d\d[._ -]| FLAC$/i', $name) ||
+            preg_match('/\d{3,4}kbps[._ -]FLAC|\[FLAC\]|\(FLAC\)|FLACME|FLAC[._ -]\d{3,4}(kbps)?|WEB[._ -]FLAC/i', $name) ||
+            preg_match('/\.flac"/i', $preExtractionName)) {
 
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.85, 'flac_foreign');
@@ -160,10 +167,13 @@ class MusicCategorizer extends AbstractCategorizer
     protected function checkMP3(string $name, bool $categorizeForeign, string $preExtractionName): ?CategorizationResult
     {
         // MP3 indicators
-        if (! $this->hasStrongVideoMarkers($name) && preg_match('/(?<![a-zA-Z0-9])(?:MP3|320kbps|256kbps|192kbps|128kbps|CBR|VBR)(?![a-zA-Z0-9])|\b(?:MP3)\b|[\._-](?:MP3)[\._-]|\.mp3$/i', $name)) {
+        if (! $this->hasStrongVideoMarkers($name, $preExtractionName) && preg_match('/(?<![a-zA-Z0-9])(?:MP3|320kbps|256kbps|192kbps|128kbps|CBR|VBR)(?![a-zA-Z0-9])|\b(?:MP3)\b/i', $name)) {
             if (preg_match('/\b(?:320|256|192|128)[._-]?kbps|\b(?:320|256|192|128)[._-]?K|\((?:320|256|192|128)\)|\[(?:320|256|192|128)\]|V0|V2|VBR/i', $name) ||
+                preg_match('/\b(?:320|256|192|128)[._-]?kbps|\b(?:320|256|192|128)[._-]?K|\((?:320|256|192|128)\)|\[(?:320|256|192|128)\]|V0|V2|VBR/i', $preExtractionName) ||
                 preg_match('/\b(?:CD[._-]?Rip|Web[._-]?Rip|WEB|iTunes|AmazonRip|Spotify[._-]?Rip|MP3\s*\-\s*\d{3}kbps)\b/i', $name) ||
-                preg_match('/\.(m3u|mp3)"|rip(?:192|256|320)|[._-]FM[._-].+MP3/i', $name)) {
+                preg_match('/\b(?:CD[._-]?Rip|Web[._-]?Rip|WEB|iTunes|AmazonRip|Spotify[._-]?Rip|MP3\s*\-\s*\d{3}kbps)\b/i', $preExtractionName) ||
+                preg_match('/\.(m3u|mp3)"|rip(?:192|256|320)|[._-]FM[._-].+MP3/i', $name) ||
+                preg_match('/\.(m3u|mp3)"|rip(?:192|256|320)|[._-]FM[._-].+MP3/i', $preExtractionName)) {
 
                 if ($categorizeForeign && $this->checkForeign($name)) {
                     return $this->matched(Category::MUSIC_FOREIGN, 0.85, 'mp3_foreign');
@@ -173,12 +183,13 @@ class MusicCategorizer extends AbstractCategorizer
             }
         }
 
-        // MP3 scene patterns. The first shape is read from the cleaned name.
-        // The second is a year and group inside a longer scene name: a whole
-        // name with no whitespace and no domain-style suffix. Cleaning turns
-        // the dots and underscores of a scene name into spaces, so this shape
-        // is read from the name as it stood before cleaning.
-        if (preg_match('/^[a-zA-Z0-9]{1,12}[._-](19|20)\d\d[._-][a-zA-Z0-9]{1,12}$/i', $name) ||
+        // MP3 scene patterns. The first shape is a short word, a year and a
+        // group joined by hyphens, read from the cleaned name. The second is
+        // a year and group inside a longer scene name: a whole name with no
+        // whitespace and no domain-style suffix. Cleaning turns the dots and
+        // underscores of a scene name into spaces, so this shape is read
+        // from the name as it stood before cleaning.
+        if (preg_match('/^[a-zA-Z0-9]{1,12}-(19|20)\d\d-[a-zA-Z0-9]{1,12}$/i', $name) ||
             preg_match('/^(?!\S*\.[a-z]{2,}$)\S*[a-z0-9]\-(19|20)\d\d\-[a-z0-9]\S*$/i', $preExtractionName)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.75, 'mp3_scene_foreign');
@@ -188,7 +199,9 @@ class MusicCategorizer extends AbstractCategorizer
         }
 
         // Bitrate patterns
-        if (! $this->hasStrongVideoMarkers($name) && preg_match('/[\.\-\(\[_ ]\d{2,3}k[\.\-\)\]_ ]|\((192|256|320)\)|(320|cd|eac|vbr)[._-]+mp3|(cd|eac|mp3|vbr)[._-]+320/i', $name)) {
+        if (! $this->hasStrongVideoMarkers($name, $preExtractionName) &&
+            (preg_match('/[\.\-\(\[_ ]\d{2,3}k[\.\-\)\]_ ]|\((192|256|320)\)|(320|cd|eac|vbr)[._-]+mp3|(cd|eac|mp3|vbr)[._-]+320/i', $name) ||
+                preg_match('/(320|cd|eac|vbr)[._]+mp3|(cd|eac|mp3|vbr)[._]+320/i', $preExtractionName))) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.8, 'mp3_bitrate_foreign');
             }
@@ -199,15 +212,17 @@ class MusicCategorizer extends AbstractCategorizer
         return null;
     }
 
-    private function hasStrongVideoMarkers(string $name): bool
+    private function hasStrongVideoMarkers(string $name, string $preExtractionName): bool
     {
-        return (bool) preg_match('/\b(?:WEB[._ -]?DL|WEB-?Rip|BluRay|BDRip|HDTV|H\.?264|x26[45]|HEVC|AVC|\d{3,4}[pi]|AAC2\.0|DDP?5\.1|DD51|Atmos)\b|\.(?:mkv|mp4|avi)$/i', $name);
+        return preg_match('/\b(?:WEB[._ -]?DL|WEB-?Rip|BluRay|BDRip|HDTV|H\.?264|x26[45]|HEVC|AVC|\d{3,4}[pi]|AAC2\.0|DDP?5\.1|DD51|Atmos)\b|\.(?:mkv|mp4|avi)$/i', $name) === 1 ||
+            preg_match('/\b(?:H\.264|AAC2\.0|DDP?5\.1)\b|\.(?:mkv|mp4|avi)$/i', $preExtractionName) === 1;
     }
 
-    protected function checkOther(string $name, bool $categorizeForeign): ?CategorizationResult
+    protected function checkOther(string $name, bool $categorizeForeign, string $preExtractionName): ?CategorizationResult
     {
         // Compilation and VA indicators
-        if (preg_match('/(?<![a-zA-Z0-9])(?:Compilation|Various[._ -]Artists|OST|Soundtrack|B-Sides|Greatest[._ -]Hits|Anthology)(?![a-zA-Z0-9])|\b(?:VA|V\.A|Bonus[._ -]Track|Discography|Box[._ -]Set)\b/i', $name)) {
+        if (preg_match('/(?<![a-zA-Z0-9])(?:Compilation|Various[._ -]Artists|OST|Soundtrack|B-Sides|Greatest[._ -]Hits|Anthology)(?![a-zA-Z0-9])|\b(?:VA|V\.A|Bonus[._ -]Track|Discography|Box[._ -]Set)\b/i', $name) ||
+            preg_match('/\bV\.A\b/i', $preExtractionName)) {
             if ($categorizeForeign && $this->checkForeign($name)) {
                 return $this->matched(Category::MUSIC_FOREIGN, 0.8, 'music_other_foreign');
             }
