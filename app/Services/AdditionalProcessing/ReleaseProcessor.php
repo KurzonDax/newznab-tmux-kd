@@ -20,15 +20,16 @@ use App\Services\AdditionalProcessing\Enums\ProcessingOutcome;
 use App\Services\AdditionalProcessing\Enums\ProcessingStage;
 use App\Services\AdditionalProcessing\State\ArchivePartTail;
 use App\Services\AdditionalProcessing\State\CompressedTopUpFetch;
+use App\Services\AdditionalProcessing\State\PayloadSniffRun;
 use App\Services\AdditionalProcessing\State\PersistenceMetricsCollector;
 use App\Services\AdditionalProcessing\State\ProcessingMetrics;
 use App\Services\AdditionalProcessing\State\ReleaseProcessingContext;
+use App\Services\DTO\YencArticleMetadata;
 use App\Services\MediaInfo\DTO\MediaInfoProbeContext;
 use App\Services\MediaInfo\Enums\MediaInfoSourceCompleteness;
 use App\Services\MediaInfo\Enums\MediaInfoSourceKind;
 use App\Services\ObfuscationRecovery\RecoveryIdentityPolicy;
 use App\Services\ObfuscationRecovery\RecoveryProcessing;
-use App\Services\Par2Sidecar\SidecarEvidence;
 use App\Services\ReleaseImageService;
 use App\Services\Releases\DynamicPreviewBudgetPolicy;
 use App\Services\Releases\PreviewGenerationPolicy;
@@ -71,6 +72,7 @@ class ReleaseProcessor
         private readonly VideoDecodableLengthProbe $decodableLengthProbe = new VideoDecodableLengthProbe,
         private readonly FreeDiskGuard $freeDiskGuard = new FreeDiskGuard,
         private readonly ReleaseImageService $releaseImage = new ReleaseImageService,
+        private readonly UnknownPayloadCandidateSelector $candidateSelector = new UnknownPayloadCandidateSelector,
     ) {}
 
     public function process(ReleaseProcessingContext $context, string $mainTmpPath): ReleaseProcessingResult
@@ -478,95 +480,28 @@ class ReleaseProcessor
 
     private function processUnknownPayloadCandidates(ReleaseProcessingContext $context): void
     {
-        /** @var list<array{payload: string, candidate: ArchiveCandidate}> $deferredArchives */
-        $deferredArchives = [];
-        $deferredPar2 = [];
-        $sidecarEvidence = new SidecarEvidence;
-        $firstVideoHandled = false;
+        $run = new PayloadSniffRun;
 
         foreach ($context->workPlan->unknownPayloadCandidates as $candidate) {
             if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
                 break;
             }
-
-            $result = $this->downloadService->download(
-                DownloadKind::PayloadSniff,
-                [$candidate->firstMessageId],
-                $context->releaseGroupName,
-                $context->release->id,
-                $candidate->title,
-            );
-
-            if ($result['groupUnavailable']) {
-                $context->groupUnavailable = true;
-                $this->output->echoGroupUnavailable();
-
+            $step = $this->sniffCandidate($candidate, $context, $run);
+            if ($step === 'stop') {
                 break;
             }
-
-            if (! $result['success'] || ! is_string($result['data'])) {
-                continue;
-            }
-
-            $payload = $result['data'];
-            $sniffResult = $this->payloadSniffer->classify($payload);
-            $classification = $sniffResult->classification;
-            $context->recordPayloadClassification($classification);
-            $sidecarEvidence->queueClassification($context, $candidate, $classification->value, $payload);
-            if ($classification === PayloadClassification::Par2) {
-                $deferredPar2[] = $payload;
-
-                continue;
-            }
-            $sidecarEvidence->queuePrefix($context, $candidate, $payload, $result['metadata'] ?? null);
-
-            if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip, PayloadClassification::SevenZip], true)) {
-                $archiveCandidate = new ArchiveCandidate(
-                    title: $candidate->title,
-                    messageIds: [$candidate->firstMessageId],
-                    likelyFirstVolume: $sniffResult->likelyFirstVolume,
-                    sourceIndex: $candidate->sourceIndex,
-                );
-                if ($classification === PayloadClassification::SevenZip && $this->config->processPasswords) {
-                    $segments = array_values($context->nzbContents[$candidate->sourceIndex]['segments'] ?? []);
-                    $archiveCandidate = new ArchiveCandidate($candidate->title, [$candidate->firstMessageId], true,
-                        $candidate->sourceIndex, array_slice($segments, 1));
-                    $this->processSevenZip($archiveCandidate, $context, true);
-                } elseif ($archiveCandidate->likelyFirstVolume) {
-                    $this->processCompressedData($payload, $context, false, $archiveCandidate->title);
-                } else {
-                    $deferredArchives[] = ['payload' => $payload, 'candidate' => $archiveCandidate];
-                }
-
-                continue;
-            }
-
-            if (in_array($classification, [PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi], true)) {
-                if ($firstVideoHandled) {
-                    $this->processSniffedVideo($payload, $classification, $context);
-                } else {
-                    $firstVideoHandled = true;
-                    $this->processFirstSniffedVideo($candidate, $payload, $classification, $context);
-                    if ($context->groupUnavailable) {
-                        break;
-                    }
-                }
-
-                continue;
-            }
-
-            match ($classification) {
-                PayloadClassification::Text => $this->processSniffedNfo($payload, $context),
-                PayloadClassification::Unknown => null,
-            };
+            $run->foundContainer = $run->foundContainer || $step === 'found';
         }
 
+        $this->searchSplitSet($context, $run);
+
         $totalFiles = (int) ($context->nzbContents[0]['nzbFileCount'] ?? count($context->nzbContents));
-        $context->purePar2Sidecar = $totalFiles > 0 && count($deferredPar2) === $totalFiles;
-        foreach ($deferredPar2 as $payload) {
+        $context->purePar2Sidecar = $totalFiles > 0 && count($run->deferredPar2) === $totalFiles;
+        foreach ($run->deferredPar2 as $payload) {
             $this->processSniffedPar2($payload, $context);
         }
 
+        $deferredArchives = $run->deferredArchives;
         usort(
             $deferredArchives,
             static fn (array $left, array $right): int => $left['candidate']->sourceIndex <=> $right['candidate']->sourceIndex,
@@ -583,6 +518,265 @@ class ReleaseProcessor
                 $archive['candidate']->title,
             );
         }
+    }
+
+    /**
+     * Sniffs one candidate's first segment and routes it to its handler:
+     * 'found' for an archive or a video, 'stop' when the group is unavailable.
+     *
+     * @return 'next'|'found'|'stop'
+     */
+    private function sniffCandidate(UnknownPayloadCandidate $candidate, ReleaseProcessingContext $context, PayloadSniffRun $run): string
+    {
+        $result = $this->downloadFirstSegment($candidate, $context, $run);
+        if ($result['groupUnavailable']) {
+            return 'stop';
+        }
+
+        if (! $result['success'] || ! is_string($result['data'])) {
+            return 'next';
+        }
+
+        $payload = $result['data'];
+        $sniffResult = $this->payloadSniffer->classify($payload);
+        $classification = $sniffResult->classification;
+        $context->recordPayloadClassification($classification);
+        $run->sidecarEvidence->queueClassification($context, $candidate, $classification->value, $payload);
+        if ($classification === PayloadClassification::Par2) {
+            $run->deferredPar2[] = $payload;
+
+            return 'next';
+        }
+        $run->sidecarEvidence->queuePrefix($context, $candidate, $payload, $result['metadata'] ?? null);
+
+        if (in_array($classification, [PayloadClassification::Rar, PayloadClassification::Zip, PayloadClassification::SevenZip], true)) {
+            $archiveCandidate = new ArchiveCandidate(
+                title: $candidate->title,
+                messageIds: [$candidate->firstMessageId],
+                likelyFirstVolume: $sniffResult->likelyFirstVolume,
+                sourceIndex: $candidate->sourceIndex,
+            );
+            if ($classification === PayloadClassification::SevenZip && $this->config->processPasswords) {
+                $this->processSniffedSevenZip($candidate, $result, $context, $run);
+            } elseif ($archiveCandidate->likelyFirstVolume) {
+                $this->processCompressedData($payload, $context, false, $archiveCandidate->title);
+            } else {
+                $run->deferredArchives[] = ['payload' => $payload, 'candidate' => $archiveCandidate];
+            }
+
+            return 'found';
+        }
+
+        if (in_array($classification, [PayloadClassification::Matroska, PayloadClassification::Mp4, PayloadClassification::Avi], true)) {
+            if ($run->firstVideoHandled) {
+                $this->processSniffedVideo($payload, $classification, $context);
+            } else {
+                $run->firstVideoHandled = true;
+                $this->processFirstSniffedVideo($candidate, $payload, $classification, $context);
+                if ($context->groupUnavailable) {
+                    return 'stop';
+                }
+            }
+
+            return 'found';
+        }
+
+        match ($classification) {
+            PayloadClassification::Text => $this->processSniffedNfo($payload, $context),
+            PayloadClassification::Unknown => null,
+        };
+
+        return 'next';
+    }
+
+    /**
+     * An obfuscated split archive gives its parts random names, and only its
+     * first part carries a signature. When the selected candidates found no
+     * archive or video, sniff the rest of the split-set files, within their
+     * own limits, until one is.
+     */
+    private function searchSplitSet(ReleaseProcessingContext $context, PayloadSniffRun $run): void
+    {
+        if (! $this->config->processPasswords || $run->foundContainer || $context->groupUnavailable
+            || $context->isTimedOut($this->config->releaseProcessingTimeout)
+            || $this->config->payloadSplitSearchMaxFiles <= 0 || $this->config->payloadSplitSearchByteBudget <= 0) {
+            return;
+        }
+
+        $files = $this->candidateSelector->splitSetFiles($context->nzbContents);
+        if ($files === []) {
+            return;
+        }
+        $bytes = array_sum(array_map(static fn (UnknownPayloadCandidate $file): int => $file->estimatedFirstSegmentBytes, $files));
+        if (count($files) > $this->config->payloadSplitSearchMaxFiles || $bytes > $this->config->payloadSplitSearchByteBudget) {
+            $context->recordSevenZipVolumeSearchCap();
+
+            return;
+        }
+
+        foreach ($files as $file) {
+            if (isset($run->attempted[$file->firstMessageId])) {
+                continue;
+            }
+            if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
+                // A verdict sends the release through the inspection path's retries
+                // instead of the timeout count that deletes it.
+                $context->recordPasswordVerdict(Enums\PasswordVerdict::Incomplete, 'seven-zip-volume-search-timeout');
+
+                return;
+            }
+            $run->searchFiles++;
+            $run->searchBytes += $file->estimatedFirstSegmentBytes;
+            if ($this->sniffCandidate($file, $context, $run) !== 'next') {
+                return;
+            }
+        }
+    }
+
+    /**
+     * A sniffed 7z first part. Its start header gives the archive's size, so
+     * a set of equal parts and one smaller last part gives the part count and
+     * the last part's size; the last part is the eligible file of that size.
+     * Its header is read through placeholders for the parts in between.
+     *
+     * @param  array<string, mixed>  $result  The first part's sniff result.
+     */
+    private function processSniffedSevenZip(
+        UnknownPayloadCandidate $candidate,
+        array $result,
+        ReleaseProcessingContext $context,
+        PayloadSniffRun $run,
+    ): void {
+        if (isset($context->inspectedSevenZipTitles[$candidate->title])) {
+            return;
+        }
+        $segments = array_values($context->nzbContents[$candidate->sourceIndex]['segments'] ?? []);
+        $first = new ArchiveCandidate($candidate->title, [$candidate->firstMessageId], true,
+            $candidate->sourceIndex, array_slice($segments, 1));
+        $metadata = $result['metadata'] ?? null;
+        try {
+            $header = SevenZip\Inspector::startHeader((string) $result['data']);
+        } catch (\RuntimeException) {
+            $header = null;
+        }
+        if (! $metadata instanceof YencArticleMetadata || $header === null || $metadata->fileSize < 1) {
+            $this->processSevenZip($first, $context, true, $run->held);
+
+            return;
+        }
+
+        $total = 32 + $header['offset'] + $header['size'];
+        $partSize = $metadata->fileSize;
+        $parts = intdiv($total, $partSize) + ($total % $partSize > 0 ? 1 : 0);
+        if ($parts <= 1) {
+            $this->processSevenZip($first, $context, true, $run->held);
+
+            return;
+        }
+
+        $lastSize = $total - ($parts - 1) * $partSize;
+        $others = array_values(array_filter(
+            $this->candidateSelector->eligibleFiles($context->nzbContents),
+            static fn (UnknownPayloadCandidate $file): bool => $file->sourceIndex !== $candidate->sourceIndex,
+        ));
+        if ($lastSize === $partSize || count($others) < $parts - 1) {
+            $context->inspectedSevenZipTitles[$candidate->title] = true;
+            $context->recordPasswordVerdict(Enums\PasswordVerdict::Incomplete, 'missing-volume');
+
+            return;
+        }
+
+        $last = $this->findLastSevenZipPart($others, $lastSize, $context, $run);
+        if (is_string($last)) {
+            $context->inspectedSevenZipTitles[$candidate->title] = true;
+            $context->recordPasswordVerdict(Enums\PasswordVerdict::Incomplete, $last);
+
+            return;
+        }
+        $lastSegments = array_values($context->nzbContents[$last->sourceIndex]['segments'] ?? []);
+        $volumes = [
+            $first,
+            ...array_fill(0, $parts - 2, new SevenZip\PlaceholderVolume($partSize)),
+            new ArchiveCandidate($last->title, [$last->firstMessageId], false, $last->sourceIndex, array_slice($lastSegments, 1)),
+        ];
+        $this->processSevenZip($first, $context, true, $run->held, $volumes);
+    }
+
+    /**
+     * The eligible file whose first article says it is the last part's size:
+     * a held one first, then files sniffed from the fewest segments up, within
+     * the split-archive search's limits. A string is why none was found.
+     *
+     * @param  list<UnknownPayloadCandidate>  $others
+     */
+    private function findLastSevenZipPart(
+        array $others,
+        int $lastSize,
+        ReleaseProcessingContext $context,
+        PayloadSniffRun $run,
+    ): UnknownPayloadCandidate|string {
+        $unheld = [];
+        foreach ($others as $file) {
+            $held = $run->held[$file->firstMessageId] ?? null;
+            if ($held === null) {
+                // A file whose sniff already failed is not asked for again.
+                if (! isset($run->attempted[$file->firstMessageId])) {
+                    $unheld[] = $file;
+                }
+            } elseif (($held['metadata'] ?? null) instanceof YencArticleMetadata && $held['metadata']->fileSize === $lastSize) {
+                return $file;
+            }
+        }
+        usort($unheld, static fn (UnknownPayloadCandidate $left, UnknownPayloadCandidate $right): int => $left->segmentCount <=> $right->segmentCount ?: $left->sourceIndex <=> $right->sourceIndex);
+
+        foreach ($unheld as $file) {
+            if ($context->isTimedOut($this->config->releaseProcessingTimeout)) {
+                return 'seven-zip-volume-search-timeout';
+            }
+            if ($run->searchFiles >= $this->config->payloadSplitSearchMaxFiles
+                || $run->searchBytes + $file->estimatedFirstSegmentBytes > $this->config->payloadSplitSearchByteBudget) {
+                return 'missing-volume';
+            }
+            $run->searchFiles++;
+            $run->searchBytes += $file->estimatedFirstSegmentBytes;
+            $result = $this->downloadFirstSegment($file, $context, $run);
+            if ($result['groupUnavailable']) {
+                return 'group-unavailable';
+            }
+            $metadata = $result['metadata'] ?? null;
+            if ($metadata instanceof YencArticleMetadata && $metadata->fileSize === $lastSize) {
+                return $file;
+            }
+        }
+
+        return 'missing-volume';
+    }
+
+    /**
+     * Downloads a file's first segment once: the attempt is recorded, a
+     * successful result is held for the inspection, and an unavailable group
+     * is flagged.
+     *
+     * @return array<string, mixed>
+     */
+    private function downloadFirstSegment(UnknownPayloadCandidate $file, ReleaseProcessingContext $context, PayloadSniffRun $run): array
+    {
+        $result = $this->downloadService->download(
+            DownloadKind::PayloadSniff,
+            [$file->firstMessageId],
+            $context->releaseGroupName,
+            $context->release->id,
+            $file->title,
+        );
+        $run->attempted[$file->firstMessageId] = true;
+        if ($result['groupUnavailable']) {
+            $context->groupUnavailable = true;
+            $this->output->echoGroupUnavailable();
+        } elseif ($result['success'] && is_string($result['data'])) {
+            $run->held[$file->firstMessageId] = $result;
+        }
+
+        return $result;
     }
 
     private function processSniffedPar2(string $payload, ReleaseProcessingContext $context): void
@@ -1851,15 +2045,26 @@ class ReleaseProcessor
         return (unpack('v', $firstVolume, 10)[1] & RarInfo::MAIN_NEWNUMBERING) === 0;
     }
 
-    private function processSevenZip(ArchiveCandidate $anchor, ReleaseProcessingContext $context, bool $sniffed = false): void
-    {
+    /**
+     * @param  array<string, array<string, mixed>>  $held  Sniff results by message-id, used instead of fetching again.
+     * @param  list<ArchiveCandidate|SevenZip\PlaceholderVolume>|null  $volumes  The set's volumes when sniffing resolved them.
+     */
+    private function processSevenZip(
+        ArchiveCandidate $anchor,
+        ReleaseProcessingContext $context,
+        bool $sniffed = false,
+        array $held = [],
+        ?array $volumes = null,
+    ): void {
         if (isset($context->inspectedSevenZipTitles[$anchor->title])) {
             return;
         }
-        $volumes = $sniffed ? [$anchor] : ($context->workPlan?->sevenZipVolumes($anchor->title) ?? []);
+        $volumes ??= $sniffed ? [$anchor] : ($context->workPlan?->sevenZipVolumes($anchor->title) ?? []);
         $context->inspectedSevenZipTitles[$anchor->title] = true;
         foreach ($volumes as $volume) {
-            $context->inspectedSevenZipTitles[$volume->title] = true;
+            if ($volume instanceof ArchiveCandidate) {
+                $context->inspectedSevenZipTitles[$volume->title] = true;
+            }
         }
         $budget = $context->passwordInspectionBudget ??= new SevenZip\InspectionBudget(
             max(1, (int) config('archive-inspection.seven_zip.max_articles', 32)),
@@ -1869,7 +2074,10 @@ class ReleaseProcessor
         );
         $ranges = new SevenZip\ArchiveRanges(
             $volumes,
-            function (string $id) use ($context, $budget): array {
+            function (string $id) use ($context, $budget, $held): array {
+                if (isset($held[$id])) {
+                    return $held[$id];
+                }
                 $result = $this->downloadService->downloadInspectionArticle($id, $context->releaseGroupName, $budget);
                 $context->groupUnavailable = $context->groupUnavailable || $result['groupUnavailable'];
 
@@ -1877,8 +2085,152 @@ class ReleaseProcessor
             },
             $budget,
         );
-        // The service performs validation before it can return a positive verdict.
-        $this->processCompressedData(SevenZip\Inspector::SIGNATURE, $context, false, $anchor->title, $ranges->read(...));
+        $workingSet = $context->tmpPath === '' ? null : new SevenZip\WorkingSet($ranges, $context->tmpPath.'sevenzip/');
+        try {
+            // The service performs validation before it can return a positive verdict.
+            $this->processCompressedData(SevenZip\Inspector::SIGNATURE, $context, false, $anchor->title, $ranges->read(...), $workingSet);
+            if ($workingSet !== null) {
+                $this->processSevenZipPreview($workingSet, $context);
+            }
+        } finally {
+            // The nested-archive sweep would read a working set left behind as a lone 7z.
+            $workingSet?->delete();
+        }
+    }
+
+    /**
+     * A preview from inside a verified 7z: 7-Zip lists the working set, and the
+     * first video entry's head is fetched where its block starts, written into
+     * the set, and extracted. Any step that cannot complete ends it quietly.
+     */
+    private function processSevenZipPreview(SevenZip\WorkingSet $workingSet, ReleaseProcessingContext $context): void
+    {
+        if (! $this->archiveService->canRunSevenZip($context)
+            || ! in_array($workingSet->inspectionVerdict(), [Enums\PasswordVerdict::VerifiedUnencrypted, Enums\PasswordVerdict::VerifiedEncrypted], true)
+            || $context->releaseDiscarded
+            || $context->releaseHasPassword
+            || ($context->foundMediaInfo && $context->foundSample && $context->foundVideo)
+            || $context->isTimedOut($this->config->releaseProcessingTimeout)) {
+            return;
+        }
+
+        $listing = $this->archiveService->sevenZipListing($workingSet, $context);
+        if ($listing->exitCode !== 0) {
+            return;
+        }
+        $video = null;
+        $blockStart = 32;
+        $solidBytes = 0;
+        $before = [];
+        foreach ($listing->entries as $entry) {
+            if (PostedFileClassifier::matchesTerminalExtension($entry['path'], $this->config->videoFileRegex)) {
+                $video = $entry;
+
+                break;
+            }
+            $before[] = $entry;
+        }
+        if ($video === null) {
+            return;
+        }
+        // Blocks are stored one after another from byte 32, in listing order;
+        // a solid block decodes the entries before the video first.
+        foreach ($before as $entry) {
+            if ($entry['block'] === $video['block']) {
+                $solidBytes += $entry['size'];
+            } else {
+                $blockStart += $entry['packedSize'];
+            }
+        }
+
+        $volumeIndex = null;
+        foreach ($workingSet->ranges->volumes() as $index => $volume) {
+            if ($volume['start'] <= $blockStart && $blockStart < $volume['start'] + $volume['size']) {
+                $volumeIndex = $index;
+
+                break;
+            }
+        }
+        $volume = $volumeIndex === null ? null : $workingSet->ranges->volumes()[$volumeIndex];
+        if ($volume === null || $volume['placeholder']) {
+            return;
+        }
+        $offset = $blockStart - $volume['start'];
+        $head = $workingSet->ranges->heldArticle($volume['ids'][0]);
+        if ($head === null) {
+            return;
+        }
+        $segmentIndex = intdiv($offset, $head['metadata']->length);
+        if (! isset($volume['ids'][$segmentIndex])) {
+            return;
+        }
+
+        if ($segmentIndex === 0) {
+            $segment = $head;
+        } else {
+            $download = $this->downloadService->download(
+                DownloadKind::Compressed,
+                [$volume['ids'][$segmentIndex]],
+                $context->releaseGroupName,
+                $context->release->id,
+            );
+            if ($download['groupUnavailable']) {
+                $context->groupUnavailable = true;
+
+                return;
+            }
+            $metadata = $download['metadata'] ?? null;
+            if (! $download['success'] || ! is_string($download['data']) || ! $metadata instanceof YencArticleMetadata
+                || $offset < $metadata->offset || $offset >= $metadata->offset + strlen($download['data'])) {
+                return;
+            }
+            $segment = ['data' => $download['data'], 'metadata' => $metadata];
+        }
+
+        $window = $segment['data'];
+        $following = array_slice($volume['ids'], $segmentIndex + 1, max(0, $this->config->segmentsToDownload - 1));
+        if ($following !== []) {
+            $download = $this->downloadService->download(
+                DownloadKind::Compressed,
+                $following,
+                $context->releaseGroupName,
+                $context->release->id,
+            );
+            if ($download['groupUnavailable']) {
+                $context->groupUnavailable = true;
+
+                return;
+            }
+            if ($download['success'] && is_string($download['data'])) {
+                $window .= $download['data'];
+            }
+        }
+        try {
+            $workingSet->write($volumeIndex, $segment['metadata']->offset, $window);
+        } catch (\RuntimeException) {
+            return;
+        }
+
+        $bytes = min($segment['metadata']->offset + strlen($window) - $offset - $solidBytes, $video['size']);
+        if ($bytes < 1) {
+            return;
+        }
+        $extension = preg_replace('/[^A-Za-z0-9]/', '', pathinfo($video['path'], PATHINFO_EXTENSION)) ?: 'bin';
+        $fragment = $context->tmpPath.'sevenzip_preview_'.uniqid('', true).'.'.$extension;
+        try {
+            $this->archiveService->extractSevenZipHead($workingSet, $context, $video['path'], $bytes, $fragment);
+            if (! File::isFile($fragment) || File::size($fragment) < 1) {
+                return;
+            }
+            $this->mediaService->processVideoFile(
+                $fragment,
+                $context,
+                $context->tmpPath,
+                $this->mediaInfoContext(basename($video['path']), MediaInfoSourceCompleteness::Partial),
+            );
+        } finally {
+            File::delete($fragment);
+        }
     }
 
     private function processCompressedData(
@@ -1887,10 +2239,13 @@ class ReleaseProcessor
         bool $reverse,
         string $archiveTitle = '',
         ?\Closure $archiveRead = null,
+        ?SevenZip\WorkingSet $workingSet = null,
     ): bool {
-        $result = $archiveRead === null
-            ? $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath)
-            : $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath, $archiveRead);
+        $result = match (true) {
+            $archiveRead === null => $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath),
+            $workingSet === null => $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath, $archiveRead),
+            default => $this->archiveService->processCompressedData($compressedData, $context, $context->tmpPath, $archiveRead, $workingSet),
+        };
 
         if (isset($result['verdict'])) {
             $context->recordPasswordVerdict($result['verdict'], $result['inspectionReason']);

@@ -28,6 +28,8 @@ final readonly class ProcessingConfiguration
 
     public string|false $unzipPath;
 
+    public string|false $sevenZipPath;
+
     public string|false $timeoutPath;
 
     public int $timeoutSeconds;
@@ -63,6 +65,12 @@ final readonly class ProcessingConfiguration
     public int $payloadSniffByteBudget;
 
     public int $payloadSniffSmallSegmentLimit;
+
+    /** Most split-set files the split-archive part search may sniff; 0 turns it off. */
+    public int $payloadSplitSearchMaxFiles;
+
+    /** Estimated first-segment bytes the split-archive part search may sniff; 0 turns it off. */
+    public int $payloadSplitSearchByteBudget;
 
     public bool $mp4TailFetch;
 
@@ -127,6 +135,7 @@ final readonly class ProcessingConfiguration
         $this->fetchLastFiles = (bool) config('nntmux_settings.fetch_last_file');
         $this->unrarPath = config('nntmux_settings.unrar_path') ?: false;
         $this->unzipPath = config('nntmux_settings.unzip_path') ?: false;
+        $this->sevenZipPath = config('nntmux_settings.sevenzip_path') ?: false;
         $this->timeoutPath = config('nntmux_settings.timeout_path') ?: false;
         $this->timeoutSeconds = (int) Settings::settingValue('timeoutseconds');
         $this->queryLimit = (int) (Settings::settingValue('maxaddprocessed') ?: 25);
@@ -156,6 +165,8 @@ final readonly class ProcessingConfiguration
         $this->payloadSniffMaxCandidates = max((int) config('nntmux_settings.payload_sniff_max_candidates'), 0);
         $this->payloadSniffByteBudget = max((int) config('nntmux_settings.payload_sniff_byte_budget'), 0);
         $this->payloadSniffSmallSegmentLimit = max((int) config('nntmux_settings.payload_sniff_small_segment_limit'), 1);
+        $this->payloadSplitSearchMaxFiles = max((int) config('nntmux_settings.payload_split_search_max_files'), 0);
+        $this->payloadSplitSearchByteBudget = max((int) config('nntmux_settings.payload_split_search_byte_budget'), 0);
         $this->mp4TailFetch = (bool) config('nntmux_settings.mp4_tail_fetch');
         $this->mp4TailMaxSegments = max((int) config('nntmux_settings.mp4_tail_max_segments'), 1);
         $previewTargetSeconds = Settings::settingValue('preview_target_seconds');

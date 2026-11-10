@@ -204,7 +204,8 @@ class SevenZipInspectionTest extends TestCase
         $downloads = \Mockery::mock(UsenetDownloadService::class);
         $first = ['success' => true, 'groupUnavailable' => false, 'data' => $sniffed ? substr($data, 0, 32) : $data,
             'metadata' => new YencArticleMetadata(strlen($data), 1, $sniffed ? 2 : 1, 0, $sniffed ? 32 : strlen($data))];
-        $downloads->shouldReceive('downloadInspectionArticle')->once()->with('<fixture>', '', \Mockery::type(InspectionBudget::class))->andReturn($first);
+        // A sniffed first article is held and handed to the inspection, never fetched again.
+        $downloads->shouldReceive('downloadInspectionArticle')->times($sniffed ? 0 : 1)->with('<fixture>', '', \Mockery::type(InspectionBudget::class))->andReturn($first);
         if ($sniffed) {
             $downloads->shouldReceive('download')->once()->andReturn($first);
             $downloads->shouldReceive('downloadInspectionArticle')->once()->with('<tail>', '', \Mockery::type(InspectionBudget::class))
@@ -237,6 +238,18 @@ class SevenZipInspectionTest extends TestCase
      * concatenated, using -t7z -m0=Copy -v64k. encrypted: -mhe=on,
      * visible: -mhe=off; both use -pfixture-only-pass. plain has no password.
      * manifest uses -mhc=on with a synthetic nested filename and content.
+     *
+     * The obfuscated-* fixtures (split-set search, password listing and
+     * previews) were made with 7-Zip 23.01 and each volume set concatenated
+     * (`cat out/NAME.7z.* > NAME.7z`); every set has at least 4 parts:
+     *   ffmpeg -f lavfi -i testsrc=duration=4:size=320x240:rate=25 -c:v libx264
+     *     -pix_fmt yuv420p -movflags +faststart clip.mp4
+     *   a/: a.txt (40 bytes of text), b.pad (6,016 bytes: SHA-256(LE32(0..187))), c.mp4
+     *   b/: a.txt, c.mp4    c/: c.mp4    h/: 'a"b$(touch pwned).mp4' (clip.mp4)
+     *   (cd a && 7z a -t7z -m0=Copy -mhe=on -pfixture-only-pass -v7k ../out/obfuscated-encrypted.7z -- *)
+     *   (cd b && 7z a -t7z -m0=Copy -v6k ../out/obfuscated-plain.7z -- *)
+     *   (cd c && 7z a -t7z -m0=Copy -mhe=off -pfixture-only-pass -v6k ../out/obfuscated-visible.7z -- *)
+     *   (cd h && 7z a -t7z -m0=Copy -v6k ../out/obfuscated-hostile.7z -- *)
      */
     private function fixture(string $name): string
     {

@@ -521,6 +521,23 @@ then gets the MP4 tail splice, the dynamic segment budget and the same
 artifacts. With no rest, or when that fetch fails, the held article goes to the
 media handler alone, as every later video candidate does.
 
+Some posters cut one 7z archive into equal parts plus a smaller last part
+and give every part a random name; only the first part starts with the 7z
+signature. When password checking is on and the selected candidates found no
+archive or video, a second pass sniffs the first segment of each remaining
+split-set file (the extensionless files at the largest segment count) until
+one is an archive or a video. For a 7z first part, its start header gives the
+archive size, and so the part count and the last part's size; the last part is
+the eligible file of that size, found among the held articles first and then
+by sniffing the files with the fewest segments. The header is read from the
+first and last parts with placeholders for the parts between. Every sniffed
+article is held and handed to the inspection, never fetched again. The pass
+has its own limits, `ADDITIONAL_PAYLOAD_SPLIT_SEARCH_MAX_FILES` and
+`ADDITIONAL_PAYLOAD_SPLIT_SEARCH_BYTE_BUDGET` (0 turns it off); a set over
+either limit is not searched and records `seven-zip-volume-search-cap`. A
+search cut off by the release timeout records an incomplete inspection, so the
+release is retried rather than counted toward deletion.
+
 The fallback is enabled by `ADDITIONAL_PAYLOAD_SNIFFING`; candidate count,
 byte budget, and the small-file segment threshold have matching
 `ADDITIONAL_PAYLOAD_SNIFF_*` settings. Completion telemetry includes total

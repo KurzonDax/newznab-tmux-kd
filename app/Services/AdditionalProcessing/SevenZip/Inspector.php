@@ -26,16 +26,7 @@ final class Inspector
         try {
             $deadline ??= microtime(true) + 20;
             $start = $read(0, 32);
-            if (strlen($start) !== 32 || ! str_starts_with($start, self::SIGNATURE)
-                || ord($start[6]) !== 0 || ord($start[7]) > 4) {
-                throw new RuntimeException('invalid-start-header');
-            }
-            self::checkCrc(substr($start, 12, 20), substr($start, 8, 4));
-            $offset = self::uint64(substr($start, 12, 8));
-            $size = self::uint64(substr($start, 20, 8));
-            if ($offset > PHP_INT_MAX - 32 - $size || $size < 1 || $size > self::MAX_HEADER_BYTES) {
-                throw new RuntimeException('invalid-next-header-range');
-            }
+            ['offset' => $offset, 'size' => $size] = self::startHeader($start);
             $data = $read(32 + $offset, $size);
             if (strlen($data) !== $size) {
                 throw new RuntimeException('missing-next-header');
@@ -97,6 +88,28 @@ final class Inspector
         } catch (Throwable $exception) {
             return ['verdict' => PasswordVerdict::Incomplete, 'files' => [], 'reason' => $exception->getMessage()];
         }
+    }
+
+    /**
+     * The validated start header: where the next header sits after byte 32,
+     * and its size. An archive's total size is 32 + offset + size.
+     *
+     * @return array{offset: int, size: int}
+     */
+    public static function startHeader(string $start): array
+    {
+        if (strlen($start) < 32 || ! str_starts_with($start, self::SIGNATURE)
+            || ord($start[6]) !== 0 || ord($start[7]) > 4) {
+            throw new RuntimeException('invalid-start-header');
+        }
+        self::checkCrc(substr($start, 12, 20), substr($start, 8, 4));
+        $offset = self::uint64(substr($start, 12, 8));
+        $size = self::uint64(substr($start, 20, 8));
+        if ($offset > PHP_INT_MAX - 32 - $size || $size < 1 || $size > self::MAX_HEADER_BYTES) {
+            throw new RuntimeException('invalid-next-header-range');
+        }
+
+        return ['offset' => $offset, 'size' => $size];
     }
 
     public static function checkCrc(string $data, string $crc): void

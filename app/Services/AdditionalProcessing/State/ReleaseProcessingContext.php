@@ -66,6 +66,10 @@ class ReleaseProcessingContext
 
     public bool $nzbPasswordRejected = false;
 
+    // A 7-Zip command of this release exited 126 or 127: the shell could not
+    // run it, so no further 7-Zip step is tried for the release.
+    public bool $sevenZipUnavailable = false;
+
     // Discard state: the release was purged mid-processing (executable file
     // detected); all remaining processing for it must be skipped.
     public bool $releaseDiscarded = false;
@@ -346,6 +350,15 @@ class ReleaseProcessingContext
         $this->runtimeUnsupportedReasons[] = 'segment-gaps';
     }
 
+    /**
+     * The split-archive part search did not run: the release has more
+     * split-set files, or more estimated first-segment bytes, than its limits.
+     */
+    public function recordSevenZipVolumeSearchCap(): void
+    {
+        $this->runtimeUnsupportedReasons[] = 'seven-zip-volume-search-cap';
+    }
+
     public function recordMp4TailFetch(int $bytes): void
     {
         $this->mp4TailMetrics = $this->mp4TailMetrics->recordFetch($bytes);
@@ -395,6 +408,8 @@ class ReleaseProcessingContext
 
     /**
      * Check if the release has exceeded the processing timeout.
+     *
+     * @phpstan-impure
      */
     public function isTimedOut(int $timeoutSeconds): bool
     {
