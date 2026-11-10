@@ -18,6 +18,46 @@ final readonly class UnknownPayloadCandidateSelector
             return [];
         }
 
+        $candidates = $this->eligibleFiles($nzbContents);
+        if ($candidates === []) {
+            return [];
+        }
+
+        usort($candidates, static fn (UnknownPayloadCandidate $left, UnknownPayloadCandidate $right): int => $right->estimatedSizeBytes <=> $left->estimatedSizeBytes ?: $left->sourceIndex <=> $right->sourceIndex
+        );
+
+        $largest = array_shift($candidates);
+        $smallCandidates = array_values(array_filter(
+            $candidates,
+            static fn (UnknownPayloadCandidate $candidate): bool => $candidate->segmentCount <= $smallSegmentLimit,
+        ));
+        usort($smallCandidates, static fn (UnknownPayloadCandidate $left, UnknownPayloadCandidate $right): int => $left->estimatedSizeBytes <=> $right->estimatedSizeBytes ?: $left->sourceIndex <=> $right->sourceIndex
+        );
+
+        $selected = [];
+        $usedBytes = 0;
+        foreach ([$largest, ...$smallCandidates] as $candidate) {
+            if (count($selected) >= $maximumCandidates || $usedBytes + $candidate->estimatedFirstSegmentBytes > $byteBudget) {
+                continue;
+            }
+
+            $selected[] = $candidate;
+            $usedBytes += $candidate->estimatedFirstSegmentBytes;
+        }
+
+        return $selected;
+    }
+
+    /**
+     * Every file sniffing may open, in NZB order: a first message-id and an
+     * extensionless, .bin, .dat or .file title. Source indexes are positions
+     * in the NZB file list.
+     *
+     * @param  array<int|string, mixed>  $nzbContents
+     * @return list<UnknownPayloadCandidate>
+     */
+    public function eligibleFiles(array $nzbContents): array
+    {
         $candidates = [];
         foreach (array_values($nzbContents) as $sourceIndex => $file) {
             if (! is_array($file)) {
@@ -47,33 +87,32 @@ final readonly class UnknownPayloadCandidateSelector
             );
         }
 
-        if ($candidates === []) {
+        return $candidates;
+    }
+
+    /**
+     * The split-set files: the eligible files at the largest eligible segment
+     * count, in NZB order. Every part of a split archive but the last has
+     * that count, so its first part is among them. Fewer than two such files
+     * are no split set.
+     *
+     * @param  array<int|string, mixed>  $nzbContents
+     * @return list<UnknownPayloadCandidate>
+     */
+    public function splitSetFiles(array $nzbContents): array
+    {
+        $eligible = $this->eligibleFiles($nzbContents);
+        if ($eligible === []) {
             return [];
         }
 
-        usort($candidates, static fn (UnknownPayloadCandidate $left, UnknownPayloadCandidate $right): int => $right->estimatedSizeBytes <=> $left->estimatedSizeBytes ?: $left->sourceIndex <=> $right->sourceIndex
-        );
-
-        $largest = array_shift($candidates);
-        $smallCandidates = array_values(array_filter(
-            $candidates,
-            static fn (UnknownPayloadCandidate $candidate): bool => $candidate->segmentCount <= $smallSegmentLimit,
+        $largest = max(array_map(static fn (UnknownPayloadCandidate $file): int => $file->segmentCount, $eligible));
+        $files = array_values(array_filter(
+            $eligible,
+            static fn (UnknownPayloadCandidate $file): bool => $file->segmentCount === $largest,
         ));
-        usort($smallCandidates, static fn (UnknownPayloadCandidate $left, UnknownPayloadCandidate $right): int => $left->estimatedSizeBytes <=> $right->estimatedSizeBytes ?: $left->sourceIndex <=> $right->sourceIndex
-        );
 
-        $selected = [];
-        $usedBytes = 0;
-        foreach ([$largest, ...$smallCandidates] as $candidate) {
-            if (count($selected) >= $maximumCandidates || $usedBytes + $candidate->estimatedFirstSegmentBytes > $byteBudget) {
-                continue;
-            }
-
-            $selected[] = $candidate;
-            $usedBytes += $candidate->estimatedFirstSegmentBytes;
-        }
-
-        return $selected;
+        return count($files) < 2 ? [] : $files;
     }
 
     /**

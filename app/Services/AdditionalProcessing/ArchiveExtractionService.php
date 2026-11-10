@@ -79,6 +79,7 @@ class ArchiveExtractionService
         ReleaseProcessingContext $context,
         string $tmpPath,
         ?Closure $archiveRead = null,
+        ?SevenZip\WorkingSet $workingSet = null,
     ): array {
         $result = [
             'success' => false,
@@ -91,11 +92,13 @@ class ArchiveExtractionService
 
         if ($this->config->processPasswords && str_starts_with($compressedData, SevenZip\Inspector::SIGNATURE)) {
             $inspection = (new SevenZip\Inspector)->inspect($archiveRead ?? static fn (int $offset, int $length): string => substr($compressedData, $offset, $length), $context->passwordInspectionBudget?->deadline);
-            // 7z can't be test-opened here, so a password from the NZB counts as opening it.
+            $workingSet?->recordInspection($inspection['verdict']);
+            // Without 7-Zip and a working set the archive can't be test-opened, so a
+            // password from the NZB counts as opening it.
             $encrypted = $inspection['verdict'] === Enums\PasswordVerdict::VerifiedEncrypted
                 && $context->nzbPassword === null;
 
-            return [
+            $result = [
                 'success' => $inspection['files'] !== [],
                 'files' => $inspection['files'],
                 'hasPassword' => $encrypted,
@@ -105,6 +108,15 @@ class ArchiveExtractionService
                 'dataSummary' => ['file_list' => $inspection['files']],
                 'manifestComplete' => $inspection['verdict'] !== Enums\PasswordVerdict::Incomplete,
             ];
+            if ($inspection['verdict'] === Enums\PasswordVerdict::VerifiedEncrypted
+                && $inspection['reason'] === 'encrypted-header'
+                && $context->nzbPassword !== null
+                && $workingSet !== null
+                && $this->canRunSevenZip($context)) {
+                return $this->openEncryptedSevenZip($result, $workingSet, $context);
+            }
+
+            return $result;
         }
 
         // A video signature wins over ArchiveInfo: its fragment search can read random
@@ -278,6 +290,100 @@ class ArchiveExtractionService
         }
 
         return $files;
+    }
+
+    /**
+     * Whether 7-Zip can run for this release: the configured binary is
+     * executable and no earlier 7-Zip command of the release found it missing.
+     */
+    public function canRunSevenZip(ReleaseProcessingContext $context): bool
+    {
+        return ! $context->sevenZipUnavailable
+            && is_string($this->config->sevenZipPath)
+            && is_executable($this->config->sevenZipPath);
+    }
+
+    /**
+     * Lists a working set with the NZB password, at most once per set.
+     */
+    public function sevenZipListing(SevenZip\WorkingSet $workingSet, ReleaseProcessingContext $context): SevenZip\Listing
+    {
+        $listing = $workingSet->listing();
+        if ($listing !== null) {
+            return $listing;
+        }
+        try {
+            $archive = $workingSet->firstVolumePath();
+            $run = ($this->processRunner)($this->sevenZipCommand('l -slt -bse1', $context->nzbPassword).' -- '.escapeshellarg($archive));
+            $listing = SevenZip\Listing::fromOutput($run['exitCode'], $run['output']);
+        } catch (\Throwable $exception) {
+            $listing = new SevenZip\Listing(-1, $exception->getMessage());
+        }
+        if ($listing->unavailable()) {
+            $context->sevenZipUnavailable = true;
+        }
+        $workingSet->rememberListing($listing);
+
+        return $listing;
+    }
+
+    /**
+     * Extracts the first bytes of one entry to a file. head stops 7-Zip, so the
+     * entry never passes through PHP; the exit code is not meaningful.
+     */
+    public function extractSevenZipHead(
+        SevenZip\WorkingSet $workingSet,
+        ReleaseProcessingContext $context,
+        string $entryPath,
+        int $bytes,
+        string $fragmentPath,
+    ): void {
+        ($this->processRunner)($this->sevenZipCommand('e -so -spd -bso0 -bsp0 -bse0', $context->nzbPassword)
+            .' -- '.escapeshellarg($workingSet->firstVolumePath()).' '.escapeshellarg($entryPath)
+            .' | head -c '.max(1, $bytes).' > '.escapeshellarg($fragmentPath));
+    }
+
+    /**
+     * @param  array<string, mixed>  $result  The header inspection's result.
+     * @return array<string, mixed>
+     */
+    private function openEncryptedSevenZip(array $result, SevenZip\WorkingSet $workingSet, ReleaseProcessingContext $context): array
+    {
+        $listing = $this->sevenZipListing($workingSet, $context);
+        if ($listing->exitCode === 0) {
+            $files = $listing->releaseFiles();
+
+            return [
+                'success' => true,
+                'files' => $files,
+                'hasPassword' => false,
+                'passwordStatus' => ReleaseBrowseService::PASSWD_NONE,
+                'dataSummary' => ['file_list' => $files],
+                'manifestComplete' => true,
+            ] + $result;
+        }
+        if ($listing->unavailable()) {
+            return $result;
+        }
+        if ($listing->wrongPassword()) {
+            $context->nzbPasswordRejected = true;
+
+            return ['hasPassword' => true, 'passwordStatus' => ReleaseBrowseService::PASSWD_RAR] + $result;
+        }
+        $workingSet->recordInspection(Enums\PasswordVerdict::Incomplete);
+
+        return [
+            'success' => false,
+            'verdict' => Enums\PasswordVerdict::Incomplete,
+            'inspectionReason' => 'seven-zip-list-failed',
+            'manifestComplete' => false,
+        ] + $result;
+    }
+
+    private function sevenZipCommand(string $switches, ?string $password): string
+    {
+        return $this->config->getKillString().$this->config->sevenZipPath.'" '.$switches
+            .($password === null ? '' : ' -p'.escapeshellarg($password));
     }
 
     private function canRunUnrar(): bool

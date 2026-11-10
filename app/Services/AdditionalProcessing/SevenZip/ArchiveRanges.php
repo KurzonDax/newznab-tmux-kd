@@ -15,7 +15,7 @@ final class ArchiveRanges
     /** @var array<string, array{data: string, metadata: YencArticleMetadata}> */
     private array $articles = [];
 
-    /** @var list<array{start: int, size: int, ids: list<string>}> */
+    /** @var list<array{start: int, size: int, ids: list<string>, placeholder: bool}> */
     private array $volumes = [];
 
     private int $bytes = 0;
@@ -23,7 +23,7 @@ final class ArchiveRanges
     private int $requests = 0;
 
     /**
-     * @param  list<ArchiveCandidate>  $candidates
+     * @param  list<ArchiveCandidate|PlaceholderVolume>  $candidates
      * @param  Closure(string): array<string, mixed>  $fetch
      */
     public function __construct(
@@ -46,6 +46,9 @@ final class ArchiveRanges
             if ($offset >= $volumeEnd) {
                 continue;
             }
+            if ($volume['placeholder']) {
+                throw new RuntimeException('missing-range');
+            }
             while ($offset < min($end, $volumeEnd)) {
                 $article = $this->locate($volume['ids'], $offset - $volume['start'], $volume['size']);
                 $metadata = $article['metadata'];
@@ -59,7 +62,44 @@ final class ArchiveRanges
         return $result;
     }
 
-    /** @return array{start: int, size: int, ids: list<string>} */
+    /**
+     * Every volume resolved so far, in order. After a verified inspection
+     * that is every volume up to the one holding the archive's header.
+     *
+     * @return list<array{start: int, size: int, ids: list<string>, placeholder: bool}>
+     */
+    public function volumes(): array
+    {
+        return $this->volumes;
+    }
+
+    /**
+     * The decoded articles held, each with its volume index and its yEnc
+     * offset inside that volume.
+     *
+     * @return list<array{volume: int, offset: int, data: string}>
+     */
+    public function heldArticles(): array
+    {
+        $held = [];
+        foreach ($this->volumes as $index => $volume) {
+            foreach ($volume['ids'] as $id) {
+                if (isset($this->articles[$id])) {
+                    $held[] = ['volume' => $index, 'offset' => $this->articles[$id]['metadata']->offset, 'data' => $this->articles[$id]['data']];
+                }
+            }
+        }
+
+        return $held;
+    }
+
+    /** @return array{data: string, metadata: YencArticleMetadata}|null */
+    public function heldArticle(string $id): ?array
+    {
+        return $this->articles[$id] ?? null;
+    }
+
+    /** @return array{start: int, size: int, ids: list<string>, placeholder: bool} */
     private function volume(int $index): array
     {
         if (isset($this->volumes[$index])) {
@@ -68,6 +108,14 @@ final class ArchiveRanges
         $candidate = $this->candidates[$index] ?? null;
         if ($candidate === null) {
             throw new RuntimeException('missing-volume');
+        }
+        $start = $index === 0 ? 0 : $this->volumes[$index - 1]['start'] + $this->volumes[$index - 1]['size'];
+        if ($candidate instanceof PlaceholderVolume) {
+            if ($candidate->size < 1 || $candidate->size > PHP_INT_MAX - $start) {
+                throw new RuntimeException('volume-size-overflow');
+            }
+
+            return $this->volumes[$index] = ['start' => $start, 'size' => $candidate->size, 'ids' => [], 'placeholder' => true];
         }
         $ids = [...$candidate->messageIds, ...$candidate->expansionMessageIds];
         if ($ids === [] || count(array_unique($ids)) !== count($ids)) {
@@ -78,12 +126,11 @@ final class ArchiveRanges
         if ($metadata->offset !== 0) {
             throw new RuntimeException('missing-volume-head');
         }
-        $start = $index === 0 ? 0 : $this->volumes[$index - 1]['start'] + $this->volumes[$index - 1]['size'];
         if ($metadata->fileSize > PHP_INT_MAX - $start) {
             throw new RuntimeException('volume-size-overflow');
         }
 
-        return $this->volumes[$index] = ['start' => $start, 'size' => $metadata->fileSize, 'ids' => $ids];
+        return $this->volumes[$index] = ['start' => $start, 'size' => $metadata->fileSize, 'ids' => $ids, 'placeholder' => false];
     }
 
     /**
