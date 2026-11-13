@@ -8,7 +8,7 @@
     ".github/docker-compose.ci.yml": "ed7fbca18c38c566b58570f54a21b80baa7151617fcde78c465505aad40e5e04",
     ".github/php-ci.ini": "cf1c7ad36cfc32f8e1a9f2660fe3c9fd10c0e7b41799345d40ba673bf703dc56",
     ".github/workflows/admission-scale.yml": "e1c3fefeb85edaf77896bf613d44df7cde9ef5d6c808a39a61e9b8097badd862",
-    ".github/workflows/ci-maintenance.yml": "49ea5e499afd044b5bef6640afbf5f7fe838fde302ca1fb17df535b29dab9432",
+    ".github/workflows/ci-maintenance.yml": "fa1b64c6f8c947217c4d97d0dcaed69eff5aec17be54afafa739d47a9e93c7c3",
     ".github/workflows/laravel.yml": "4283b7606d13f56eb10df963191b5c7151c7e0ff9058e1b5430f7e378218420b",
     "Makefile": "31d607d55b1b396440db0b1aa50c41784842b005e28c5d8fe55a42d1e26a12c1",
     "captainhook.json": "795f55d4fd4ff7d848d04e6441078be2eed9db2b9d0832d6145771dbdb440a06",
