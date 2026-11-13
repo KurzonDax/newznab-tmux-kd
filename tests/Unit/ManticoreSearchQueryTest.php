@@ -286,6 +286,118 @@ class ManticoreSearchQueryTest extends TestCase
         $this->assertStringContainsString('circus', $result);
     }
 
+    /**
+     * Release names logged by production with a Manticore syntax error (#1240).
+     * The literal expression escapes every bracket, quote, `!` and `-`.
+     */
+    #[Test]
+    #[DataProvider('bracketedNameProvider')]
+    public function a_bracketed_name_builds_a_literal_expression(string $name, string $escaped): void
+    {
+        $this->assertSame(
+            '@@relaxed @(title,filename) ('.$escaped.')',
+            ManticoreSearchDriver::buildLiteralSearchExpression($name, ['title', 'filename']),
+        );
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function bracketedNameProvider(): array
+    {
+        return [
+            'Happy Gilmore' => [
+                'Happy Gilmore (1996) REPACK (1080p BDRip x265 10bit AC3 5.1 - JBENT)[TAoE]',
+                'Happy Gilmore \(1996\) REPACK \(1080p BDRip x265 10bit AC3 5.1 \- JBENT\)\[TAoE\]',
+            ],
+            'Scary Movie 2' => [
+                'Scary Movie 2 (2001) (1080p BDRip DDP5.1 x265)-Vialle',
+                'Scary Movie 2 \(2001\) \(1080p BDRip DDP5.1 x265\)\-Vialle',
+            ],
+            'Redline' => [
+                '[Trix] Redline [Dual Audio](AV1 1080p Opus)',
+                '\[Trix\] Redline \[Dual Audio\]\(AV1 1080p Opus\)',
+            ],
+            'A Kite' => [
+                'A Kite (1998) (BDRip 1440x1076p x265 HEVC FLACx2 2.0x2)(Dual Audio)[sxales]',
+                'A Kite \(1998\) \(BDRip 1440x1076p x265 HEVC FLACx2 2.0x2\)\(Dual Audio\)\[sxales\]',
+            ],
+            'Johnny Hallyday' => [
+                "Johnny Hallyday - Pour moi la vie va commencer (BOF 'D'o viens-tu Johnny !')",
+                "Johnny Hallyday \- Pour moi la vie va commencer \(BOF \'D\'o viens\-tu Johnny \!\'\)",
+            ],
+            'Appleseed' => [
+                '[AI-Raws] APPLESEED (BD HEVC 1440x1080 FLAC )[9A641CC3]',
+                '\[AI\-Raws\] APPLESEED \(BD HEVC 1440x1080 FLAC \)\[9A641CC3\]',
+            ],
+            'Fantasia 2000' => [
+                'Fantasia 2000 (1999) (1080p BDRip x265 10bit AC3 5.1 - JBENT)[TAoE]',
+                'Fantasia 2000 \(1999\) \(1080p BDRip x265 10bit AC3 5.1 \- JBENT\)\[TAoE\]',
+            ],
+        ];
+    }
+
+    /** No character of a name acts as a query operator in the literal expression. */
+    #[Test]
+    #[DataProvider('operatorNameProvider')]
+    public function a_name_with_operator_characters_builds_a_literal_expression(string $name, string $expected): void
+    {
+        $this->assertSame($expected, ManticoreSearchDriver::buildLiteralSearchExpression($name, ['title', 'filename']));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function operatorNameProvider(): array
+    {
+        return [
+            'leading -' => ['Artist -Live- 2019 FLAC', '@@relaxed @(title,filename) (Artist \-Live\- 2019 FLAC)'],
+            'leading !' => ['Movie !Uncut! 2020', '@@relaxed @(title,filename) (Movie \!Uncut\! 2020)'],
+            'OR bar' => ['Show S01E01 | Extras', '@@relaxed @(title,filename) (Show S01E01 \| Extras)'],
+            'field-start anchor' => ['Mamma ^Mia', '@@relaxed @(title,filename) (Mamma \^Mia)'],
+            'trailing wildcard' => ['MEOW*', '@@relaxed @(title,filename) (MEOW)'],
+            'single-character wildcard' => ['Mamma.Mia?.2008', '@@relaxed @(title,filename) (Mamma.Mia .2008)'],
+        ];
+    }
+
+    /** These names already search correctly: the literal path builds what today's builder does. */
+    #[Test]
+    #[DataProvider('unchangedNameProvider')]
+    public function a_name_that_works_today_builds_the_same_expression(string $name, string $expected): void
+    {
+        $this->assertSame($expected, ManticoreSearchDriver::buildLiteralSearchExpression($name, ['title', 'filename']));
+        $this->assertSame($expected, ManticoreSearchDriver::buildSearchExpression($name, ['title', 'filename']));
+    }
+
+    /** @return array<string, array{string, string}> */
+    public static function unchangedNameProvider(): array
+    {
+        return [
+            'scene name' => [
+                'Some.Scene.Release.2024.1080p.WEB.h264-GRP',
+                '@@relaxed @(title,filename) (Some.Scene.Release.2024.1080p.WEB.h264\-GRP)',
+            ],
+            'trailing !' => ['Mamma Mia!', '@@relaxed @(title,filename) (Mamma Mia\!)'],
+            'double hyphen' => [
+                '(HED)P.E.--Blackout-CD-FLAC-2003-MEOWZiK',
+                '@@relaxed @(title,filename) (\(HED\)P.E.\-\-Blackout\-CD\-FLAC\-2003\-MEOWZiK)',
+            ],
+        ];
+    }
+
+    #[Test]
+    public function a_name_that_escapes_to_nothing_builds_no_literal_expression(): void
+    {
+        $this->assertNull(ManticoreSearchDriver::buildLiteralSearchExpression('*', ['title', 'filename']));
+        $this->assertNull(ManticoreSearchDriver::buildLiteralSearchExpression(' ? ', ['title', 'filename']));
+        $this->assertNull(ManticoreSearchDriver::buildLiteralSearchExpression('', ['title', 'filename']));
+    }
+
+    #[Test]
+    public function the_typed_query_path_keeps_its_operators(): void
+    {
+        $this->assertSame(
+            '@@relaxed @(title,filename) (Show S01E01 | Extras)',
+            ManticoreSearchDriver::buildSearchExpression('Show S01E01 | Extras', ['title', 'filename']),
+        );
+    }
+
     /** @param array<string, string>|string $input */
     #[Test]
     #[DataProvider('negationDetectionProvider')]

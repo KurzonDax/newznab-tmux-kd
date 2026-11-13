@@ -782,7 +782,7 @@ class NameFixingService
             $this->predbMatchCache = [];
         }
 
-        $results = Search::searchPredb($fileName);
+        $results = Search::searchPredb($fileName, literal: true);
 
         return $this->predbMatchCache[$fileName] = $this->predbMatchSelector->selectBestMatch($fileName, $results);
     }

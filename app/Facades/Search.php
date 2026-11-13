@@ -23,7 +23,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static array searchReleases(array|string $phrases, int $limit = 1000)
  * @method static array searchReleasesWithFuzzy(array|string $phrases, int $limit = 1000, bool $forceFuzzy = false)
  * @method static bool isFuzzyEnabled()
- * @method static array searchPredb(array|string $searchTerm)
+ * @method static array searchPredb(array|string $searchTerm, bool $literal = false)
  * @method static array suggest(string $query, ?string $index = null)
  * @method static bool isAvailable()
  * @method static string getCurrentDriver()

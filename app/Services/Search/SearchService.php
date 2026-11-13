@@ -183,12 +183,12 @@ class SearchService extends Manager implements SearchServiceInterface
     /**
      * Search the predb index.
      *
-     * @param  array<string, mixed>  $searchTerm
-     * @return array<string, mixed>
+     * @param  array<string, mixed>|string  $searchTerm
+     * @return list<array<string, mixed>>
      */
-    public function searchPredb(array|string $searchTerm): array
+    public function searchPredb(array|string $searchTerm, bool $literal = false): array
     {
-        return $this->driver()->searchPredb($searchTerm);
+        return $this->driver()->searchPredb($searchTerm, $literal);
     }
 
     /**

@@ -271,6 +271,28 @@ class DirectNameWriteCharacterizationTest extends TestCase
             (int) $row['is_trusted_name'], $row['name_source']]);
     }
 
+    /** #1240: the PreDB lookup searches the file name as literal text, and the hit's id is stored. */
+    public function test_a_predb_filename_hit_stores_its_predb_id_on_the_release(): void
+    {
+        $id = $this->linkedRelease(1);
+        Search::shouldReceive('searchPredb')
+            ->once()
+            ->withArgs(static fn (string $name, bool $literal = false): bool => $literal)
+            ->andReturn([[
+                'title' => 'Some.Movie.2024.1080p.BluRay.x264-GROUP',
+                'filename' => 'some.movie.2024.1080p.bluray.x264-group',
+                'source' => 'srrdb',
+                'id' => 55,
+            ]]);
+        Search::shouldReceive('updateRelease');
+        $naming = new NameFixingService($this->updates);
+
+        $this->assertSame(1, $naming->matchPreDbFiles((object) [...(array) $this->snapshot($id), 'filename' => 'some.movie.2024.1080p.bluray.x264-group.mkv'], true, true, false));
+
+        $row = $this->releaseRow($id);
+        $this->assertSame(['Some.Movie.2024.1080p.BluRay.x264-GROUP', 55, 'PreDB file match'], [$row['searchname'], (int) $row['predb_id'], $row['name_source']]);
+    }
+
     /** @return iterable<string, array{array<string, mixed>, bool}> */
     public static function donorRows(): iterable
     {

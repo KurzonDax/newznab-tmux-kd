@@ -205,7 +205,7 @@ class Predb extends Model
             ->select('predb.*', 'releases.guid')
             ->orderByDesc('predb.predate');
         if (! empty($search)) {
-            $ids = Search::searchPredb($search);
+            $ids = array_column(Search::searchPredb($search), 'id');
             $sql->whereIn('predb.id', $ids);
         }
 

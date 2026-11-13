@@ -660,6 +660,51 @@ class ManticoreSearchDriver implements SearchDriverInterface
     }
 
     /**
+     * Escapes text so Manticore searches it as literal words: no character acts as a query operator.
+     *
+     * Each character is replaced once (strtr), so `--` becomes `\-\-` and nothing is escaped
+     * twice. `*` and `?` become spaces because a backslash does not stop them acting as
+     * wildcards. Only whitespace is trimmed, so a trailing `!` stays escaped. Unlike
+     * escapeString(), which the suggestion fallback still uses.
+     */
+    public static function escapeLiteralText(string $text): string
+    {
+        $pairs = ['*' => ' ', '?' => ' '];
+        foreach (['\\', '(', ')', '@', '~', '"', '&', '/', '$', '=', "'", '[', ']', '!', '-', '|', '^', '<'] as $character) {
+            $pairs[$character] = '\\'.$character;
+        }
+
+        return trim(strtr($text, $pairs));
+    }
+
+    /**
+     * Builds the search expression for literal text, such as a release name looked up in PreDB.
+     *
+     * @param  list<string>  $columns
+     */
+    public static function buildLiteralSearchExpression(string $text, array $columns = []): ?string
+    {
+        $escaped = self::escapeLiteralText($text);
+        if ($escaped === '') {
+            return null;
+        }
+
+        return '@@relaxed '.self::columnSelector($columns).' ('.$escaped.')';
+    }
+
+    /**
+     * @param  list<string>  $columns
+     */
+    private static function columnSelector(array $columns): string
+    {
+        return match (count($columns)) {
+            0 => '',
+            1 => '@'.$columns[0],
+            default => '@('.implode(',', $columns).')',
+        };
+    }
+
+    /**
      * Prepares a user search query for ManticoreSearch, preserving search operators.
      *
      * Unlike escapeString() which escapes ALL special characters, this method
@@ -924,13 +969,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             return null;
         }
 
-        $fieldSelector = match (count($columns)) {
-            0 => '',
-            1 => '@'.$columns[0],
-            default => '@('.implode(',', $columns).')',
-        };
-
-        return '@@relaxed '.self::scopeReleaseSearchQuery($searchString, $preparedSearch, $fieldSelector);
+        return '@@relaxed '.self::scopeReleaseSearchQuery($searchString, $preparedSearch, self::columnSelector($columns));
     }
 
     /**
@@ -1405,16 +1444,28 @@ class ManticoreSearchDriver implements SearchDriverInterface
     /**
      * Search predb index.
      *
+     * A typed query (the admin PreDB search) keeps its operators. With $literal, the text is
+     * a release name and is searched as literal words.
+     *
      * @param  array<string, mixed>|string  $searchTerm  Search term(s)
-     * @return array<string, mixed> Array of predb records
+     * @return list<array<string, mixed>> PreDB hits: the indexed fields plus `id`, the PreDB id
      */
-    public function searchPredb(array|string $searchTerm): array
+    public function searchPredb(array|string $searchTerm, bool $literal = false): array
     {
         $searchString = is_array($searchTerm) ? implode(' ', $searchTerm) : $searchTerm;
+        $columns = ['title', 'filename'];
 
-        $result = $this->searchIndexes($this->getPredbIndex(), $searchString, ['title', 'filename'], []); // @phpstan-ignore argument.type
+        $result = $literal
+            ? $this->executeIndexSearch($this->getPredbIndex(), $searchString, $columns, [], limit: 1000, literal: true)
+            : $this->searchIndexes($this->getPredbIndex(), $searchString, $columns, []); // @phpstan-ignore argument.type
 
-        return $result['data'] ?? [];
+        $ids = $result['id'] ?? [];
+        $hits = [];
+        foreach ($result['data'] ?? [] as $position => $fields) {
+            $hits[] = [...$fields, 'id' => (int) $ids[$position]];
+        }
+
+        return $hits;
     }
 
     /**
@@ -1423,6 +1474,17 @@ class ManticoreSearchDriver implements SearchDriverInterface
      * @return array<string, mixed>
      */
     public function searchIndexes(string $rt_index, ?string $searchString, array $column = [], array $searchArray = [], int $limit = 1000): array
+    {
+        return $this->executeIndexSearch($rt_index, $searchString, $column, $searchArray, $limit, literal: false);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $column
+     * @param  array<string, mixed>  $searchArray
+     * @param  bool  $literal  search $searchString as literal text instead of a typed query
+     * @return array<string, mixed>
+     */
+    private function executeIndexSearch(string $rt_index, ?string $searchString, array $column, array $searchArray, int $limit, bool $literal): array
     {
         if (empty($rt_index)) {
             Log::warning('ManticoreSearch: Index name is required for search');
@@ -1453,6 +1515,7 @@ class ManticoreSearchDriver implements SearchDriverInterface
             'array' => $searchArray,
             'limit' => $normalizedLimit,
             'profile' => $profile,
+            'literal' => $literal,
         ]));
 
         $cached = Cache::get($cacheKey);
@@ -1468,7 +1531,9 @@ class ManticoreSearchDriver implements SearchDriverInterface
         }
 
         $columns = array_map(static fn (mixed $value): string => (string) $value, array_values($column));
-        $searchExpr = self::buildSearchExpression($searchString, $columns, $searchArray);
+        $searchExpr = $literal
+            ? self::buildLiteralSearchExpression((string) $searchString, $columns)
+            : self::buildSearchExpression($searchString, $columns, $searchArray);
         if ($searchExpr === null) {
             if (config('app.debug')) {
                 Log::debug('ManticoreSearch::searchIndexes no terms after escaping');
