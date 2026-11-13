@@ -1,73 +1,158 @@
-name: CI maintenance
-on:
-  push:
-    branches: [master]
-    paths:
-      - 'docker/8.5/**'
-      - '.github/docker-compose.ci*.yml'
-      - '.github/php-ci.ini'
-      - '.github/actions/ci-sail/**'
-      - '.github/workflows/ci-maintenance.yml'
-      - '.github/workflows/laravel.yml'
-      - 'composer.json'
-      - 'composer.lock'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'sail'
-      - 'Makefile'
-      - '.env.test'
-      - 'scripts/ci-*'
-  schedule:
-    - cron: '17 8 * * *'
-  workflow_dispatch:
-permissions:
-  contents: read
-concurrency:
-  group: ci-cache-maintenance-master
-  cancel-in-progress: false
-jobs:
-  maintenance:
-    name: Trusted runtime maintenance and serial validation
-    if: github.ref == 'refs/heads/master'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    env:
-      COMPOSER_AUTH: '{"github-oauth":{"github.com":"${{ secrets.GITHUB_TOKEN }}"}}'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/ci-sail
-        id: setup
-        with:
-          npm-cache: 'true'
-          export-build-cache: 'true'
-          fresh: ${{ github.event_name != 'push' }}
-      - name: Warm npm downloads on input changes
-        if: github.event_name == 'push'
-        run: ./sail exec -T -u sail laravel.test bash -c 'umask 0022; exec npm ci --no-audit --no-fund'
-      - name: Run tests
-        if: github.event_name != 'push'
-        run: ./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index 0 --count 1
-
-      - name: Run bounded correctness from the shared inventory
-        if: github.event_name != 'push'
-        run: python3 scripts/ci-run --all-correctness
-
-      - name: Audit dependencies (informational)
-        if: github.event_name != 'push'
-        continue-on-error: true
-        run: make deps-audit
-      - name: Save Composer downloads
-        if: success() && steps.setup.outputs.composer-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/nntmux-ci-cache/composer/files
-          key: ${{ steps.setup.outputs.composer-key }}
-      - name: Save npm downloads
-        if: success() && steps.setup.outputs.npm-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/nntmux-ci-cache/npm/_cacache
-          key: ${{ steps.setup.outputs.npm-key }}
-      - name: Stop Sail
-        if: always()
-        run: ./sail down
+{
+  "name": "CI maintenance",
+  "on": {
+    "push": {
+      "branches": [
+        "master"
+      ],
+      "paths": [
+        "docker/8.5/**",
+        ".github/docker-compose.ci*.yml",
+        ".github/php-ci.ini",
+        ".github/actions/ci-sail/**",
+        ".github/workflows/ci-maintenance.yml",
+        ".github/workflows/laravel.yml",
+        "composer.json",
+        "composer.lock",
+        "package.json",
+        "package-lock.json",
+        "sail",
+        "Makefile",
+        ".env.test",
+        "scripts/ci-*"
+      ]
+    },
+    "schedule": [
+      {
+        "cron": "17 8 * * *"
+      }
+    ],
+    "workflow_dispatch": null
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "ci-cache-maintenance-master",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "serial": {
+      "name": "Serial PHP validation",
+      "if": "github.ref == 'refs/heads/master' && github.event_name != 'push'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "env": {
+        "COMPOSER_AUTH": "{\"github-oauth\":{\"github.com\":\"${{ secrets.GITHUB_TOKEN }}\"}}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        },
+        {
+          "name": "Set up runtime",
+          "id": "setup",
+          "uses": "./.github/actions/ci-sail",
+          "with": {
+            "fresh": "true"
+          }
+        },
+        {
+          "name": "Run tests",
+          "run": "./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh scripts/ci-phpunit-shard --index 0 --count 1"
+        },
+        {
+          "name": "Audit dependencies",
+          "if": "always() && steps.setup.outcome == 'success'",
+          "run": "make deps-audit"
+        },
+        {
+          "name": "Stop Sail",
+          "if": "always()",
+          "run": "./sail down"
+        }
+      ]
+    },
+    "bounded": {
+      "name": "Bounded suites and runtime maintenance",
+      "if": "github.ref == 'refs/heads/master'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 30,
+      "env": {
+        "COMPOSER_AUTH": "{\"github-oauth\":{\"github.com\":\"${{ secrets.GITHUB_TOKEN }}\"}}"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+        },
+        {
+          "name": "Set up runtime",
+          "id": "setup",
+          "uses": "./.github/actions/ci-sail",
+          "with": {
+            "npm-cache": "true",
+            "export-build-cache": "true",
+            "fresh": "${{ github.event_name != 'push' }}"
+          }
+        },
+        {
+          "name": "Warm npm downloads on input changes",
+          "if": "github.event_name == 'push'",
+          "run": "./sail exec -T -u sail laravel.test bash -c 'umask 0022; exec npm ci --no-audit --no-fund'"
+        },
+        {
+          "name": "Run bounded correctness from the shared inventory",
+          "if": "github.event_name != 'push'",
+          "run": "python3 scripts/ci-run --all-correctness"
+        },
+        {
+          "name": "Save Composer downloads",
+          "if": "success() && steps.setup.outputs.composer-hit != 'true'",
+          "uses": "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "with": {
+            "path": "${{ runner.temp }}/nntmux-ci-cache/composer/files",
+            "key": "${{ steps.setup.outputs.composer-key }}"
+          }
+        },
+        {
+          "name": "Save npm downloads",
+          "if": "success() && steps.setup.outputs.npm-hit != 'true'",
+          "uses": "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
+          "with": {
+            "path": "${{ runner.temp }}/nntmux-ci-cache/npm/_cacache",
+            "key": "${{ steps.setup.outputs.npm-key }}"
+          }
+        },
+        {
+          "name": "Stop Sail",
+          "if": "always()",
+          "run": "./sail down"
+        }
+      ]
+    },
+    "report": {
+      "name": "Report nightly result",
+      "needs": [
+        "serial",
+        "bounded"
+      ],
+      "if": "always() && github.event_name == 'schedule'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 5,
+      "permissions": {
+        "issues": "write",
+        "actions": "read"
+      },
+      "steps": [
+        {
+          "name": "Track a red night in one issue",
+          "shell": "python3 {0}",
+          "env": {
+            "GH_TOKEN": "${{ github.token }}"
+          },
+          "run": "import json\nimport os\nimport subprocess\nfrom datetime import datetime, timezone\n\nTITLE = 'Nightly CI maintenance is red'\nLABEL = 'needs-triage'\nBOT_LOGINS = {'app/github-actions', 'github-actions[bot]'}\nSERIAL = 'Serial PHP validation'\nBOUNDED = 'Bounded suites and runtime maintenance'\nREPO = os.environ['GITHUB_REPOSITORY']\nRUN_ID = os.environ['GITHUB_RUN_ID']\nRUN_URL = f\"{os.environ['GITHUB_SERVER_URL']}/{REPO}/actions/runs/{RUN_ID}\"\n\n\ndef gh(*args, body=None):\n    return subprocess.run(['gh', *args, '--repo', REPO], input=body, stdout=subprocess.PIPE,\n                          text=True, check=True).stdout\n\n\ndef step_conclusion(job, name):\n    return next((s for s in job.get('steps') or [] if s.get('name') == name), {}).get('conclusion') or None\n\n\ndef parse_time(value):\n    return datetime.fromisoformat(value.replace('Z', '+00:00'))\n\n\ndef job_result(job):\n    conclusion = job.get('conclusion') or None\n    if conclusion is None:\n        return 'not reported'\n    if conclusion == 'cancelled' and job.get('startedAt') and job.get('completedAt'):\n        minutes = (parse_time(job['completedAt']) - parse_time(job['startedAt'])).total_seconds() / 60\n        return f'cancelled after {minutes:.1f} min'\n    return conclusion\n\n\njobs = {job.get('name'): job for job in json.loads(gh('run', 'view', RUN_ID, '--json', 'jobs'))['jobs']}\nserial = jobs.get(SERIAL, {})\nbounded = jobs.get(BOUNDED, {})\ntests = step_conclusion(serial, 'Run tests')\ncorrectness = step_conclusion(bounded, 'Run bounded correctness from the shared inventory')\naudit = step_conclusion(serial, 'Audit dependencies')\nif audit == 'success':\n    audit_text = 'passed'\nelif audit == 'failure':\n    audit_text = 'failed'\nelif audit in (None, 'skipped'):\n    audit_text = 'not run (runtime setup failed)' if step_conclusion(serial, 'Set up runtime') != 'success' else 'not run'\nelse:\n    audit_text = audit\ngreen = all(value == 'success' for value in\n            (serial.get('conclusion'), bounded.get('conclusion'), tests, correctness, audit))\n\ntoday = datetime.now(timezone.utc).date().isoformat()\nbody = '\\n'.join([\n    f'The scheduled `CI maintenance` run on {today} {\"finished green\" if green else \"did not finish green\"}: {RUN_URL}',\n    '',\n    '| Result | Conclusion |',\n    '| --- | --- |',\n    f'| Serial PHP job | {job_result(serial)} |',\n    f'| `Run tests` step | {tests or \"not reported\"} |',\n    f'| Bounded suites job | {job_result(bounded)} |',\n    f'| Bounded correctness step | {correctness or \"not reported\"} |',\n    f'| Audit | {audit_text} |',\n    '',\n    'The workflow replaces this body after each red night and closes this issue after the next green night.',\n    '',\n])\nprint(body)\n\nmatches = sorted(issue['number'] for issue in json.loads(gh(\n    'issue', 'list', '--state', 'open', '--limit', '1000', '--json', 'number,title,author'))\n    if issue.get('title') == TITLE and (issue.get('author') or {}).get('login') in BOT_LOGINS)\nif green:\n    if matches:\n        gh('issue', 'close', str(matches[0]), '--comment', f'Scheduled CI maintenance is green again: {RUN_URL}')\nelif matches:\n    gh('issue', 'edit', str(matches[0]), '--body-file', '-', body=body)\nelse:\n    gh('issue', 'create', '--title', TITLE, '--label', LABEL, '--body-file', '-', body=body)\n"
+        }
+      ]
+    }
+  }
+}

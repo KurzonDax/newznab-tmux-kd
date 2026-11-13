@@ -1,6 +1,6 @@
 {
-  "issue": 1236,
-  "base": "bf46a6c7d2370a546ad8d1f40da3ecfa5aa63d01",
+  "issue": 1241,
+  "base": "6c1d9bdbaa88f93a7f1de88d4b0c6834310f38ad",
   "files": {
     ".github/actions/ci-sail/action.yml": "4924453805b5e7e15165c48e28fa19d4bc532d7069048d6d337b3139252eb259",
     ".github/ci-policy.json": "f2192a71e1ba0de8607f68c1c9cc21c8e508376e02c3a25d27083935cd66b5b8",
@@ -8,9 +8,9 @@
     ".github/docker-compose.ci.yml": "ed7fbca18c38c566b58570f54a21b80baa7151617fcde78c465505aad40e5e04",
     ".github/php-ci.ini": "cf1c7ad36cfc32f8e1a9f2660fe3c9fd10c0e7b41799345d40ba673bf703dc56",
     ".github/workflows/admission-scale.yml": "e1c3fefeb85edaf77896bf613d44df7cde9ef5d6c808a39a61e9b8097badd862",
-    ".github/workflows/ci-maintenance.yml": "5b6efdfeb288d153b13f7452f64855fc8a6847685cfa1f6dee81ba24bca92260",
+    ".github/workflows/ci-maintenance.yml": "fa1b64c6f8c947217c4d97d0dcaed69eff5aec17be54afafa739d47a9e93c7c3",
     ".github/workflows/laravel.yml": "4283b7606d13f56eb10df963191b5c7151c7e0ff9058e1b5430f7e378218420b",
-    "Makefile": "d0a0879e09e7222915753c8d6da91887d2dad7f072289c5c0f5ebdf8d2e47258",
+    "Makefile": "31d607d55b1b396440db0b1aa50c41784842b005e28c5d8fe55a42d1e26a12c1",
     "captainhook.json": "795f55d4fd4ff7d848d04e6441078be2eed9db2b9d0832d6145771dbdb440a06",
     "docker/8.5/Dockerfile": "da97a14ceea298096bf916d5ae0fbdae3056b61c5ec8fe0610ad35acf8403dd0",
     "docker/8.5/nginx.conf": "8276f8c62527dcb3991e82423040cdcae35c2c597a67e1373b377be8011d6ec7",

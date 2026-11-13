@@ -231,7 +231,7 @@ composer-install: ## Run composer install inside the container
 composer-update: ## Run composer update inside the container
 	@$(SAIL) exec -u sail $(APP_SERVICE) bash -c 'umask 0022; exec composer update'
 .PHONY: deps-audit
-deps-audit: ## Report known vulnerabilities in Composer + npm deps (exit 1 if any; CI treats as informational)
+deps-audit: ## Report known vulnerabilities in Composer + npm deps (exit 1 if any; fails the daily CI maintenance run)
 	@echo "$(CYAN)▶ composer audit$(RESET)"
 	@$(SAIL) exec -u sail $(APP_SERVICE) composer audit --no-interaction; composer_rc=$$?; \
 	echo "$(CYAN)▶ npm audit --omit=dev$(RESET)"; \
