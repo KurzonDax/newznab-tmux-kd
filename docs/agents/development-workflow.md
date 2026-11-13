@@ -278,7 +278,7 @@ A new commit or base update cancels obsolete `Run tests` executions for that sam
 
 Master pushes no longer repeat the full suite. `CI maintenance` warms BuildKit and Composer/npm download caches only when runtime, workflow, or dependency inputs change. PR jobs restore those caches and still build/install normally on a miss; trusted master maintenance is the cache writer. Installed dependencies and application caches stay local to each runner.
 
-At 08:17 UTC daily, maintenance pulls base images, rebuilds every layer, and runs the full unsharded suite plus runtime/frontend validation on that exact fresh image. This retains serial order and state-leak coverage alongside PR sharding. Dependency audits are informational on dependency-changing PRs and every daily/manual full run.
+At 08:17 UTC daily, maintenance pulls base images, rebuilds every layer, and runs the full unsharded suite. A parallel job rebuilds its own fresh image the same way for runtime/frontend validation. This retains serial order and state-leak coverage alongside PR sharding. The dependency audit runs on every daily and manual run whose runtime started, and a failed audit turns the run red.
 
 Request the same fresh-runtime full validation on demand:
 

@@ -138,9 +138,12 @@ adapter if using the focused verifier directly for a database test.
 
 Full admission comparison, admission throughput, million-row ingestion, retained-index,
 naming-scale and frontier-scale tests remain
-manual; there is no automatic performance schedule. Daily maintenance retains
-fresh-runtime serial PHP plus the bounded suite inventory. Master pushes warm
-runtime caches only; they do not repeat the full test pipeline.
+manual; there is no automatic performance schedule. Daily maintenance runs two
+side-by-side jobs on fresh runtimes: serial PHP followed by the dependency audit,
+and the bounded suite inventory, which also writes the runtime caches. A red
+scheduled night opens or refreshes one `Nightly CI maintenance is red` issue;
+the next green night closes it. Master pushes warm runtime caches only; they do
+not repeat the full test pipeline.
 
 ## Completion and timing
 

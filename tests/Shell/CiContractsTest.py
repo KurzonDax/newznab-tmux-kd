@@ -212,5 +212,200 @@ sys.exit(int(os.environ.get('TEST_EXIT', '0')))
         self.assertFalse(self.capture.exists())
 
 
+MAINTENANCE = ROOT / '.github/workflows/ci-maintenance.yml'
+SERIAL_COMMAND = ('./sail exec -T -u sail laravel.test scripts/run-tests-isolated.sh '
+                  'scripts/ci-phpunit-shard --index 0 --count 1')
+BOUNDED_COMMAND = 'python3 scripts/ci-run --all-correctness'
+REPORT_TITLE = 'Nightly CI maintenance is red'
+
+
+def maintenance():
+    return json.loads(MAINTENANCE.read_text())
+
+
+def named_step(job, name):
+    matches = [step for step in job['steps'] if step.get('name') == name]
+    if len(matches) != 1:
+        raise AssertionError(f'expected one step named {name!r}, found {len(matches)}')
+    return matches[0]
+
+
+class MaintenanceWorkflowTest(unittest.TestCase):
+    def setUp(self):
+        self.workflow = maintenance()
+        self.jobs = self.workflow['jobs']
+
+    def test_serial_and_bounded_jobs_run_side_by_side_within_thirty_minutes(self):
+        self.assertEqual({'serial', 'bounded', 'report'}, set(self.jobs))
+        for key, other in (('serial', 'bounded'), ('bounded', 'serial')):
+            needs = self.jobs[key].get('needs', [])
+            self.assertNotIn(other, [needs] if isinstance(needs, str) else needs)
+            self.assertEqual(30, self.jobs[key]['timeout-minutes'])
+
+    def test_each_test_command_runs_once_in_its_own_job(self):
+        commands = [(key, step['run']) for key, job in self.jobs.items() for step in job['steps'] if 'run' in step]
+        self.assertEqual([('serial', SERIAL_COMMAND)], [c for c in commands if c[1] == SERIAL_COMMAND])
+        self.assertEqual([('bounded', BOUNDED_COMMAND)], [c for c in commands if c[1] == BOUNDED_COMMAND])
+        self.assertEqual(SERIAL_COMMAND, named_step(self.jobs['serial'], 'Run tests')['run'])
+        self.assertEqual(BOUNDED_COMMAND, named_step(self.jobs['bounded'], 'Run bounded correctness from the shared inventory')['run'])
+
+    def test_audit_follows_serial_tests_and_counts_whenever_setup_succeeded(self):
+        steps = self.jobs['serial']['steps']
+        audit = named_step(self.jobs['serial'], 'Audit dependencies')
+        self.assertGreater(steps.index(audit), steps.index(named_step(self.jobs['serial'], 'Run tests')))
+        self.assertEqual('make deps-audit', audit['run'])
+        self.assertEqual("always() && steps.setup.outcome == 'success'", audit['if'])
+        self.assertNotIn('continue-on-error', audit)
+        for key in ('bounded', 'report'):
+            self.assertFalse(any(step.get('run') == 'make deps-audit' for step in self.jobs[key]['steps']))
+
+    def test_only_the_reporting_job_widens_permissions(self):
+        self.assertEqual({'contents': 'read'}, self.workflow['permissions'])
+        self.assertEqual({'issues': 'write', 'actions': 'read'}, self.jobs['report']['permissions'])
+        for key in ('serial', 'bounded'):
+            self.assertNotIn('permissions', self.jobs[key])
+
+    def test_push_runs_warm_caches_once_and_no_tests(self):
+        self.assertEqual("github.ref == 'refs/heads/master' && github.event_name != 'push'", self.jobs['serial']['if'])
+        self.assertEqual("github.ref == 'refs/heads/master'", self.jobs['bounded']['if'])
+        self.assertEqual("github.event_name != 'push'",
+                         named_step(self.jobs['bounded'], 'Run bounded correctness from the shared inventory')['if'])
+        self.assertEqual("github.event_name == 'push'",
+                         named_step(self.jobs['bounded'], 'Warm npm downloads on input changes')['if'])
+        self.assertIn("github.event_name == 'schedule'", self.jobs['report']['if'])
+
+    def test_both_setups_are_fresh_outside_push(self):
+        self.assertEqual('true', named_step(self.jobs['serial'], 'Set up runtime')['with']['fresh'])
+        self.assertEqual("${{ github.event_name != 'push' }}",
+                         named_step(self.jobs['bounded'], 'Set up runtime')['with']['fresh'])
+
+    def test_only_the_bounded_job_writes_caches(self):
+        setup = named_step(self.jobs['bounded'], 'Set up runtime')
+        self.assertEqual('setup', setup['id'])
+        self.assertEqual({'npm-cache': 'true', 'export-build-cache': 'true'},
+                         {k: v for k, v in setup['with'].items() if k != 'fresh'})
+        self.assertEqual('setup', named_step(self.jobs['serial'], 'Set up runtime')['id'])
+        for key, job in self.jobs.items():
+            saves = [step for step in job['steps'] if step.get('uses', '').startswith('actions/cache/save@')]
+            warms = [step for step in job['steps'] if step.get('name') == 'Warm npm downloads on input changes']
+            exports = [step for step in job['steps'] if step.get('with', {}).get('export-build-cache') == 'true']
+            expected = (2, 1, 1) if key == 'bounded' else (0, 0, 0)
+            self.assertEqual(expected, (len(saves), len(warms), len(exports)), key)
+
+    def test_reporting_job_awaits_both_test_jobs_on_scheduled_runs_only(self):
+        report = self.jobs['report']
+        self.assertEqual(['serial', 'bounded'], report['needs'])
+        self.assertIn('always()', report['if'])
+        self.assertIn("github.event_name == 'schedule'", report['if'])
+        self.assertFalse(any('uses' in step for step in report['steps']), 'reporting adds no action')
+
+
+class MaintenanceReportTest(unittest.TestCase):
+    """Runs the reporting step's script against a fake gh that records every call."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        workflow = maintenance()
+        steps = workflow['jobs']['report']['steps']
+        self.assertEqual(1, len(steps))
+        self.assertEqual('python3 {0}', steps[0]['shell'])
+        self.script = self.root / 'report.py'
+        self.script.write_text(steps[0]['run'])
+        self.calls = self.root / 'calls'
+        gh = self.root / 'gh'
+        gh.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['CALLS'], 'a') as handle:
+    handle.write(json.dumps({'args': args, 'stdin': '' if sys.stdin.isatty() else sys.stdin.read()}) + '\\n')
+if args[:2] == ['run', 'view']:
+    print(os.environ['FAKE_JOBS'])
+elif args[:2] == ['issue', 'list']:
+    print(os.environ['FAKE_ISSUES'])
+""")
+        gh.chmod(0o755)
+        self.serial_name = workflow['jobs']['serial']['name']
+        self.bounded_name = workflow['jobs']['bounded']['name']
+
+    def job(self, name, conclusion, steps, minutes=12):
+        return {'name': name, 'status': 'completed', 'conclusion': conclusion,
+                'startedAt': '2026-11-12T08:20:00Z', 'completedAt': f'2026-11-12T08:{20 + minutes}:30Z',
+                'steps': [{'name': step, 'status': 'completed', 'conclusion': result} for step, result in steps.items()]}
+
+    def jobs(self, serial='success', tests='success', audit='success', bounded='success',
+             correctness='success', setup='success', serial_minutes=12):
+        return [self.job(self.serial_name, serial,
+                         {'Set up runtime': setup, 'Run tests': tests, 'Audit dependencies': audit},
+                         serial_minutes),
+                self.job(self.bounded_name, bounded,
+                         {'Set up runtime': 'success',
+                          'Run bounded correctness from the shared inventory': correctness})]
+
+    def report(self, jobs, issues=()):
+        env = dict(os.environ, PATH=str(self.root) + os.pathsep + os.environ['PATH'], CALLS=str(self.calls),
+                   FAKE_JOBS=json.dumps({'jobs': jobs}), FAKE_ISSUES=json.dumps(list(issues)),
+                   GITHUB_REPOSITORY='owner/repo', GITHUB_RUN_ID='4242', GITHUB_SERVER_URL='https://github.com')
+        result = subprocess.run(['python3', str(self.script)], env=env, capture_output=True, text=True,
+                                stdin=subprocess.DEVNULL)
+        self.assertEqual(0, result.returncode, result.stderr)
+        calls = [json.loads(line) for line in self.calls.read_text().splitlines()]
+        for call in calls:
+            self.assertEqual(['--repo', 'owner/repo'], call['args'][-2:])
+        return [call for call in calls if call['args'][:2] not in (['run', 'view'], ['issue', 'list'])]
+
+    def issue(self, number, title=REPORT_TITLE, login='app/github-actions'):
+        return {'number': number, 'title': title, 'author': {'login': login}}
+
+    def test_red_night_without_an_open_issue_creates_one(self):
+        writes = self.report(self.jobs(bounded='cancelled', correctness='cancelled'),
+                             [self.issue(1241, title=REPORT_TITLE + ' (spec)', login='KurzonDax'),
+                              self.issue(1300, login='KurzonDax')])
+        self.assertEqual(1, len(writes))
+        args = writes[0]['args']
+        self.assertEqual(['issue', 'create'], args[:2])
+        self.assertEqual(REPORT_TITLE, args[args.index('--title') + 1])
+        self.assertEqual('needs-triage', args[args.index('--label') + 1])
+        self.assertEqual('-', args[args.index('--body-file') + 1])
+        body = writes[0]['stdin']
+        self.assertIn('https://github.com/owner/repo/actions/runs/4242', body)
+        self.assertIn('Bounded suites job | cancelled after 12.5 min', body)
+        self.assertIn('Audit | passed', body)
+
+    def test_red_night_replaces_the_lowest_matching_bot_issue_body(self):
+        writes = self.report(self.jobs(serial='failure', audit='failure'),
+                             [self.issue(1400), self.issue(1350, login='github-actions[bot]'),
+                              self.issue(1300, login='KurzonDax')])
+        self.assertEqual([['issue', 'edit', '1350', '--body-file', '-', '--repo', 'owner/repo']],
+                         [call['args'] for call in writes])
+        self.assertIn('Audit | failed', writes[0]['stdin'])
+        self.assertIn('Serial PHP job | failure', writes[0]['stdin'])
+
+    def test_failed_setup_reports_the_audit_as_not_run(self):
+        writes = self.report(self.jobs(serial='failure', setup='failure', tests='skipped', audit='skipped'))
+        self.assertIn('Audit | not run (runtime setup failed)', writes[0]['stdin'])
+        self.assertIn('`Run tests` step | skipped', writes[0]['stdin'])
+
+    def test_limit_night_reads_as_thirty_minutes(self):
+        writes = self.report(self.jobs(serial='cancelled', tests='cancelled', serial_minutes=30))
+        self.assertIn('Serial PHP job | cancelled after 30.5 min', writes[0]['stdin'])
+
+    def test_missing_job_is_red(self):
+        writes = self.report(self.jobs()[:1])
+        self.assertEqual(['issue', 'create'], writes[0]['args'][:2])
+        self.assertIn('Bounded suites job | not reported', writes[0]['stdin'])
+
+    def test_green_night_closes_the_open_issue_with_one_comment(self):
+        writes = self.report(self.jobs(), [self.issue(1400), self.issue(1300, login='KurzonDax')])
+        self.assertEqual(1, len(writes))
+        args = writes[0]['args']
+        self.assertEqual(['issue', 'close', '1400'], args[:3])
+        self.assertIn('https://github.com/owner/repo/actions/runs/4242', args[args.index('--comment') + 1])
+
+    def test_green_night_without_an_open_issue_writes_nothing(self):
+        self.assertEqual([], self.report(self.jobs(), [self.issue(1241, login='KurzonDax')]))
+
+
 if __name__ == '__main__':
     unittest.main()
