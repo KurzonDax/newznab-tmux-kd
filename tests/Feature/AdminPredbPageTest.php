@@ -171,7 +171,7 @@ class AdminPredbPageTest extends TestCase
         Search::shouldReceive('searchPredb')
             ->once()
             ->with('irc size')
-            ->andReturn([$predbId]);
+            ->andReturn([['title' => 'Searched.IRC.Release-GROUP', 'source' => 'irc', 'id' => $predbId]]);
 
         $response = $this->actingAs($this->admin())->get(route('admin.predb', ['presearch' => 'irc size']));
 
@@ -293,11 +293,11 @@ class AdminPredbPageTest extends TestCase
         Search::shouldReceive('searchPredb')
             ->once()
             ->with('alpha')
-            ->andReturn([$ids['Predb.Alpha-GROUP']]);
+            ->andReturn([['title' => 'Predb.Alpha-GROUP', 'id' => $ids['Predb.Alpha-GROUP']]]);
         Search::shouldReceive('searchPredb')
             ->once()
             ->with('beta')
-            ->andReturn([$ids['Predb.Beta-GROUP']]);
+            ->andReturn([['title' => 'Predb.Beta-GROUP', 'id' => $ids['Predb.Beta-GROUP']]]);
 
         $this->withCurrentPage(1);
 

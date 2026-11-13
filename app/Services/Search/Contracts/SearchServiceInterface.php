@@ -104,10 +104,13 @@ interface SearchServiceInterface
     /**
      * Search the predb index.
      *
+     * A typed query keeps its operators. With $literal, the text is a release name and is
+     * searched as literal words: no character acts as a query operator.
+     *
      * @param  array<string, mixed>|string  $searchTerm  Search term(s)
-     * @return array<string, mixed> Array of predb records
+     * @return list<array<string, mixed>> PreDB hits: the indexed fields plus `id`, the PreDB id
      */
-    public function searchPredb(array|string $searchTerm): array;
+    public function searchPredb(array|string $searchTerm, bool $literal = false): array;
 
     /**
      * Get spell correction suggestions ("Did you mean?").
