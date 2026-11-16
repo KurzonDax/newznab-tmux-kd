@@ -159,6 +159,57 @@ final class RecoveryRetentionTest extends TestCase
         $this->assertSame(1, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
     }
 
+    public function test_the_purge_bundle_lookup_is_bounded_by_the_batch(): void
+    {
+        $this->header(1, null, 145);
+        $this->header(5, null, 145);
+        $lookups = [];
+        DB::listen(function (QueryExecuted $query) use (&$lookups): void {
+            if (str_contains($query->sql, 'from "obfuscation_recovery_bundles" as "owner"')) {
+                $lookups[] = $query;
+            }
+        });
+
+        $this->assertSame(2, (new RecoveryRetention)->purge(RecoveryConfig::fromValues([]))['headers']);
+
+        $this->assertCount(2, $lookups);
+        $this->assertStringStartsWith('select distinct "owner"."id"', $lookups[0]->sql);
+        $this->assertStringStartsWith('select distinct "raw"."id"', $lookups[1]->sql);
+        foreach ($lookups as $lookup) {
+            $this->assertSame([1005], $this->boundBindings($lookup, '"owner"."start_ms" <= ?'));
+            $this->assertSame([1001], $this->boundBindings($lookup, '"owner"."end_ms" >= ?'));
+            $this->assertSame([1], $this->boundBindings($lookup, '"owner"."groups_id" in (?)'));
+            $this->assertSame(['nyuu-media-v1'], $this->boundBindings($lookup, '"owner"."profile" in (?)'));
+        }
+    }
+
+    public function test_the_bounded_lookup_finds_the_same_owners(): void
+    {
+        $this->freezeTime();
+        $this->header(1, null, 145);
+        $this->header(2, null, 145);
+        $this->header(3, null, 145);
+        DB::table('obfuscation_recovery_headers')->where('id', 3)->update([
+            'profile' => 'nyuu-rar-sequential-v1', 'key_digest' => str_repeat('c', 64),
+        ]);
+        $owners = [
+            'A' => $this->bundle('A', 'nyuu-media-v1', str_repeat('a', 64), 1002, 5000),
+            'B' => $this->bundle('B', 'nyuu-media-v1', str_repeat('a', 64), 0, 1001),
+            'R' => $this->bundle('R', 'nyuu-rar-sequential-v1', str_repeat('c', 64), 1003, 1003),
+            'C' => $this->bundle('C', 'nyuu-media-v1', str_repeat('a', 64), 0, 1000),
+        ];
+
+        $this->assertSame(['headers' => 3, 'candidates' => 3, 'waiting' => 0], (new RecoveryRetention)->purge(RecoveryConfig::fromValues([])));
+
+        foreach (['A', 'B', 'R'] as $owner) {
+            $bundle = DB::table('obfuscation_recovery_bundles')->where('id', $owners[$owner])->first();
+            $this->assertSame(['expired_unresolved', 'raw_retention_elapsed'], [$bundle->state, $bundle->reason], $owner);
+        }
+        $untouched = DB::table('obfuscation_recovery_bundles')->where('id', $owners['C'])->first();
+        $this->assertSame(['collecting', null], [$untouched->state, $untouched->reason]);
+        $this->assertSame(0, DB::table('obfuscation_recovery_headers')->count());
+    }
+
     public function test_drain_repeats_bounded_batches_until_nothing_is_deleted(): void
     {
         for ($id = 1; $id <= 250; $id++) {
@@ -716,6 +767,28 @@ final class RecoveryRetentionTest extends TestCase
         DB::table('obfuscation_recovery_expired_headers')->insert([
             'source_epoch' => $epoch, 'groups_id' => $group, 'message_id_digest' => hash('sha256', $message),
             'first_observed_at' => now()->subHours($age),
+        ]);
+    }
+
+    /**
+     * Read the bindings a placeholder fragment of the statement consumes.
+     *
+     * @return list<mixed>
+     */
+    private function boundBindings(QueryExecuted $query, string $fragment): array
+    {
+        $position = strpos($query->sql, $fragment);
+        $this->assertNotFalse($position, $fragment.' is missing from '.$query->sql);
+
+        return array_slice($query->bindings, substr_count(substr($query->sql, 0, $position), '?'), substr_count($fragment, '?'));
+    }
+
+    private function bundle(string $owner, string $profile, string $key, int $start, int $end): int
+    {
+        return (int) DB::table('obfuscation_recovery_bundles')->insertGetId([
+            'owner_digest' => hash('sha256', $owner), 'profile' => $profile, 'groups_id' => 1, 'source_epoch' => 'epoch',
+            'capture_generation' => 1, 'key_digest' => $key, 'start_ms' => $start, 'end_ms' => $end,
+            'state' => 'collecting', 'created_at' => now(), 'updated_at' => now(),
         ]);
     }
 

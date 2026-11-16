@@ -63,6 +63,13 @@ final class RecoveryRetention
                     ->where(fn ($partition) => $partition->where('owner.profile', RecoveryAlgorithm::Media->value)
                         ->orWhereColumn('owner.key_digest', 'raw.key_digest'));
             })->whereIn('raw.id', $rows->pluck('id')->all())->where('owner.state', '!=', 'coalesced');
+            if ($rows->isNotEmpty()) {
+                // Restate the join's bounds as constants from the locked batch so the lookup ranges over recovery_bundle_window.
+                $membership->whereIn('owner.groups_id', $rows->pluck('groups_id')->map(fn ($group): int => (int) $group)->unique()->sort()->values()->all())
+                    ->whereIn('owner.profile', $rows->pluck('profile')->unique()->sort()->values()->all())
+                    ->where('owner.start_ms', '<=', (int) $rows->max('embedded_timestamp_ms'))
+                    ->where('owner.end_ms', '>=', (int) $rows->min('embedded_timestamp_ms'));
+            }
             $discovered = (clone $membership)
                 ->distinct()->limit(1001)->get(['owner.id', 'owner.groups_id', 'owner.source_epoch', 'owner.capture_generation', 'owner.profile', 'owner.start_ms', 'owner.end_ms']);
             if ($discovered->count() > 1000) {

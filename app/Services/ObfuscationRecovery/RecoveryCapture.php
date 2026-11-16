@@ -6,6 +6,7 @@ namespace App\Services\ObfuscationRecovery;
 
 use App\Services\Binaries\HeaderStorageReport;
 use App\Services\BlacklistService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -256,7 +257,12 @@ final class RecoveryCapture
                 return new RecoveryCaptureReport('captured', $captured, $duplicates, $complete, $exclusions);
             }, 1);
         } catch (\Throwable $exception) {
-            Log::warning('Recovery capture storage is unavailable; coverage remains unknown.', ['group_id' => $context->groupId, 'exception' => $exception::class, 'reason' => substr($exception->getMessage(), 0, 200)]);
+            $warning = ['group_id' => $context->groupId, 'exception' => $exception::class, 'reason' => substr($exception->getMessage(), 0, 200)];
+            if ($exception instanceof QueryException) {
+                // The placeholder SQL names the failing statement; bindings stay out of the log.
+                $warning['statement'] = substr($exception->getSql(), 0, 300);
+            }
+            Log::warning('Recovery capture storage is unavailable; coverage remains unknown.', $warning);
 
             return new RecoveryCaptureReport('capture_failed');
         } finally {
