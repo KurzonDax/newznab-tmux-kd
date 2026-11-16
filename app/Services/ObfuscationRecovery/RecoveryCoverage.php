@@ -12,12 +12,12 @@ final class RecoveryCoverage
 {
     /**
      * @param  list<array<string, mixed>>  $headers
-     * @return array{returned: list<array{int,int}>, first_postdate: ?string, last_postdate: ?string, earliest_date_article:?int, latest_date_article:?int, date_order_consistent:bool, date_points:list<array{int,string,?string}>, date_conflicts:list<int>, invalid_date_articles:list<int>}
+     * @return array{returned: list<array{int,int}>, first_postdate: ?string, last_postdate: ?string, earliest_date_article:?int, latest_date_article:?int, date_order_consistent:bool, date_points:list<array{int,string,?string}>, identity_fingerprints:array<int,?string>, date_conflicts:list<int>, invalid_date_articles:list<int>}
      */
     public static function overview(array $headers, int $first, int $last): array
     {
         $numbers = $dates = [];
-        $digests = $conflicts = $invalidDates = [];
+        $digests = $fingerprints = $conflicts = $invalidDates = [];
         foreach ($headers as $header) {
             $raw = $header['Number'] ?? null;
             $number = (is_string($raw) || is_int($raw))
@@ -37,11 +37,13 @@ final class RecoveryCoverage
             } else {
                 $dates[$number] = $date;
             }
-            $digest = self::observationDigest($header);
-            if (isset($digests[$number]) && $digests[$number] !== $digest) {
+            // A provider can report a different Bytes value for the same article, so only the identity decides a conflict.
+            $fingerprint = self::identityFingerprint($header);
+            if (isset($fingerprints[$number]) && $fingerprints[$number] !== $fingerprint) {
                 $conflicts[$number] = true;
             }
-            $digests[$number] = $digest;
+            $fingerprints[$number] = $fingerprint;
+            $digests[$number] = self::observationDigest($header);
         }
 
         ksort($dates, SORT_NUMERIC);
@@ -53,6 +55,7 @@ final class RecoveryCoverage
             'latest_date_article' => $dates !== [] ? (int) array_search(max($dates), $dates, true) : null,
             'date_order_consistent' => true,
             'date_points' => array_map(static fn (int $number, string $date): array => [$number, $date, $digests[$number]], array_keys($dates), array_values($dates)),
+            'identity_fingerprints' => $fingerprints,
             'date_conflicts' => array_keys($conflicts), 'invalid_date_articles' => $invalidDates];
     }
 
@@ -61,6 +64,17 @@ final class RecoveryCoverage
     {
         return isset($header['Message-ID'], $header['Subject'], $header['From'], $header['Bytes'])
             ? hash('sha256', json_encode([$header['Message-ID'], $header['Subject'], $header['From'], (string) $header['Bytes']], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)) : null;
+    }
+
+    /**
+     * The observation digest without Bytes: two sightings of one article that differ only in size are the same observation.
+     *
+     * @param  array<string,mixed>  $header
+     */
+    public static function identityFingerprint(array $header): ?string
+    {
+        return isset($header['Message-ID'], $header['Subject'], $header['From'])
+            ? hash('sha256', json_encode([$header['Message-ID'], $header['Subject'], $header['From']], JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)) : null;
     }
 
     public static function sourceDate(mixed $raw): ?string
