@@ -6,7 +6,6 @@ namespace App\Services\Backup;
 
 use App\Models\DatabaseBackup;
 use App\Models\Settings;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -73,29 +72,30 @@ class BackupOffsiteService
             $allowLocal,
         );
         $rsync = $this->resolveRsync();
+        $keep = $keepOverride ?? BackupRetention::offsiteKeep();
+
         $sourceFiles = $this->catalog->files($source, $deadline);
         $this->ensureBeforeDeadline($deadline);
-        $this->catalog->reconcile($source, $sourceFiles);
-        $files = array_reverse($sourceFiles);
+
+        // Only the newest $keep verified folders are sent, so an older or unverified local folder never aborts the copy.
+        $sets = array_slice(array_values(array_filter(
+            $this->catalog->reconcile($source, $sourceFiles),
+            static fn (array $set): bool => $set['verified'],
+        )), 0, $keep);
         $copied = 0;
         $skipped = 0;
-        $sets = [];
 
-        foreach ($files as $file) {
-            $setId = (string) ($file['manifest']['set_id'] ?? '');
+        foreach (array_reverse($sets) as $set) {
+            $setId = $set['set_id'];
             if ($setId === '' || basename($setId) !== $setId) {
-                throw new RuntimeException('Source manifest contains an unsafe Backup set identifier.');
+                throw new RuntimeException('Source manifest contains an unsafe backup folder identifier.');
             }
 
-            $sets[$setId][] = $file;
-        }
-
-        foreach ($sets as $setId => $setFiles) {
             $this->activeSetId = $setId;
             $this->markSet($setId, 'copying');
 
             try {
-                foreach ($setFiles as $file) {
+                foreach (array_reverse($set['files']) as $file) {
                     if ($this->copyFile($file, $destination, $rsync, $setId, $deadline)) {
                         $copied++;
                     } else {
@@ -111,11 +111,8 @@ class BackupOffsiteService
             }
         }
 
-        $keep = $keepOverride ?? (int) Settings::settingValue('backup_offsite_keep');
-        if ($keep > 0) {
-            $this->pruneDestination($destination, $keep, $deadline);
-            $this->ensureBeforeDeadline($deadline);
-        }
+        $this->catalog->applyRetention($destination, $keep, $deadline);
+        $this->ensureBeforeDeadline($deadline);
 
         return ['copied' => $copied, 'skipped' => $skipped, 'sets' => count($sets)];
     }
@@ -136,7 +133,7 @@ class BackupOffsiteService
 
         $setDirectory = $destination.DIRECTORY_SEPARATOR.$setId;
         if (! is_dir($setDirectory) && ! mkdir($setDirectory, 0o775, true) && ! is_dir($setDirectory)) {
-            throw new RuntimeException("Unable to create off-site Backup set directory: {$setDirectory}");
+            throw new RuntimeException("Unable to create off-site backup folder: {$setDirectory}");
         }
 
         $destinationDump = $setDirectory.DIRECTORY_SEPARATOR.basename($file['dump_path']);
@@ -269,21 +266,6 @@ class BackupOffsiteService
             'offsite_at' => now(),
             'error' => $status === 'failed' ? $error : null,
         ]);
-    }
-
-    private function pruneDestination(string $destination, int $keep, float $deadline): void
-    {
-        $sets = array_values(array_filter(
-            $this->catalog->sets($destination, $this->catalog->files($destination, $deadline)),
-            static fn (array $set): bool => $set['verified'],
-        ));
-
-        foreach (array_slice($sets, $keep) as $set) {
-            $setId = $set['set_id'];
-            if ($setId !== '' && basename($setId) === $setId) {
-                (new Filesystem)->deleteDirectory($destination.DIRECTORY_SEPARATOR.$setId);
-            }
-        }
     }
 
     private function ensureBeforeDeadline(float $deadline): void

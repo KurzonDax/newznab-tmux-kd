@@ -75,7 +75,7 @@ class MailRenderingTest extends TestCase
         yield 'AccountExpired' => [static fn () => new AccountExpired($userFactory())];
         yield 'AccountDeleted' => [static fn () => new AccountDeleted($userFactory())];
         yield 'ContactUs' => [static fn () => new ContactUs('admin@example.test', 'visitor@example.test', "Hello!\nQuestion inside.")];
-        yield 'BackupFailed' => [static fn () => new BackupFailed('full', 'Dump process failed.', '20260817-020000')];
+        yield 'BackupFailed' => [static fn () => new BackupFailed('Dump process failed.', '20260817-020000')];
     }
 
     #[DataProvider('mailableFactoryProvider')]
@@ -189,6 +189,19 @@ class MailRenderingTest extends TestCase
         $mailable = new IncidentDetected($incident, true);
         $mailable->assertHasSubject('[NNTmux] Service incident Resolved: NZB Search, API');
         $mailable->assertSeeInHtml('Resolved');
+    }
+
+    public function test_backup_failed_names_the_folder_and_no_backup_kind(): void
+    {
+        $mailable = new BackupFailed('Dump process failed.', '20260817-020000');
+        $mailable->assertHasSubject('[NNTmux] Database backup failed');
+        $mailable->assertSeeInHtml('Folder');
+        $mailable->assertSeeInHtml('20260817-020000');
+        $mailable->assertSeeInText('Folder:     20260817-020000');
+        foreach (['Backup set', 'Full backup', 'Daily backup'] as $gone) {
+            $mailable->assertDontSeeInHtml($gone);
+            $mailable->assertDontSeeInText($gone);
+        }
     }
 
     public function test_branded_subject_prefix_is_applied_to_every_transactional_mailable(): void

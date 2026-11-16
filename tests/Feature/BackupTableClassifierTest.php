@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Enums\BackupKind;
 use App\Services\Backup\BackupTableClassifier;
 use Illuminate\Database\MariaDbConnection;
 use Illuminate\Database\Schema\Blueprint;
@@ -61,28 +60,28 @@ class BackupTableClassifierTest extends TestCase
      * @param  list<string>  $tiers
      */
     #[DataProvider('backupModes')]
-    public function test_backup_selects_only_local_tables(BackupKind $kind, bool $includeWorking, array $tables, array $tiers): void
+    public function test_backup_selects_only_local_tables(bool $includeWorking, array $tables, array $tiers): void
     {
         $this->assertContains('research.articles', Schema::getTableListing());
 
         $this->assertSame([
             'tables' => $tables,
             'tiers' => $tiers,
-        ], (new BackupTableClassifier)->tablesFor($kind, $includeWorking));
+        ], (new BackupTableClassifier)->tablesFor($includeWorking));
 
         $this->assertEqualsCanonicalizing(['articles', 'capture_runs', 'users'], Schema::getTableListing(['research'], false));
     }
 
     /**
-     * @return array<string, array{BackupKind, bool, list<string>, list<string>}>
+     * @return array<string, array{bool, list<string>, list<string>}>
      */
     public static function backupModes(): array
     {
         return [
-            'full with working' => [BackupKind::Full, true, ['collections', 'custom_Important', 'multigroup_parts_12', 'users'], ['important', 'working']],
-            'full without working' => [BackupKind::Full, false, ['custom_Important', 'users'], ['important']],
-            'daily with working' => [BackupKind::Daily, true, ['custom_Important', 'users'], ['important']],
-            'daily without working' => [BackupKind::Daily, false, ['custom_Important', 'users'], ['important']],
+            'full with working' => [true, ['collections', 'custom_Important', 'multigroup_parts_12', 'users'], ['important', 'working']],
+            'full without working' => [false, ['custom_Important', 'users'], ['important']],
+            'daily with working' => [true, ['collections', 'custom_Important', 'multigroup_parts_12', 'users'], ['important', 'working']],
+            'daily without working' => [false, ['custom_Important', 'users'], ['important']],
         ];
     }
 
@@ -94,7 +93,7 @@ class BackupTableClassifierTest extends TestCase
         $this->assertSame([
             'tables' => ['Archive.v1', 'articles', 'custom_Important', 'users'],
             'tiers' => ['important'],
-        ], (new BackupTableClassifier)->tablesFor(BackupKind::Daily, false));
+        ], (new BackupTableClassifier)->tablesFor(false));
     }
 
     #[DataProvider('missingSchemas')]
@@ -106,7 +105,7 @@ class BackupTableClassifierTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Unable to determine the database schema for backup.');
 
-        (new BackupTableClassifier)->tablesFor(BackupKind::Full, true);
+        (new BackupTableClassifier)->tablesFor(true);
     }
 
     /**
@@ -124,7 +123,7 @@ class BackupTableClassifierTest extends TestCase
         Schema::swap($connection->getSchemaBuilder());
 
         try {
-            $queries = $connection->pretend(fn () => (new BackupTableClassifier)->tablesFor(BackupKind::Full, true));
+            $queries = $connection->pretend(fn () => (new BackupTableClassifier)->tablesFor(true));
 
             $this->assertCount(1, $queries);
             $this->assertStringContainsString("table_schema in ('0')", $queries[0]['query']);

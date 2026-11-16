@@ -1,5 +1,9 @@
 # Daily backups are complete dumps of Important tables, not incrementals
 
+## Status
+
+Accepted, partly superseded. ADR 0016 (#1247) replaced the weekly Full plus Dailies with one standalone backup per day, and retention by Backup set with retention counted in single backups. The table tiers, the files-on-disk-are-the-truth rule and the off-site rules below still hold.
+
 The database backup feature was requested as "weekly full plus daily incremental". MariaDB has no logical incremental dump: a true incremental needs either binary logging (a server config change and restart, plus `RELOAD` / `REPLICATION SLAVE` / `BINLOG MONITOR` grants for the app's DB user, and a restore that replays a week of change logs) or `mariadb-backup` physical incrementals (a binary that is not installed, plus read access to the datadir as the `mysql` user — unreachable from the web/app user). Prod's irreplaceable data is only a few GB; the bulk of the database was Pulse telemetry (since truncated) and regenerable header-collection tables.
 
 We decided that a **Daily backup** is a complete dump of **Important tables** only, standing on its own and restoring in one step, and that a **Full backup** is the same plus **Working tables** (collections/binaries/parts/missed_parts and their per-group variants) unless the admin turns that off. **Throwaway tables** (telemetry, logs, sessions, cache, queues, stats) are never dumped. Retention is by **Backup set** — one Full plus the Dailies until the next successful Full — and a set is kept or purged whole, so "purging a full purges its associated incrementals" holds even though nothing is incremental. The tier lists live in config, an unknown table defaults to Important, and dumps run with `--single-transaction` so the site stays online; the tmux monitor is soft-paused around the run and restored to its prior state.

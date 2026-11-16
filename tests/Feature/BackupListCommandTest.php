@@ -21,17 +21,38 @@ class BackupListCommandTest extends TestCase
         $this->writeBackup($set, 'full', '20260816-0200', '2026-08-16T02:00:00-05:00');
         $this->writeBackup($set, 'daily', '20260817-0200', '2026-08-17T02:00:00-05:00');
 
+        $newer = $location.'/20260818-020000';
+        mkdir($newer);
+        $this->writeBackup($newer, null, '20260818-0200', '2026-08-18T02:00:00-05:00');
+
         $this->artisan('backup:list')
-            ->expectsOutputToContain('full')
-            ->expectsOutputToContain('daily')
+            ->expectsOutputToContain('Folder')
+            ->expectsOutputToContain('20260816-020000')
+            ->expectsOutputToContain('20260818-020000')
+            ->doesntExpectOutputToContain('Kind')
+            ->doesntExpectOutputToContain('Backup set')
             ->assertSuccessful();
 
-        $this->assertDatabaseCount('database_backups', 2);
+        $this->assertDatabaseCount('database_backups', 3);
         $this->assertDatabaseHas('database_backups', [
             'set_id' => '20260816-020000',
-            'kind' => 'full',
+            'path' => $set.'/full-20260816-0200.sql.gz.manifest.json',
             'status' => 'successful',
         ]);
+        $this->assertDatabaseHas('database_backups', [
+            'set_id' => '20260818-020000',
+            'path' => $newer.'/backup-20260818-0200.sql.gz.manifest.json',
+            'status' => 'successful',
+        ]);
+    }
+
+    public function test_list_reports_an_empty_backup_location(): void
+    {
+        $this->prepareLocation();
+
+        $this->artisan('backup:list')
+            ->expectsOutputToContain('No database backups found.')
+            ->assertSuccessful();
     }
 
     public function test_list_reads_manifests_and_sizes_without_hashing_backups(): void
@@ -61,7 +82,6 @@ class BackupListCommandTest extends TestCase
         });
         Schema::create('database_backups', function (Blueprint $table): void {
             $table->id();
-            $table->string('kind', 10);
             $table->string('set_id');
             $table->text('path')->nullable();
             $table->unsignedBigInteger('bytes')->nullable();
@@ -83,12 +103,15 @@ class BackupListCommandTest extends TestCase
         return $location;
     }
 
-    private function writeBackup(string $set, string $kind, string $timestamp, string $startedAt): void
+    /**
+     * Writes a verified backup; a kind writes a pre-change Full or Daily file and manifest.
+     */
+    private function writeBackup(string $set, ?string $kind, string $timestamp, string $startedAt): void
     {
-        $dump = "{$set}/{$kind}-{$timestamp}.sql.gz";
-        file_put_contents($dump, gzencode("{$kind} backup\n"));
+        $dump = sprintf('%s/%s-%s.sql.gz', $set, $kind ?? 'backup', $timestamp);
+        file_put_contents($dump, gzencode(($kind ?? 'daily-only')." backup\n"));
         file_put_contents($dump.'.manifest.json', json_encode([
-            'kind' => $kind,
+            ...($kind === null ? [] : ['kind' => $kind]),
             'started_at' => $startedAt,
             'finished_at' => $startedAt,
             'tables' => ['settings', 'users'],

@@ -14,7 +14,6 @@ class BackupFailed extends Mailable
     use HasBrandedSubject, Queueable, SerializesModels;
 
     public function __construct(
-        public readonly string $kind,
         public readonly string $error,
         public readonly ?string $setId = null,
         public readonly bool $offsite = false,
@@ -24,7 +23,7 @@ class BackupFailed extends Mailable
 
     public function build(): static
     {
-        $operation = $this->offsite ? 'Off-site copy' : ucfirst($this->kind).' backup';
+        $operation = $this->offsite ? 'Off-site copy' : 'Database backup';
 
         return $this->from((string) config('mail.from.address'))
             ->brandedSubject("{$operation} failed")

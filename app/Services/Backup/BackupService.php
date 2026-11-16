@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Backup;
 
-use App\Enums\BackupKind;
 use App\Models\Settings;
 use Composer\InstalledVersions;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -29,7 +28,7 @@ class BackupService
     /**
      * @return array<string, mixed>
      */
-    public function run(BackupKind $kind): array
+    public function run(): array
     {
         $lock = Cache::lock('database-backup-run', (int) config('nntmux-backup.lock_seconds'));
         if (! $lock->get()) {
@@ -40,18 +39,18 @@ class BackupService
         $deadline = microtime(true) + (int) config('nntmux-backup.operation_timeout_seconds');
 
         try {
-            return $this->performRun($kind, $deadline, $lock->owner());
+            return $this->performRun($deadline, $lock->owner());
         } catch (\Throwable $e) {
             $failedSetId = 'failed-'.$startedAt->format('Ymd-His');
             try {
-                $this->catalog->recordFailure($kind->value, $failedSetId, $startedAt, $e->getMessage());
+                $this->catalog->recordFailure($failedSetId, $startedAt, $e->getMessage());
             } catch (\Throwable $catalogError) {
                 Log::error('Unable to record database backup failure.', [
                     'backup_error' => $e->getMessage(),
                     'catalog_error' => $catalogError->getMessage(),
                 ]);
             }
-            $this->alerts->failure($kind, $e->getMessage(), $failedSetId);
+            $this->alerts->failure($e->getMessage(), $failedSetId);
 
             throw $e;
         } finally {
@@ -62,7 +61,7 @@ class BackupService
     /**
      * @return array<string, mixed>
      */
-    private function performRun(BackupKind $kind, float $deadline, string $lockOwner): array
+    private function performRun(float $deadline, string $lockOwner): array
     {
         if (! filter_var(Settings::settingValue('backup_enabled'), FILTER_VALIDATE_BOOL)) {
             throw new RuntimeException('Database backups are disabled.');
@@ -71,28 +70,27 @@ class BackupService
         $this->ensureSupportedDatabase();
         $location = $this->locationValidator->validate((string) Settings::settingValue('backup_location'));
         $catalogFiles = $this->catalog->files($location, $deadline);
-        $this->ensureFreeSpace($location, $kind, $catalogFiles);
+        $this->ensureFreeSpace($location, $catalogFiles);
         $this->ensureBeforeDeadline($deadline);
         $dumpBinary = $this->resolveDumpBinary();
         $compressor = $this->resolveCompressor();
         $includeWorking = filter_var(Settings::settingValue('backup_incl_working'), FILTER_VALIDATE_BOOL);
-        $selection = $this->tableClassifier->tablesFor($kind, $includeWorking);
+        $selection = $this->tableClassifier->tablesFor($includeWorking);
 
         if ($selection['tables'] === []) {
             throw new RuntimeException('No database tables were selected for backup.');
         }
 
         $startedAt = Carbon::now();
-        $setId = $kind === BackupKind::Full
-            ? $startedAt->format('Ymd-His')
-            : $this->latestSetId($catalogFiles, $startedAt);
+        // Every backup gets its own folder, named from its start time.
+        $setId = $startedAt->format('Ymd-His');
         $setDirectory = $location.DIRECTORY_SEPARATOR.$setId;
 
         if (! is_dir($setDirectory) && ! mkdir($setDirectory, 0o775, true) && ! is_dir($setDirectory)) {
-            throw new RuntimeException("Unable to create Backup set directory: {$setDirectory}");
+            throw new RuntimeException("Unable to create backup folder: {$setDirectory}");
         }
 
-        $filename = sprintf('%s-%s.sql.gz', $kind->value, $startedAt->format('Ymd-Hi'));
+        $filename = sprintf('backup-%s.sql.gz', $startedAt->format('Ymd-Hi'));
         $dumpPath = $setDirectory.DIRECTORY_SEPARATOR.$filename;
         $partialPath = $dumpPath.'.partial';
         $manifestPath = $dumpPath.'.manifest.json';
@@ -116,7 +114,6 @@ class BackupService
 
             $finishedAt = Carbon::now();
             $manifest = [
-                'kind' => $kind->value,
                 'started_at' => $startedAt->toIso8601String(),
                 'finished_at' => $finishedAt->toIso8601String(),
                 'tables' => $selection['tables'],
@@ -147,11 +144,8 @@ class BackupService
             $this->pauseManager->restore($pauseState);
         }
 
-        if ($kind === BackupKind::Full) {
-            $this->catalog->purgeOldSets($location, (int) Settings::settingValue('backup_keep_fulls'), $deadline);
-            $this->ensureBeforeDeadline($deadline);
-        }
-
+        // Copy first, so a folder local retention is about to remove still reaches the off-site
+        // destination; local retention runs even when the copy fails.
         if (filter_var(Settings::settingValue('backup_offsite_after'), FILTER_VALIDATE_BOOL)
             && trim((string) Settings::settingValueOr('backup_offsite_path', '')) !== '') {
             try {
@@ -160,6 +154,9 @@ class BackupService
                 Log::error('Automatic off-site copy failed after successful database backup.', ['error' => $e->getMessage()]);
             }
         }
+
+        $this->catalog->reconcile($location, $this->catalog->applyRetention($location, BackupRetention::localKeep(), $deadline));
+        $this->ensureBeforeDeadline($deadline);
 
         return $manifest;
     }
@@ -177,9 +174,9 @@ class BackupService
     /**
      * @param  list<array{manifest: array<string, mixed>, verified: bool}>  $catalogFiles
      */
-    private function ensureFreeSpace(string $location, BackupKind $kind, array $catalogFiles): void
+    private function ensureFreeSpace(string $location, array $catalogFiles): void
     {
-        $previous = $this->latestManifestForKind($catalogFiles, $kind->value);
+        $previous = $this->latestVerifiedManifest($catalogFiles);
         if ($previous === null || (int) ($previous['bytes'] ?? 0) <= 0) {
             return;
         }
@@ -192,8 +189,7 @@ class BackupService
         $required = (float) $previous['bytes'] * (float) config('nntmux-backup.free_space_multiplier', 2);
         if ((float) $available < $required) {
             throw new RuntimeException(sprintf(
-                'Insufficient free space for %s backup: %.0f bytes available, %.0f required.',
-                $kind->label(),
+                'Insufficient free space for backup: %.0f bytes available, %.0f required.',
                 $available,
                 $required,
             ));
@@ -286,30 +282,12 @@ class BackupService
 
     /**
      * @param  list<array{manifest: array<string, mixed>, verified: bool}>  $catalogFiles
-     */
-    private function latestSetId(array $catalogFiles, Carbon $now): string
-    {
-        $manifest = $this->latestManifestForKind($catalogFiles, BackupKind::Full->value);
-        if ($manifest === null) {
-            return 'no-full-yet-'.$now->format('Ymd-His');
-        }
-
-        $setId = (string) ($manifest['set_id'] ?? '');
-        if ($setId === '' || basename($setId) !== $setId) {
-            throw new RuntimeException('The latest Full backup has an unsafe Backup set identifier.');
-        }
-
-        return $setId;
-    }
-
-    /**
-     * @param  list<array{manifest: array<string, mixed>, verified: bool}>  $catalogFiles
      * @return array<string, mixed>|null
      */
-    private function latestManifestForKind(array $catalogFiles, string $kind): ?array
+    private function latestVerifiedManifest(array $catalogFiles): ?array
     {
         foreach ($catalogFiles as $file) {
-            if (($file['manifest']['kind'] ?? null) === $kind && ($file['verified'] ?? false)) {
+            if ($file['verified'] ?? false) {
                 return $file['manifest'];
             }
         }

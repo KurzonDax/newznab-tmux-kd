@@ -43,7 +43,17 @@ class AdminBackupsControllerTest extends TestCase
         $response->assertOk();
         $response->assertSee('Database Backups');
         $response->assertSee($this->backupLocation);
-        $response->assertSee('No Backup sets found');
+        $response->assertSee('No backups found.');
+        $response->assertSee('Backups on disk');
+        $response->assertSee('Last backup');
+        $response->assertSee('Run backup now');
+        $response->assertSee('Backup time');
+        $response->assertSee('Backups to keep');
+        $response->assertSee('Include Working tables');
+        $response->assertSee('Off-site backups to keep');
+        foreach (['Backup set', 'Last Full', 'Last Daily', 'Run Full now', 'Run Daily now', 'Full backup day', 'Full backup time', 'backup_full_dow', 'backup_full_time'] as $gone) {
+            $response->assertDontSee($gone);
+        }
     }
 
     public function test_admin_page_reconciles_disk_sets_and_shows_offsite_status(): void
@@ -67,7 +77,6 @@ class AdminBackupsControllerTest extends TestCase
             'set_id' => $setId,
         ], JSON_THROW_ON_ERROR));
         DB::table('database_backups')->insert([
-            'kind' => 'full',
             'set_id' => $setId,
             'path' => $manifest,
             'bytes' => filesize($dump),
@@ -84,9 +93,10 @@ class AdminBackupsControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee($setId);
-        $response->assertSee('Full');
         $response->assertSee('Copied');
-        $response->assertDontSee('No Backup sets found');
+        $response->assertSee('Last backup');
+        $response->assertSee('Aug 16, 2026');
+        $response->assertDontSee('No backups found.');
     }
 
     #[DataProvider('backupEnabledValues')]
@@ -100,7 +110,7 @@ class AdminBackupsControllerTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('20260816-020000');
-        $response->assertDontSee('No Backup sets found');
+        $response->assertDontSee('No backups found.');
         $response->assertSee('<td class="py-3 pr-4">Yes</td>', false);
         $this->assertSame([], $catalog->checksummed);
     }
@@ -148,22 +158,22 @@ class AdminBackupsControllerTest extends TestCase
     {
         $response = $this->actingAs($this->user('Admin'))->post(route('admin.backups.update'), [
             'backup_enabled' => '1',
-            'backup_full_dow' => '6',
-            'backup_full_time' => '03:15',
-            'backup_daily_time' => '04:20',
+            'backup_time' => '04:20',
             'backup_location' => $this->backupLocation,
-            'backup_keep_fulls' => '6',
+            'backup_keep' => '6',
             'backup_pause_tmux' => '1',
             'backup_incl_working' => '0',
             'backup_dump_binary' => '',
             'backup_offsite_path' => '',
             'backup_offsite_after' => '0',
-            'backup_offsite_keep' => '12',
+            'backup_offsite_keep' => '9',
         ]);
 
         $response->assertRedirect(route('admin.backups.index'));
         $response->assertSessionHas('success');
-        $this->assertSame('6', DB::table('settings')->where('name', 'backup_keep_fulls')->value('value'));
+        $this->assertSame('04:20', DB::table('settings')->where('name', 'backup_time')->value('value'));
+        $this->assertSame('6', DB::table('settings')->where('name', 'backup_keep')->value('value'));
+        $this->assertSame('9', DB::table('settings')->where('name', 'backup_offsite_keep')->value('value'));
         $this->assertSame('0', DB::table('settings')->where('name', 'backup_incl_working')->value('value'));
     }
 
@@ -173,15 +183,13 @@ class AdminBackupsControllerTest extends TestCase
             ->actingAs($this->user('Admin'))
             ->post(route('admin.backups.update'), [
                 'backup_enabled' => '1',
-                'backup_full_dow' => '0',
-                'backup_full_time' => '02:00',
-                'backup_daily_time' => '02:00',
+                'backup_time' => '02:00',
                 'backup_location' => 'relative/backups',
-                'backup_keep_fulls' => '4',
+                'backup_keep' => '4',
                 'backup_pause_tmux' => '1',
                 'backup_incl_working' => '1',
                 'backup_offsite_after' => '0',
-                'backup_offsite_keep' => '0',
+                'backup_offsite_keep' => '7',
             ]);
 
         $response->assertRedirect(route('admin.backups.index'));
@@ -219,16 +227,16 @@ class AdminBackupsControllerTest extends TestCase
     public function test_run_now_records_request_for_next_tick(): void
     {
         DB::table('settings')->where('name', 'backup_enabled')->update(['value' => '1']);
-        $response = $this->actingAs($this->user('Admin'))->post(route('admin.backups.run', ['kind' => 'full']));
+        $response = $this->actingAs($this->user('Admin'))->post('/admin/backups/run');
 
         $response->assertRedirect(route('admin.backups.index'));
-        $response->assertSessionHas('success');
-        $this->assertSame('full', DB::table('settings')->where('name', 'backup_run_request')->value('value'));
+        $response->assertSessionHas('success', 'Backup requested; it will start within one minute.');
+        $this->assertSame('1', DB::table('settings')->where('name', 'backup_run_request')->value('value'));
     }
 
     public function test_run_now_is_rejected_while_backups_are_disabled(): void
     {
-        $response = $this->actingAs($this->user('Admin'))->post(route('admin.backups.run', ['kind' => 'daily']));
+        $response = $this->actingAs($this->user('Admin'))->post(route('admin.backups.run'));
 
         $response->assertRedirect(route('admin.backups.index'));
         $response->assertSessionHas('error', 'Enable database backups before requesting a run.');
@@ -241,10 +249,39 @@ class AdminBackupsControllerTest extends TestCase
         DB::table('settings')->where('name', 'backup_run_request')->update(['value' => 'full']);
 
         $this->actingAs($this->user('Admin'))
-            ->post(route('admin.backups.run', ['kind' => 'daily']))
-            ->assertSessionHas('success', 'Full backup requested; it will start within one minute.');
+            ->post(route('admin.backups.run'))
+            ->assertSessionHas('success', 'Backup requested; it will start within one minute.');
 
-        $this->assertSame('full', DB::table('settings')->where('name', 'backup_run_request')->value('value'));
+        $this->assertSame(1, DB::table('settings')->where('name', 'backup_run_request')->count());
+        $this->assertNotSame('', (string) DB::table('settings')->where('name', 'backup_run_request')->value('value'));
+    }
+
+    #[DataProvider('invalidOffsiteKeeps')]
+    public function test_offsite_keep_must_be_from_one_to_ten(string $keep): void
+    {
+        $response = $this->from(route('admin.backups.index'))
+            ->actingAs($this->user('Admin'))
+            ->post(route('admin.backups.update'), $this->validSettings(['backup_offsite_keep' => $keep]));
+
+        $response->assertRedirect(route('admin.backups.index'));
+        $response->assertSessionHasErrors('backup_offsite_keep');
+        $this->assertSame('7', DB::table('settings')->where('name', 'backup_offsite_keep')->value('value'));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidOffsiteKeeps(): array
+    {
+        return ['blank' => [''], 'zero' => ['0'], 'eleven' => ['11']];
+    }
+
+    public function test_run_route_no_longer_takes_a_kind(): void
+    {
+        DB::table('settings')->where('name', 'backup_enabled')->update(['value' => '1']);
+
+        $this->actingAs($this->user('Admin'))->post('/admin/backups/run/full')->assertNotFound();
+        $this->assertSame('', DB::table('settings')->where('name', 'backup_run_request')->value('value'));
     }
 
     public function test_non_admin_cannot_access_backups_page(): void
@@ -340,7 +377,6 @@ class AdminBackupsControllerTest extends TestCase
         });
         Schema::create('database_backups', function (Blueprint $table): void {
             $table->id();
-            $table->string('kind', 10);
             $table->string('set_id');
             $table->text('path')->nullable();
             $table->unsignedBigInteger('bytes')->nullable();
@@ -363,17 +399,15 @@ class AdminBackupsControllerTest extends TestCase
             ['name' => 'categorizeforeign', 'value' => '0'],
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_enabled', 'value' => '0'],
-            ['name' => 'backup_full_dow', 'value' => '0'],
-            ['name' => 'backup_full_time', 'value' => '02:00'],
-            ['name' => 'backup_daily_time', 'value' => '02:00'],
+            ['name' => 'backup_time', 'value' => '02:00'],
             ['name' => 'backup_location', 'value' => $this->backupLocation],
-            ['name' => 'backup_keep_fulls', 'value' => '4'],
+            ['name' => 'backup_keep', 'value' => '4'],
             ['name' => 'backup_pause_tmux', 'value' => '1'],
             ['name' => 'backup_incl_working', 'value' => '1'],
             ['name' => 'backup_dump_binary', 'value' => ''],
             ['name' => 'backup_offsite_path', 'value' => ''],
             ['name' => 'backup_offsite_after', 'value' => '0'],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
             ['name' => 'backup_run_request', 'value' => ''],
             ['name' => 'backup_pause_marker', 'value' => ''],
         ]);
@@ -434,17 +468,15 @@ class AdminBackupsControllerTest extends TestCase
     {
         return array_merge([
             'backup_enabled' => '1',
-            'backup_full_dow' => '0',
-            'backup_full_time' => '02:00',
-            'backup_daily_time' => '02:00',
+            'backup_time' => '02:00',
             'backup_location' => $this->backupLocation,
-            'backup_keep_fulls' => '4',
+            'backup_keep' => '4',
             'backup_pause_tmux' => '1',
             'backup_incl_working' => '1',
             'backup_dump_binary' => '',
             'backup_offsite_path' => '',
             'backup_offsite_after' => '0',
-            'backup_offsite_keep' => '0',
+            'backup_offsite_keep' => '7',
         ], $overrides);
     }
 }

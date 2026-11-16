@@ -413,7 +413,6 @@ DROP TABLE IF EXISTS `database_backups`;
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `database_backups` (
   `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-  `kind` varchar(10) NOT NULL,
   `set_id` varchar(255) NOT NULL,
   `path` text DEFAULT NULL,
   `bytes` bigint(20) unsigned DEFAULT NULL,
@@ -427,7 +426,6 @@ CREATE TABLE `database_backups` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `database_backups_kind_status_finished_at_index` (`kind`,`status`,`finished_at`),
   KEY `database_backups_set_id_index` (`set_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -4395,3 +4393,5 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (336,'2026_10_20_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (337,'2026_10_20_180000_add_collection_due_lookups',43);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (338,'2026_10_23_120000_add_decision_model_music_album_setting',44);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (339,'2026_11_16_120000_clear_size_only_recovery_header_conflicts',45);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (340,'2026_11_16_130000_switch_backup_settings_to_daily_only',46);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (341,'2026_11_16_130100_drop_kind_from_database_backups',46);

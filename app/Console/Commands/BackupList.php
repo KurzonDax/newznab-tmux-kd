@@ -12,7 +12,7 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('backup:list')]
-#[Description('List database Backup sets and check their files against their manifests')]
+#[Description('List database backups and check their files against their manifests')]
 class BackupList extends Command
 {
     public function handle(BackupCatalog $catalog, BackupLocationValidator $validator): int
@@ -27,7 +27,7 @@ class BackupList extends Command
         }
 
         if ($sets === []) {
-            $this->components->info('No database Backup sets found.');
+            $this->components->info('No database backups found.');
 
             return self::SUCCESS;
         }
@@ -38,7 +38,6 @@ class BackupList extends Command
                 $manifest = $file['manifest'];
                 $rows[] = [
                     $set['set_id'],
-                    (string) ($manifest['kind'] ?? 'unknown'),
                     (string) ($manifest['finished_at'] ?? 'unknown'),
                     $this->formatBytes((int) ($manifest['bytes'] ?? 0)),
                     $file['verified'] ? 'verified' : 'FAILED',
@@ -46,7 +45,7 @@ class BackupList extends Command
             }
         }
 
-        $this->table(['Backup set', 'Kind', 'Finished', 'Size', 'Checksum'], $rows);
+        $this->table(['Folder', 'Finished', 'Size', 'Checksum'], $rows);
 
         return self::SUCCESS;
     }
