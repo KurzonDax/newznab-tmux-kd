@@ -360,22 +360,21 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '2'],
+            ['name' => 'backup_offsite_keep', 'value' => '3'],
         ]);
-        $this->writeBackup($destination, '20260802-020000', 'full');
-        $this->writeBackupFile($destination.'/20260802-020000', '20260802-020000', 'daily', '20260803-0200');
-        $this->writeDailyOnlyBackup($source, 'no-full-yet-20260808-020000', '20260808-0200');
-        $this->writeBackupFile($source.'/no-full-yet-20260808-020000', 'no-full-yet-20260808-020000', 'daily', '20260809-0200');
+        $this->writeBackup($destination, '20260725-020000');
+        $this->writeBackup($destination, '20260802-020000');
+        $this->writeBackup($destination, '20260809-020000', 'full');
+        $this->writeBackupFile($destination.'/20260809-020000', '20260809-020000', 'daily', '20260810-0200');
+        $this->writeBackupFile($destination.'/20260809-020000', '20260809-020000', 'daily', '20260811-0200');
         $this->writeBackup($source, '20260816-020000');
         $this->fakeSuccessfulCopies();
 
         $this->artisan('backup:offsite', ['--allow-local' => true])->assertSuccessful();
 
-        // The pre-change folder with two Dailies is one of the two kept, and stays whole.
-        $this->assertDirectoryDoesNotExist($destination.'/20260802-020000');
-        $this->assertFileExists($destination.'/no-full-yet-20260808-020000/daily-20260808-0200.sql.gz');
-        $this->assertFileExists($destination.'/no-full-yet-20260808-020000/daily-20260809-0200.sql.gz');
-        $this->assertDirectoryExists($destination.'/20260816-020000');
+        // The pre-change Full plus two Dailies is one of the three kept, so 0802 stays and only 0725 goes.
+        $this->assertSame(['20260802-020000', '20260809-020000', '20260816-020000'], $this->folders($destination));
+        $this->assertCount(3, glob($destination.'/20260809-020000/*.sql.gz') ?: []);
     }
 
     public function test_corrupt_destination_set_does_not_evict_verified_set(): void
@@ -607,13 +606,6 @@ class BackupOffsiteCommandTest extends TestCase
     private function writeDailyBackup(string $location, string $setId): void
     {
         $this->writeBackupFile($location.'/'.$setId, $setId, 'daily', '20260817-0200');
-    }
-
-    private function writeDailyOnlyBackup(string $location, string $setId, string $fileTimestamp): void
-    {
-        $set = $location.'/'.$setId;
-        mkdir($set);
-        $this->writeBackupFile($set, $setId, 'daily', $fileTimestamp);
     }
 
     private function writeBackupFile(string $set, string $setId, string $kind, string $fileTimestamp): void

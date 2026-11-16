@@ -176,6 +176,10 @@ class BackupTickCommandTest extends TestCase
         $this->assertSame('2026-08-17 03:30', $schedule->nextRun(Carbon::parse('2026-08-17 01:00:00'))->format('Y-m-d H:i'));
         $this->assertSame('2026-08-18 03:30', $schedule->nextRun(Carbon::parse('2026-08-17 03:30:00'))->format('Y-m-d H:i'));
         $this->assertSame('2026-08-19 03:30', $schedule->nextRun(Carbon::parse('2026-08-18 22:00:00'))->format('Y-m-d H:i'));
+
+        // A stored time that is not a valid H:i falls back to 02:00 instead of rolling into another day.
+        DB::table('settings')->where('name', 'backup_time')->update(['value' => '25:00']);
+        $this->assertSame('2026-08-18 02:00', $schedule->nextRun(Carbon::parse('2026-08-17 23:00:00'))->format('Y-m-d H:i'));
     }
 
     public function test_missed_full_slot_is_caught_up_before_daily_work(): void

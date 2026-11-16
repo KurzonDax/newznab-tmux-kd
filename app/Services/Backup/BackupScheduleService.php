@@ -70,7 +70,7 @@ class BackupScheduleService
     private function slotOn(Carbon $day): Carbon
     {
         $time = (string) Settings::settingValue('backup_time');
-        if (preg_match('/^\d{1,2}:\d{2}$/', $time) !== 1) {
+        if (preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/', $time) !== 1) {
             $time = self::DEFAULT_BACKUP_TIME;
         }
 

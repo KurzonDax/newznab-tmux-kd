@@ -8,7 +8,6 @@ use App\Models\DatabaseBackup;
 use App\Models\Settings;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Process;
-use InvalidArgumentException;
 use RuntimeException;
 
 class BackupOffsiteService
@@ -74,9 +73,6 @@ class BackupOffsiteService
         );
         $rsync = $this->resolveRsync();
         $keep = $keepOverride ?? BackupRetention::offsiteKeep();
-        if ($keep < 1 || $keep > BackupRetention::OFFSITE_MAX) {
-            throw new InvalidArgumentException('Off-site backups to keep must be from 1 to '.BackupRetention::OFFSITE_MAX.'.');
-        }
 
         $sourceFiles = $this->catalog->files($source, $deadline);
         $this->ensureBeforeDeadline($deadline);
