@@ -76,10 +76,11 @@ final class RecoveryCapture
                             continue;
                         }
                         $key = $row['message_id_digest'];
-                        if (isset($rows[$key]) && $rows[$key] !== $row) {
-                            $rows[$key]['metadata_conflict'] = true;
-                        } else {
+                        // A size-only difference is the same observation; the first size seen stays.
+                        if (! isset($rows[$key])) {
                             $rows[$key] = $row;
+                        } elseif (array_diff_key($rows[$key], ['advertised_bytes' => true]) !== array_diff_key($row, ['advertised_bytes' => true])) {
+                            $rows[$key]['metadata_conflict'] = true;
                         }
                     } catch (InvalidArgumentException) {
                         $exclusions['invalid_header'] = ($exclusions['invalid_header'] ?? 0) + 1;
@@ -164,7 +165,7 @@ final class RecoveryCapture
                     foreach ($stored as $record) {
                         $incoming = $chunk[$record->message_id_digest];
                         $conflict = (bool) ($incoming['metadata_conflict'] ?? false);
-                        foreach (['message_id', 'article_number', 'raw_subject', 'parsed_name', 'poster_identity', 'source_date', 'advertised_bytes', 'original_part', 'advertised_total'] as $field) {
+                        foreach (['message_id', 'article_number', 'raw_subject', 'parsed_name', 'poster_identity', 'source_date', 'original_part', 'advertised_total'] as $field) {
                             if ((string) $record->{$field} !== (string) $incoming[$field]) {
                                 $conflict = true;
                             }

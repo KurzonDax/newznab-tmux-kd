@@ -4394,3 +4394,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (335,'2026_10_20_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (336,'2026_10_20_120000_index_obfuscation_recovery_expired_headers_by_age',42);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (337,'2026_10_20_180000_add_collection_due_lookups',43);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (338,'2026_10_23_120000_add_decision_model_music_album_setting',44);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (339,'2026_11_16_120000_clear_size_only_recovery_header_conflicts',45);

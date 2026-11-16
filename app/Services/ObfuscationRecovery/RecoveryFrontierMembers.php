@@ -76,6 +76,7 @@ final class RecoveryFrontierMembers
     public function invalidateRaw(Connection $connection, RecoveryScanContext $context, array $coverage): void
     {
         $points = array_column($coverage['date_points'], null, 0);
+        $fingerprints = $coverage['identity_fingerprints'];
         $invalid = array_fill_keys([...$coverage['invalid_date_articles'], ...$coverage['date_conflicts']], true);
         $changed = [];
         foreach (array_chunk(array_unique([...array_keys($points), ...array_keys($invalid)]), 250) as $articles) {
@@ -86,10 +87,10 @@ final class RecoveryFrontierMembers
             }
             foreach ($records as $record) {
                 $point = $points[$record->article_number] ?? null;
-                $digest = RecoveryCoverage::observationDigest(['Message-ID' => $record->source_message_id, 'Subject' => $record->raw_subject,
-                    'From' => $record->poster_identity, 'Bytes' => $record->advertised_bytes]);
+                $fingerprint = RecoveryCoverage::identityFingerprint(['Message-ID' => $record->source_message_id, 'Subject' => $record->raw_subject,
+                    'From' => $record->poster_identity]);
                 if (! $record->metadata_conflict && (isset($invalid[$record->article_number])
-                    || ($point !== null && ($point[1] !== $record->postdate || ($point[2] ?? null) !== $digest)))) {
+                    || ($point !== null && ($point[1] !== $record->postdate || ($fingerprints[$record->article_number] ?? null) !== $fingerprint)))) {
                     $connection->table('obfuscation_recovery_headers')->where('id', $record->id)->update(['metadata_conflict' => true]);
                     $changed[(int) $record->capture_generation][] = (array) $record;
                 }

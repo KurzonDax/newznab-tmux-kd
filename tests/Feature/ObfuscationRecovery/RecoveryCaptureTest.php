@@ -14,6 +14,7 @@ use App\Services\ObfuscationRecovery\RecoveryCaptureBatch;
 use App\Services\ObfuscationRecovery\RecoveryConfig;
 use App\Services\ObfuscationRecovery\RecoveryControl;
 use App\Services\ObfuscationRecovery\RecoveryCoverage;
+use App\Services\ObfuscationRecovery\RecoveryFrontierMembers;
 use App\Services\ObfuscationRecovery\RecoveryHistoryRetention;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
@@ -349,6 +350,103 @@ final class RecoveryCaptureTest extends TestCase
         $returned = $begin('one.invalid');
         $this->assertNotSame($first->sourceEpoch, $returned->sourceEpoch);
         $this->assertSame('captured', $capture->capture(new RecoveryCaptureBatch([], []), $returned)->outcome);
+    }
+
+    public function test_a_recapture_that_changes_only_the_size_keeps_the_header_and_writes_no_dirty_mark(): void
+    {
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $header = $this->header(1, '0123456789abcdefghij');
+        $this->assertSame('captured', $capture->capture(new RecoveryCaptureBatch([$header], []), $this->sizeContext('scan-size-1'))->outcome);
+        $dirty = DB::table('obfuscation_recovery_dirty')->orderBy('id')->get(['id', 'version'])->all();
+        $this->assertNotSame([], $dirty);
+
+        $report = $capture->capture(new RecoveryCaptureBatch([array_replace($header, ['Bytes' => 740075])], []), $this->sizeContext('scan-size-2'));
+
+        $this->assertSame('captured', $report->outcome);
+        $this->assertSame(1, $report->duplicates);
+        $stored = DB::table('obfuscation_recovery_headers')->sole();
+        $this->assertFalse((bool) $stored->metadata_conflict);
+        $this->assertSame(740000, (int) $stored->advertised_bytes);
+        $this->assertEquals($dirty, DB::table('obfuscation_recovery_dirty')->orderBy('id')->get(['id', 'version'])->all());
+    }
+
+    public function test_a_recapture_with_another_subject_still_flags_the_header(): void
+    {
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $header = $this->header(1, '0123456789abcdefghij');
+        $capture->capture(new RecoveryCaptureBatch([$header], []), $this->sizeContext('scan-subject-1'));
+
+        $report = $capture->capture(new RecoveryCaptureBatch([array_replace($header, ['Subject' => 'abcdefghij0123456789'])], []), $this->sizeContext('scan-subject-2'));
+
+        $this->assertSame('captured', $report->outcome);
+        $this->assertTrue((bool) DB::table('obfuscation_recovery_headers')->sole()->metadata_conflict);
+    }
+
+    public function test_a_recapture_under_another_article_number_still_flags_the_header(): void
+    {
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $header = $this->header(1, '0123456789abcdefghij');
+        $capture->capture(new RecoveryCaptureBatch([$header], []), $this->sizeContext('scan-number-1'));
+
+        $report = $capture->capture(new RecoveryCaptureBatch([array_replace($header, ['Number' => '4000000002'])], []), $this->sizeContext('scan-number-2'));
+
+        $this->assertSame('captured', $report->outcome);
+        $stored = DB::table('obfuscation_recovery_headers')->sole();
+        $this->assertTrue((bool) $stored->metadata_conflict);
+        $this->assertSame(4000000001, (int) $stored->article_number);
+    }
+
+    public function test_one_batch_holding_a_message_id_twice_with_only_the_size_changed_keeps_the_first_size(): void
+    {
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $header = $this->header(1, '0123456789abcdefghij');
+
+        $report = $capture->capture(new RecoveryCaptureBatch([$header, array_replace($header, ['Bytes' => 740002])], []), $this->sizeContext('scan-batch'));
+
+        $this->assertSame('captured', $report->outcome);
+        $stored = DB::table('obfuscation_recovery_headers')->sole();
+        $this->assertFalse((bool) $stored->metadata_conflict);
+        $this->assertSame(740000, (int) $stored->advertised_bytes);
+    }
+
+    public function test_overview_ignores_a_size_only_difference_on_one_article_number(): void
+    {
+        $header = $this->header(1, '0123456789abcdefghij');
+
+        $sizeOnly = RecoveryCoverage::overview([$header, array_replace($header, ['Bytes' => 740075])], 4000000001, 4000000002);
+        $subject = RecoveryCoverage::overview([$header, array_replace($header, ['Subject' => 'abcdefghij0123456789'])], 4000000001, 4000000002);
+
+        $this->assertSame([], $sizeOnly['date_conflicts']);
+        $this->assertSame([4000000001], $subject['date_conflicts']);
+    }
+
+    public function test_overview_date_points_keep_the_observation_digest(): void
+    {
+        $header = $this->header(1, '0123456789abcdefghij');
+
+        $overview = RecoveryCoverage::overview([$header], 4000000001, 4000000002);
+
+        $this->assertSame(RecoveryCoverage::observationDigest($header), $overview['date_points'][0][2]);
+    }
+
+    public function test_raw_invalidation_ignores_a_size_only_difference_and_flags_another_subject(): void
+    {
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $header = $this->header(1, '0123456789abcdefghij');
+        $context = $this->sizeContext('scan-raw');
+        $capture->capture(new RecoveryCaptureBatch([$header], []), $context);
+        $members = new RecoveryFrontierMembers;
+
+        $members->invalidateRaw(DB::connection(), $context, RecoveryCoverage::overview([array_replace($header, ['Bytes' => 740075])], 4000000001, 4000000002));
+        $this->assertFalse((bool) DB::table('obfuscation_recovery_headers')->sole()->metadata_conflict);
+
+        $members->invalidateRaw(DB::connection(), $context, RecoveryCoverage::overview([array_replace($header, ['Subject' => 'abcdefghij0123456789'])], 4000000001, 4000000002));
+        $this->assertTrue((bool) DB::table('obfuscation_recovery_headers')->sole()->metadata_conflict);
+    }
+
+    private function sizeContext(string $scanId): RecoveryScanContext
+    {
+        return new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 4000000001, 4000000002, HeaderScanDirection::Head, $scanId);
     }
 
     /**
