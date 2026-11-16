@@ -18,6 +18,8 @@ use App\Services\ObfuscationRecovery\RecoveryHistoryRetention;
 use App\Services\ObfuscationRecovery\RecoveryIdentity;
 use App\Services\ObfuscationRecovery\RecoveryRetention;
 use App\Services\ObfuscationRecovery\RecoveryScanContext;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -126,6 +128,30 @@ final class RecoveryCaptureTest extends TestCase
             'Recovery capture storage is unavailable; coverage remains unknown.',
             ['group_id' => 1, 'exception' => \InvalidArgumentException::class, 'reason' => 'invalid_overview_range'],
         );
+    }
+
+    public function test_capture_failure_on_a_long_statement_logs_its_first_300_characters(): void
+    {
+        [$warning, $sql] = $this->failCaptureOnInsertInto('obfuscation_recovery_headers');
+
+        $this->assertGreaterThan(300, strlen($sql));
+        $this->assertSame(['group_id', 'exception', 'reason', 'statement'], array_keys($warning));
+        $this->assertSame(QueryException::class, $warning['exception']);
+        $this->assertSame(300, strlen($warning['statement']));
+        $this->assertSame(substr($sql, 0, 300), $warning['statement']);
+        $this->assertStringNotContainsString('m1-1700000000000@nyuu', $warning['statement']);
+        $this->assertStringNotContainsString('0123456789abcdefghij', $warning['statement']);
+    }
+
+    public function test_capture_failure_on_a_short_statement_logs_all_of_it(): void
+    {
+        [$warning, $sql] = $this->failCaptureOnInsertInto('obfuscation_recovery_scan_windows');
+
+        $this->assertLessThanOrEqual(300, strlen($sql));
+        $this->assertSame(['group_id', 'exception', 'reason', 'statement'], array_keys($warning));
+        $this->assertSame(QueryException::class, $warning['exception']);
+        $this->assertSame($sql, $warning['statement']);
+        $this->assertStringNotContainsString('scan-statement', $warning['statement']);
     }
 
     public function test_fresh_capture_generation_reuses_identity_without_refreshing_retention(): void
@@ -323,6 +349,40 @@ final class RecoveryCaptureTest extends TestCase
         $returned = $begin('one.invalid');
         $this->assertNotSame($first->sourceEpoch, $returned->sourceEpoch);
         $this->assertSame('captured', $capture->capture(new RecoveryCaptureBatch([], []), $returned)->outcome);
+    }
+
+    /**
+     * Fail one capture with a trigger on the table, then rerun it without the trigger to read the failed statement's SQL.
+     *
+     * @return array{0: array<string, mixed>, 1: string}
+     */
+    private function failCaptureOnInsertInto(string $table): array
+    {
+        DB::statement('create trigger recovery_capture_fixture_failure before insert on "'.$table.'" begin select raise(abort, \'fixture_capture_failure\'); end');
+        Log::spy();
+        $capture = new RecoveryCapture(RecoveryConfig::fromValues(['obfuscation_recovery_enabled' => 1]), new NeverBlacklistedService);
+        $context = new RecoveryScanContext(1, 'alt.binaries.fixture', 'epoch', 1, 4000000001, 4000000001, HeaderScanDirection::Head, 'scan-statement');
+        $batch = new RecoveryCaptureBatch([$this->header(1, '0123456789abcdefghij')], []);
+
+        $this->assertSame('capture_failed', $capture->capture($batch, $context)->outcome);
+        $warning = null;
+        Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context) use (&$warning): bool {
+            $warning = $context;
+
+            return $message === 'Recovery capture storage is unavailable; coverage remains unknown.';
+        });
+        DB::statement('drop trigger recovery_capture_fixture_failure');
+        $statements = [];
+        DB::listen(function (QueryExecuted $query) use (&$statements, $table): void {
+            if (preg_match('/^insert (or ignore )?into "'.preg_quote($table, '/').'"/', $query->sql) === 1) {
+                $statements[] = $query->sql;
+            }
+        });
+        $this->assertSame('captured', $capture->capture($batch, $context)->outcome);
+        $this->assertCount(1, $statements);
+        $this->assertIsArray($warning);
+
+        return [$warning, $statements[0]];
     }
 
     /** @return array<string, mixed> */
