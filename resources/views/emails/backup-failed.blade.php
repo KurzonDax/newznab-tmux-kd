@@ -11,7 +11,7 @@
         </tr>
         @if ($setId)
             <tr>
-                <td class="status-label">Backup set</td>
+                <td class="status-label">Folder</td>
                 <td>{{ $setId }}</td>
             </tr>
         @endif

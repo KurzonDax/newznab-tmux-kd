@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Backup;
 
-use App\Enums\BackupKind;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
@@ -13,12 +12,12 @@ class BackupTableClassifier
     /**
      * @return array{tables: list<string>, tiers: list<string>}
      */
-    public function tablesFor(BackupKind $kind, bool $includeWorking): array
+    public function tablesFor(bool $includeWorking): array
     {
         $tables = [];
         $tiers = ['important'];
 
-        if ($kind === BackupKind::Full && $includeWorking) {
+        if ($includeWorking) {
             $tiers[] = 'working';
         }
 
@@ -35,7 +34,7 @@ class BackupTableClassifier
                 continue;
             }
 
-            if ($tier === 'working' && ($kind !== BackupKind::Full || ! $includeWorking)) {
+            if ($tier === 'working' && ! $includeWorking) {
                 continue;
             }
 

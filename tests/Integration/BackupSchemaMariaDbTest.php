@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
-use App\Enums\BackupKind;
 use App\Services\Backup\BackupTableClassifier;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
@@ -24,7 +23,7 @@ final class BackupSchemaMariaDbTest extends TestCase
      * @param  list<string>  $expectedTables
      */
     #[DataProvider('backupModes')]
-    public function test_only_current_schema_tables_and_rows_survive_dump_and_restore(BackupKind $kind, bool $includeWorking, bool $localArticles, array $expectedTables): void
+    public function test_only_current_schema_tables_and_rows_survive_dump_and_restore(bool $includeWorking, bool $localArticles, array $expectedTables): void
     {
         if (getenv('BACKUP_INTEGRATION_MARIADB') !== '1') {
             $this->markTestSkipped('Set BACKUP_INTEGRATION_MARIADB=1 in the isolated Sail/CI runtime.');
@@ -81,9 +80,9 @@ final class BackupSchemaMariaDbTest extends TestCase
             $this->assertContains($databases['research'].'.users', $visibleTables);
             $this->assertContains($databases['local'].'.users', $visibleTables);
 
-            $selection = (new BackupTableClassifier)->tablesFor($kind, $includeWorking);
+            $selection = (new BackupTableClassifier)->tablesFor($includeWorking);
             $this->assertSame($expectedTables, $selection['tables']);
-            $this->assertSame($kind === BackupKind::Full && $includeWorking ? ['important', 'working'] : ['important'], $selection['tiers']);
+            $this->assertSame($includeWorking ? ['important', 'working'] : ['important'], $selection['tiers']);
             $this->assertNotEmpty($selection['tables']);
 
             $dump = Process::env(['MYSQL_PWD' => 'password'])->timeout(30)->run([
@@ -131,16 +130,16 @@ final class BackupSchemaMariaDbTest extends TestCase
     }
 
     /**
-     * @return array<string, array{BackupKind, bool, bool, list<string>}>
+     * @return array<string, array{bool, bool, list<string>}>
      */
     public static function backupModes(): array
     {
         return [
-            'full with working' => [BackupKind::Full, true, false, ['collections', 'custom_Important', 'multigroup_parts_12', 'users']],
-            'full without working' => [BackupKind::Full, false, false, ['custom_Important', 'users']],
-            'daily with working' => [BackupKind::Daily, true, false, ['custom_Important', 'users']],
-            'daily without working' => [BackupKind::Daily, false, false, ['custom_Important', 'users']],
-            'legitimate local articles' => [BackupKind::Daily, false, true, ['articles', 'custom_Important', 'users']],
+            'full with working' => [true, false, ['collections', 'custom_Important', 'multigroup_parts_12', 'users']],
+            'full without working' => [false, false, ['custom_Important', 'users']],
+            'daily with working' => [true, false, ['collections', 'custom_Important', 'multigroup_parts_12', 'users']],
+            'daily without working' => [false, false, ['custom_Important', 'users']],
+            'legitimate local articles' => [false, true, ['articles', 'custom_Important', 'users']],
         ];
     }
 

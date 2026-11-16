@@ -354,9 +354,7 @@ Route::middleware(['role:Admin', '2fa'])->prefix('admin')->group(function () {
     Route::post('ajax', [AdminAjaxController::class, 'ajaxAction'])->name('admin.ajax');
     Route::get('backups', [AdminBackupsController::class, 'index'])->name('admin.backups.index');
     Route::post('backups', [AdminBackupsController::class, 'update'])->name('admin.backups.update');
-    Route::post('backups/run/{kind}', [AdminBackupsController::class, 'run'])
-        ->whereIn('kind', ['full', 'daily'])
-        ->name('admin.backups.run');
+    Route::post('backups/run', [AdminBackupsController::class, 'run'])->name('admin.backups.run');
     Route::get('release-list', [AdminReleasesController::class, 'index'])->name('admin.release-list');
     Route::get('recovered-releases', [AdminRecoveredReleasesController::class, 'index'])->name('admin.recovered-releases');
     Route::post('release-bulk-category', [AdminReleasesController::class, 'bulkCategory'])->name('admin.release-bulk-category');

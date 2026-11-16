@@ -28,15 +28,13 @@ class BackupTick extends Command
                 return self::SUCCESS;
             }
 
-            $kind = $due['kind'];
-            $reason = $due['reason'] === 'requested' ? 'requested' : 'scheduled';
-            $this->components->info(sprintf('Running %s %s backup.', $reason, $kind->label()));
-            $backups->run($kind);
+            $this->components->info(sprintf('Running %s backup.', $due));
+            $backups->run();
 
             return self::SUCCESS;
         } catch (BackupAlreadyRunning $e) {
-            if (($due['reason'] ?? null) === 'requested') {
-                Settings::settingsUpdate(['backup_run_request' => $due['kind']->value]);
+            if ($due === 'requested') {
+                Settings::settingsUpdate(['backup_run_request' => '1']);
             }
 
             $this->components->warn($e->getMessage());

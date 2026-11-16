@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Mail\BackupFailed;
+use App\Services\Backup\BackupOffsiteService;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Process\PendingProcess;
@@ -72,12 +73,12 @@ class BackupRunCommandTest extends TestCase
             return Process::result();
         });
 
-        $this->artisan('backup:run full')
-            ->expectsOutputToContain('Full backup completed')
+        $this->artisan('backup:run')
+            ->expectsOutputToContain('Backup completed')
             ->assertSuccessful();
 
         $setDirectory = $this->backupLocation.'/20260817-020000';
-        $dumpPath = $setDirectory.'/full-20260817-0200.sql.gz';
+        $dumpPath = $setDirectory.'/backup-20260817-0200.sql.gz';
         $manifestPath = $dumpPath.'.manifest.json';
 
         $this->assertFileExists($dumpPath);
@@ -86,7 +87,7 @@ class BackupRunCommandTest extends TestCase
 
         $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
 
-        $this->assertSame('full', $manifest['kind']);
+        $this->assertArrayNotHasKey('kind', $manifest);
         $this->assertSame('20260817-020000', $manifest['set_id']);
         $this->assertSame(['collections', 'settings', 'users'], $manifest['tables']);
         $this->assertSame(['important', 'working'], $manifest['tiers_included']);
@@ -113,18 +114,17 @@ class BackupRunCommandTest extends TestCase
             return Process::result(errorOutput: 'disk write failed', exitCode: 2);
         });
 
-        $this->artisan('backup:run daily')
+        $this->artisan('backup:run')
             ->expectsOutputToContain('Database dump failed: disk write failed')
             ->assertFailed();
 
         $files = glob($this->backupLocation.'/*/*') ?: [];
         $this->assertSame([], $files);
         $this->assertDatabaseHas('database_backups', [
-            'kind' => 'daily',
             'status' => 'failed',
             'error' => 'Database dump failed: disk write failed',
         ]);
-        Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => $mail->kind === 'daily'
+        Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => ! $mail->offsite
             && $mail->error === 'Database dump failed: disk write failed');
     }
 
@@ -132,7 +132,7 @@ class BackupRunCommandTest extends TestCase
      * @param  list<string>  $tables
      */
     #[DataProvider('crossSchemaBackupModes')]
-    public function test_cross_schema_backup_uses_exact_local_dump_arguments_and_manifest(string $kind, bool $includeWorking, array $tables): void
+    public function test_cross_schema_backup_uses_exact_local_dump_arguments_and_manifest(bool $includeWorking, array $tables): void
     {
         DB::table('settings')->where('name', 'backup_incl_working')->update(['value' => $includeWorking ? '1' : '0']);
         config([
@@ -151,7 +151,7 @@ class BackupRunCommandTest extends TestCase
             $this->assertContains('research.articles', Schema::getTableListing());
             $this->fakeSuccessfulDump();
 
-            $this->artisan('backup:run '.$kind)->assertSuccessful();
+            $this->artisan('backup:run')->assertSuccessful();
 
             Process::assertRanTimes(function (PendingProcess $process) use ($tables): bool {
                 if (! isset($process->environment['BACKUP_OUTPUT'])) {
@@ -170,11 +170,11 @@ class BackupRunCommandTest extends TestCase
                 return true;
             }, 1);
 
-            $manifests = glob($this->backupLocation.'/*/'.$kind.'-*.manifest.json') ?: [];
+            $manifests = glob($this->backupLocation.'/*/backup-*.manifest.json') ?: [];
             $this->assertCount(1, $manifests);
             $manifest = json_decode((string) file_get_contents($manifests[0]), true, flags: JSON_THROW_ON_ERROR);
             $this->assertSame($tables, $manifest['tables']);
-            $this->assertSame($kind === 'full' && $includeWorking ? ['important', 'working'] : ['important'], $manifest['tiers_included']);
+            $this->assertSame($includeWorking ? ['important', 'working'] : ['important'], $manifest['tiers_included']);
             $this->assertEqualsCanonicalizing(['articles', 'capture_runs', 'users'], Schema::getTableListing(['research'], false));
         } finally {
             DB::statement('DETACH DATABASE research');
@@ -182,15 +182,15 @@ class BackupRunCommandTest extends TestCase
     }
 
     /**
-     * @return array<string, array{string, bool, list<string>}>
+     * @return array<string, array{bool, list<string>}>
      */
     public static function crossSchemaBackupModes(): array
     {
         return [
-            'full with working' => ['full', true, ['collections', 'settings', 'users']],
-            'full without working' => ['full', false, ['settings', 'users']],
-            'daily with working' => ['daily', true, ['settings', 'users']],
-            'daily without working' => ['daily', false, ['settings', 'users']],
+            'full with working' => [true, ['collections', 'settings', 'users']],
+            'full without working' => [false, ['settings', 'users']],
+            'daily with working' => [true, ['collections', 'settings', 'users']],
+            'daily without working' => [false, ['settings', 'users']],
         ];
     }
 
@@ -223,7 +223,7 @@ class BackupRunCommandTest extends TestCase
         }
 
         try {
-            $this->artisan('backup:run full')->expectsOutputToContain($error)->assertFailed();
+            $this->artisan('backup:run')->expectsOutputToContain($error)->assertFailed();
         } finally {
             Schema::swap($builder);
         }
@@ -233,7 +233,7 @@ class BackupRunCommandTest extends TestCase
         $this->assertSame('1', DB::table('settings')->where('name', 'running')->value('value'));
         $this->assertSame('', DB::table('settings')->where('name', 'backup_pause_marker')->value('value'));
         $this->assertSame([], glob($this->backupLocation.'/*') ?: []);
-        $this->assertDatabaseHas('database_backups', ['kind' => 'full', 'status' => 'failed', 'error' => $error]);
+        $this->assertDatabaseHas('database_backups', ['status' => 'failed', 'error' => $error]);
         Mail::assertSent(BackupFailed::class, fn (BackupFailed $mail): bool => $mail->error === $error);
 
         $lock = Cache::lock('database-backup-run', 60);
@@ -282,7 +282,7 @@ class BackupRunCommandTest extends TestCase
             return Process::result();
         });
 
-        $this->artisan('backup:run full')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
         $this->assertSame('1', DB::table('settings')->where('name', 'running')->value('value'));
         $this->assertSame('', DB::table('settings')->where('name', 'backup_pause_marker')->value('value'));
@@ -290,10 +290,11 @@ class BackupRunCommandTest extends TestCase
 
     public function test_successful_full_purges_oldest_backup_set_as_a_whole(): void
     {
-        DB::table('settings')->where('name', 'backup_keep_fulls')->update(['value' => '2']);
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '2']);
         $this->writeExistingBackup('20260801-020000', 'full', '20260801-0200');
         $this->writeExistingBackup('20260801-020000', 'daily', '20260802-0200');
         $this->writeExistingBackup('20260808-020000', 'full', '20260808-0200');
+        $this->writeExistingBackup('20260808-020000', 'daily', '20260809-0200');
 
         Process::fake(function (PendingProcess $process) {
             if ($process->command === ['sh', '-c', 'command -v mariadb-dump || command -v mysqldump']) {
@@ -311,17 +312,20 @@ class BackupRunCommandTest extends TestCase
             return Process::result();
         });
 
-        $this->artisan('backup:run full')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
+        // A pre-change folder holding a Full plus Dailies counts as one backup and goes, or stays, whole.
         $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260801-020000');
-        $this->assertDirectoryExists($this->backupLocation.'/20260808-020000');
+        $this->assertFileExists($this->backupLocation.'/20260808-020000/full-20260808-0200.sql.gz');
+        $this->assertFileExists($this->backupLocation.'/20260808-020000/daily-20260809-0200.sql.gz');
         $this->assertDirectoryExists($this->backupLocation.'/20260817-020000');
     }
 
-    #[DataProvider('backupKinds')]
-    public function test_run_hashes_only_the_dump_it_writes(string $kind): void
+    #[DataProvider('workingTableModes')]
+    public function test_run_hashes_only_the_dump_it_writes(bool $includeWorking): void
     {
-        DB::table('settings')->where('name', 'backup_keep_fulls')->update(['value' => '2']);
+        DB::table('settings')->where('name', 'backup_incl_working')->update(['value' => $includeWorking ? '1' : '0']);
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '2']);
         $this->writeExistingBackup('20260801-020000', 'full', '20260801-0200');
         $this->writeExistingBackup('20260801-020000', 'daily', '20260802-0200');
         $this->writeExistingBackup('20260808-020000', 'full', '20260808-0200');
@@ -329,31 +333,32 @@ class BackupRunCommandTest extends TestCase
         $catalog = CountingBackupCatalog::install($this->app);
         $this->fakeSuccessfulDump();
 
-        $this->artisan("backup:run {$kind}")->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
-        $written = glob($this->backupLocation."/*/{$kind}-20260817-0200.sql.gz") ?: [];
+        $written = glob($this->backupLocation.'/*/backup-20260817-0200.sql.gz') ?: [];
         $this->assertCount(1, $written);
         $this->assertSame(array_map(basename(...), $written), array_map(basename(...), $catalog->checksummed));
     }
 
     /**
-     * @return array<string, array{string}>
+     * @return array<string, array{bool}>
      */
-    public static function backupKinds(): array
+    public static function workingTableModes(): array
     {
-        return ['full' => ['full'], 'daily' => ['daily']];
+        return ['full' => [true], 'daily' => [false]];
     }
 
     public function test_corrupt_full_does_not_count_toward_retention(): void
     {
-        DB::table('settings')->where('name', 'backup_keep_fulls')->update(['value' => '2']);
-        $this->writeExistingBackup('20260801-020000', 'full', '20260801-0200');
-        $this->writeExistingBackup('20260810-020000', 'full', '20260810-0200');
-        file_put_contents($this->backupLocation.'/20260810-020000/full-20260810-0200.sql.gz', 'corrupt');
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '2']);
+        $this->writeExistingBackup('20260801-020000', null, '20260801-0200');
+        $this->writeExistingBackup('20260810-020000', null, '20260810-0200');
+        file_put_contents($this->backupLocation.'/20260810-020000/backup-20260810-0200.sql.gz', 'corrupt');
         $this->fakeSuccessfulDump();
 
-        $this->artisan('backup:run full')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
+        // The unverified 0810 folder does not count toward the two kept, and stays because it is newer than 0801.
         $this->assertDirectoryExists($this->backupLocation.'/20260801-020000');
         $this->assertDirectoryExists($this->backupLocation.'/20260810-020000');
         $this->assertDirectoryExists($this->backupLocation.'/20260817-020000');
@@ -368,7 +373,7 @@ class BackupRunCommandTest extends TestCase
         file_put_contents($manifestPath, json_encode($manifest, JSON_THROW_ON_ERROR));
 
         $this->artisan('backup:list')
-            ->expectsOutputToContain('No database Backup sets found')
+            ->expectsOutputToContain('No database backups found')
             ->assertSuccessful();
 
         $this->assertDatabaseCount('database_backups', 0);
@@ -383,7 +388,7 @@ class BackupRunCommandTest extends TestCase
         file_put_contents($manifestPath, json_encode($manifest, JSON_THROW_ON_ERROR));
 
         $this->artisan('backup:list')
-            ->expectsOutputToContain('No database Backup sets found')
+            ->expectsOutputToContain('No database backups found')
             ->assertSuccessful();
 
         $this->assertDatabaseCount('database_backups', 0);
@@ -393,25 +398,31 @@ class BackupRunCommandTest extends TestCase
     {
         $this->fakeSuccessfulDump();
 
-        $this->artisan('backup:run daily')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
+        Carbon::setTestNow('2026-08-17 02:01:00');
+        DB::table('settings')->where('name', 'backup_incl_working')->update(['value' => '0']);
+        $this->artisan('backup:run')->assertSuccessful();
 
-        $manifestPath = (glob($this->backupLocation.'/*/daily-*.manifest.json') ?: [])[0] ?? null;
-        $this->assertNotNull($manifestPath);
-        $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
-        $this->assertSame(['settings', 'users'], $manifest['tables']);
-        $this->assertSame(['important'], $manifest['tiers_included']);
+        $withWorking = $this->manifestAt('20260817-020000/backup-20260817-0200.sql.gz');
+        $withoutWorking = $this->manifestAt('20260817-020100/backup-20260817-0201.sql.gz');
+        $this->assertSame(['collections', 'settings', 'users'], $withWorking['tables']);
+        $this->assertSame(['settings', 'users'], $withoutWorking['tables']);
+        foreach ([$withWorking, $withoutWorking] as $manifest) {
+            $this->assertNotContains('pulse_entries', $manifest['tables']);
+            $this->assertNotContains('database_backups', $manifest['tables']);
+        }
     }
 
     public function test_daily_does_not_attach_to_a_corrupt_full_set(): void
     {
-        $this->writeExistingBackup('20260816-020000', 'full', '20260816-0200');
-        file_put_contents($this->backupLocation.'/20260816-020000/full-20260816-0200.sql.gz', 'corrupt');
+        $this->writeExistingBackup('20260816-020000', null, '20260816-0200');
+        file_put_contents($this->backupLocation.'/20260816-020000/backup-20260816-0200.sql.gz', 'corrupt');
         $this->fakeSuccessfulDump();
 
-        $this->artisan('backup:run daily')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
-        $this->assertCount(1, glob($this->backupLocation.'/no-full-yet-*/daily-*.sql.gz') ?: []);
-        $this->assertCount(0, glob($this->backupLocation.'/20260816-020000/daily-*.sql.gz') ?: []);
+        $this->assertSame(['backup-20260817-0200.sql.gz'], array_map(basename(...), glob($this->backupLocation.'/20260817-020000/*.sql.gz') ?: []));
+        $this->assertSame(['backup-20260816-0200.sql.gz'], array_map(basename(...), glob($this->backupLocation.'/20260816-020000/*.sql.gz') ?: []));
     }
 
     public function test_full_backup_can_exclude_working_tables(): void
@@ -419,9 +430,9 @@ class BackupRunCommandTest extends TestCase
         DB::table('settings')->where('name', 'backup_incl_working')->update(['value' => '0']);
         $this->fakeSuccessfulDump();
 
-        $this->artisan('backup:run full')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
-        $manifestPath = (glob($this->backupLocation.'/*/full-*.manifest.json') ?: [])[0] ?? null;
+        $manifestPath = (glob($this->backupLocation.'/*/backup-*.manifest.json') ?: [])[0] ?? null;
         $this->assertNotNull($manifestPath);
         $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
         $this->assertSame(['settings', 'users'], $manifest['tables']);
@@ -434,7 +445,7 @@ class BackupRunCommandTest extends TestCase
         DB::table('settings')->where('name', 'running')->update(['value' => '0']);
         $this->fakeSuccessfulDump();
 
-        $this->artisan('backup:run full')->assertSuccessful();
+        $this->artisan('backup:run')->assertSuccessful();
 
         $this->assertSame('0', DB::table('settings')->where('name', 'running')->value('value'));
         $this->assertSame('', DB::table('settings')->where('name', 'backup_pause_marker')->value('value'));
@@ -456,7 +467,7 @@ class BackupRunCommandTest extends TestCase
             return Process::result(errorOutput: 'dump interrupted', exitCode: 2);
         });
 
-        $this->artisan('backup:run daily')->assertFailed();
+        $this->artisan('backup:run')->assertFailed();
 
         $this->assertSame('1', DB::table('settings')->where('name', 'running')->value('value'));
         $this->assertSame('', DB::table('settings')->where('name', 'backup_pause_marker')->value('value'));
@@ -468,7 +479,7 @@ class BackupRunCommandTest extends TestCase
         Mail::fake();
         config(['nntmux.admin_email' => 'admin@example.test']);
 
-        $this->artisan('backup:run full')
+        $this->artisan('backup:run')
             ->expectsOutputToContain("unsupported for the 'pgsql' driver")
             ->assertFailed();
 
@@ -484,7 +495,7 @@ class BackupRunCommandTest extends TestCase
         ]);
         Mail::fake();
 
-        $this->artisan('backup:run full')
+        $this->artisan('backup:run')
             ->expectsOutputToContain("unsupported for the 'pgsql' driver")
             ->assertFailed();
 
@@ -495,19 +506,120 @@ class BackupRunCommandTest extends TestCase
     {
         Process::fake(fn () => Process::result(errorOutput: 'not found', exitCode: 1));
 
-        $this->artisan('backup:run full')
+        $this->artisan('backup:run')
             ->expectsOutputToContain('Neither mariadb-dump nor mysqldump is available')
             ->assertFailed();
     }
 
-    public function test_run_refuses_when_twice_the_last_backup_size_exceeds_free_space(): void
+    #[DataProvider('previousBackupKinds')]
+    public function test_run_refuses_when_twice_the_last_backup_size_exceeds_free_space(?string $previousKind): void
     {
-        $this->writeExistingBackup('20260808-020000', 'full', '20260808-0200');
+        $this->writeExistingBackup('20260808-020000', $previousKind, '20260808-0200');
         config(['nntmux-backup.free_space_multiplier' => PHP_INT_MAX]);
 
-        $this->artisan('backup:run full')
-            ->expectsOutputToContain('Insufficient free space for Full backup')
+        $this->artisan('backup:run')
+            ->expectsOutputToContain('Insufficient free space for backup')
             ->assertFailed();
+    }
+
+    /**
+     * @return array<string, array{?string}>
+     */
+    public static function previousBackupKinds(): array
+    {
+        return ['daily-only backup' => [null], 'pre-change full' => ['full'], 'pre-change daily' => ['daily']];
+    }
+
+    public function test_retention_removes_every_folder_older_than_the_oldest_kept_folder(): void
+    {
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '2']);
+        $this->writeExistingBackup('20260815-020000', null, '20260815-0200');
+        $this->writeExistingBackup('20260814-020000', null, '20260814-0200');
+        file_put_contents($this->backupLocation.'/20260814-020000/backup-20260814-0200.sql.gz', 'corrupt');
+        $this->writeExistingBackup('20260813-020000', null, '20260813-0200');
+        mkdir($this->backupLocation.'/20260812-020000');
+        file_put_contents($this->backupLocation.'/20260812-020000/backup-20260812-0200.sql.gz.partial', 'killed mid-dump');
+        $this->writeExistingBackup('20260811-020000', 'full', '20260811-0200');
+        $this->writeExistingBackup('20260811-020000', 'daily', '20260812-0200');
+        mkdir($this->backupLocation.'/restore-notes');
+        file_put_contents($this->backupLocation.'/restore-notes/readme.txt', 'operator notes');
+        $this->fakeSuccessfulDump();
+
+        $this->artisan('backup:run')->assertSuccessful();
+
+        // 0817 and 0815 are the two kept; everything older than 0815 goes, verified or not.
+        $this->assertDirectoryExists($this->backupLocation.'/20260817-020000');
+        $this->assertDirectoryExists($this->backupLocation.'/20260815-020000');
+        $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260814-020000');
+        $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260813-020000');
+        $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260812-020000');
+        $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260811-020000');
+        $this->assertFileExists($this->backupLocation.'/restore-notes/readme.txt');
+        $this->assertEqualsCanonicalizing(
+            ['20260815-020000', '20260817-020000'],
+            DB::table('database_backups')->where('status', 'successful')->pluck('set_id')->all(),
+        );
+    }
+
+    public function test_retention_keeps_everything_while_fewer_verified_folders_exist_than_the_keep_count(): void
+    {
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '3']);
+        $this->writeExistingBackup('20260815-020000', null, '20260815-0200');
+        file_put_contents($this->backupLocation.'/20260815-020000/backup-20260815-0200.sql.gz', 'corrupt');
+        mkdir($this->backupLocation.'/20260814-020000');
+        file_put_contents($this->backupLocation.'/20260814-020000/backup-20260814-0200.sql.gz.partial', 'killed mid-dump');
+        $this->writeExistingBackup('20260813-020000', null, '20260813-0200');
+        $this->fakeSuccessfulDump();
+
+        $this->artisan('backup:run')->assertSuccessful();
+
+        foreach (['20260817-020000', '20260815-020000', '20260814-020000', '20260813-020000'] as $folder) {
+            $this->assertDirectoryExists($this->backupLocation.'/'.$folder);
+        }
+    }
+
+    #[DataProvider('offsiteCopyOutcomes')]
+    public function test_automatic_off_site_copy_runs_before_local_retention(bool $copyFails): void
+    {
+        $destination = $this->makeTempDirectory('nntmux-backups-offsite');
+        DB::table('settings')->where('name', 'backup_keep')->update(['value' => '1']);
+        DB::table('settings')->where('name', 'backup_offsite_after')->update(['value' => '1']);
+        DB::table('settings')->insert(['name' => 'backup_offsite_path', 'value' => $destination]);
+        $this->writeExistingBackup('20260816-020000', null, '20260816-0200');
+        $location = $this->backupLocation;
+        $offsite = new class($location, $copyFails) extends BackupOffsiteService
+        {
+            /** @var list<string>|null */
+            public ?array $foldersAtCopy = null;
+
+            public function __construct(private readonly string $location, private readonly bool $fails) {}
+
+            public function copy(?string $destinationOverride, ?int $keepOverride, bool $allowLocal, ?float $deadlineOverride = null): array
+            {
+                $this->foldersAtCopy = array_map(basename(...), glob($this->location.'/*') ?: []);
+                if ($this->fails) {
+                    throw new RuntimeException('destination disconnected');
+                }
+
+                return ['copied' => 2, 'skipped' => 0, 'sets' => 2];
+            }
+        };
+        $this->app->instance(BackupOffsiteService::class, $offsite);
+        $this->fakeSuccessfulDump();
+
+        $this->artisan('backup:run')->assertSuccessful();
+
+        $this->assertSame(['20260816-020000', '20260817-020000'], $offsite->foldersAtCopy);
+        $this->assertDirectoryDoesNotExist($this->backupLocation.'/20260816-020000');
+        $this->assertDirectoryExists($this->backupLocation.'/20260817-020000');
+    }
+
+    /**
+     * @return array<string, array{bool}>
+     */
+    public static function offsiteCopyOutcomes(): array
+    {
+        return ['copy succeeds' => [false], 'copy fails' => [true]];
     }
 
     private function createSchema(): void
@@ -521,7 +633,6 @@ class BackupRunCommandTest extends TestCase
         Schema::create('pulse_entries', fn (Blueprint $table) => $table->id());
         Schema::create('database_backups', function (Blueprint $table): void {
             $table->id();
-            $table->string('kind', 10);
             $table->string('set_id');
             $table->text('path')->nullable();
             $table->unsignedBigInteger('bytes')->nullable();
@@ -543,7 +654,7 @@ class BackupRunCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_enabled', 'value' => '1'],
             ['name' => 'backup_location', 'value' => $this->backupLocation],
-            ['name' => 'backup_keep_fulls', 'value' => '4'],
+            ['name' => 'backup_keep', 'value' => '4'],
             ['name' => 'backup_pause_tmux', 'value' => '0'],
             ['name' => 'backup_incl_working', 'value' => '1'],
             ['name' => 'backup_dump_binary', 'value' => ''],
@@ -554,17 +665,20 @@ class BackupRunCommandTest extends TestCase
         ]);
     }
 
-    private function writeExistingBackup(string $setId, string $kind, string $timestamp): void
+    /**
+     * Writes a verified backup; a kind writes a pre-change Full or Daily file and manifest.
+     */
+    private function writeExistingBackup(string $setId, ?string $kind, string $timestamp): void
     {
         $directory = $this->backupLocation.'/'.$setId;
         if (! is_dir($directory)) {
             mkdir($directory);
         }
 
-        $dump = "{$directory}/{$kind}-{$timestamp}.sql.gz";
-        file_put_contents($dump, gzencode("{$kind}\n"));
+        $dump = sprintf('%s/%s-%s.sql.gz', $directory, $kind ?? 'backup', $timestamp);
+        file_put_contents($dump, gzencode(($kind ?? 'backup')."\n"));
         file_put_contents($dump.'.manifest.json', json_encode([
-            'kind' => $kind,
+            ...($kind === null ? [] : ['kind' => $kind]),
             'started_at' => Carbon::createFromFormat('Ymd-Hi', $timestamp)->toIso8601String(),
             'finished_at' => Carbon::createFromFormat('Ymd-Hi', $timestamp)->toIso8601String(),
             'tables' => ['settings'],
@@ -575,6 +689,14 @@ class BackupRunCommandTest extends TestCase
             'db_server_version' => 'test',
             'set_id' => $setId,
         ], JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function manifestAt(string $dump): array
+    {
+        return json_decode((string) file_get_contents($this->backupLocation.'/'.$dump.'.manifest.json'), true, flags: JSON_THROW_ON_ERROR);
     }
 
     private function fakeSuccessfulDump(): void

@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\Support\CountingBackupCatalog;
 use Tests\TestCase;
@@ -30,7 +31,7 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
         ]);
         $this->writeBackup($source, '20260816-020000');
 
@@ -56,11 +57,11 @@ class BackupOffsiteCommandTest extends TestCase
             '--allow-local' => true,
         ])->expectsOutputToContain('1 file copied')->assertSuccessful();
 
-        $destinationDump = $destination.'/20260816-020000/full-20260816-0200.sql.gz';
+        $destinationDump = $destination.'/20260816-020000/backup-20260816-0200.sql.gz';
         $this->assertFileExists($destinationDump);
         $this->assertFileExists($destinationDump.'.manifest.json');
         $this->assertSame(
-            hash_file('sha256', $source.'/20260816-020000/full-20260816-0200.sql.gz'),
+            hash_file('sha256', $source.'/20260816-020000/backup-20260816-0200.sql.gz'),
             hash_file('sha256', $destinationDump),
         );
 
@@ -85,7 +86,7 @@ class BackupOffsiteCommandTest extends TestCase
 
         $this->assertSame(2, $copies);
         $this->assertSame(
-            hash_file('sha256', $source.'/20260816-020000/full-20260816-0200.sql.gz'),
+            hash_file('sha256', $source.'/20260816-020000/backup-20260816-0200.sql.gz'),
             hash_file('sha256', $destinationDump),
         );
 
@@ -97,7 +98,7 @@ class BackupOffsiteCommandTest extends TestCase
 
         $this->assertSame(3, $copies);
         $this->assertSame(
-            file_get_contents($source.'/20260816-020000/full-20260816-0200.sql.gz.manifest.json'),
+            file_get_contents($source.'/20260816-020000/backup-20260816-0200.sql.gz.manifest.json'),
             file_get_contents($destinationDump.'.manifest.json'),
         );
     }
@@ -112,7 +113,7 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
         ]);
         $this->writeBackup($source, '20260816-020000');
 
@@ -133,7 +134,7 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
         ]);
         $this->writeBackup($source, '20260816-020000');
         config(['nntmux.admin_email' => 'admin@example.test']);
@@ -174,7 +175,7 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'backup_offsite_keep', 'value' => '2'],
         ]);
         $this->writeBackup($destination, '20260801-020000');
-        $this->writeBackup($source, '20260816-020000');
+        $this->writeBackup($source, '20260816-020000', 'full');
         $this->writeDailyBackup($source, '20260816-020000');
         $this->fakeSuccessfulCopies();
         $catalog = CountingBackupCatalog::install($this->app);
@@ -207,7 +208,7 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
         ]);
         $this->writeBackup($source, '20260816-020000');
         Mail::fake();
@@ -227,11 +228,11 @@ class BackupOffsiteCommandTest extends TestCase
         });
 
         $this->artisan('backup:offsite', ['--allow-local' => true])
-            ->expectsOutputToContain('Off-site checksum verification failed for 20260816-020000/full-20260816-0200.sql.gz')
+            ->expectsOutputToContain('Off-site checksum verification failed for 20260816-020000/backup-20260816-0200.sql.gz')
             ->assertFailed();
 
-        $this->assertFileDoesNotExist($destination.'/20260816-020000/full-20260816-0200.sql.gz');
-        $this->assertFileDoesNotExist($destination.'/20260816-020000/full-20260816-0200.sql.gz.manifest.json');
+        $this->assertFileDoesNotExist($destination.'/20260816-020000/backup-20260816-0200.sql.gz');
+        $this->assertFileDoesNotExist($destination.'/20260816-020000/backup-20260816-0200.sql.gz.manifest.json');
         $this->assertSame([], glob($destination.'/20260816-020000/.tmp-*') ?: []);
         $this->assertDatabaseHas('database_backups', [
             'set_id' => '20260816-020000',
@@ -249,9 +250,9 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'catwebdl', 'value' => '0'],
             ['name' => 'backup_location', 'value' => $source],
             ['name' => 'backup_offsite_path', 'value' => $destination],
-            ['name' => 'backup_offsite_keep', 'value' => '0'],
+            ['name' => 'backup_offsite_keep', 'value' => '7'],
         ]);
-        $this->writeBackup($source, '20260816-020000');
+        $this->writeBackup($source, '20260816-020000', 'full');
         $this->writeDailyBackup($source, '20260816-020000');
         $copyAttempt = 0;
 
@@ -361,16 +362,20 @@ class BackupOffsiteCommandTest extends TestCase
             ['name' => 'backup_offsite_path', 'value' => $destination],
             ['name' => 'backup_offsite_keep', 'value' => '2'],
         ]);
-        $this->writeDailyOnlyBackup($source, 'no-full-yet-20260814-020000', '20260814-0200');
-        $this->writeDailyOnlyBackup($source, 'no-full-yet-20260815-020000', '20260815-0200');
-        $this->writeDailyOnlyBackup($source, 'no-full-yet-20260816-020000', '20260816-0200');
+        $this->writeBackup($destination, '20260802-020000', 'full');
+        $this->writeBackupFile($destination.'/20260802-020000', '20260802-020000', 'daily', '20260803-0200');
+        $this->writeDailyOnlyBackup($source, 'no-full-yet-20260808-020000', '20260808-0200');
+        $this->writeBackupFile($source.'/no-full-yet-20260808-020000', 'no-full-yet-20260808-020000', 'daily', '20260809-0200');
+        $this->writeBackup($source, '20260816-020000');
         $this->fakeSuccessfulCopies();
 
         $this->artisan('backup:offsite', ['--allow-local' => true])->assertSuccessful();
 
-        $this->assertDirectoryDoesNotExist($destination.'/no-full-yet-20260814-020000');
-        $this->assertDirectoryExists($destination.'/no-full-yet-20260815-020000');
-        $this->assertDirectoryExists($destination.'/no-full-yet-20260816-020000');
+        // The pre-change folder with two Dailies is one of the two kept, and stays whole.
+        $this->assertDirectoryDoesNotExist($destination.'/20260802-020000');
+        $this->assertFileExists($destination.'/no-full-yet-20260808-020000/daily-20260808-0200.sql.gz');
+        $this->assertFileExists($destination.'/no-full-yet-20260808-020000/daily-20260809-0200.sql.gz');
+        $this->assertDirectoryExists($destination.'/20260816-020000');
     }
 
     public function test_corrupt_destination_set_does_not_evict_verified_set(): void
@@ -387,7 +392,7 @@ class BackupOffsiteCommandTest extends TestCase
         ]);
         $this->writeBackup($destination, '20260801-020000');
         $this->writeBackup($destination, '20260810-020000');
-        file_put_contents($destination.'/20260810-020000/full-20260816-0200.sql.gz', 'corrupt');
+        file_put_contents($destination.'/20260810-020000/backup-20260816-0200.sql.gz', 'corrupt');
         $this->writeBackup($source, '20260816-020000');
         $this->fakeSuccessfulCopies();
 
@@ -396,6 +401,131 @@ class BackupOffsiteCommandTest extends TestCase
         $this->assertDirectoryExists($destination.'/20260801-020000');
         $this->assertDirectoryExists($destination.'/20260810-020000');
         $this->assertDirectoryExists($destination.'/20260816-020000');
+    }
+
+    public function test_copy_sends_only_the_newest_verified_local_folders(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        $this->seedOffsiteSettings($source, $destination, '2');
+        $this->writeBackup($source, '20260802-020000');
+        $this->writeBackup($source, '20260809-020000');
+        $this->writeBackup($source, '20260812-020000');
+        file_put_contents($source.'/20260812-020000/backup-20260816-0200.sql.gz', 'corrupt');
+        $this->writeBackup($source, '20260816-020000');
+        $this->fakeSuccessfulCopies();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])
+            ->expectsOutputToContain('2 files copied; 0 already complete across 2 backups.')
+            ->assertSuccessful();
+
+        $this->assertSame(['20260809-020000', '20260816-020000'], $this->folders($destination));
+        $this->assertSame(['20260809-020000', '20260816-020000'], DB::table('database_backups')
+            ->where('offsite_status', 'copied')->orderBy('set_id')->pluck('set_id')->all());
+    }
+
+    public function test_keep_option_replaces_the_stored_count(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        $this->seedOffsiteSettings($source, $destination, '7');
+        $this->writeBackup($source, '20260809-020000');
+        $this->writeBackup($source, '20260816-020000');
+        $this->writeBackup($destination, '20260802-020000');
+        $this->fakeSuccessfulCopies();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true, '--keep' => '1'])
+            ->expectsOutputToContain('1 file copied; 0 already complete across 1 backups.')
+            ->assertSuccessful();
+
+        $this->assertSame(['20260816-020000'], $this->folders($destination));
+    }
+
+    #[DataProvider('invalidKeepOptions')]
+    public function test_keep_option_outside_one_to_ten_is_rejected(string $keep): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        $this->seedOffsiteSettings($source, $destination, '7');
+        $this->writeBackup($destination, '20260802-020000');
+        Process::preventStrayProcesses();
+        Process::fake();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true, '--keep' => $keep])
+            ->expectsOutputToContain('--keep must be a whole number from 1 to 10.')
+            ->assertExitCode(2);
+
+        Process::assertNothingRan();
+        $this->assertSame(['20260802-020000'], $this->folders($destination));
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidKeepOptions(): array
+    {
+        return ['zero' => ['0'], 'negative' => ['-1'], 'eleven' => ['11'], 'fraction' => ['2.5'], 'text' => ['all']];
+    }
+
+    #[DataProvider('storedOffsiteKeeps')]
+    public function test_stored_offsite_keep_resolves_into_the_one_to_ten_range(?string $stored, int $kept): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        $this->seedOffsiteSettings($source, $destination, $stored);
+        for ($day = 1; $day <= 12; $day++) {
+            $this->writeBackup($source, sprintf('202608%02d-020000', $day));
+        }
+        $this->fakeSuccessfulCopies();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])->assertSuccessful();
+
+        $expected = array_map(static fn (int $day): string => sprintf('202608%02d-020000', $day), range(13 - $kept, 12));
+        $this->assertSame($expected, $this->folders($destination));
+    }
+
+    /**
+     * @return array<string, array{?string, int}>
+     */
+    public static function storedOffsiteKeeps(): array
+    {
+        return [
+            'missing' => [null, 7],
+            'blank' => ['', 7],
+            'zero' => ['0', 7],
+            'negative' => ['-2', 7],
+            'three' => ['3', 3],
+            'ten' => ['10', 10],
+            'above ten' => ['25', 10],
+        ];
+    }
+
+    public function test_destination_retention_removes_every_folder_older_than_the_oldest_kept_folder(): void
+    {
+        $source = $this->makeTempDirectory('nntmux-offsite-source');
+        $destination = $this->makeTempDirectory('nntmux-offsite-destination');
+        $this->createSchema();
+        $this->seedOffsiteSettings($source, $destination, '2');
+        mkdir($destination.'/20260801-020000');
+        file_put_contents($destination.'/20260801-020000/.tmp-backup-20260801-0200.sql.gz', 'rsync failed part-way');
+        $this->writeBackup($destination, '20260803-020000');
+        file_put_contents($destination.'/20260803-020000/backup-20260816-0200.sql.gz', 'corrupt');
+        $this->writeBackup($destination, '20260805-020000');
+        mkdir($destination.'/lost+found');
+        $this->writeBackup($destination, '20260814-020000');
+        file_put_contents($destination.'/20260814-020000/backup-20260816-0200.sql.gz', 'corrupt');
+        $this->writeBackup($source, '20260813-020000');
+        $this->writeBackup($source, '20260816-020000');
+        $this->fakeSuccessfulCopies();
+
+        $this->artisan('backup:offsite', ['--allow-local' => true])->assertSuccessful();
+
+        // 0816 and 0813 are kept; the unverified 0814 between them stays; everything older goes.
+        $this->assertSame(['20260813-020000', '20260814-020000', '20260816-020000', 'lost+found'], $this->folders($destination));
     }
 
     public function test_concurrent_offsite_copy_is_skipped_successfully(): void
@@ -436,7 +566,6 @@ class BackupOffsiteCommandTest extends TestCase
         });
         Schema::create('database_backups', function (Blueprint $table): void {
             $table->id();
-            $table->string('kind', 10);
             $table->string('set_id');
             $table->text('path')->nullable();
             $table->unsignedBigInteger('bytes')->nullable();
@@ -451,15 +580,18 @@ class BackupOffsiteCommandTest extends TestCase
         });
     }
 
-    private function writeBackup(string $location, string $setId): void
+    /**
+     * Writes a verified one-file folder; a kind writes a pre-change Full or Daily file and manifest.
+     */
+    private function writeBackup(string $location, string $setId, ?string $kind = null): void
     {
         $set = $location.'/'.$setId;
         mkdir($set);
-        $dump = $set.'/full-20260816-0200.sql.gz';
-        file_put_contents($dump, gzencode("full backup\n"));
+        $dump = sprintf('%s/%s-20260816-0200.sql.gz', $set, $kind ?? 'backup');
+        file_put_contents($dump, gzencode(($kind ?? 'daily-only')." backup\n"));
         $timestamp = Carbon::createFromFormat('Ymd-His', $setId)->toIso8601String();
         file_put_contents($dump.'.manifest.json', json_encode([
-            'kind' => 'full',
+            ...($kind === null ? [] : ['kind' => $kind]),
             'started_at' => $timestamp,
             'finished_at' => $timestamp,
             'tables' => ['settings'],
@@ -501,6 +633,30 @@ class BackupOffsiteCommandTest extends TestCase
             'db_server_version' => 'test',
             'set_id' => $setId,
         ], JSON_THROW_ON_ERROR));
+    }
+
+    private function seedOffsiteSettings(string $source, string $destination, ?string $keep): void
+    {
+        DB::table('settings')->insert([
+            ['name' => 'categorizeforeign', 'value' => '0'],
+            ['name' => 'catwebdl', 'value' => '0'],
+            ['name' => 'backup_location', 'value' => $source],
+            ['name' => 'backup_offsite_path', 'value' => $destination],
+        ]);
+        if ($keep !== null) {
+            DB::table('settings')->insert(['name' => 'backup_offsite_keep', 'value' => $keep]);
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function folders(string $location): array
+    {
+        $folders = array_map(basename(...), glob($location.'/*', GLOB_ONLYDIR) ?: []);
+        sort($folders);
+
+        return $folders;
     }
 
     /**

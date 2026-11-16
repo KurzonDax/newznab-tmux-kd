@@ -598,15 +598,7 @@ class SettingsTableSeeder extends Seeder
                 'value' => '0',
             ],
             [
-                'name' => 'backup_full_dow',
-                'value' => '0',
-            ],
-            [
-                'name' => 'backup_full_time',
-                'value' => '02:00',
-            ],
-            [
-                'name' => 'backup_daily_time',
+                'name' => 'backup_time',
                 'value' => '02:00',
             ],
             [
@@ -614,7 +606,7 @@ class SettingsTableSeeder extends Seeder
                 'value' => storage_path('app/backups'),
             ],
             [
-                'name' => 'backup_keep_fulls',
+                'name' => 'backup_keep',
                 'value' => '4',
             ],
             [
@@ -639,7 +631,7 @@ class SettingsTableSeeder extends Seeder
             ],
             [
                 'name' => 'backup_offsite_keep',
-                'value' => '0',
+                'value' => '7',
             ],
             [
                 'name' => 'backup_run_request',

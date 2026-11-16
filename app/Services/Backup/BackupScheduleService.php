@@ -4,25 +4,28 @@ declare(strict_types=1);
 
 namespace App\Services\Backup;
 
-use App\Enums\BackupKind;
 use App\Models\Settings;
 use Illuminate\Support\Carbon;
 
 class BackupScheduleService
 {
+    private const string DEFAULT_BACKUP_TIME = '02:00';
+
     public function __construct(
         private readonly BackupCatalog $catalog,
         private readonly BackupLocationValidator $locationValidator,
     ) {}
 
     /**
-     * @return array{kind: BackupKind, reason: string}|null
+     * Whether a backup is due now: 'requested' for a pending Run backup now, 'scheduled' when no
+     * attempt has finished since the most recent Backup-time slot, or null.
      */
-    public function due(): ?array
+    public function due(): ?string
     {
+        $requested = trim((string) Settings::settingValue('backup_run_request')) !== '';
         $enabled = filter_var(Settings::settingValue('backup_enabled'), FILTER_VALIDATE_BOOL);
         if (! $enabled) {
-            if (BackupKind::tryFrom((string) Settings::settingValue('backup_run_request')) !== null) {
+            if ($requested) {
                 Settings::settingsUpdate(['backup_run_request' => '']);
                 logger()->warning('Discarded database backup request because backups are disabled.');
             }
@@ -30,32 +33,20 @@ class BackupScheduleService
             return null;
         }
 
-        $request = BackupKind::tryFrom((string) Settings::settingValue('backup_run_request'));
-        if ($request !== null) {
+        // Any non-empty value is a request, including a full or daily value left from before ADR 0016.
+        if ($requested) {
             Settings::settingsUpdate(['backup_run_request' => '']);
 
-            return ['kind' => $request, 'reason' => 'requested'];
+            return 'requested';
         }
 
         $location = $this->locationValidator->validate((string) Settings::settingValue('backup_location'));
-        $now = Carbon::now((string) config('app.timezone'));
-        $fullDay = (int) Settings::settingValue('backup_full_dow');
-        $fullSlot = $this->mostRecentSlot($now, $fullDay, (string) Settings::settingValue('backup_full_time'));
-        $lastFull = $this->catalog->latestFinishedAt($location, BackupKind::Full->value);
+        $slot = $this->mostRecentSlot(Carbon::now((string) config('app.timezone')));
+        $lastAttempt = $this->catalog->latestAttemptFinishedAt($location);
 
-        if ($lastFull === null || $lastFull->lessThan($fullSlot)) {
-            return ['kind' => BackupKind::Full, 'reason' => 'scheduled'];
-        }
-
-        if ($now->dayOfWeek === $fullDay) {
-            return null;
-        }
-
-        $dailySlot = $this->mostRecentDailySlot($now, $fullDay, (string) Settings::settingValue('backup_daily_time'));
-        $lastDaily = $this->catalog->latestFinishedAt($location, BackupKind::Daily->value);
-
-        if ($lastDaily === null || $lastDaily->lessThan($dailySlot)) {
-            return ['kind' => BackupKind::Daily, 'reason' => 'scheduled'];
+        // A failed run counts as the slot's attempt, so it is not retried until the next slot.
+        if ($lastAttempt === null || $lastAttempt->lessThan($slot)) {
+            return 'scheduled';
         }
 
         return null;
@@ -64,49 +55,27 @@ class BackupScheduleService
     public function nextRun(?Carbon $from = null): Carbon
     {
         $from ??= Carbon::now((string) config('app.timezone'));
-        $fullDay = (int) Settings::settingValue('backup_full_dow');
-        $fullTime = (string) Settings::settingValue('backup_full_time');
-        $dailyTime = (string) Settings::settingValue('backup_daily_time');
+        $slot = $this->slotOn($from);
 
-        for ($offset = 0; $offset <= 7; $offset++) {
-            $day = $from->copy()->addDays($offset);
-            $time = $day->dayOfWeek === $fullDay ? $fullTime : $dailyTime;
-            [$hour, $minute] = array_map('intval', explode(':', $time));
-            $candidate = $day->copy()->setTime($hour, $minute);
-
-            if ($candidate->greaterThan($from)) {
-                return $candidate;
-            }
-        }
-
-        return $from->copy()->addWeek();
+        return $slot->greaterThan($from) ? $slot : $this->slotOn($from->copy()->addDay());
     }
 
-    private function mostRecentSlot(Carbon $now, int $dayOfWeek, string $time): Carbon
+    private function mostRecentSlot(Carbon $now): Carbon
     {
-        $daysBack = ($now->dayOfWeek - $dayOfWeek + 7) % 7;
-        $slot = $now->copy()->subDays($daysBack)->startOfDay();
-        [$hour, $minute] = array_map('intval', explode(':', $time));
-        $slot->setTime($hour, $minute);
+        $slot = $this->slotOn($now);
 
-        if ($slot->greaterThan($now)) {
-            $slot->subWeek();
-        }
-
-        return $slot;
+        return $slot->greaterThan($now) ? $this->slotOn($now->copy()->subDay()) : $slot;
     }
 
-    private function mostRecentDailySlot(Carbon $now, int $fullDay, string $time): Carbon
+    private function slotOn(Carbon $day): Carbon
     {
-        [$hour, $minute] = array_map('intval', explode(':', $time));
-
-        for ($offset = 0; $offset <= 7; $offset++) {
-            $slot = $now->copy()->subDays($offset)->setTime($hour, $minute);
-            if ($slot->dayOfWeek !== $fullDay && $slot->lessThanOrEqualTo($now)) {
-                return $slot;
-            }
+        $time = (string) Settings::settingValue('backup_time');
+        if (preg_match('/^\d{1,2}:\d{2}$/', $time) !== 1) {
+            $time = self::DEFAULT_BACKUP_TIME;
         }
 
-        return $now->copy()->subWeek();
+        [$hour, $minute] = array_map('intval', explode(':', $time));
+
+        return $day->copy()->setTime($hour, $minute);
     }
 }

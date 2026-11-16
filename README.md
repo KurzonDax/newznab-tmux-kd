@@ -337,7 +337,7 @@ php artisan nntmux:optimize-tables
 php artisan nntmux:delete-releases --hours-old=8760 --dry-run
 
 # Run or list database backups
-php artisan backup:run full
+php artisan backup:run
 php artisan backup:list
 
 # Delete all Laravel Pulse data

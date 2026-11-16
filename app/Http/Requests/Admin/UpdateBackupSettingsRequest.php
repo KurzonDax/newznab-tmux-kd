@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Admin;
 
 use App\Services\Backup\BackupLocationValidator;
+use App\Services\Backup\BackupRetention;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Validator;
 
@@ -22,17 +23,15 @@ class UpdateBackupSettingsRequest extends FormRequest
     {
         return [
             'backup_enabled' => ['required', 'boolean'],
-            'backup_full_dow' => ['required', 'integer', 'between:0,6'],
-            'backup_full_time' => ['required', 'date_format:H:i'],
-            'backup_daily_time' => ['required', 'date_format:H:i'],
+            'backup_time' => ['required', 'date_format:H:i'],
             'backup_location' => ['required', 'string', 'max:2000'],
-            'backup_keep_fulls' => ['required', 'integer', 'min:1', 'max:100'],
+            'backup_keep' => ['required', 'integer', 'min:1', 'max:100'],
             'backup_pause_tmux' => ['required', 'boolean'],
             'backup_incl_working' => ['required', 'boolean'],
             'backup_dump_binary' => ['nullable', 'string', 'max:2000'],
             'backup_offsite_path' => ['nullable', 'string', 'max:2000'],
             'backup_offsite_after' => ['required', 'boolean'],
-            'backup_offsite_keep' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            'backup_offsite_keep' => ['required', 'integer', 'min:1', 'max:'.BackupRetention::OFFSITE_MAX],
         ];
     }
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Admin;
 
-use App\Enums\BackupKind;
 use App\Http\Controllers\BasePageController;
 use App\Http\Requests\Admin\UpdateBackupSettingsRequest;
 use App\Models\DatabaseBackup;
@@ -44,8 +43,7 @@ class AdminBackupsController extends BasePageController
             'supported' => in_array($driver, ['mysql', 'mariadb'], true),
             'databaseDriver' => $driver,
             'nextRun' => $enabled ? $schedule->nextRun() : null,
-            'lastFull' => $this->lastResult(BackupKind::Full),
-            'lastDaily' => $this->lastResult(BackupKind::Daily),
+            'lastBackup' => DatabaseBackup::query()->latest('finished_at')->first(),
         ]);
 
         return view('admin.backups.index', $this->viewData);
@@ -56,20 +54,15 @@ class AdminBackupsController extends BasePageController
         $settings = $request->validated();
         $settings['backup_dump_binary'] = trim((string) ($settings['backup_dump_binary'] ?? ''));
         $settings['backup_offsite_path'] = trim((string) ($settings['backup_offsite_path'] ?? ''));
-        $settings['backup_offsite_keep'] = (string) ($settings['backup_offsite_keep'] ?? 0);
+        $settings['backup_offsite_keep'] = (string) $settings['backup_offsite_keep'];
 
         Settings::settingsUpdate($settings);
 
         return redirect()->route('admin.backups.index')->with('success', 'Database backup settings updated successfully.');
     }
 
-    public function run(string $kind): RedirectResponse
+    public function run(): RedirectResponse
     {
-        $backupKind = BackupKind::tryFrom($kind);
-        if ($backupKind === null) {
-            abort(404);
-        }
-
         if (! filter_var(Settings::settingValue('backup_enabled'), FILTER_VALIDATE_BOOL)) {
             return redirect()->route('admin.backups.index')->with(
                 'error',
@@ -77,22 +70,12 @@ class AdminBackupsController extends BasePageController
             );
         }
 
-        $pendingKind = BackupKind::tryFrom((string) Settings::settingValue('backup_run_request'));
-        $requestedKind = $pendingKind === BackupKind::Full ? BackupKind::Full : $backupKind;
-        Settings::settingsUpdate(['backup_run_request' => $requestedKind->value]);
+        Settings::settingsUpdate(['backup_run_request' => '1']);
 
         return redirect()->route('admin.backups.index')->with(
             'success',
-            $requestedKind->label().' backup requested; it will start within one minute.',
+            'Backup requested; it will start within one minute.',
         );
-    }
-
-    private function lastResult(BackupKind $kind): ?DatabaseBackup
-    {
-        return DatabaseBackup::query()
-            ->where('kind', $kind->value)
-            ->latest('finished_at')
-            ->first();
     }
 
     /**

@@ -12,6 +12,8 @@ use RuntimeException;
 
 class BackupCatalog
 {
+    private const string FOLDER_NAME_PATTERN = '/^\d{8}-\d{6}$/';
+
     /**
      * @return list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>
      */
@@ -77,12 +79,17 @@ class BackupCatalog
     }
 
     /**
+     * Groups the files into backup folders, newest first by the newest manifest's finished_at.
+     *
+     * A folder written before ADR 0016 holds one Full plus its Dailies and is still one entry.
+     *
      * @param  list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>|null  $files
-     * @return list<array{set_id: string, files: list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>, bytes: int, has_full: bool, has_verified_full: bool, verified: bool, newest_at: string}>
+     * @return list<array{set_id: string, files: list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>, bytes: int, verified: bool, newest_at: string}>
      */
     public function sets(string $location, ?array $files = null): array
     {
         $sets = [];
+        $newest = [];
 
         foreach ($files ?? $this->files($location) as $file) {
             $setId = (string) ($file['manifest']['set_id'] ?? basename(dirname($file['manifest_path'])));
@@ -90,32 +97,31 @@ class BackupCatalog
                 'set_id' => $setId,
                 'files' => [],
                 'bytes' => 0,
-                'has_full' => false,
-                'has_verified_full' => false,
                 'verified' => true,
                 'newest_at' => '',
             ];
             $sets[$setId]['files'][] = $file;
             $sets[$setId]['bytes'] += (int) ($file['manifest']['bytes'] ?? 0);
-            $sets[$setId]['has_full'] = $sets[$setId]['has_full'] || ($file['manifest']['kind'] ?? null) === 'full';
-            $sets[$setId]['has_verified_full'] = $sets[$setId]['has_verified_full']
-                || (($file['manifest']['kind'] ?? null) === 'full' && $file['verified']);
             $sets[$setId]['verified'] = $sets[$setId]['verified'] && $file['verified'];
-            $sets[$setId]['newest_at'] = max(
-                $sets[$setId]['newest_at'],
-                (string) ($file['manifest']['finished_at'] ?? ''),
-            );
+
+            $finishedAt = (string) ($file['manifest']['finished_at'] ?? '');
+            $timestamp = Carbon::parse($finishedAt)->getTimestamp();
+            if (! isset($newest[$setId]) || $timestamp > $newest[$setId]) {
+                $newest[$setId] = $timestamp;
+                $sets[$setId]['newest_at'] = $finishedAt;
+            }
         }
 
         $result = array_values($sets);
-        usort($result, static fn (array $left, array $right): int => strcmp($right['newest_at'], $left['newest_at']));
+        usort($result, static fn (array $left, array $right): int => [$newest[$right['set_id']], $right['set_id']]
+            <=> [$newest[$left['set_id']], $left['set_id']]);
 
         return $result;
     }
 
     /**
      * @param  list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>|null  $files
-     * @return list<array{set_id: string, files: list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>, bytes: int, has_full: bool, has_verified_full: bool, verified: bool, newest_at: string}>
+     * @return list<array{set_id: string, files: list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>, bytes: int, verified: bool, newest_at: string}>
      */
     public function reconcile(string $location, ?array $files = null): array
     {
@@ -137,59 +143,55 @@ class BackupCatalog
         return $this->sets($location, $files);
     }
 
-    public function purgeOldSets(string $location, int $keepFulls, ?float $deadline = null): void
+    /**
+     * Keeps the newest $keep folders whose files all verify and removes every folder older than the oldest of them.
+     *
+     * Unverified folders newer than that stay, and nothing is removed while fewer than $keep verified folders
+     * exist. A folder with no readable manifest is ordered by the start time in its YYYYMMDD-HHMMSS name;
+     * one whose name has another shape is never touched.
+     *
+     * @return list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}> the files left
+     */
+    public function applyRetention(string $location, int $keep, ?float $deadline = null): array
     {
-        $keepFulls = max(1, $keepFulls);
         $files = $this->files($location, $deadline);
-        $fullSets = array_values(array_filter(
-            $this->sets($location, $files),
-            static fn (array $set): bool => $set['has_verified_full'],
-        ));
-        $deletedSetIds = [];
+        $removed = [];
 
-        foreach (array_slice($fullSets, $keepFulls) as $set) {
-            $setId = $set['set_id'];
-            if ($setId === '' || basename($setId) !== $setId) {
-                Log::warning('Refusing to purge database Backup set with an unsafe identifier.', ['set_id' => $setId]);
-
-                continue;
-            }
-
-            if ((new Filesystem)->deleteDirectory(rtrim($location, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$setId)) {
-                $deletedSetIds[] = $setId;
+        foreach ($this->foldersPastRetention($location, max(1, $keep), $files) as $folder) {
+            if ((new Filesystem)->deleteDirectory(rtrim($location, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$folder)) {
+                $removed[] = $folder;
             }
         }
 
-        $remainingFiles = array_values(array_filter(
+        return array_values(array_filter(
             $files,
-            static fn (array $file): bool => ! in_array($file['manifest']['set_id'], $deletedSetIds, true),
+            static fn (array $file): bool => ! in_array($file['manifest']['set_id'], $removed, true),
         ));
-        $this->reconcile($location, $remainingFiles);
-    }
-
-    public function latestFinishedAt(string $location, string $kind): ?Carbon
-    {
-        foreach ($this->files($location) as $file) {
-            if (($file['manifest']['kind'] ?? null) === $kind && $file['verified']) {
-                return Carbon::parse((string) $file['manifest']['finished_at']);
-            }
-        }
-
-        return null;
     }
 
     /**
-     * @return array<string, mixed>|null
+     * The finish time of the most recent backup attempt: a verified backup in the Backup location or a recorded failed run.
      */
-    public function latestManifest(string $location, string $kind, ?float $deadline = null): ?array
+    public function latestAttemptFinishedAt(string $location): ?Carbon
     {
-        foreach ($this->files($location, $deadline) as $file) {
-            if (($file['manifest']['kind'] ?? null) === $kind && $file['verified']) {
-                return $file['manifest'];
+        $latest = null;
+        foreach ($this->files($location) as $file) {
+            if ($file['verified']) {
+                $latest = Carbon::parse((string) $file['manifest']['finished_at']);
+
+                break;
             }
         }
 
-        return null;
+        $failedAt = DatabaseBackup::query()->where('status', 'failed')->max('finished_at');
+        if ($failedAt !== null) {
+            $failed = Carbon::parse((string) $failedAt);
+            if ($latest === null || $failed->greaterThan($latest)) {
+                $latest = $failed;
+            }
+        }
+
+        return $latest;
     }
 
     public function checksum(string $path, ?float $deadline = null): string
@@ -230,7 +232,6 @@ class BackupCatalog
         return DatabaseBackup::query()->updateOrCreate(
             ['path' => $manifestPath],
             [
-                'kind' => $manifest['kind'],
                 'set_id' => $manifest['set_id'],
                 'bytes' => $manifest['bytes'],
                 'sha256' => $manifest['sha256'],
@@ -242,10 +243,9 @@ class BackupCatalog
         );
     }
 
-    public function recordFailure(string $kind, string $setId, Carbon $startedAt, string $error): DatabaseBackup
+    public function recordFailure(string $setId, Carbon $startedAt, string $error): DatabaseBackup
     {
         return DatabaseBackup::query()->create([
-            'kind' => $kind,
             'set_id' => $setId,
             'path' => null,
             'started_at' => $startedAt,
@@ -260,7 +260,8 @@ class BackupCatalog
      */
     private function manifestIsValid(array $manifest): bool
     {
-        if (! in_array($manifest['kind'] ?? null, ['full', 'daily'], true)
+        // Manifests written before ADR 0016 also name their kind, full or daily; newer ones have none.
+        if ((array_key_exists('kind', $manifest) && ! in_array($manifest['kind'], ['full', 'daily'], true))
             || ! is_string($manifest['set_id'] ?? null)
             || ! is_string($manifest['started_at'] ?? null)
             || ! is_string($manifest['finished_at'] ?? null)
@@ -283,6 +284,52 @@ class BackupCatalog
         }
 
         return true;
+    }
+
+    /**
+     * @param  list<array{manifest_path: string, dump_path: string, manifest: array<string, mixed>, verified: bool}>  $files
+     * @return list<string>
+     */
+    private function foldersPastRetention(string $location, int $keep, array $files): array
+    {
+        $folders = [];
+        foreach ($this->sets($location, $files) as $set) {
+            $folders[$set['set_id']] = [Carbon::parse($set['newest_at'])->getTimestamp(), $set['verified']];
+        }
+
+        foreach (glob(rtrim($location, DIRECTORY_SEPARATOR).'/*', GLOB_ONLYDIR) ?: [] as $directory) {
+            $name = basename($directory);
+            if (isset($folders[$name]) || preg_match(self::FOLDER_NAME_PATTERN, $name) !== 1) {
+                continue;
+            }
+
+            $startedAt = Carbon::createFromFormat('Ymd-His', $name, (string) config('app.timezone'));
+            if ($startedAt instanceof Carbon) {
+                $folders[$name] = [$startedAt->getTimestamp(), false];
+            }
+        }
+
+        uksort($folders, static fn (int|string $left, int|string $right): int => [$folders[$right][0], (string) $right]
+            <=> [$folders[$left][0], (string) $left]);
+
+        $kept = 0;
+        $past = [];
+        foreach ($folders as $name => [, $verified]) {
+            $name = (string) $name;
+            if ($kept >= $keep) {
+                if ($name === '' || basename($name) !== $name) {
+                    Log::warning('Refusing to remove a database backup folder with an unsafe name.', ['set_id' => $name]);
+
+                    continue;
+                }
+
+                $past[] = $name;
+            } elseif ($verified) {
+                $kept++;
+            }
+        }
+
+        return $past;
     }
 
     private function isStringList(mixed $value): bool

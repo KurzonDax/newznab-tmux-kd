@@ -5,7 +5,7 @@
 
   Operation:  {{ $operation }}
 @if ($setId)
-  Backup set: {{ $setId }}
+  Folder:     {{ $setId }}
 @endif
   Error:      {{ $error }}
 

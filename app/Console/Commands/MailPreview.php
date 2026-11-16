@@ -67,7 +67,6 @@ class MailPreview extends Command
                 "Hello!\nQuestion inside.",
             ),
             'backup_failed' => fn (): Mailable => new BackupFailed(
-                'full',
                 'The database dump process exited with status 2.',
                 '20260817-020000',
             ),
