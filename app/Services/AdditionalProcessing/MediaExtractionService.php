@@ -107,9 +107,9 @@ class MediaExtractionService
     }
 
     /**
-     * Store the release's single video artifact: a full-resolution stream-copy
-     * Clip where possible, otherwise a capped browser-safe transcode. When the
-     * Clip declines, no video artifact is stored and false is returned.
+     * Store the release's single video artifact: a Clip re-encoded to a
+     * browser-safe MP4 fitted inside 1280x720 and capped at the preview target.
+     * When the Clip declines, no video artifact is stored and false is returned.
      */
     public function getVideo(string $fileLocation, string $tmpPath, string $guid, ?int $categoriesId = null): bool
     {

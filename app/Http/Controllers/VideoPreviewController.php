@@ -12,8 +12,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
 /**
- * Streams the release's video artifact: the full-resolution stream-copy Clip
- * when one was stored, or the legacy downscaled OGV transcode otherwise.
+ * Streams the release's video artifact: the Clip when one was stored, or the
+ * legacy downscaled OGV transcode otherwise.
  *
  * Follows {@see AudioPreviewController}: {@see CoverController} only ever
  * serves images and does not honour range requests, which a <video> element
@@ -43,7 +43,7 @@ class VideoPreviewController extends Controller
             ->where('releases_id', '=', (int) $release->id)
             ->first();
 
-        // A Clip row names the container it was remuxed into; without one the
+        // A Clip row names the container it was encoded into; without one the
         // artifact is the legacy transcode's fixed OGV container.
         $extension = $clip instanceof ReleaseVideoClip ? $clip->clipExtension() : 'ogv';
         $mimeType = $clip instanceof ReleaseVideoClip ? $clip->clipMimeType() : ReleaseVideoClip::VIDEO_MIME_TYPES['ogv'];

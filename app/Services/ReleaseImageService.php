@@ -288,7 +288,7 @@ class ReleaseImageService
     /** Delete all generated assets for a release, including legacy images. */
     public function delete(string $guid): void
     {
-        // The video artifact slot: the stream-copy Clip containers plus the
+        // The video artifact slot: the Clip containers plus the
         // legacy transcode. The Clip's metadata row goes with the release row
         // via its FK cascade.
         $files = [];

@@ -7,18 +7,17 @@ namespace App\Services\AdditionalProcessing;
 class SoftwareClipTranscodeArguments
 {
     /**
-     * Build the bounded software codec arguments for a browser-safe MP4.
+     * Build the bounded software codec arguments for a browser-safe MP4: the
+     * video is always scaled and encoded with libx264.
      *
      * @return list<string>
      */
-    public function build(bool $copyVideo, bool $hasAudio, int $targetSeconds): array
+    public function build(bool $hasAudio, int $targetSeconds): array
     {
-        $arguments = $copyVideo
-            ? ['-c:v', 'copy']
-            : [
-                '-vf', ClipEncodeLimits::SCALE_FILTER,
-                '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
-            ];
+        $arguments = [
+            '-vf', ClipEncodeLimits::SCALE_FILTER,
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+        ];
 
         if ($hasAudio) {
             $arguments = [...$arguments, '-c:a', 'aac', '-b:a', '128k'];

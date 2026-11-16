@@ -33,13 +33,13 @@ class VideoClipEncoderTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_h264_with_aac_remuxes_to_faststart_mp4(): void
+    public function test_h264_with_aac_is_transcoded_to_a_capped_720p_faststart_mp4(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
             $commands[] = $command;
-            if (in_array('copy', $command, true)) {
-                file_put_contents(end($command), 'remuxed clip bytes');
+            if (in_array('libx264', $command, true)) {
+                file_put_contents(end($command), 'transcoded clip bytes');
 
                 return '';
             }
@@ -59,17 +59,18 @@ class VideoClipEncoderTest extends TestCase
         $this->assertSame('mp4', $result->extension);
         $this->assertSame('video/mp4', $result->mime);
         $this->assertSame(30, $result->durationSeconds);
-        $this->assertSame(strlen('remuxed clip bytes'), $result->bytes);
+        $this->assertSame(strlen('transcoded clip bytes'), $result->bytes);
 
-        $remux = $commands[1];
-        $this->assertContains('-c', $remux);
-        $this->assertContains('copy', $remux);
-        $this->assertContains('+faststart', $remux);
-        $this->assertContains('0:a:0', $remux, 'The AAC track is mapped into the MP4.');
-        $this->assertNotContains('-t', $remux, 'Stream-copy clips keep the whole downloaded head window.');
-        $this->assertNotContains('-threads', $remux, 'A stream copy decodes nothing, so it needs no thread cap.');
-        $this->assertNotContains('-vf', $remux);
-        $this->assertStringEndsWith('.mp4', (string) end($remux));
+        $transcode = $commands[1];
+        $this->assertNotContains('copy', $transcode, 'A browser-safe source is re-encoded, not copied.');
+        $this->assertCommandOption($transcode, '-vf', ClipEncodeLimits::SCALE_FILTER);
+        $this->assertCommandOption($transcode, '-c:v', 'libx264');
+        $this->assertCommandOption($transcode, '-c:a', 'aac');
+        $this->assertCommandOption($transcode, '-t', '30');
+        $this->assertContains('+faststart', $transcode);
+        $this->assertContains('0:a:0', $transcode, 'The AAC track is mapped into the MP4.');
+        $this->assertThreadsCappedAroundInput($transcode);
+        $this->assertStringEndsWith('.mp4', (string) end($transcode));
     }
 
     public function test_divx_with_mpeg_audio_transcodes_to_a_capped_h264_aac_mp4(): void
@@ -293,7 +294,7 @@ class VideoClipEncoderTest extends TestCase
         );
     }
 
-    public function test_stream_copy_does_not_initialize_hardware_when_acceleration_is_enabled(): void
+    public function test_an_h264_source_initializes_the_hardware_encoder_when_acceleration_is_enabled(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(
@@ -303,8 +304,8 @@ class VideoClipEncoderTest extends TestCase
                     return "Stream #0:0: Video: h264 (High)\n  Stream #0:1: Audio: aac (LC)";
                 }
 
-                if (in_array('copy', $command, true)) {
-                    file_put_contents(end($command), 'copied clip bytes');
+                if (in_array('h264_vaapi', $command, true)) {
+                    file_put_contents(end($command), 'vaapi clip bytes');
 
                     return '';
                 }
@@ -314,10 +315,15 @@ class VideoClipEncoderTest extends TestCase
             hardwareBackend: 'vaapi',
         );
 
-        $this->assertNotNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'copy-guid'));
-        $this->assertContains('copy', $commands[1]);
-        $this->assertNotContains('-init_hw_device', $commands[1]);
-        $this->assertNotContains('h264_vaapi', $commands[1]);
+        $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'h264-hardware-guid');
+
+        $this->assertNotNull($result);
+        $this->assertSame('vaapi clip bytes', file_get_contents($result->path));
+        $this->assertCommandOption($commands[1], '-init_hw_device', 'vaapi=clip_hw:/dev/dri/renderD128');
+        $this->assertCommandOption($commands[1], '-c:v', 'h264_vaapi');
+        $this->assertCommandOption($commands[1], '-vf', ClipEncodeLimits::SCALE_FILTER.',format=nv12,hwupload');
+        $this->assertCommandOption($commands[1], '-t', '30');
+        $this->assertNotContains('copy', $commands[1]);
     }
 
     public function test_an_unsafe_video_codec_logs_the_codec_when_its_fallback_declines(): void
@@ -346,7 +352,7 @@ class VideoClipEncoderTest extends TestCase
         );
     }
 
-    public function test_h264_with_ac3_copies_video_and_only_transcodes_audio(): void
+    public function test_h264_with_ac3_transcodes_both_video_and_audio(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
@@ -368,12 +374,12 @@ class VideoClipEncoderTest extends TestCase
 
         $this->assertNotNull($result);
         $transcode = $commands[1];
-        $this->assertCommandOption($transcode, '-c:v', 'copy');
+        $this->assertCommandOption($transcode, '-c:v', 'libx264');
+        $this->assertCommandOption($transcode, '-vf', ClipEncodeLimits::SCALE_FILTER);
         $this->assertCommandOption($transcode, '-c:a', 'aac');
         $this->assertCommandOption($transcode, '-t', '12');
         $this->assertThreadsCappedAroundInput($transcode);
-        $this->assertNotContains('-vf', $transcode, 'Copied video is not re-encoded, so it is not scaled.');
-        $this->assertNotContains('libx264', $transcode);
+        $this->assertNotContains('copy', $transcode, 'The H.264 video is re-encoded, not copied.');
     }
 
     public function test_an_unsafe_audio_codec_logs_the_codec_when_its_fallback_declines(): void
@@ -424,13 +430,13 @@ class VideoClipEncoderTest extends TestCase
         $this->assertNotContains('-t', $commands[1]);
     }
 
-    public function test_vp9_with_opus_remuxes_to_webm_without_faststart(): void
+    public function test_vp9_with_opus_is_transcoded_to_a_faststart_mp4(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
             $commands[] = $command;
-            if (in_array('copy', $command, true)) {
-                file_put_contents(end($command), 'webm clip');
+            if (in_array('libx264', $command, true)) {
+                file_put_contents(end($command), 'mp4 clip');
 
                 return '';
             }
@@ -445,17 +451,41 @@ class VideoClipEncoderTest extends TestCase
         $result = $encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'test-guid');
 
         $this->assertNotNull($result);
-        $this->assertSame('webm', $result->extension);
-        $this->assertSame('video/webm', $result->mime);
-        $this->assertNotContains('+faststart', $commands[1]);
+        $this->assertSame('mp4', $result->extension);
+        $this->assertSame('video/mp4', $result->mime);
+        $this->assertCommandOption($commands[1], '-c:a', 'aac');
+        $this->assertContains('+faststart', $commands[1]);
+        $this->assertStringEndsWith('.mp4', (string) end($commands[1]));
     }
 
-    public function test_video_without_audio_is_remuxed_with_no_audio_map(): void
+    public function test_a_failed_vp9_with_opus_encode_logs_remux_failed_without_an_unsafe_codec_tag(): void
+    {
+        Log::spy();
+        $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
+            if (str_ends_with((string) end($command), 'source.bin')) {
+                return "Stream #0:0: Video: vp9 (Profile 0)\n  Stream #0:1: Audio: opus, 48000 Hz";
+            }
+
+            throw new RuntimeException('vp9 encode failed');
+        });
+
+        $this->assertNull($encoder->encode($this->tmpPath.'source.bin', $this->tmpPath, 'ffmpeg', 60, 'vp9-failure-guid'));
+        Log::shouldHaveReceived('debug')->once()->with(
+            'Clip generation declined',
+            [
+                'release_guid' => 'vp9-failure-guid',
+                'reason' => 'clip_remux_failed',
+                'exception_message' => 'vp9 encode failed',
+            ],
+        );
+    }
+
+    public function test_video_without_audio_is_encoded_with_no_audio_map(): void
     {
         $commands = [];
         $encoder = new VideoClipEncoder(function (array $command, int $timeout) use (&$commands): string {
             $commands[] = $command;
-            if (in_array('copy', $command, true)) {
+            if (in_array('libx264', $command, true)) {
                 file_put_contents(end($command), 'silent clip');
 
                 return '';
@@ -519,11 +549,11 @@ class VideoClipEncoderTest extends TestCase
         );
     }
 
-    public function test_an_empty_remux_output_is_refused(): void
+    public function test_an_empty_encode_output_is_refused(): void
     {
         Log::spy();
         $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
-            if (in_array('copy', $command, true)) {
+            if (in_array('libx264', $command, true)) {
                 file_put_contents(end($command), '');
 
                 return '';
@@ -686,11 +716,11 @@ SHELL);
         );
     }
 
-    public function test_a_remux_output_without_a_video_stream_is_refused_and_deleted(): void
+    public function test_an_encode_output_without_a_video_stream_is_refused_and_deleted(): void
     {
         Log::spy();
         $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
-            if (in_array('copy', $command, true)) {
+            if (in_array('libx264', $command, true)) {
                 file_put_contents(end($command), 'audio-only clip bytes');
 
                 return '';
@@ -716,11 +746,11 @@ SHELL);
         );
     }
 
-    public function test_a_remux_output_without_a_duration_is_refused_and_deleted(): void
+    public function test_an_encode_output_without_a_duration_is_refused_and_deleted(): void
     {
         Log::spy();
         $encoder = new VideoClipEncoder(function (array $command, int $timeout): string {
-            if (in_array('copy', $command, true)) {
+            if (in_array('libx264', $command, true)) {
                 file_put_contents(end($command), 'durationless clip bytes');
 
                 return '';
