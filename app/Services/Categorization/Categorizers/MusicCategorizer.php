@@ -9,7 +9,7 @@ use App\Services\Categorization\CategorizationResult;
 use App\Services\Categorization\ReleaseContext;
 
 /**
- * Categorizer for Music content (MP3, Lossless, Video, Audiobook, Podcast).
+ * Categorizer for Music content (MP3, Lossless, Audiobook, Podcast, Foreign, Other).
  */
 class MusicCategorizer extends AbstractCategorizer
 {
