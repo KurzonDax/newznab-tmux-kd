@@ -15,16 +15,18 @@ use Symfony\Component\Process\Process;
 use Throwable;
 
 /**
- * Produces the Clip (see GLOSSARY.md): a browser-safe remux where possible,
- * otherwise a capped MP4 transcode of the downloaded head window.
+ * Produces the Clip (see GLOSSARY.md): every decodable source is re-encoded
+ * to an H.264/AAC MP4 that fits inside 1280x720 and is capped at the preview
+ * target, using the hardware encoder first when one is configured.
  *
- * H.264 with AAC or no audio remuxes into MP4; VP8/VP9 with Vorbis/Opus or no
- * audio remuxes into WebM. Other decodable video falls back to H.264/AAC MP4.
+ * The browser-safe codec lists no longer choose the encode path; they only
+ * name the unsafe codec when a failed encode is logged.
  */
 class VideoClipEncoder
 {
     /**
-     * Browser-safe video codecs mapped to the container they remux into.
+     * Browser-safe video codecs mapped to the container that can carry them.
+     * Used only to tag a failed encode with the unsafe codec.
      */
     private const array VIDEO_CODEC_CONTAINERS = [
         'h264' => 'mp4',
@@ -34,17 +36,16 @@ class VideoClipEncoder
 
     /**
      * Audio codecs each container can carry; audio outside this list makes
-     * the source unsafe (no audio at all is always safe).
+     * the source unsafe (no audio at all is always safe). Logging only.
      */
     private const array CONTAINER_AUDIO_CODECS = [
         'mp4' => ['aac'],
         'webm' => ['vorbis', 'opus'],
     ];
 
-    private const array CONTAINER_MIME_TYPES = [
-        'mp4' => 'video/mp4',
-        'webm' => 'video/webm',
-    ];
+    private const string OUTPUT_CONTAINER = 'mp4';
+
+    private const string OUTPUT_MIME_TYPE = 'video/mp4';
 
     private const string VIDEO_STREAM_PATTERN = '/Stream #\d+:\d+[^\r\n]*?: Video: ([a-z0-9]+)/i';
 
@@ -87,23 +88,19 @@ class VideoClipEncoder
             return null;
         }
 
-        $container = self::VIDEO_CODEC_CONTAINERS[$streams['video']] ?? null;
-        $unsafeVideoCodec = $container === null ? $streams['video'] : null;
+        // Unsafe audio is judged against the source video codec's own
+        // container, not the MP4 output.
+        $safeContainer = self::VIDEO_CODEC_CONTAINERS[$streams['video']] ?? null;
+        $unsafeVideoCodec = $safeContainer === null ? $streams['video'] : null;
         $hasAudio = $streams['audio'] !== null;
-        $unsafeAudioCodec = $container !== null
+        $unsafeAudioCodec = $safeContainer !== null
             && $hasAudio
-            && ! in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$container], true)
+            && ! in_array($streams['audio'], self::CONTAINER_AUDIO_CODECS[$safeContainer], true)
                 ? $streams['audio']
                 : null;
-        $streamCopy = $container !== null
-            && $unsafeAudioCodec === null;
-        $container = $streamCopy ? $container : 'mp4';
 
-        $outputPath = $tmpPath.'clip_'.uniqid('', true).'.'.$container;
-        $copyVideo = $streams['video'] === 'h264';
-        $hardwareEncoder = ! $streamCopy && ! $copyVideo
-            ? $this->resolveHardwareEncoder($releaseGuid)
-            : null;
+        $outputPath = $tmpPath.'clip_'.uniqid('', true).'.'.self::OUTPUT_CONTAINER;
+        $hardwareEncoder = $this->resolveHardwareEncoder($releaseGuid);
 
         if ($hardwareEncoder !== null) {
             $hardwareArguments = $hardwareEncoder->build($this->hardwareDevice);
@@ -128,7 +125,7 @@ class VideoClipEncoder
                 if ($this->isNonEmptyOutput($outputPath)) {
                     $probe = $this->probeOutput($outputPath, $ffmpegBinary, $timeoutSeconds);
                     if ($this->isPlayable($probe)) {
-                        return $this->encodeResult($outputPath, $container, $probe['duration_seconds']);
+                        return $this->encodeResult($outputPath, $probe['duration_seconds']);
                     }
 
                     $this->logHardwareFailure($releaseGuid, $hardwareEncoder, 'unplayable_output');
@@ -154,28 +151,19 @@ class VideoClipEncoder
             @unlink($outputPath);
         }
 
-        // A stream copy decodes nothing, so only the encoding paths are capped.
-        $inputArguments = $streamCopy ? [] : $this->threadArguments();
-        $outputArguments = $streamCopy
-            ? ['-c', 'copy']
-            : [
-                ...$this->threadArguments(),
-                ...$this->softwareTranscodeArguments->build(
-                    copyVideo: $copyVideo,
-                    hasAudio: $hasAudio,
-                    targetSeconds: $previewTargetSeconds,
-                ),
-            ];
-        if ($streamCopy && $container === 'mp4') {
-            $outputArguments = [...$outputArguments, '-movflags', '+faststart'];
-        }
         $command = $this->buildCommand(
             $ffmpegBinary,
             $sourcePath,
             $outputPath,
             $hasAudio,
-            $inputArguments,
-            $outputArguments,
+            $this->threadArguments(),
+            [
+                ...$this->threadArguments(),
+                ...$this->softwareTranscodeArguments->build(
+                    hasAudio: $hasAudio,
+                    targetSeconds: $previewTargetSeconds,
+                ),
+            ],
         );
 
         try {
@@ -223,7 +211,7 @@ class VideoClipEncoder
             return null;
         }
 
-        return $this->encodeResult($outputPath, $container, $probe['duration_seconds']);
+        return $this->encodeResult($outputPath, $probe['duration_seconds']);
     }
 
     private function resolveHardwareEncoder(string $releaseGuid): ?ClipHardwareEncoder
@@ -351,20 +339,20 @@ class VideoClipEncoder
         return is_file($outputPath) && filesize($outputPath) > 0;
     }
 
-    private function encodeResult(string $outputPath, string $container, int $durationSeconds): VideoClipEncodeResult
+    private function encodeResult(string $outputPath, int $durationSeconds): VideoClipEncodeResult
     {
         return new VideoClipEncodeResult(
             path: $outputPath,
-            extension: $container,
-            mime: self::CONTAINER_MIME_TYPES[$container],
+            extension: self::OUTPUT_CONTAINER,
+            mime: self::OUTPUT_MIME_TYPE,
             durationSeconds: $durationSeconds,
             bytes: (int) filesize($outputPath),
         );
     }
 
     /**
-     * An unsafe codec is the causal decline when its fallback cannot produce a
-     * Clip; otherwise report the mechanical failure of the stream-copy path.
+     * An unsafe codec is the causal decline when the encode cannot produce a
+     * Clip; otherwise report the mechanical failure of the encode itself.
      *
      * @param  array<string, bool|int|string|null>  $context
      */

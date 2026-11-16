@@ -11,11 +11,12 @@ namespace App\Services\AdditionalProcessing;
 final class ClipEncodeLimits
 {
     /**
-     * Fit the picture inside 1920x1080, keeping the aspect ratio, never
-     * upscaling, and keeping both sides even. The quotes reach ffmpeg's filter
-     * parser (there is no shell) and protect the commas inside min().
+     * Fit the picture inside 1280x720, keeping the aspect ratio, never
+     * upscaling, and keeping both sides even. Every Clip encode (software,
+     * VAAPI and QSV) uses it. The quotes reach ffmpeg's filter parser (there
+     * is no shell) and protect the commas inside min().
      */
-    public const string SCALE_FILTER = "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2";
+    public const string SCALE_FILTER = "scale=w='min(1280,iw)':h='min(720,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2";
 
     /**
      * Thread count for the decoder (before -i) and the encoder (after -i).

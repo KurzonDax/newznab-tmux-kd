@@ -1,6 +1,6 @@
 # Hardware-accelerated clip encoding
 
-NNTmux can use VAAPI or Intel Quick Sync Video (QSV) when a downloaded video head must be transcoded into a browser-safe H.264/AAC Clip. Hardware acceleration is opt-in. Browser-safe sources still use stream copy, and any failed hardware attempt automatically retries with the existing software encoder.
+NNTmux can use VAAPI or Intel Quick Sync Video (QSV) to transcode a downloaded video head into a browser-safe H.264/AAC Clip. Hardware acceleration is opt-in. When it is on, the hardware encoder is tried for every Clip, and any failed hardware attempt automatically retries with the existing software encoder.
 
 The stock Debian and Ubuntu `ffmpeg` packages include the VAAPI and QSV support needed here. Do not compile a custom ffmpeg build for this feature.
 

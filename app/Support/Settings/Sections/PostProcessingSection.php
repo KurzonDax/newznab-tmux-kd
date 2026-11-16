@@ -317,7 +317,7 @@ final class PostProcessingSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'preview_target_seconds',
                             label: 'Preview target duration',
-                            help: 'How much of the main video the adaptive budget aims to fetch. The fetch ceiling below wins over this target. 0 disables top-ups everywhere. Default 30.',
+                            help: 'How much of the main video the adaptive budget aims to fetch, and the longest any clip may run. The fetch ceiling below wins over this target. 0 disables top-ups everywhere and leaves clips uncapped. Any other value below the minimum clip duration stores no clips. Default 30.',
                             type: SettingType::Int,
                             unit: 'seconds',
                             rules: ['required', 'integer', 'min:0'],

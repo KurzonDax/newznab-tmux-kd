@@ -13,6 +13,7 @@ enum ClipGenerationDeclineReason: string
     case ProbeFailed = 'clip_probe_failed';
     case UnsafeVideoCodec = 'clip_unsafe_video_codec';
     case UnsafeAudioCodec = 'clip_unsafe_audio_codec';
+    /** The encode failed (the value predates every Clip being re-encoded). */
     case RemuxFailed = 'clip_remux_failed';
     case EmptyOutput = 'clip_empty_output';
     case OutputUnplayable = 'clip_output_unplayable';

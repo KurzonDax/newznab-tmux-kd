@@ -21,9 +21,9 @@ use Tests\TestCase;
 use Tests\Unit\AdditionalProcessing\CreatesProcessingConfiguration;
 
 /**
- * Backend branching for the Clip (see GLOSSARY.md): stream-copy storage when
- * the toggle, codec safety, and disk headroom all allow it; no video artifact
- * at all in every other case (Clip-or-nothing); artifact deletion.
+ * Backend branching for the Clip (see GLOSSARY.md): a transcoded MP4 is stored
+ * when the toggle, the encode, and disk headroom all allow it; no video
+ * artifact at all in every other case (Clip-or-nothing); artifact deletion.
  */
 class ClipStorageTest extends TestCase
 {
@@ -68,7 +68,7 @@ class ClipStorageTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_a_browser_safe_source_stores_a_stream_copy_clip_and_its_metadata_row(): void
+    public function test_a_browser_safe_source_stores_a_transcoded_mp4_clip_and_its_metadata_row(): void
     {
         $releaseId = $this->seedRelease('clip-guid');
         Log::spy();
@@ -542,13 +542,16 @@ class ClipStorageTest extends TestCase
     }
 
     /**
-     * @param  string|null  $duration  What the post-remux duration probe reports; null for an unreadable duration.
+     * Writes the Clip only on the libx264 software encode, so a stored Clip
+     * proves the browser-safe source was transcoded rather than copied.
+     *
+     * @param  string|null  $duration  What the post-encode duration probe reports; null for an unreadable duration.
      * @return callable(list<string>, int): string
      */
     private function safeH264Runner(?string $duration = '00:00:30.20'): callable
     {
         return static function (array $command, int $timeout) use ($duration): string {
-            if (in_array('copy', $command, true)) {
+            if (in_array('libx264', $command, true)) {
                 file_put_contents(end($command), 'remuxed clip bytes');
 
                 return '';

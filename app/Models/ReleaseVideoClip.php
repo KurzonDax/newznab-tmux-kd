@@ -12,9 +12,8 @@ use Illuminate\Support\Carbon;
  * Metadata for the Clip stored as a release's video artifact (see GLOSSARY.md).
  *
  * One row per release: a release has exactly one video artifact slot. A row
- * exists for stream-copy and fallback-transcoded Clips — releases whose
- * artifact is the legacy downscaled OGV transcode are identified by
- * `releases.videostatus` alone.
+ * exists for every Clip — releases whose artifact is the legacy downscaled
+ * OGV transcode are identified by `releases.videostatus` alone.
  * Kept in its own table because `releases` is deliberately slim; follows the
  * {@see ReleaseAudioTag} precedent.
  *
@@ -89,7 +88,7 @@ class ReleaseVideoClip extends Model
 
     /**
      * The MIME type to serve the Clip as: the one recorded when it was
-     * remuxed, unless that is not a well-formed media type, in which case the
+     * encoded, unless that is not a well-formed media type, in which case the
      * container's canonical type. Null whenever {@see self::clipExtension()} is.
      */
     public function clipMimeType(): ?string
