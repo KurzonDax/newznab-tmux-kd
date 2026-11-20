@@ -20,6 +20,7 @@ use App\Services\TvProcessing\TvProcessingCandidateQuery;
 use App\Services\TvProcessing\TvProcessingPassable;
 use App\Services\TvProcessing\TvProcessingPipeline;
 use App\Services\TvProcessing\TvProcessingResult;
+use App\Services\TvProcessing\TvShowDetails;
 use App\Services\TvProcessor;
 use GuzzleHttp\Handler\MockHandler;
 use Illuminate\Database\Events\QueryExecuted;
@@ -33,6 +34,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -82,18 +84,6 @@ class TvEpisodeRevisitTest extends TestCase
         Schema::table('videos', function (Blueprint $table): void {
             $table->string('countries_id')->default('');
             $table->unique(['title', 'type', 'started', 'countries_id']);
-        });
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->unsignedInteger('videos_id')->primary();
-            $table->text('summary');
-            $table->string('publisher');
-            $table->string('localzone');
-            $table->string('original_language', 8)->default('');
-            $table->unsignedTinyInteger('status')->default(0);
-            $table->string('content_rating_us', 8)->default('');
-            $table->date('premiered')->nullable();
-            $table->unsignedInteger('networks_id')->nullable();
-            $table->timestamp('details_refreshed_at')->nullable();
         });
         foreach (['networks', 'people', 'genres', 'video_genres', 'video_people'] as $table) {
             ProductionTables::fromAuthority()->create($table);
@@ -596,6 +586,212 @@ class TvEpisodeRevisitTest extends TestCase
     }
 
     #[Test]
+    public function a_finished_show_settles_a_miss_past_its_newest_stored_episode(): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_ENDED, [[4, 9, '2025-12-01'], [4, 10, '2025-12-08']]);
+
+        $this->assertSettled($this->settleKnownShowMiss(self::episode(5, 3)));
+    }
+
+    #[Test]
+    public function a_show_marked_ended_that_aired_inside_the_window_retries_its_next_episode(): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_ENDED, [[17, 8, '2026-08-15'], [17, 9, '2026-08-22']]);
+
+        $this->assertRetried($this->settleKnownShowMiss(self::episode(17, 10)));
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>, bool}>
+     */
+    public static function runningShowMisses(): array
+    {
+        return [
+            'inside the stored range' => [self::episode(3, 2), false],
+            'next episode of the newest season' => [self::episode(3, 6), true],
+            'first episode of a new season' => [self::episode(4, 1), true],
+            'a special' => [self::episode(0, 6), false],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsedInfo
+     */
+    #[Test]
+    #[DataProvider('runningShowMisses')]
+    public function a_running_show_retries_only_a_miss_past_its_newest_stored_episode(array $parsedInfo, bool $retried): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_RUNNING, [[3, 4, '2026-01-01'], [3, 5, '2026-01-08']]);
+
+        $release = $this->settleKnownShowMiss($parsedInfo);
+
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    /**
+     * @return array<string, array{int}>
+     */
+    public static function showStatuses(): array
+    {
+        return [
+            'running' => [TvShowDetails::STATUS_RUNNING],
+            'finished' => [TvShowDetails::STATUS_ENDED],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('showStatuses')]
+    public function a_miss_whose_episode_is_now_stored_is_retried(int $status): void
+    {
+        $this->insertShow(10, $status, [[3, 5, '2026-01-01'], [3, 6, '2026-01-08']]);
+
+        $this->assertRetried($this->settleKnownShowMiss(self::episode(3, 6)));
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function airDateMisses(): array
+    {
+        return [
+            'after the newest air date' => ['2026-08-24', true],
+            'an old episode' => ['2010-01-12', false],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('airDateMisses')]
+    public function a_dated_miss_is_retried_only_on_or_after_the_newest_stored_air_date(string $airdate, bool $retried): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_RUNNING, [[2026, 140, '2026-08-19'], [2026, 141, '2026-08-20']]);
+
+        $release = $this->settleKnownShowMiss(['name' => 'Known Show', 'season' => 0, 'episode' => 0, 'airdate' => $airdate]);
+
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    /**
+     * @return array<string, array{array<string, mixed>, bool}>
+     */
+    public static function mixedNumberingMisses(): array
+    {
+        return [
+            'next ordinal episode' => [self::episode(25, 16), true],
+            'old ordinal episode' => [self::episode(25, 10), false],
+            'next year-numbered episode' => [self::episode(2026, 20), true],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parsedInfo
+     */
+    #[Test]
+    #[DataProvider('mixedNumberingMisses')]
+    public function a_miss_is_compared_only_with_episodes_of_its_own_numbering_scheme(array $parsedInfo, bool $retried): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_RUNNING, [[25, 15, '2026-01-01'], [2026, 19, '2026-01-02']]);
+
+        $release = $this->settleKnownShowMiss($parsedInfo);
+
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    /**
+     * @return array<string, array{string, array<string, mixed>|null, bool}>
+     */
+    public static function showsWithoutEpisodes(): array
+    {
+        return [
+            'just started, parsed' => ['2026-08-20 00:00:00', self::episode(1, 2), true],
+            'just started, not parsed' => ['2026-08-20 00:00:00', null, true],
+            'started long ago, parsed' => ['2024-08-25 00:00:00', self::episode(1, 2), false],
+            'started long ago, not parsed' => ['2024-08-25 00:00:00', null, false],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $parsedInfo
+     */
+    #[Test]
+    #[DataProvider('showsWithoutEpisodes')]
+    public function a_show_without_stored_episodes_is_retried_only_when_it_has_just_started(string $started, ?array $parsedInfo, bool $retried): void
+    {
+        $this->insertShow(10, null, [], $started);
+
+        $release = $this->settleKnownShowMiss($parsedInfo);
+
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    #[Test]
+    public function a_miss_while_a_provider_was_unavailable_is_retried_even_on_a_finished_show(): void
+    {
+        $this->insertShow(10, TvShowDetails::STATUS_ENDED, [[4, 10, '2025-12-08']]);
+        app(ProviderGateway::class)->report('tvdb', ProviderOutcome::Unavailable);
+
+        $this->assertRetried($this->settleKnownShowMiss(self::episode(5, 3)));
+    }
+
+    /**
+     * @return array<string, array{string, bool}>
+     */
+    public static function callerMisses(): array
+    {
+        return [
+            'past the newest stored episode' => ['Known.Show.S03E06.1080p.WEB-DL', true],
+            'inside the stored range' => ['Known.Show.S03E02.1080p.WEB-DL', false],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('callerMisses')]
+    public function the_live_final_provider_passes_the_parsed_episode_to_the_settlement(string $searchname, bool $retried): void
+    {
+        Event::fake();
+        $this->insertShow(10, TvShowDetails::STATUS_RUNNING, [[3, 4, '2026-01-01'], [3, 5, '2026-01-08']]);
+        $this->insertRelease(1, ['searchname' => $searchname, 'videos_id' => 10, 'tv_episodes_id' => -3]);
+        $provider = new class extends TraktProvider
+        {
+            public function __construct()
+            {
+                $this->echooutput = false;
+                $this->titleCache = [];
+            }
+
+            public function getTvReleases(string $groupID = '', string $guidChar = '', int $lookupSetting = 1, int $status = 0): array|\Illuminate\Database\Eloquent\Collection|int|Collection
+            {
+                return collect(DB::table('releases')->where('id', 1)->get(['id', 'searchname', 'videos_id'])->map(fn (object $row): array => (array) $row));
+            }
+        };
+
+        $provider->processSite('', '', 1);
+
+        $release = DB::table('releases')->find(1);
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    #[Test]
+    #[DataProvider('callerMisses')]
+    public function the_provider_pipeline_passes_the_parsed_episode_to_the_settlement(string $searchname, bool $retried): void
+    {
+        Event::fake();
+        config(['nntmux.echocli' => false, 'tvdb.api_key' => null, 'tvdb.user_pin' => null]);
+        $gateway = app(ProviderGateway::class);
+        $gateway->useHandler('tvdb', new MockHandler);
+        Http::preventStrayRequests();
+        Http::fake();
+        $this->insertShow(10, TvShowDetails::STATUS_RUNNING, [[3, 4, '2026-01-01'], [3, 5, '2026-01-08']]);
+        $this->insertRelease(1, ['searchname' => $searchname, 'videos_id' => 10]);
+
+        $result = TvProcessingPipeline::createDefault(echoOutput: false)->processRelease(DB::table('releases')->find(1));
+
+        $this->assertFalse($result['matched']);
+        $this->assertSame(0, $gateway->unavailableCount('tvdb', 'tvmaze', 'tmdb', 'trakt'));
+        $release = DB::table('releases')->find(1);
+        $retried ? $this->assertRetried($release) : $this->assertSettled($release);
+    }
+
+    #[Test]
     public function the_final_provider_writes_the_designed_terminal_after_a_full_failure(): void
     {
         $provider = new class extends TraktProvider
@@ -734,6 +930,72 @@ class TvEpisodeRevisitTest extends TestCase
         $this->assertSame(-6, (int) DB::table('releases')->where('id', 3)->value('tv_episodes_id'));
     }
 
+    /**
+     * @return array{name: string, season: int, episode: int, airdate: string}
+     */
+    private static function episode(int $season, int $episode): array
+    {
+        return ['name' => 'Known Show', 'season' => $season, 'episode' => $episode, 'airdate' => ''];
+    }
+
+    /**
+     * @param  list<array{int, int, string|null}>  $episodes  series, episode, firstaired
+     */
+    private function insertShow(int $id, ?int $status, array $episodes, string $started = '2015-01-01 00:00:00'): void
+    {
+        DB::table('videos')->insert([
+            'id' => $id,
+            'type' => 0,
+            'title' => 'Known Show',
+            'source' => 0,
+            'started' => $started,
+        ]);
+        if ($status !== null) {
+            DB::table('tv_info')->insert([
+                'videos_id' => $id,
+                'summary' => '',
+                'publisher' => '',
+                'localzone' => '',
+                'status' => $status,
+            ]);
+        }
+        foreach ($episodes as [$series, $episode, $firstaired]) {
+            DB::table('tv_episodes')->insert([
+                'videos_id' => $id,
+                'series' => $series,
+                'episode' => $episode,
+                'title' => sprintf('Episode %d', $episode),
+                'firstaired' => $firstaired === null ? null : $firstaired.' 00:00:00',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $parsedInfo
+     */
+    private function settleKnownShowMiss(?array $parsedInfo): object
+    {
+        $this->insertRelease(1, ['videos_id' => 10, 'tv_episodes_id' => -3]);
+
+        (new TvEpisodeRevisitService)->settleFinalFailure(1, parsedInfo: $parsedInfo);
+
+        return DB::table('releases')->find(1);
+    }
+
+    private function assertRetried(object $release): void
+    {
+        $this->assertSame(10, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id, 'retried later');
+        $this->assertSame('2026-08-25 12:00:00', $release->tv_episode_lookup_attempted_at);
+    }
+
+    private function assertSettled(object $release): void
+    {
+        $this->assertSame(10, (int) $release->videos_id);
+        $this->assertSame(TvEpisodeRevisitService::NO_MATCH_FOUND, (int) $release->tv_episodes_id, 'settled as no match');
+        $this->assertNull($release->tv_episode_lookup_attempted_at);
+    }
+
     private function collectedTvCount(): int
     {
         $monitor = new TmuxMonitorService;
@@ -812,6 +1074,19 @@ class TvEpisodeRevisitTest extends TestCase
         });
 
         ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
+
+        Schema::create('tv_info', function (Blueprint $table): void {
+            $table->unsignedInteger('videos_id')->primary();
+            $table->text('summary');
+            $table->string('publisher');
+            $table->string('localzone');
+            $table->string('original_language', 8)->default('');
+            $table->unsignedTinyInteger('status')->default(0);
+            $table->string('content_rating_us', 8)->default('');
+            $table->date('premiered')->nullable();
+            $table->unsignedInteger('networks_id')->nullable();
+            $table->timestamp('details_refreshed_at')->nullable();
+        });
 
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');

@@ -28,7 +28,7 @@ use Illuminate\Support\Collection;
 class TvProcessingPipeline
 {
     /** The provider gateway entries the TV lookup asks. */
-    private const array LOOKUP_PROVIDERS = ['tvdb', 'tvmaze', 'tmdb', 'trakt'];
+    public const array LOOKUP_PROVIDERS = ['tvdb', 'tvmaze', 'tmdb', 'trakt'];
 
     /**
      * @var Collection<AbstractTvProviderPipe>
@@ -110,6 +110,7 @@ class TvProcessingPipeline
             app(TvEpisodeRevisitService::class)->settleFinalFailure(
                 $context->releaseId,
                 ambiguous: $result->isAmbiguous(),
+                parsedInfo: $result->getParsedInfo(),
             );
         }
 
