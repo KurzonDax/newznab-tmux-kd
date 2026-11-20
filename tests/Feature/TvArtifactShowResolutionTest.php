@@ -260,21 +260,17 @@ final class TvArtifactShowResolutionTest extends TestCase
         ]);
     }
 
-    private function resolveName(string $releaseName): TvShowResolution
+    private function resolveName(string $releaseName, int $releaseId = 0): TvShowResolution
     {
         $provider = new LocalDbProvider;
         $showInfo = $provider->parseInfo($releaseName);
         $this->assertIsArray($showInfo);
 
-        return $provider->resolveByRelease($showInfo, 0);
+        return $provider->resolveByRelease($showInfo, 0, releaseId: $releaseId);
     }
 
     private function resolveCastle(): TvShowResolution
     {
-        $provider = new LocalDbProvider;
-        $showInfo = $provider->parseInfo('Castle.S01E01.TR.EN');
-        $this->assertIsArray($showInfo);
-
-        return $provider->resolveByRelease($showInfo, 0, releaseId: 99);
+        return $this->resolveName('Castle.S01E01.TR.EN', releaseId: 99);
     }
 }

@@ -29,6 +29,14 @@ use Illuminate\Support\Facades\DB;
  */
 abstract class AbstractTvProvider extends BaseVideoProvider
 {
+    /**
+     * Month names that make a year part of a full date: English full names and
+     * three-letter abbreviations (plus "sept"), and Portuguese full names.
+     */
+    private const DATE_MONTH_NAMES = 'january|february|march|april|may|june|july|august|september|october|november|december'
+        .'|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec'
+        .'|janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+
     private const FOLLOWING_RELEASE_TOKEN = '[^a-z0-9]([(|\[]\w+[)|\]]\s)*?(\d\d-\d\d|\d{1,3}x\d{2,3}|\(?(19|20)\d{2}\)?|(480|720|1080|2160)[ip]|AAC2?|BD-?Rip|Blu-?Ray|D0?\d|DD5|DiVX|DLMux|DTS|DVD(-?Rip)?|E\d{2,3}|EP\d{1,3}|[HX][\-_. ]?26[45]|ITA(-ENG)?|HEVC|[HPS]DTV|PROPER|REPACK|Season|Episode|S\d+[^a-z0-9]?((E\d+)[abr]?)*|WEB[\-_. ]?(DL|Rip)|XViD)[^a-z0-9]?';
 
     // Television Sources
@@ -804,7 +812,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
         foreach ($years[0] as [$year, $offset]) {
             if ($markerOffset !== null && $offset > $markerOffset && $season !== 1
-                && $this->isYearOfDate($relname, $offset)) {
+                && $this->yearBelongsToDate($relname, $offset)) {
                 continue;
             }
 
@@ -817,15 +825,13 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     /**
      * Whether the four-digit year at the given byte offset belongs to a full date.
      */
-    private function isYearOfDate(string $relname, int $offset): bool
+    private function yearBelongsToDate(string $relname, int $offset): bool
     {
         $flags = mb_check_encoding($relname, 'UTF-8') ? 'iu' : 'i';
         $before = substr($relname, 0, $offset);
         $after = substr($relname, $offset + 4);
 
-        $month = 'january|february|march|april|may|june|july|august|september|october|november|december'
-            .'|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec'
-            .'|janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+        $month = self::DATE_MONTH_NAMES;
         $separator = '[ ._,-]+(?:de[ ._,-]+)?';
         $day = '\d{1,2}(?:st|nd|rd|th)?';
 
