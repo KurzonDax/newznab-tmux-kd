@@ -43,6 +43,12 @@ final readonly class BookPcReleaseFilters extends ShelfReleaseFilters
             search: $this->search);
     }
 
+    public function withCompletion(int|string|null $completion): static
+    {
+        return new self(categories: $this->categories, sort: $this->sort, page: $this->page, completion: $completion, excludeOther: $this->excludeOther,
+            search: $this->search);
+    }
+
     /** @return array<string, list<int|string>|int|string> the URL query for this page; page 1 carries no page */
     public function query(?int $page = null): array
     {

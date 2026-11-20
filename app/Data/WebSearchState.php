@@ -115,7 +115,7 @@ final readonly class WebSearchState
         return $this->terms->freeText();
     }
 
-    /** The Completion cell's choice: a listed threshold, Imported only, or null for Any completion. */
+    /** The Completion cell's choice: a listed threshold, Imported only, Not imported, or null for Any completion. */
     public function completion(): int|string|null
     {
         return ReleaseListFilters::completionChoice($this->parameters['completion'] ?? null);
@@ -127,7 +127,7 @@ final readonly class WebSearchState
         return isset($this->parameters['minc']) ? (int) $this->parameters['minc'] : 0;
     }
 
-    /** The completion threshold applied: the cell's, else the minc link's; null for none and for Imported only. */
+    /** The completion threshold applied: the cell's, else the minc link's; null for none, Imported only and Not imported. */
     public function threshold(): ?int
     {
         $completion = $this->completion();
@@ -141,6 +141,11 @@ final readonly class WebSearchState
     public function importedOnly(): bool
     {
         return $this->completion() === ReleaseListFilters::IMPORTED_ONLY;
+    }
+
+    public function notImported(): bool
+    {
+        return $this->completion() === ReleaseListFilters::NOT_IMPORTED;
     }
 
     /**
@@ -271,7 +276,7 @@ final readonly class WebSearchState
 
     /**
      * The filters the feed cannot carry, as the dialog names them: their chips, then the
-     * completion threshold or Imported only.
+     * completion threshold, Imported only or Not imported.
      *
      * @return list<string>
      */
@@ -279,8 +284,8 @@ final readonly class WebSearchState
     {
         $filters = array_values(array_map(static fn (array $chip): string => $chip['label'], array_filter($this->chips(),
             static fn (array $chip): bool => in_array($chip['key'], ['title', 'actors', 'director', 'plot', 'minage', 'maxsize', 'poster'], true))));
-        if ($this->importedOnly()) {
-            $filters[] = ReleaseListFilters::COMPLETIONS[ReleaseListFilters::IMPORTED_ONLY][0];
+        if ($this->importedOnly() || $this->notImported()) {
+            $filters[] = ReleaseListFilters::COMPLETIONS[$this->completion()][0];
         } elseif ($this->threshold() !== null) {
             $filters[] = 'Completion ≥ '.$this->threshold().'%';
         }

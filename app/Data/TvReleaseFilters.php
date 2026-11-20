@@ -22,7 +22,7 @@ final readonly class TvReleaseFilters extends ReleaseListFilters
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, IMPORTED_ONLY or NOT_IMPORTED
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      */
     public function __construct(
@@ -97,6 +97,11 @@ final readonly class TvReleaseFilters extends ReleaseListFilters
     public function withPage(int $page): static
     {
         return new self($this->categories, $this->resolutions, $this->sources, $this->sort, $page, $this->audio, $this->completion, $this->shows, $this->excludeOther);
+    }
+
+    public function withCompletion(int|string|null $completion): static
+    {
+        return new self($this->categories, $this->resolutions, $this->sources, $this->sort, $this->page, $this->audio, $completion, $this->shows, $this->excludeOther);
     }
 
     /** @return array<string, list<int|string>|int|string> the URL query for this page; page 1 carries no page */

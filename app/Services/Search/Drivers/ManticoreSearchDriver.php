@@ -2399,6 +2399,8 @@ class ManticoreSearchDriver implements SearchDriverInterface
 
         if ((bool) ($criteria['imported_only'] ?? false)) {
             $query->filter('is_imported', '=', 1);
+        } elseif ((bool) ($criteria['not_imported'] ?? false)) {
+            $query->filter('is_imported', '=', 0);
         }
 
         $mediaUniqueId = ReleaseSearchQuery::normalizeMediaUniqueId($criteria['media_unique_id'] ?? null);

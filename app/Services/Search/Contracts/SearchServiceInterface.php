@@ -201,7 +201,8 @@ interface SearchServiceInterface
      *                                          min_video_height (int), max_video_height (int), min_completion (int),
      *                                          sort_field (string), sort_dir (string), try_fuzzy (bool), release_ids (list<int>|null),
      *                                          excluded_movieinfo_id (int|null: a film whose releases are left out),
-     *                                          imported_only (bool: only releases added from an imported NZB, `is_imported`)
+     *                                          imported_only (bool: only releases added from an imported NZB, `is_imported`),
+     *                                          not_imported (bool: only releases not added from an imported NZB, `is_imported` 0)
      * @return array{ids: list<int>, total: int, fuzzy: bool, available?: bool, has_more?: bool}
      */
     public function searchReleasesFiltered(array $criteria, int $limit, int $offset = 0): array;

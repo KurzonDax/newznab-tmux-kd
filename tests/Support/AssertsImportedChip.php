@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use Closure;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
+
 /**
  * The Imported chip of a release chip line (issue #1049): the `fa-right-to-bracket` icon with no text in the
  * `imported` tone, never a link or a button, its sentence both the hover title and the accessible name, the last
@@ -84,15 +88,45 @@ trait AssertsImportedChip
     }
 
     /**
-     * The page's Completion menu is single-choice and lists "Any completion", "100% only", "95% or more" and then
-     * "Imported only", the last one ticked and no other.
+     * The page's Completion menu is single-choice and lists "Any completion", "100% only", "95% or more", "Imported only"
+     * and then "Not imported", Imported only ticked and no other.
      */
-    protected function assertImportedOnlyChosenLast(string $html): void
+    protected function assertImportedOnlyChosen(string $html): void
+    {
+        $this->assertCompletionChosen($html, 'imported', 'Imported');
+    }
+
+    /** The same menu with Not imported (issue #1264), its last item, ticked and no other. */
+    protected function assertNotImportedChosenLast(string $html): void
+    {
+        $this->assertCompletionChosen($html, 'not-imported', 'Not imported');
+    }
+
+    /** The Completion menu's five items in order, $value ticked and no other, and the filter cell reading $cell. */
+    private function assertCompletionChosen(string $html, string $value, string $cell): void
     {
         $menu = (string) strstr((string) strstr($html, 'data-name="completion"'), '</div>', true);
         preg_match_all('/role="menuitemradio"(?: data-any| data-value="([^"]*)" data-text="([^"]*)")[^>]*aria-checked="(true|false)"/', $menu, $items, PREG_SET_ORDER);
-        $this->assertSame([['', '', 'false'], ['100', '100% only', 'false'], ['95', '95% or more', 'false'], ['imported', 'Imported only', 'true']],
-            array_map(static fn (array $item): array => [$item[1], $item[2], $item[3]], $items));
-        $this->assertMatchesRegularExpression('/<span class="checkbox-menu-name">Completion<\/span>.*?<span class="checkbox-menu-value"[^>]*>Imported<\/span>/s', $menu, 'the filter cell reads Imported');
+        $expected = [['', '', 'false'], ['100', '100% only', 'false'], ['95', '95% or more', 'false'], ['imported', 'Imported only', 'false'], ['not-imported', 'Not imported', 'false']];
+        foreach ($expected as $at => $item) {
+            $expected[$at][2] = $item[0] === $value ? 'true' : 'false';
+        }
+        $this->assertSame($expected, array_map(static fn (array $item): array => [$item[1], $item[2], $item[3]], $items));
+        $this->assertMatchesRegularExpression('/<span class="checkbox-menu-name">Completion<\/span>.*?<span class="checkbox-menu-value"[^>]*>'.preg_quote($cell, '/').'<\/span>/s', $menu, 'the filter cell reads '.$cell);
+    }
+
+    /** @return Closure(): list<string> the count reads of `releases` run since the call, as raw SQL (issue #1264) */
+    protected function releaseCountReads(): Closure
+    {
+        $reads = [];
+        DB::listen(static function (QueryExecuted $query) use (&$reads): void {
+            if (str_contains($query->sql, 'count(*)') && str_contains($query->sql, '"releases"')) {
+                $reads[] = $query->toRawSql();
+            }
+        });
+
+        return static function () use (&$reads): array {
+            return $reads;
+        };
     }
 }

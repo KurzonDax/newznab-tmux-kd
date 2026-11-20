@@ -768,7 +768,7 @@ final class ConsoleReleasesPageTest extends TestCase
 
         $response = $this->page('/console?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
         $this->assertSame(['Imported action', 'Imported no game', 'Imported other game'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertListed('/console?completion=95', ['Imported no game', 'Imported other game', 'Indexed action', 'Indexed no game']);
@@ -801,5 +801,59 @@ final class ConsoleReleasesPageTest extends TestCase
             $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
             $this->assertSame($count($without), $count($with));
         }
+    }
+
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported_and_a_game_filter_adds_it_on_its_own_read(): void
+    {
+        $this->genre(self::ACTION, 'Action');
+        $this->game(1, 'Blades of Varn', '2010-01-01', [self::ACTION]);
+        $this->game(2, 'Salt Harbour', '1995-01-01', []);
+        $this->console('Imported action', ['is_imported' => 1, 'consoleinfo_id' => 1]);
+        $this->console('Imported no game', ['is_imported' => 1]);
+        $this->console('Indexed action', ['consoleinfo_id' => 1, 'completion' => 40]);
+        $this->console('Indexed other game', ['consoleinfo_id' => 2, 'categories_id' => self::NDS]);
+        $this->console('Indexed no game');
+        $this->console('Indexed locked action', ['consoleinfo_id' => 1, 'passwordstatus' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/console?completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed action', 'Indexed no game', 'Indexed other game'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertListed('/console?completion=not-imported&category[]='.self::NDS, ['Indexed other game']);
+        $this->page('/console?completion=not-imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('not imported · release or game names containing');
+        $this->assertSame('not-imported', $this->remembered($user, 'console')['completion']);
+
+        // the game-led reads: the game filter and the choice both hold, in the page and in the count
+        $this->assertSame(['Indexed action'], $this->listedNames($this->page('/console?completion=not-imported&genre[]='.self::ACTION)->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed no game', 'Indexed other game'],
+            $this->listedNames($this->page('/console?completion=not-imported&genre[]='.ConsoleReleaseFilters::GENRE_UNKNOWN)->assertOk()->assertSee('Showing 1–2 of 2 releases')));
+        $this->assertSame(['Indexed other game'], $this->listedNames($this->page('/console?completion=not-imported&decade[]=1990')->assertOk()->assertSee('Showing 1–1 of 1 release')));
+
+        $list = app(ConsoleReleaseList::class);
+        $count = fn (ConsoleReleaseFilters $filters): string => (fn (ConsoleReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $notImported = ['completion' => ConsoleReleaseFilters::NOT_IMPORTED];
+        foreach ([[], ['categories' => [self::NDS]], ['search' => 'x'], ['categories' => [self::NDS], 'search' => 'x'], ['genres' => [self::ACTION]],
+            ['genres' => [ConsoleReleaseFilters::GENRE_UNKNOWN]], ['decades' => [1990]], ['yearFrom' => 2024]] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $with = new ConsoleReleaseFilters(...$set, ...$notImported, sort: $sort);
+                $without = new ConsoleReleaseFilters(...$set, sort: $sort);
+                $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []), json_encode([array_keys($set), $sort->value]));
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($with, []));
+                $this->assertSame($count($without), $count($with));
+            }
+        }
+
+        // the band count subtracts; a game-led count adds the condition on its own index
+        Cache::flush();
+        $counts = $this->releaseCountReads();
+        $this->assertSame(3, $list->count(new ConsoleReleaseFilters(...$notImported), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new ConsoleReleaseFilters(...$notImported, genres: [self::ACTION]), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
     }
 }

@@ -39,9 +39,15 @@ abstract readonly class ReleaseListFilters
      */
     public const IMPORTED_ONLY = 'imported';
 
+    /**
+     * The Completion menu's Not imported choice (issue #1264), by its URL value: Imported only's
+     * opposite, the releases not added from an imported NZB, at any completion; no threshold.
+     */
+    public const NOT_IMPORTED = 'not-imported';
+
     /** The Completion menu's choices after "Any completion", in menu order: URL value => [menu item, cell text, empty line]. */
     public const COMPLETIONS = [100 => ['100% only', '100%', '100% complete'], 95 => ['95% or more', '95%+', '95%+ complete'],
-        self::IMPORTED_ONLY => ['Imported only', 'Imported', 'imported only']];
+        self::IMPORTED_ONLY => ['Imported only', 'Imported', 'imported only'], self::NOT_IMPORTED => ['Not imported', 'Not imported', 'not imported']];
 
     /** The Audio menu's value for releases with no audio language. */
     public const AUDIO_UNKNOWN = 'unknown';
@@ -58,7 +64,7 @@ abstract readonly class ReleaseListFilters
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $sources  ticked keys of SOURCES, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, IMPORTED_ONLY or NOT_IMPORTED
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode: it applies while
      *                              $categories holds its ids, and sleeps (filters nothing, stays in
      *                              the URL) while the menu shows no Exclude Other item
@@ -76,6 +82,14 @@ abstract readonly class ReleaseListFilters
 
     /** The same filters on another page. */
     abstract public function withPage(int $page): static;
+
+    /**
+     * The same filters with another Completion choice, every other field kept: the two reads a
+     * Not imported count subtracts (no choice, and Imported only).
+     *
+     * @param  int|string|null  $completion  a key of COMPLETIONS, or null for Any completion
+     */
+    abstract public function withCompletion(int|string|null $completion): static;
 
     /** Whether any filter is set ("Clear all" shows then). */
     abstract public function any(): bool;
@@ -175,11 +189,11 @@ abstract readonly class ReleaseListFilters
         ];
     }
 
-    /** A request's Completion value as a key of COMPLETIONS: a listed threshold, or IMPORTED_ONLY; null for anything else. */
+    /** A request's Completion value as a key of COMPLETIONS: a listed threshold, IMPORTED_ONLY or NOT_IMPORTED; null for anything else. */
     public static function completionChoice(mixed $value): int|string|null
     {
-        if ($value === self::IMPORTED_ONLY) {
-            return self::IMPORTED_ONLY;
+        if ($value === self::IMPORTED_ONLY || $value === self::NOT_IMPORTED) {
+            return $value;
         }
 
         return is_string($value) && ctype_digit($value) && array_key_exists((int) $value, self::COMPLETIONS) ? (int) $value : null;
@@ -251,7 +265,13 @@ abstract readonly class ReleaseListFilters
         return $this->completion === self::IMPORTED_ONLY;
     }
 
-    /** The lowest completion listed: the Completion choice when it is a threshold; null for Any and for Imported only. */
+    /** Whether the Completion choice is Not imported. */
+    public function notImported(): bool
+    {
+        return $this->completion === self::NOT_IMPORTED;
+    }
+
+    /** The lowest completion listed: the Completion choice when it is a threshold; null for Any, Imported only and Not imported. */
     public function completionThreshold(): ?int
     {
         return is_int($this->completion) ? $this->completion : null;

@@ -428,7 +428,7 @@ final class MovieReleasesPageTest extends TestCase
         }
 
         $completion = (string) strstr((string) strstr($html, 'data-name="completion"'), 'data-name="genre"', true);
-        $this->assertSame(['Any completion', '100% only', '95% or more', 'Imported only'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
+        $this->assertSame(['Any completion', '100% only', '95% or more', 'Imported only', 'Not imported'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
             array_slice(explode('<button type="button" class="checkbox-menu-item" role="menuitemradio"', $completion), 1)));
         $this->assertStringContainsString('data-single="true"', $completion);
 
@@ -1189,7 +1189,7 @@ final class MovieReleasesPageTest extends TestCase
 
         $response = $this->page('/movies?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
         $this->assertSame(['Imported drama', 'Imported no film', 'Imported other film'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertListed('/movies?completion=95', ['Imported no film', 'Imported other film', 'Indexed drama', 'Indexed no film']);
@@ -1220,5 +1220,60 @@ final class MovieReleasesPageTest extends TestCase
             $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
             $this->assertSame($count($without), $count($with));
         }
+    }
+
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported_and_a_film_filter_adds_it_on_its_own_read(): void
+    {
+        $this->genre(self::DRAMA, 'Drama', [21]);
+        $this->movie('Imported drama', ['is_imported' => 1, 'movieinfo_id' => 21]);
+        $this->movie('Imported no film', ['is_imported' => 1]);
+        $this->movie('Indexed drama', ['movieinfo_id' => 21, 'completion' => 40]);
+        $this->movie('Indexed other film', ['movieinfo_id' => 22, 'resolution' => 3]);
+        $this->movie('Indexed no film');
+        $this->movie('Indexed locked drama', ['movieinfo_id' => 21, 'passwordstatus' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/movies?completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed drama', 'Indexed no film', 'Indexed other film'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertListed('/movies?completion=not-imported&resolution[]=720p', ['Indexed other film']);
+        $this->page('/movies?completion=not-imported&resolution[]=4k')->assertOk()->assertSee('Showing 0 releases')->assertSee('No releases match 4K · not imported.');
+        $this->assertSame(['resolution' => ['4k'], 'completion' => 'not-imported'], $this->remembered($user, 'movies'));
+
+        // the film-led read: the film filter and the choice both hold, in the page and in the count
+        $drama = $this->page('/movies?completion=not-imported&genre[]='.self::DRAMA)->assertOk()->assertSee('Showing 1–1 of 1 release');
+        $this->assertSame(['Indexed drama'], $this->listedNames($drama));
+
+        $list = app(MovieReleaseList::class);
+        $count = fn (MovieReleaseFilters $filters): string => (fn (MovieReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $notImported = ['completion' => MovieReleaseFilters::NOT_IMPORTED];
+        foreach ([[], ['categories' => [self::UHD]], ['resolutions' => ['4k']], ['sources' => ['bluray']], ['audio' => ['unknown']]] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::PostedOldest, ReleaseSort::AddedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $with = new MovieReleaseFilters(...$set, ...$notImported, sort: $sort);
+                $without = new MovieReleaseFilters(...$set, sort: $sort);
+                $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []), json_encode([array_keys($set), $sort->value]));
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($with, []));
+                $this->assertSame('ix_releases_band_count', $count($with));
+            }
+        }
+        foreach ([['genres' => [self::DRAMA]], ['decades' => [1990]], ['yearFrom' => 2024], ['scores' => ['few']], ['ratings' => ['R']], ['languages' => ['en']]] as $film) {
+            $with = new MovieReleaseFilters(...$notImported, films: new MovieFilmFilters(...$film));
+            $without = new MovieReleaseFilters(films: new MovieFilmFilters(...$film));
+            $this->assertSame('ix_releases_movieinfo_cat', $list->readIndex($with, []), json_encode($film, JSON_THROW_ON_ERROR));
+            $this->assertSame($count($without), $count($with));
+        }
+
+        // the band count subtracts; the film-led count adds the condition on its own index; both match a direct count
+        Cache::flush();
+        $counts = $this->releaseCountReads();
+        $this->assertSame(3, $list->count(new MovieReleaseFilters(...$notImported), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new MovieReleaseFilters(...$notImported, films: new MovieFilmFilters(genres: [self::DRAMA])), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
     }
 }

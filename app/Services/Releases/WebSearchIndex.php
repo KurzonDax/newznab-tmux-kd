@@ -78,6 +78,8 @@ final class WebSearchIndex
         }
         if ($state->importedOnly()) {
             $criteria['imported_only'] = true;
+        } elseif ($state->notImported()) {
+            $criteria['not_imported'] = true;
         } elseif ($state->threshold() !== null) {
             $criteria['min_completion'] = $state->threshold();
         }

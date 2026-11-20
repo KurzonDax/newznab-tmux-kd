@@ -72,6 +72,8 @@ final class WebReleaseSearch
         $query = $this->browser->matchingQuery(ReleaseBrowserState::fromRequest(new Request($base), BrowseRoot::All), $user);
         if ($search->importedOnly()) {
             $query->where('r.is_imported', 1);
+        } elseif ($search->notImported()) {
+            $query->where('r.is_imported', 0);
         }
         if (isset($search->parameters['t'])) {
             $ids = $search->scopeIds();

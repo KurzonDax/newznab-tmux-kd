@@ -579,6 +579,52 @@ final class ShelfReleasesPageTest extends TestCase
         $this->assertNoImportedChip($this->rowOf($response, 'Indexed with chips'), 'A Books row that was not imported');
     }
 
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported(): void
+    {
+        $this->book('Imported ebook', ['is_imported' => 1]);
+        $this->book('Imported comic', ['is_imported' => 1, 'categories_id' => self::COMICS]);
+        $this->book('Indexed ebook', ['completion' => 40]);
+        $this->book('Indexed comic', ['categories_id' => self::COMICS]);
+        $this->book('Indexed locked', ['passwordstatus' => 1]);
+        $this->pc('Indexed pc');
+        $this->pc('Imported pc', ['is_imported' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/books?completion=not-imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame(['Indexed comic', 'Indexed ebook'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertListed('/books?completion=not-imported&category[]='.self::COMICS, ['Indexed comic']);
+        $this->assertListed('/books?completion=not-imported&q=ebook', ['Indexed ebook']);
+        $this->page('/books?completion=not-imported&category[]='.self::COMICS.'&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('Comics · not imported · names containing');
+        $this->assertSame('not-imported', $this->remembered($user, 'books')['completion']);
+        $this->assertListed('/pc?completion=not-imported', ['Indexed pc']);
+
+        $list = app(BookReleaseList::class);
+        $count = fn (BookPcReleaseFilters $filters): string => (fn (BookPcReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        foreach ([[], ['categories' => [self::COMICS]], ['search' => 'ebook'], ['categories' => [self::COMICS], 'search' => 'ebook']] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::PostedOldest, ReleaseSort::AddedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $with = new BookPcReleaseFilters(...$set, completion: BookPcReleaseFilters::NOT_IMPORTED, sort: $sort);
+                $without = new BookPcReleaseFilters(...$set, sort: $sort);
+                $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []), json_encode([array_keys($set), $sort->value]));
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($with, []));
+                $this->assertSame($count($without), $count($with));
+            }
+        }
+
+        // the band count subtracts; the name search adds the condition on the page's index
+        Cache::flush();
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new BookPcReleaseFilters(categories: [self::COMICS], completion: BookPcReleaseFilters::NOT_IMPORTED), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new BookPcReleaseFilters(completion: BookPcReleaseFilters::NOT_IMPORTED, search: 'ebook'), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
+    }
+
     public function test_imported_only_lists_exactly_the_visible_imported_releases_from_the_imported_index(): void
     {
         $this->book('Imported ebook', ['is_imported' => 1, 'completion' => 40]);
@@ -591,7 +637,7 @@ final class ShelfReleasesPageTest extends TestCase
 
         $response = $this->page('/books?completion=imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
         $this->assertSame(['Imported comic', 'Imported ebook'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertListed('/books?completion=95', ['Imported comic', 'Indexed ebook', 'Indexed partial']);

@@ -861,7 +861,7 @@ final class GenericReleasesPageTest extends TestCase
         $response = $this->page('/browse/all?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
         $this->assertSame(['Imported.Misc', 'Imported.Movie', 'Imported.Show'], $this->listedNames($response));
         $this->assertSame(3, $response->viewData('total'));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
 
         // another choice replaces it; it combines with the Category filter, the name search and each list's own context
@@ -889,6 +889,78 @@ final class GenericReleasesPageTest extends TestCase
         $this->page('/browse/all?clear=1')->assertRedirect(route('browse.all'));
         $this->assertSame([], $this->remembered($user, 'all'));
         $this->assertFalse($this->page('/browse/all')->assertOk()->viewData('filters')->any());
+    }
+
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported_on_every_generic_list_and_drops_a_minc_threshold(): void
+    {
+        DB::table('usenet_groups')->insert([['id' => 1, 'name' => 'alt.binaries.demo'], ['id' => 2, 'name' => 'alt.binaries.other']]);
+        $poster = 'bob <bob@home.mex>';
+        $user = $this->user = $this->browserUser();
+        DB::table('user_movies')->insert(['users_id' => $user->id, 'imdbid' => '0137523', 'categories' => null]);
+        $this->generic('Imported.Movie', ['is_imported' => 1, 'groups_id' => 1, 'fromname' => $poster, 'imdbid' => '0137523']);
+        $this->generic('Imported.Misc', ['is_imported' => 1, 'categories_id' => self::MISC, 'groups_id' => 1]);
+        $this->generic('Indexed.Movie', ['completion' => 40, 'groups_id' => 1, 'fromname' => $poster, 'imdbid' => '0137523']);
+        $this->generic('Indexed.Show', ['categories_id' => self::TV_HD, 'groups_id' => 2]);
+        $this->generic('Indexed.Misc', ['completion' => 96, 'categories_id' => self::MISC, 'groups_id' => 1]);
+        $this->generic('Indexed.Locked', ['passwordstatus' => 1, 'groups_id' => 1, 'fromname' => $poster]);
+
+        // the menu: Any completion, the four choices, Not imported last and the only one ticked
+        $response = $this->page('/browse/all?completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed.Misc', 'Indexed.Movie', 'Indexed.Show'], $this->listedNames($response));
+        $this->assertSame(3, $response->viewData('total'));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+
+        // it combines with the Category filter, the name search and each list's own context, its total matching
+        $this->assertSame(['Indexed.Show'], $this->listedNames($this->page('/browse/all?completion=not-imported&category[]=5000')->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed.Movie'], $this->listedNames($this->page('/browse/all?completion=not-imported&q=movie')->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed.Misc', 'Indexed.Movie'], $this->listedNames($this->page('/browse/all?group=alt.binaries.demo&completion=not-imported')->assertSee('Showing 1–2 of 2 releases')));
+        $this->assertSame(['Indexed.Movie'], $this->listedNames($this->page('/browse/all?poster='.rawurlencode($poster).'&completion=not-imported')->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed.Misc'], $this->listedNames($this->page('/browse/other?completion=not-imported')->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed.Movie'], $this->listedNames($this->page('/browse/all?watching=1&completion=not-imported')->assertSee('Showing 1–1 of 1 release')));
+        $this->page('/browse/all?completion=not-imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('No releases match not imported · names containing');
+
+        // an explicit Completion value: a minc link's threshold is dropped while it is set, from the list and from its links
+        $withMinc = $this->page('/browse/all?minc=95&completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed.Misc', 'Indexed.Movie', 'Indexed.Show'], $this->listedNames($withMinc), 'Indexed.Movie is 40% complete');
+        $this->assertSame(['completion' => 'not-imported', 'page' => 2], $withMinc->viewData('filters')->query(2));
+        $this->assertStringNotContainsString('minc', (string) $withMinc->getContent());
+
+        // the count: the no-choice count minus the Imported only count, each with the list's context and filters
+        $list = app(GenericReleaseList::class);
+        foreach ([GenericListContext::all(), GenericListContext::group('alt.binaries.demo'), GenericListContext::poster($poster), GenericListContext::other(), GenericListContext::all(watching: true)] as $context) {
+            foreach (['', 'movie'] as $search) {
+                $filters = new GenericReleaseFilters(context: $context, completion: GenericReleaseFilters::NOT_IMPORTED, search: $search);
+                $direct = DB::table('releases')->whereIn('id', $this->idsOf($context, $search, $user))->where('is_imported', 0)->count();
+                $counts = $this->releaseCountReads();
+                $this->assertSame($direct, $list->count($filters, [], $user->id), json_encode([$context->kind, $context->watching, $search]));
+                $this->assertCount(2, $counts());
+                $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+                $this->assertNull($filters->threshold());
+            }
+        }
+
+        // remembered, recalled on a bare open, cleared by Any completion and by Clear all
+        $this->assertSame(['completion' => 'not-imported'], $this->remembered($user, 'all'));
+        $this->page('/browse/all')->assertRedirect(route('browse.all', ['completion' => 'not-imported']));
+        $this->page('/browse/all?_fragment=list&completion=')->assertOk()->assertSee('Showing 1–5 of 5 releases');
+        $this->assertSame([], $this->remembered($user, 'all'));
+        $this->page('/browse/all?completion=not-imported')->assertOk();
+        $this->page('/browse/all?clear=1')->assertRedirect(route('browse.all'));
+        $this->assertSame([], $this->remembered($user, 'all'));
+    }
+
+    /**
+     * The visible releases of a generic list, read with no Completion choice through the list itself.
+     *
+     * @return list<int>
+     */
+    private function idsOf(GenericListContext $context, string $search, User $user): array
+    {
+        $filters = new GenericReleaseFilters(context: $context, search: $search);
+        $list = app(GenericReleaseList::class);
+
+        return $list->pageIds($filters, [], $user->id, $list->count($filters, [], $user->id));
     }
 
     public function test_the_list_s_own_read_carries_the_imported_flag_so_the_row_loader_refetches_nothing(): void

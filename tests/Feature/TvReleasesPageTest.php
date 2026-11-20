@@ -472,9 +472,9 @@ final class TvReleasesPageTest extends TestCase
 
         // check.mjs 396: Completion is one choice with radio items
         $completion = (string) strstr((string) strstr($html, 'data-name="completion"'), 'data-name="genre"', true);
-        $this->assertSame(['Any completion', '100% only', '95% or more', 'Imported only'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
+        $this->assertSame(['Any completion', '100% only', '95% or more', 'Imported only', 'Not imported'], array_map(static fn (string $item): string => trim(strip_tags(substr($item, (int) strpos($item, '>') + 1))),
             array_slice(explode('<button type="button" class="checkbox-menu-item" role="menuitemradio"', $completion), 1)));
-        $this->assertSame(4, substr_count($completion, '<span class="checkbox-menu-dot"></span>'));
+        $this->assertSame(5, substr_count($completion, '<span class="checkbox-menu-dot"></span>'));
         $this->assertStringContainsString('data-single="true"', $completion);
 
         // check.mjs 124, 411: Clear all in a fixed slot on the Showing line, hidden but in place while nothing is set
@@ -687,7 +687,7 @@ final class TvReleasesPageTest extends TestCase
         // the menu: Any completion, then the three choices, Imported only last and the only one ticked
         $response = $this->page('/tv?completion=imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
         $this->assertSame(['Imported complete', 'Imported partial'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertSame(['completion' => 'imported', 'page' => 2], $response->viewData('filters')->query(2));
@@ -744,6 +744,98 @@ final class TvReleasesPageTest extends TestCase
         // the show filter still narrows a list read from the imported index
         $response = $this->page('/tv?completion=imported&genre[]='.self::DRAMA)->assertOk()->assertSee('Showing 1–1 of 1 release');
         $this->assertSame(['Imported drama'], $this->listedNames($response));
+    }
+
+    public function test_not_imported_is_the_last_completion_choice_and_lists_exactly_the_visible_releases_that_were_not_imported(): void
+    {
+        $this->tv('Imported complete', ['is_imported' => 1]);
+        $this->tv('Imported partial', ['is_imported' => 1, 'completion' => 40, 'resolution' => 3]);
+        $this->tv('Indexed complete');
+        $this->tv('Indexed partial', ['completion' => 40, 'resolution' => 3]);
+        $this->tv('Indexed locked', ['passwordstatus' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        // the menu: Any completion, the four choices, Not imported last and the only one ticked
+        $response = $this->page('/tv?completion=not-imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame(['Indexed complete', 'Indexed partial'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertSame(['completion' => 'not-imported', 'page' => 2], $response->viewData('filters')->query(2));
+
+        // no threshold applies with it, another choice replaces it, and it combines with the other filters
+        $this->assertListed('/tv?completion=imported', ['Imported complete', 'Imported partial']);
+        $this->assertListed('/tv?completion=not-imported&resolution[]=720p', ['Indexed partial']);
+        $this->page('/tv?completion=not-imported&resolution[]=4k')->assertOk()->assertSee('Showing 0 releases')->assertSee('Nothing matches 4K · not imported.');
+        Settings::query()->updateOrInsert(['name' => 'showpasswordedrelease'], ['value' => '1']);
+        Cache::flush();
+        $this->assertListed('/tv?completion=not-imported', ['Indexed complete', 'Indexed locked', 'Indexed partial']);
+
+        // remembered with the list's other dropdown filters, recalled on a bare open, cleared by Any completion and by Clear all
+        $this->assertSame(['completion' => 'not-imported'], $this->remembered($user, 'tv'));
+        $this->page('/tv')->assertRedirect(route('tv.releases', ['completion' => 'not-imported']));
+        $opened = $this->opened('/tv')->assertOk();
+        $this->assertSame('Completion: Not imported', $this->cellText($opened, 'completion'));
+        preg_match('/<a href="([^"]+)" class="pager-line-clear" data-clear-all/', (string) $opened->getContent(), $clearAll);
+        $this->page('/tv?_fragment=list')->assertOk();
+        $this->assertSame([], $this->remembered($user, 'tv'));
+        $this->page('/tv?completion=not-imported')->assertOk();
+        $this->page(html_entity_decode($clearAll[1]))->assertRedirect(route('tv.releases'));
+        $this->assertSame([], $this->remembered($user, 'tv'));
+        $this->assertFalse($this->page('/tv')->assertOk()->viewData('filters')->any());
+    }
+
+    public function test_a_not_imported_list_reads_its_page_from_the_index_it_reads_with_no_choice_and_subtracts_the_imported_count_from_the_band_count(): void
+    {
+        DB::table('genres')->insert(['id' => self::DRAMA, 'title' => 'Drama', 'type' => 5000, 'disabled' => 0]);
+        DB::table('video_genres')->insert(['videos_id' => 11, 'genres_id' => self::DRAMA]);
+        $this->tv('Imported drama', ['is_imported' => 1, 'videos_id' => 11, 'categories_id' => self::UHD, 'resolution' => 1]);
+        $this->tv('Imported other show', ['is_imported' => 1, 'videos_id' => 12]);
+        $this->tv('Indexed drama', ['videos_id' => 11, 'categories_id' => self::UHD, 'resolution' => 1]);
+        $this->tv('Indexed other show', ['videos_id' => 12]);
+        $this->tv('Indexed no show');
+        $list = new TvReleaseList(app(ReleaseBrowseService::class), app(TvShowWall::class), 50);
+        $count = fn (TvReleaseFilters $filters): string => (fn (TvReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $drama = new TvShowFilters(genres: [self::DRAMA]);
+
+        foreach ([[], ['categories' => [self::UHD]], ['resolutions' => ['4k']], ['sources' => ['web']], ['audio' => ['unknown']], ['shows' => $drama],
+            ['categories' => [self::UHD], 'resolutions' => ['4k'], 'sources' => ['web'], 'audio' => ['unknown'], 'shows' => $drama]] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::PostedOldest, ReleaseSort::AddedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $filters = new TvReleaseFilters(...$set, completion: TvReleaseFilters::NOT_IMPORTED, sort: $sort);
+                $none = new TvReleaseFilters(...$set, sort: $sort);
+                $where = json_encode([array_keys($set), $sort->value]);
+                $this->assertSame($list->readIndex($none, []), $list->readIndex($filters, []), $where);
+                $this->assertSame($list->pageIndex($none, 1), $list->pageIndex($filters, 1), $where);
+                $this->assertSame($count($none), $count($filters), $where);
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($filters, []).$list->pageIndex($filters, 1), $where);
+            }
+        }
+
+        // the band count: the no-choice count minus the Imported only count, each with the other filters; never is_imported = 0
+        $counts = $this->releaseCountReads();
+        $this->assertSame(2, $list->count(new TvReleaseFilters(categories: [self::HD], completion: TvReleaseFilters::NOT_IMPORTED), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $this->assertSame(1, substr_count(implode(' ', $counts()), '"is_imported" = 1'));
+        foreach ($counts() as $read) {
+            $this->assertStringContainsString('"categories_id" in ('.self::HD.')', $read);
+        }
+        // a show-led count adds the condition on its own index
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new TvReleaseFilters(completion: TvReleaseFilters::NOT_IMPORTED, shows: $drama), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
+
+        // the count cache keeps no choice, Imported only and Not imported apart
+        Cache::flush();
+        $this->assertSame(5, $list->count(new TvReleaseFilters, []));
+        $this->assertSame(2, $list->count(new TvReleaseFilters(completion: TvReleaseFilters::IMPORTED_ONLY), []));
+        $this->assertSame(3, $list->count(new TvReleaseFilters(completion: TvReleaseFilters::NOT_IMPORTED), []));
+        $this->assertSame(5, $list->count(new TvReleaseFilters, []));
+
+        // the show filter still narrows the list, with a matching pager total
+        $response = $this->page('/tv?completion=not-imported&genre[]='.self::DRAMA)->assertOk()->assertSee('Showing 1–1 of 1 release');
+        $this->assertSame(['Indexed drama'], $this->listedNames($response));
     }
 
     public function test_the_last_dropdown_filters_are_remembered_and_a_bare_open_shows_them(): void

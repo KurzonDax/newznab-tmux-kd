@@ -23,7 +23,7 @@ abstract readonly class ShelfReleaseFilters extends ReleaseListFilters
 
     /**
      * @param  list<int>  $categories  ticked sub-category ids, in menu order
-     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, IMPORTED_ONLY or NOT_IMPORTED
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      */

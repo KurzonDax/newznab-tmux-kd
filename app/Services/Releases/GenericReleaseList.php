@@ -37,12 +37,19 @@ final class GenericReleaseList
     public function __construct(private readonly ReleaseBrowseService $releases) {}
 
     /**
-     * The live count of the list (a cached count would outlive a blacklist sweep, SPEC 5.8).
+     * The live count of the list (a cached count would outlive a blacklist sweep, SPEC 5.8). Not
+     * imported (issue #1264) is the no-choice count minus the Imported only count, each with every
+     * other filter and the list's context.
      *
      * @param  list<int>  $exclusions
      */
     public function count(GenericReleaseFilters $filters, array $exclusions, int $userId): int
     {
+        if ($filters->notImported()) {
+            return $this->count($filters->withCompletion(null), $exclusions, $userId)
+                - $this->count($filters->withCompletion(ReleaseListFilters::IMPORTED_ONLY), $exclusions, $userId);
+        }
+
         return $this->visible($filters, $exclusions, $userId)->count();
     }
 
@@ -156,6 +163,8 @@ final class GenericReleaseList
         $threshold = $filters->threshold();
         if ($filters->importedOnly()) {
             $query->where('releases.is_imported', 1);
+        } elseif ($filters->notImported()) {
+            $query->where('releases.is_imported', 0);
         } elseif ($threshold !== null) {
             $query->where('releases.completion', '>=', $threshold);
         }

@@ -313,7 +313,7 @@ final class SearchControllerTest extends TestCase
         $this->release('Other imported', ['is_imported' => 1]);
         $this->actingAs($this->browserUser());
         $any = (string) $this->get('/search?q=cell')->assertOk()->getContent();
-        $this->assertSame([['', 'Any completion'], ['100', '100% only'], ['95', '95% or more'], ['imported', 'Imported only']], $this->completionMenu($any));
+        $this->assertSame([['', 'Any completion'], ['100', '100% only'], ['95', '95% or more'], ['imported', 'Imported only'], ['not-imported', 'Not imported']], $this->completionMenu($any));
         $this->assertSame('any', $this->cellText($any, 'completion'));
         $this->assertEqualsCanonicalizing([$full, $most, $some, $imported], $this->listedIds($any));
         $this->assertEqualsCanonicalizing([$full], $this->listedIds((string) $this->get('/search?q=cell&completion=100')->assertOk()->getContent()));
@@ -324,7 +324,7 @@ final class SearchControllerTest extends TestCase
         // Imported only: one choice of the menu, at any completion; every row is imported and matches the search
         $only = (string) $this->get('/search?q=cell&completion=imported')->assertOk()->getContent();
         $this->assertEqualsCanonicalizing([$most, $imported], $this->listedIds($only));
-        $this->assertImportedOnlyChosenLast($only);
+        $this->assertImportedOnlyChosen($only);
         $this->assertStringContainsString('href="'.e(route('search')).'" class="pager-line-clear"', $only);
         $this->get('/search?q=cell%20-mostly%20-imported&completion=imported&t=2000')->assertOk()->assertSee('No releases match “cell -mostly -imported” · Movies · imported only.');
 
@@ -360,6 +360,63 @@ final class SearchControllerTest extends TestCase
             ->withArgs(static fn (array $criteria): bool => ! array_key_exists('min_completion', $criteria) && ! array_key_exists('imported_only', $criteria))
             ->andReturn(['ids' => [], 'total' => 0, 'available' => true]);
         $this->get('/search?q=dune&minc=80&completion=')->assertOk();
+    }
+
+    /** Issue #1264: Not imported on a search, in its address only, through the database fallback. */
+    public function test_the_completion_cell_offers_not_imported_and_drops_a_minc_link(): void
+    {
+        $full = $this->release('Cell complete', ['completion' => 100]);
+        $partly = $this->release('Cell partly', ['completion' => 40]);
+        $this->release('Cell imported', ['is_imported' => 1]);
+        $this->release('Other indexed');
+        $user = $this->browserUser();
+        $this->actingAs($user);
+
+        $not = (string) $this->get('/search?q=cell&completion=not-imported')->assertOk()->assertSee('Showing 1–2 of 2 releases')->getContent();
+        $this->assertEqualsCanonicalizing([$full, $partly], $this->listedIds($not));
+        $this->assertNotImportedChosenLast($not);
+        $this->assertStringContainsString('href="'.e(route('search')).'" class="pager-line-clear"', $not);
+        $this->get('/search?q=cell%20-complete%20-partly&completion=not-imported&t=2000')->assertOk()->assertSee('No releases match “cell -complete -partly” · Movies · not imported.');
+
+        // an explicit Completion value: a minc link applies no threshold while it is set and leaves the page's links
+        $withMinc = (string) $this->get('/search?q=cell&minc=80&completion=not-imported')->assertOk()->getContent();
+        $this->assertEqualsCanonicalizing([$full, $partly], $this->listedIds($withMinc));
+        $this->assertStringNotContainsString('minc=80', array_column($this->chips($withMinc), 'url', 'key')['all']);
+
+        // the search remembers nothing
+        $this->assertNull(User::query()->findOrFail($user->id)->releaseViewPreferences('all')['filters'] ?? null);
+    }
+
+    /** Issue #1264: Not imported reaches the index as its own criterion, never with a threshold or Imported only. */
+    public function test_an_index_backed_search_filters_on_the_imported_flag_being_off_for_not_imported(): void
+    {
+        $this->actingAs($this->browserUser());
+        $search = app(SearchServiceInterface::class);
+        $search->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => ($criteria['not_imported'] ?? null) === true && ! array_key_exists('min_completion', $criteria) && ! array_key_exists('imported_only', $criteria))
+            ->andReturn(['ids' => [], 'total' => 0, 'available' => true]);
+        $this->get('/search?q=dune&completion=not-imported&minc=80')->assertOk()->assertSee('No releases match “dune” · not imported.');
+        $search->shouldReceive('searchReleasesFiltered')->once()
+            ->withArgs(static fn (array $criteria): bool => ($criteria['imported_only'] ?? null) === true && ! array_key_exists('not_imported', $criteria))
+            ->andReturn(['ids' => [], 'total' => 0, 'available' => true]);
+        $this->get('/search?q=dune&completion=imported')->assertOk();
+    }
+
+    /** Issue #1264: the database fallback reads Not imported as a condition on releases.is_imported. */
+    public function test_a_database_fallback_lists_only_the_releases_that_were_not_imported(): void
+    {
+        config(['search.default' => 'manticore', 'search.drivers.manticore.max_matches' => 50]);
+        foreach (range(1, 120) as $index) {
+            $this->release('Fallback '.$index, ['is_imported' => $index % 2, 'postdate' => now()->subHours($index)->toDateTimeString()]);
+        }
+        $this->actingAs($this->browserUser());
+        $not = (string) $this->get('/search?q=fallback&completion=not-imported&page=2')->assertOk()->assertSee('Showing 51–60 of 60 releases')->getContent();
+        $this->assertSame(10, substr_count($not, 'data-release-row'));
+        $this->assertSame(0, substr_count($not, 'data-chip-variant="imported"'), 'no row is imported');
+        $this->assertSame(array_map(static fn (int $index): string => 'Fallback '.$index, range(102, 120, 2)), $this->listedNames($not, false));
+
+        // the feed dialog names it among the filters the feed cannot carry
+        $this->get('/search?q=dune&completion=not-imported&minage=2')->assertOk()->assertSee('These filters apply on the website only: Age ≥ 2 d, Not imported.');
     }
 
     /** Issue #1050 section 1: a search's cells live in its address only. */
