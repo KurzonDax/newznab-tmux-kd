@@ -82,7 +82,7 @@ class TraktProvider extends AbstractTvProvider
                             cli()->primaryOver(' → ');
                             cli()->alternate('Skipped (previously failed)');
                         }
-                        $this->settleFailure($row);
+                        $this->settleFailure($row, $release);
                         $skipped++;
 
                         continue;
@@ -185,7 +185,7 @@ class TraktProvider extends AbstractTvProvider
                         } else {
                             // Processing failed, set the episode ID to the next processing group
                             $this->setVideoIdFound($videoId, $row['id'], 0);
-                            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id']);
+                            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id'], parsedInfo: $release);
                             if ($this->echooutput) {
                                 cli()->primaryOver('    → ');
                                 cli()->alternateOver($this->truncateTitle($release['cleanname']));
@@ -195,7 +195,7 @@ class TraktProvider extends AbstractTvProvider
                         }
                     } else {
                         // Processing failed, set the episode ID to the next processing group
-                        $this->settleFailure($row);
+                        $this->settleFailure($row, $release);
                         $this->titleCache[] = $release['cleanname'] ?? null;
                         if ($this->echooutput) {
                             cli()->primaryOver('    → ');
@@ -228,11 +228,12 @@ class TraktProvider extends AbstractTvProvider
 
     /**
      * @param  array<string, mixed>|\ArrayAccess<string, mixed>  $row
+     * @param  array<string, mixed>|null  $parsedInfo  The release's parseInfo() result.
      */
-    private function settleFailure(array|\ArrayAccess $row): void
+    private function settleFailure(array|\ArrayAccess $row, ?array $parsedInfo = null): void
     {
         if ((int) ($row['videos_id'] ?? 0) > 0) {
-            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id']);
+            app(TvEpisodeRevisitService::class)->settleFinalFailure((int) $row['id'], parsedInfo: $parsedInfo);
 
             return;
         }
