@@ -639,7 +639,12 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         $cleanRelname = preg_replace('/^\[[^]]+][_\s.]*/'.$flags, '', $relname);
 
         // Remove a leading host name followed by a pipe, e.g. "PSArips.com | ".
-        $cleanRelname = preg_replace('/^[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*\|\s*/'.$flags, '', $cleanRelname);
+        // A prefix holding a release token is the show name itself
+        // ("Show.S01E01.720p | GRP"), so it stays.
+        if (preg_match('/^[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*\|\s*/'.$flags, $cleanRelname, $hostHits) === 1
+            && preg_match('/'.$following.'/'.$flags, $hostHits[0]) !== 1) {
+            $cleanRelname = substr($cleanRelname, strlen($hostHits[0]));
+        }
 
         if (preg_match('/^([^a-z0-9]{2,}|(sample|proof|repost)-)(?P<name>[\w .\-!&]+?)'.$following.'/'.$flags, $cleanRelname, $hits)) {
             $showName = $hits['name'];

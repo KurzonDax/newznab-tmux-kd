@@ -151,27 +151,18 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $this->assertSame('Sweet Home', $info['cleanname']);
     }
 
+    /**
+     * @param  array<string, int|string>  $expected
+     */
     #[Test]
-    public function a_pipe_after_the_episode_marker_keeps_todays_result(): void
+    #[DataProvider('namesWithALaterPipe')]
+    public function a_pipe_after_the_episode_marker_leaves_the_show_name_alone(string $releaseName, array $expected): void
     {
-        $this->assertEquals(
-            [
-                'name' => 'Altered Carbon',
-                'country' => 'CA',
-                'cleanname' => 'Altered Carbon (2018)',
-                'season' => 1,
-                'episode' => 9,
-                'episode_title' => '',
-                'airdate' => '',
-            ],
-            (new LocalDbProvider)->parseInfo(
-                'Altered Carbon S01E09 (2018) 1080p 10bit WEBRip | RZeroX ~ R3FL3X x265 DDP5.1 5.1 English ESub',
-            ),
-        );
+        $this->assertSame($expected, (new LocalDbProvider)->parseInfo($releaseName));
     }
 
     #[Test]
-    public function a_name_with_invalid_utf8_keeps_todays_result(): void
+    public function a_name_with_invalid_utf8_is_not_parsed_and_raises_no_warning(): void
     {
         $warnings = [];
         set_error_handler(static function (int $errno, string $message) use (&$warnings): bool {
@@ -204,6 +195,23 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $method = new \ReflectionMethod($provider, 'buildUpdateQuery');
 
         return $method->invoke($provider, 123, $show);
+    }
+
+    /**
+     * @return array<string, array{string, array<string, int|string>}>
+     */
+    public static function namesWithALaterPipe(): array
+    {
+        return [
+            'space-separated name' => [
+                'Altered Carbon S01E09 (2018) 1080p 10bit WEBRip | RZeroX ~ R3FL3X x265 DDP5.1 5.1 English ESub',
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon (2018)', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+            ],
+            'dotted name' => [
+                'Altered.Carbon.S01E09.1080p.WEB | RZeroX',
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+            ],
+        ];
     }
 
     /**
