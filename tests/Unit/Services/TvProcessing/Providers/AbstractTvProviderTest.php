@@ -129,6 +129,58 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         }
     }
 
+    #[Test]
+    public function a_bracketed_tag_followed_by_a_dot_is_removed_from_the_name(): void
+    {
+        $info = (new LocalDbProvider)->parseInfo(
+            '[求婚大作战].Operation.Love.2007.S01E02.1080p.friDay.WEB-DL.H264.AAC-UBWEB.nfo',
+        );
+
+        $this->assertIsArray($info);
+        $this->assertSame('Operation Love', $info['name']);
+        $this->assertSame(1, $info['season']);
+        $this->assertSame(2, $info['episode']);
+    }
+
+    #[Test]
+    public function a_space_separated_name_loses_its_host_name_prefix(): void
+    {
+        $info = (new LocalDbProvider)->parseInfo('MoviezAddiction.Me | Sweet Home S01E01');
+
+        $this->assertIsArray($info);
+        $this->assertSame('Sweet Home', $info['cleanname']);
+    }
+
+    /**
+     * @param  array<string, int|string>  $expected
+     */
+    #[Test]
+    #[DataProvider('namesWithALaterPipe')]
+    public function a_pipe_after_the_episode_marker_leaves_the_show_name_alone(string $releaseName, array $expected): void
+    {
+        $this->assertSame($expected, (new LocalDbProvider)->parseInfo($releaseName));
+    }
+
+    #[Test]
+    public function a_name_with_invalid_utf8_is_not_parsed_and_raises_no_warning(): void
+    {
+        $warnings = [];
+        set_error_handler(static function (int $errno, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
+
+        try {
+            $info = (new LocalDbProvider)->parseInfo("Caf\xE9.Show.S01E02.720p.HDTV.x264-GRP");
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertFalse($info);
+        $this->assertSame([], $warnings);
+    }
+
     private function makeProvider(): TraktProvider
     {
         return new TraktProvider;
@@ -143,6 +195,23 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $method = new \ReflectionMethod($provider, 'buildUpdateQuery');
 
         return $method->invoke($provider, 123, $show);
+    }
+
+    /**
+     * @return array<string, array{string, array<string, int|string>}>
+     */
+    public static function namesWithALaterPipe(): array
+    {
+        return [
+            'space-separated name' => [
+                'Altered Carbon S01E09 (2018) 1080p 10bit WEBRip | RZeroX ~ R3FL3X x265 DDP5.1 5.1 English ESub',
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon (2018)', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+            ],
+            'dotted name' => [
+                'Altered.Carbon.S01E09.1080p.WEB | RZeroX',
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+            ],
+        ];
     }
 
     /**
@@ -185,6 +254,46 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
             'airdate' => [
                 'Example.Show.2024.01.15.720p.HDTV.x264',
                 ['cleanname' => 'Example Show', 'season' => 0, 'episode' => 0, 'airdate' => '2024-01-15'],
+            ],
+            'comma in the title' => [
+                'Be.Cool,.Scooby-Doo!.S01E01.1080p.WEB-DL.x264-GRP',
+                ['cleanname' => 'Be Cool Scooby-Doo', 'season' => 1, 'episode' => 1, 'airdate' => ''],
+            ],
+            'several commas in the title' => [
+                'Rock,.Paper,.Scissors.S01E01.1080p.WEB.h264-IVy',
+                ['cleanname' => 'Rock Paper Scissors', 'season' => 1, 'episode' => 1, 'airdate' => ''],
+            ],
+            'comma before a long title' => [
+                'Nadia,.le.secret.de.leau.bleue.S01E29.FRENCH.1080p.WEB-DL-GRP',
+                ['cleanname' => 'Nadia le secret de leau bleue', 'season' => 1, 'episode' => 29, 'airdate' => ''],
+            ],
+            'comma and apostrophe in the title' => [
+                "Anyway,.I'm.Falling.In.Love.With.You.S02E01.1080p.WEB-DL-GRP",
+                ['cleanname' => 'Anyway Im Falling In Love With You', 'season' => 2, 'episode' => 1, 'airdate' => ''],
+            ],
+            'host name prefix with a pipe' => [
+                'PSArips.com | The.Penguin.S01E08.1080p.WEB.x265-PSA',
+                ['cleanname' => 'The Penguin', 'season' => 1, 'episode' => 8, 'airdate' => ''],
+            ],
+            'another host name prefix with a pipe' => [
+                'PSArips.com | Animal.Control.S05E07.1080p.WEB.x265-PSA',
+                ['cleanname' => 'Animal Control', 'season' => 5, 'episode' => 7, 'airdate' => ''],
+            ],
+            'accented letter in the first word' => [
+                'Caçadores.da.Verdade.S01E01.1080p.WEB-DL-GRP',
+                ['cleanname' => 'Cacadores da Verdade', 'season' => 1, 'episode' => 1, 'airdate' => ''],
+            ],
+            'accented letter in the last word' => [
+                'Voz.da.Consciência.S01E03.1080p.WEB-DL-GRP',
+                ['cleanname' => 'Voz da Consciencia', 'season' => 1, 'episode' => 3, 'airdate' => ''],
+            ],
+            'accented letter in a short title' => [
+                'La.Mesías.S01E01.1080p.WEB-DL-GRP',
+                ['cleanname' => 'La Mesias', 'season' => 1, 'episode' => 1, 'airdate' => ''],
+            ],
+            'accented letter in a long title' => [
+                'O.Mistério.da.Fazenda.Blind.Frog.S04E01.1080p.WEB-DL-GRP',
+                ['cleanname' => 'O Misterio da Fazenda Blind Frog', 'season' => 4, 'episode' => 1, 'airdate' => ''],
             ],
         ];
     }
