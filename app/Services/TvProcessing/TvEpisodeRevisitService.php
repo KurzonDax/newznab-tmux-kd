@@ -157,16 +157,16 @@ final class TvEpisodeRevisitService
             return false;
         }
 
-        $scheme = clone $episodes;
+        $sameScheme = clone $episodes;
         if ($season === null) {
-            $scheme->where('series', '>', 0);
+            $sameScheme->where('series', '>', 0);
         } elseif ($season >= self::YEAR_SEASON_MINIMUM) {
-            $scheme->where('series', '>=', self::YEAR_SEASON_MINIMUM);
+            $sameScheme->where('series', '>=', self::YEAR_SEASON_MINIMUM);
         } else {
-            $scheme->whereBetween('series', [1, self::YEAR_SEASON_MINIMUM - 1]);
+            $sameScheme->whereBetween('series', [1, self::YEAR_SEASON_MINIMUM - 1]);
         }
 
-        $newest = $scheme->orderByDesc('series')->orderByDesc('episode')->first(['series', 'episode']);
+        $newest = $sameScheme->orderByDesc('series')->orderByDesc('episode')->first(['series', 'episode']);
         if ($newest === null) {
             // Only a show that has just started may still get its episode list filled.
             $started = Video::query()->whereKey($videoId)->value('started');

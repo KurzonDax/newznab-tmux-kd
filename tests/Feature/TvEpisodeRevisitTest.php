@@ -1075,18 +1075,7 @@ class TvEpisodeRevisitTest extends TestCase
 
         ProductionTables::fromAuthority()->create('videos_aliases', ['videos_id', 'title']);
 
-        Schema::create('tv_info', function (Blueprint $table): void {
-            $table->unsignedInteger('videos_id')->primary();
-            $table->text('summary');
-            $table->string('publisher');
-            $table->string('localzone');
-            $table->string('original_language', 8)->default('');
-            $table->unsignedTinyInteger('status')->default(0);
-            $table->string('content_rating_us', 8)->default('');
-            $table->date('premiered')->nullable();
-            $table->unsignedInteger('networks_id')->nullable();
-            $table->timestamp('details_refreshed_at')->nullable();
-        });
+        ProductionTables::fromAuthority()->create('tv_info');
 
         Schema::create('tv_episodes', function (Blueprint $table): void {
             $table->increments('id');
