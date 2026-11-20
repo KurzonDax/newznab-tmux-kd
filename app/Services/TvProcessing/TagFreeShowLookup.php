@@ -6,12 +6,7 @@ namespace App\Services\TvProcessing;
 
 use App\Models\Release;
 use App\Services\TvProcessing\Pipes\AbstractTvProviderPipe;
-use App\Services\TvProcessing\Pipes\LocalDbPipe;
 use App\Services\TvProcessing\Pipes\ParseInfoPipe;
-use App\Services\TvProcessing\Pipes\TmdbPipe;
-use App\Services\TvProcessing\Pipes\TraktPipe;
-use App\Services\TvProcessing\Pipes\TvdbPipe;
-use App\Services\TvProcessing\Pipes\TvMazePipe;
 use App\Services\TvProcessing\Providers\LocalDbProvider;
 use Illuminate\Pipeline\Pipeline;
 
@@ -36,7 +31,7 @@ final class TagFreeShowLookup
      */
     public function __construct(?iterable $pipes = null)
     {
-        $this->pipes = collect($pipes ?? [new LocalDbPipe, new TvdbPipe, new TvMazePipe, new TmdbPipe, new TraktPipe])
+        $this->pipes = collect($pipes ?? TvProcessingPipeline::lookupPipes())
             ->reject(static fn (AbstractTvProviderPipe $pipe): bool => $pipe instanceof ParseInfoPipe)
             ->sortBy(static fn (AbstractTvProviderPipe $pipe): int => $pipe->getPriority())
             ->values()

@@ -310,13 +310,22 @@ class TvProcessingPipeline
      */
     public static function createDefault(bool $echoOutput = true): self
     {
-        return new self([
-            new ParseInfoPipe,
+        return new self([new ParseInfoPipe, ...self::lookupPipes()], $echoOutput);
+    }
+
+    /**
+     * New instances of the standard lookup pipes, without the parsing pipe.
+     *
+     * @return list<AbstractTvProviderPipe>
+     */
+    public static function lookupPipes(): array
+    {
+        return [
             new LocalDbPipe,
             new TvdbPipe,
             new TvMazePipe,
             new TmdbPipe,
             new TraktPipe,
-        ], $echoOutput);
+        ];
     }
 }

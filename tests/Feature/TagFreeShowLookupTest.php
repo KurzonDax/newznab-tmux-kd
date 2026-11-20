@@ -367,6 +367,22 @@ final class TagFreeShowLookupTest extends TestCase
     }
 
     #[Test]
+    public function a_tag_free_lookup_a_provider_could_not_answer_stays_pending(): void
+    {
+        $this->remote->unavailable('tvdb', 'monk');
+        $this->insertRelease(1, 'tv4a-monk.s03e12-1080p.mkv');
+
+        $result = $this->pipeline()->processRelease(DB::table('releases')->find(1));
+
+        $this->assertFalse($result['matched']);
+        $this->assertContains(['tvdb', 'monk'], $this->remote->searches);
+        $release = DB::table('releases')->find(1);
+        $this->assertSame(0, (int) $release->videos_id);
+        $this->assertSame(0, (int) $release->tv_episodes_id, 'still pending');
+        $this->assertNull($release->tv_episode_lookup_attempted_at);
+    }
+
+    #[Test]
     public function a_title_cased_tag_is_removed(): void
     {
         $this->insertShow(10, 'Highlander: The Raven', [[1, 3]]);
@@ -543,6 +559,14 @@ final class TagFreeRemote
     /** @var list<array{string, string}> provider and looked-up clean name */
     public array $lookups = [];
 
+    /** @var array<string, list<string>> names each provider cannot be asked about */
+    private array $unavailable = [];
+
+    public function unavailable(string $provider, string $name): void
+    {
+        $this->unavailable[$provider][] = mb_strtolower($name);
+    }
+
     /**
      * @param  list<array{int, int}>  $episodes
      */
@@ -557,6 +581,11 @@ final class TagFreeRemote
     public function search(string $provider, string $name): array|false
     {
         $this->searches[] = [$provider, $name];
+        if (\in_array(mb_strtolower($name), $this->unavailable[$provider] ?? [], true)) {
+            app(ProviderGateway::class)->report($provider, ProviderOutcome::Unavailable);
+
+            return false;
+        }
         $show = $this->shows[$provider][mb_strtolower($name)] ?? null;
         if ($show === null) {
             return false;
