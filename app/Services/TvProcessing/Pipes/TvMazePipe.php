@@ -100,6 +100,12 @@ class TvMazePipe extends AbstractTvProviderPipe
                 $tvmazeShow = $tvmaze->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
+            // Then try the numbered title, for a show whose title carries the year ("Sealab 2021")
+            $numberedTitle = AbstractTvProvider::numberedTitle($parsedInfo);
+            if (! is_array($tvmazeShow) && $context->videosId <= 0 && $numberedTitle !== '') {
+                $tvmazeShow = $tvmaze->getShowInfo($numberedTitle);
+            }
+
             if (is_array($tvmazeShow)) {
                 // Check if we have a valid country
                 if (isset($parsedInfo['country']) && strlen((string) $parsedInfo['country']) === 2) {

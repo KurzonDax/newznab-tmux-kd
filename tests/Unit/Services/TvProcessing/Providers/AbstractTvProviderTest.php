@@ -110,13 +110,74 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
     {
         $provider = new LocalDbProvider;
         foreach ([
-            'Show.S01E02' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 2, 'episode_title' => '', 'airdate' => ''],
-            'Show.S01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 'all', 'episode_title' => '', 'airdate' => ''],
-            'Show.2024.05.01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 0, 'episode' => 0, 'episode_title' => '', 'airdate' => '2024-05-01'],
-            'Show.S03E05.Episode.Title' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 3, 'episode' => 5, 'episode_title' => '', 'airdate' => ''],
+            'Show.S01E02' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 2, 'episode_title' => '', 'airdate' => '', 'numbered_title' => ''],
+            'Show.S01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 1, 'episode' => 'all', 'episode_title' => '', 'airdate' => '', 'numbered_title' => ''],
+            'Show.2024.05.01' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 0, 'episode' => 0, 'episode_title' => '', 'airdate' => '2024-05-01', 'numbered_title' => ''],
+            'Show.S03E05.Episode.Title' => ['name' => 'Show', 'country' => '', 'cleanname' => 'Show', 'season' => 3, 'episode' => 5, 'episode_title' => '', 'airdate' => '', 'numbered_title' => ''],
         ] as $name => $expected) {
             $this->assertEquals($expected, $provider->parseInfo($name), $name);
         }
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string, string, int, int|string}>
+     */
+    public static function numberedTitles(): iterable
+    {
+        yield 'year before the episode tag' => ['Sealab.2021.S01E10.1080p.WEB.H264-OUTPOST31.mkv', 'Sealab 2021', 'Sealab', 'Sealab (2021)', 1, 10, ''];
+        yield 'premiere year of a same-named show' => ['The.Flash.2014.S01E01.1080p.BluRay.x264-GRP', 'The Flash 2014', 'The Flash', 'The Flash (2014)', 1, 1, ''];
+        yield 'title number then premiere year' => ['Chief.Detective.1958.2024.S01E01.Man.From.a.Small.City.1080p.DSNP.WEB-DL.AAC2.0.H.264-MARK', 'Chief Detective 1958', 'Chief Detective', 'Chief Detective (1958)', 1, 1, 'Man From a Small City'];
+        yield 'second title-number form' => ['Reply.1988.2015.S01E01.1080p.DSNP.WEB-DL.H.264.AAC-UBWEB', 'Reply 1988', 'Reply', 'Reply (1988)', 1, 1, ''];
+        yield 'numbers in the name' => ['Ranma.1.2.2024.S03E02.1080p.WEB.H264-SUGOI', 'Ranma 1 2 2024', 'Ranma 1 2', 'Ranma 1 (2024)', 3, 2, ''];
+        yield 'season pack' => ['Sealab.2021.S04.iNTERNAL.DVDRip.XviD-VCDVaULT', 'Sealab 2021', 'Sealab', 'Sealab (2021)', 4, 'all', ''];
+        yield 'NxNN episode tag' => ['Sealab.2021.1x10.DVDRip.XviD-GRP', 'Sealab 2021', 'Sealab', 'Sealab (2021)', 1, 10, ''];
+        yield 'bare episode tag' => ['Armed.Reaction.2021.E01.1080p.HDTV.DD5.1.x264-KMX', 'Armed Reaction 2021', 'Armed Reaction', 'Armed Reaction (2021)', 1, 1, ''];
+        yield 'title number of a whole-word show' => ['Galactica.1980.S01E01.DVDRip', 'Galactica 1980', 'Galactica', 'Galactica (1980)', 1, 1, ''];
+        yield 'title number after two words' => ['Prime.Suspect.1973.S01E01.720p', 'Prime Suspect 1973', 'Prime Suspect', 'Prime Suspect (1973)', 1, 1, ''];
+        yield 'no year' => ['The.Flash.S04E01.1080p.BluRay.x264-GRP', '', 'The Flash', 'The Flash', 4, 1, ''];
+        yield 'year after the episode tag' => ['The.Mentalist.S01E01.2008.1080p.Amazon.WEB-DL.AVC.DDP.5.1-4X4RYA-DBTV', '', 'The Mentalist', 'The Mentalist (2008)', 1, 1, ''];
+        yield 'date after the episode tag' => ['Saturday.Night.Live.S52E04.Inde.Navarrette.October.31.2026.2160p.PCOK.WEB-DL.DD+5.1.Atmos.HDR.H.265-PlayWEB', '', 'Saturday Night Live', 'Saturday Night Live', 52, 4, 'Inde Navarrette October 31'];
+        yield 'year then a year-numbered season' => ['Show.2009.Part1.720p', '', 'Show', 'Show (2009)', '2009', 1, ''];
+        yield 'part tag' => ['Show.2010.Part.1.720p', '', 'Show', 'Show (2010)', 1, 1, ''];
+    }
+
+    #[Test]
+    #[DataProvider('numberedTitles')]
+    public function a_year_before_the_episode_tag_gives_the_release_a_numbered_title(
+        string $releaseName,
+        string $numberedTitle,
+        string $name,
+        string $cleanname,
+        int|string $season,
+        int|string $episode,
+        string $episodeTitle,
+    ): void {
+        $info = (new LocalDbProvider)->parseInfo($releaseName);
+
+        $this->assertIsArray($info);
+        $this->assertSame($numberedTitle, $info['numbered_title']);
+        $this->assertSame($name, $info['name']);
+        $this->assertSame($cleanname, $info['cleanname']);
+        $this->assertSame($season, $info['season']);
+        $this->assertSame($episode, $info['episode']);
+        $this->assertSame($episodeTitle, $info['episode_title']);
+        $this->assertSame('', $info['airdate']);
+    }
+
+    #[Test]
+    public function names_without_a_season_or_episode_tag_have_no_numbered_title(): void
+    {
+        $provider = new LocalDbProvider;
+
+        $titleYear = $provider->parseInfo('Sterling.Point.2026');
+        $this->assertIsArray($titleYear);
+        $this->assertSame('', $titleYear['numbered_title']);
+        $this->assertSame('Sterling Point (2026)', $titleYear['cleanname']);
+
+        $dated = $provider->parseInfo('Show.2010.2011.01.05.720p');
+        $this->assertIsArray($dated);
+        $this->assertSame('', $dated['numbered_title']);
+        $this->assertSame('2011-01-05', $dated['airdate']);
     }
 
     #[Test]
@@ -228,11 +289,11 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         return [
             'space-separated name' => [
                 'Altered Carbon S01E09 (2018) 1080p 10bit WEBRip | RZeroX ~ R3FL3X x265 DDP5.1 5.1 English ESub',
-                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon (2018)', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon (2018)', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => '', 'numbered_title' => ''],
             ],
             'dotted name' => [
                 'Altered.Carbon.S01E09.1080p.WEB | RZeroX',
-                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+                ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => '', 'numbered_title' => ''],
             ],
         ];
     }

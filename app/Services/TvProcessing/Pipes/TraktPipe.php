@@ -99,6 +99,12 @@ class TraktPipe extends AbstractTvProviderPipe
                 $traktShow = $trakt->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
+            // Then try the numbered title, for a show whose title carries the year ("Sealab 2021")
+            $numberedTitle = AbstractTvProvider::numberedTitle($parsedInfo);
+            if (! is_array($traktShow) && $context->videosId <= 0 && $numberedTitle !== '') {
+                $traktShow = $trakt->getShowInfo($numberedTitle);
+            }
+
             if (is_array($traktShow)) {
                 $videoId = $trakt->add($traktShow);
                 $siteId = (int) $traktShow['trakt'];

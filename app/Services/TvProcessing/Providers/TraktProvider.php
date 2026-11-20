@@ -114,6 +114,11 @@ class TraktProvider extends AbstractTvProvider
 
                         // Get the show from TRAKT
                         $traktShow = $this->getShowInfo((string) $release['cleanname']);
+                        $isEpisodeRevisit = (int) ($row['videos_id'] ?? 0) > 0;
+                        $numberedTitle = self::numberedTitle($release);
+                        if (! \is_array($traktShow) && ! $isEpisodeRevisit && $numberedTitle !== '') {
+                            $traktShow = $this->getShowInfo($numberedTitle);
+                        }
 
                         if (\is_array($traktShow)) {
                             $videoId = $this->add($traktShow);

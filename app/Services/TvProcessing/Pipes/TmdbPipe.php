@@ -101,6 +101,12 @@ class TmdbPipe extends AbstractTvProviderPipe
                 $tmdbShow = $tmdb->getShowInfo($nameWithoutYear, (int) $yearMatch[2]);
             }
 
+            // Then try the numbered title, for a show whose title carries the year ("Sealab 2021")
+            $numberedTitle = AbstractTvProvider::numberedTitle($parsedInfo);
+            if (! is_array($tmdbShow) && $context->videosId <= 0 && $numberedTitle !== '') {
+                $tmdbShow = $tmdb->getShowInfo($numberedTitle);
+            }
+
             if (is_array($tmdbShow)) {
                 // Check if we have a valid country
                 if (isset($parsedInfo['country']) && strlen((string) $parsedInfo['country']) === 2) {
