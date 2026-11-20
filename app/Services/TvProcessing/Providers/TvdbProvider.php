@@ -11,12 +11,11 @@ use App\Services\ReleaseImageService;
 use App\Services\TmdbClient;
 use App\Services\TraktService;
 use App\Services\TvBannerService;
-use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ParseException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\ResourceNotFoundException;
 use CanIHaveSomeCoffee\TheTVDbAPI\Exception\UnauthorizedException;
 use CanIHaveSomeCoffee\TheTVDbAPI\TheTVDbAPI;
 use GuzzleHttp\Exception\TransferException;
-use Symfony\Component\Serializer\Exception\ExceptionInterface;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Class TvdbProvider -- functions used to post process releases against TVDB.
@@ -48,8 +47,6 @@ class TvdbProvider extends AbstractTvProvider
 
     /**
      * TvdbProvider constructor.
-     *
-     * @throws \Exception
      */
     public function __construct()
     {
@@ -274,10 +271,6 @@ class TvdbProvider extends AbstractTvProvider
 
     /**
      * @return array<string, mixed>
-     *
-     * @throws UnauthorizedException
-     * @throws ParseException
-     * @throws ExceptionInterface
      */
     public function getShowInfo(string $name, ?int $releaseYear = null): bool|array
     {
@@ -297,6 +290,10 @@ class TvdbProvider extends AbstractTvProvider
             } catch (UnauthorizedException $error) {
                 cli()->error('Not authorized to access TVDB');
             }
+        } catch (\Exception $error) {
+            // An error response (any status but 200, 401 and 404) or an answer that is not JSON.
+            Log::warning(sprintf('TVDB search for "%s" failed: %s', $name, $error->getMessage()));
+            $response = false;
         }
 
         if (\is_array($response)) {
@@ -341,10 +338,6 @@ class TvdbProvider extends AbstractTvProvider
 
     /**
      * @return array<string, mixed>
-     *
-     * @throws ParseException
-     * @throws UnauthorizedException
-     * @throws ExceptionInterface
      */
     public function getEpisodeInfo(int|string $siteId, int|string $series, int|string $episode, int $videoId = 0): bool|array
     {
@@ -362,6 +355,10 @@ class TvdbProvider extends AbstractTvProvider
                     } catch (UnauthorizedException $error) {
                         cli()->error('Not authorized to access TVDB');
                     }
+                } catch (\Exception $error) {
+                    Log::warning(sprintf('TVDB episode list for series %d failed: %s', (int) $siteId, $error->getMessage()));
+
+                    return false;
                 }
             } else {
                 try {
@@ -378,6 +375,10 @@ class TvdbProvider extends AbstractTvProvider
                     } catch (UnauthorizedException) {
                         cli()->error('Not authorized to access TVDB');
                     }
+
+                    return false;
+                } catch (\Exception $error) {
+                    Log::warning(sprintf('TVDB episode lookup for series %d failed: %s', (int) $siteId, $error->getMessage()));
 
                     return false;
                 }
@@ -404,9 +405,6 @@ class TvdbProvider extends AbstractTvProvider
 
     /**
      * @return array<string, mixed>
-     *
-     * @throws ExceptionInterface
-     * @throws ParseException
      */
     public function formatShowInfo(mixed $show): array
     {
@@ -424,6 +422,9 @@ class TvdbProvider extends AbstractTvProvider
             } catch (UnauthorizedException $error) {
                 cli()->error('Not authorized to access TVDB');
             }
+        } catch (\Exception $error) {
+            Log::warning(sprintf('TVDB artworks for series %d failed: %s', (int) $show->tvdb_id, $error->getMessage()));
+            $this->posterUrl = '';
         }
 
         $imdbId = '';
@@ -574,6 +575,10 @@ class TvdbProvider extends AbstractTvProvider
             } catch (UnauthorizedException $error) {
                 cli()->warning('Could not reach TVDB API. Running in local mode only!', true);
                 $this->local = true;
+            } catch (\Exception $error) {
+                // An error response on login is handled like an unreachable TVDB: no token, no local mode.
+                Log::warning(sprintf('TVDB login failed: %s', $error->getMessage()));
+                $this->client->setToken(null);
             }
 
             if ($this->token !== '') {
