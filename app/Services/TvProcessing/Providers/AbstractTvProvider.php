@@ -555,7 +555,8 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      */
     public function parseInfo(string $relname): bool|array
     {
-        $episodeInfo = $this->parseSeasonEp($relname);
+        $markerOffset = null;
+        $episodeInfo = $this->parseSeasonEp($relname, $markerOffset);
 
         $titleYear = TitleYearName::parse($relname);
         if ($titleYear !== null
@@ -606,8 +607,9 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
             if (isset($showInfo['season'], $showInfo['episode'])) {
                 if (! isset($showInfo['airdate'])) {
-                    if (preg_match('/[^a-z0-9](?P<year>(19|20)(\d{2}))[^a-z0-9]/i', $relname, $yearMatch)) {
-                        $showInfo['cleanname'] .= ' ('.$yearMatch['year'].')';
+                    $showYear = $this->parseShowYear($relname, $markerOffset, (int) $showInfo['season']);
+                    if ($showYear !== null) {
+                        $showInfo['cleanname'] .= ' ('.$showYear.')';
                     }
                     if (\is_array($showInfo['episode'])) {
                         $showInfo['episode'] = $showInfo['episode'][0];
@@ -788,12 +790,61 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     }
 
     /**
+     * Returns the first year in the name that can be the show's year.
+     *
+     * A year written after the season/episode marker as part of a full date
+     * is the air date's year, not the show's, unless the season is 1: a first
+     * season airs in the show's premiere year or just after.
+     */
+    private function parseShowYear(string $relname, ?int $markerOffset, int $season): ?string
+    {
+        if (preg_match_all('/(?<=[^a-z0-9])(19|20)\d{2}(?=[^a-z0-9])/i', $relname, $years, PREG_OFFSET_CAPTURE) === false) {
+            return null;
+        }
+
+        foreach ($years[0] as [$year, $offset]) {
+            if ($markerOffset !== null && $offset > $markerOffset && $season !== 1
+                && $this->isYearOfDate($relname, $offset)) {
+                continue;
+            }
+
+            return $year;
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the four-digit year at the given byte offset belongs to a full date.
+     */
+    private function isYearOfDate(string $relname, int $offset): bool
+    {
+        $flags = mb_check_encoding($relname, 'UTF-8') ? 'iu' : 'i';
+        $before = substr($relname, 0, $offset);
+        $after = substr($relname, $offset + 4);
+
+        $month = 'january|february|march|april|may|june|july|august|september|october|november|december'
+            .'|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec'
+            .'|janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro';
+        $separator = '[ ._,-]+(?:de[ ._,-]+)?';
+        $day = '\d{1,2}(?:st|nd|rd|th)?';
+
+        return preg_match('/^[-.\/ ]\d{2}[-.\/ ]\d{2}(?![a-z0-9])/'.$flags, $after) === 1
+            || preg_match('/(?<![a-z0-9])\d{1,2}[-.\/]\d{1,2}[-.\/]$/'.$flags, $before) === 1
+            || preg_match('/(?<![a-z])(?:'.$month.')'.$separator.$day.$separator.'$/'.$flags, $before) === 1
+            || preg_match('/(?<![a-z0-9])'.$day.$separator.'(?:'.$month.')'.$separator.'$/'.$flags, $before) === 1;
+    }
+
+    /**
      * Parses the release searchname for the season/episode/airdate information.
+     *
+     * @param-out int|null $markerOffset  byte offset where the matched season/episode marker starts
      *
      * @return array<string, mixed>
      */
-    private function parseSeasonEp(string $relname): array
+    private function parseSeasonEp(string $relname, ?int &$markerOffset = null): array
     {
+        $markerOffset = null;
         $episodeArr = [];
 
         // S01E01-E02 and S01E01-02
@@ -878,11 +929,17 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         elseif (preg_match('/[_\s][-_][_\s](\d{1,3})[_\s]*[\[(]/i', $relname, $hits)) {
             $episodeArr['season'] = 1;
             $episodeArr['episode'] = (int) $hits[1];
+            $markerOffset = (int) strpos($relname, $hits[0]);
         }
         // Season.1
         elseif (preg_match('/^(.*?)[^a-z0-9]Seasons?[^a-z0-9]?(\d{1,2})/i', $relname, $hits)) {
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = 'all';
+        }
+
+        // Every other branch captures the text before its marker as the first group.
+        if ($episodeArr !== [] && $markerOffset === null) {
+            $markerOffset = strlen($hits[1]) + 1;
         }
 
         return $episodeArr;

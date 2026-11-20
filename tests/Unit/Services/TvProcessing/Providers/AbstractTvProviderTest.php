@@ -130,6 +130,29 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
     }
 
     #[Test]
+    #[DataProvider('datesAfterTheEpisodeMarker')]
+    public function a_date_after_the_episode_marker_is_not_the_show_year(string $releaseName, string $cleanname, int $season, int $episode): void
+    {
+        $info = (new LocalDbProvider)->parseInfo($releaseName);
+
+        $this->assertIsArray($info);
+        $this->assertSame($cleanname, $info['cleanname']);
+        $this->assertSame($season, $info['season']);
+        $this->assertSame($episode, $info['episode']);
+        $this->assertSame('', $info['airdate']);
+    }
+
+    #[Test]
+    #[DataProvider('yearsThatStayTheShowYear')]
+    public function a_year_outside_an_excluded_date_stays_the_show_year(string $releaseName, string $cleanname): void
+    {
+        $info = (new LocalDbProvider)->parseInfo($releaseName);
+
+        $this->assertIsArray($info);
+        $this->assertSame($cleanname, $info['cleanname']);
+    }
+
+    #[Test]
     public function a_bracketed_tag_followed_by_a_dot_is_removed_from_the_name(): void
     {
         $info = (new LocalDbProvider)->parseInfo(
@@ -210,6 +233,96 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
             'dotted name' => [
                 'Altered.Carbon.S01E09.1080p.WEB | RZeroX',
                 ['name' => 'Altered Carbon', 'country' => 'CA', 'cleanname' => 'Altered Carbon', 'season' => 1, 'episode' => 9, 'episode_title' => '', 'airdate' => ''],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string, string, int, int}>
+     */
+    public static function datesAfterTheEpisodeMarker(): array
+    {
+        return [
+            'month name, day, year' => [
+                'Saturday.Night.Live.S52E04.Inde.Navarrette.October.31.2026.2160p.PCOK.WEB-DL.DD+5.1.Atmos.HDR.H.265-PlayWEB',
+                'Saturday Night Live', 52, 4,
+            ],
+            'year-month-day with dots' => [
+                'The.Young.And.The.Restless.S54E029.2026.11.17.1080p.AMZN.WEB-DL.DDP2.0.H.264-Kitsune',
+                'The Young And The Restless', 54, 29,
+            ],
+            'weekday, month name, day, year' => [
+                'Days.of.our.Lives.S62E043.Wednesday.October.21.2026.1080p.PCOK.WEB-DL.DDP2.0.H.264-Kitsune.mkv',
+                'Days of our Lives', 62, 43,
+            ],
+            'day, abbreviated month, year' => [
+                'A Place in the Sun S18E114 Wed 18 Nov 2026: Andalucía, Spain',
+                'A Place in the Sun', 18, 114,
+            ],
+            'ordinal day, month name, year' => [
+                'The Xtra Factor S06E11 (10th October 2009)[WS PDTV(Xvid)] Tiggzz',
+                'The Xtra Factor', 6, 11,
+            ],
+            'Portuguese day, month name, year' => [
+                'Show.S02E05.17.de.novembro.de.2026.1080p.WEB-DL.x264-GRP',
+                'Show', 2, 5,
+            ],
+            'space-separated year-month-day' => [
+                'The Young and the Restless S53E165 2026 06 03 1080p AMZN WEB-DL DDP2 0 H 264-Kitsune',
+                'The Young and the Restless', 53, 165,
+            ],
+            'space-separated year-month-day before an episode title' => [
+                'The Daily Show S31E042 2026 04 01 Dr Mary Claire Haver Host Desi Lydic 1080p AMZN WEB-DL DDP2 0 H 264-Kitsune',
+                'The Daily Show', 31, 42,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function yearsThatStayTheShowYear(): array
+    {
+        return [
+            'year before the marker' => ['Doctor.Who.2005.S01E01.1080p.BluRay.x264-GRP', 'Doctor Who (2005)'],
+            'another year before the marker' => [
+                'Dirty.Laundry.2023.S01E08.1080p.HMAX.WEB-DL.DDP2.0.H.265.DUAL-SiGLA',
+                'Dirty Laundry (2023)',
+            ],
+            'first year before the marker' => ['WWE NXT 2026 S20E50 17 de novembro de 2026', 'WWE NXT (2026)'],
+            'title numbers before the marker' => ['Ranma.1.2.2024.S03E02.1080p.WEB.H264-SUGOI', 'Ranma 1 (2024)'],
+            'dashed title numbers before the marker' => [
+                'State.of.Siege.26-11.2020.S01E02.1080p.ZEE5.WEB-DL.AAC.2.0-EMB',
+                'State of Siege (2020)',
+            ],
+            'bare year after the marker' => [
+                'The.Mentalist.S01E01.2008.1080p.Amazon.WEB-DL.AVC.DDP.5.1-4X4RYA-DBTV',
+                'The Mentalist (2008)',
+            ],
+            'year-month without a day' => [
+                'Star.Trek.Enterprise.S02E02.Carbon.Creek.2001-02.1080p.Bluray.DTSMA.5.1.x264-GRP',
+                'Star Trek Enterprise (2001)',
+            ],
+            'month name and year after the episode number' => [
+                'Show.S02E09.April.2020.1080p.NF.WEB-DL.DDP5.1.x264-GRP',
+                'Show (2020)',
+            ],
+            'audio channels before a year' => ['Show.S02E05.DDP5.1.2026.1080p', 'Show (2026)'],
+            'bare year before a later date' => [
+                'Show.S02E05.2019.Capitulo.de.08.05.2023.1080p',
+                'Show (2019)',
+            ],
+            'season 1 day-month-year' => [
+                'La.na.Minha.Terra.S01E09.Capitulo.de.18.11.2026.1080p.GLBO.WEB-DL.DDP5.1.Atmos.H.264-SiGLA',
+                'La na Minha Terra (2026)',
+            ],
+            'season 1 year-month-day' => [
+                'Iron.Family.S01E01.2024-09-28.1080p.NF.WEB-DL.AAC2.0.x.264-Saon',
+                'Iron Family (2024)',
+            ],
+            'another season 1 year-month-day' => [
+                'Doubt.S01E01.2024-10-11.1080p.NF.WEB-DL.AAC2.0.H.264-Spidey',
+                'Doubt (2024)',
             ],
         ];
     }

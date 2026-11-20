@@ -185,6 +185,35 @@ final class TvArtifactShowResolutionTest extends TestCase
         $this->assertTrue($resolution->isAmbiguous());
     }
 
+    #[Test]
+    public function a_date_year_after_the_episode_marker_does_not_pick_a_newer_same_named_show(): void
+    {
+        $this->createVideo('Saturday Night Live', '1975-10-11');
+        $ukVideoId = $this->createVideo('Saturday Night Live UK', '2026-03-21');
+        DB::table('videos_aliases')->insert([
+            'videos_id' => $ukVideoId,
+            'title' => 'Saturday Night Live (UK)',
+        ]);
+
+        $resolution = $this->resolveName(
+            'Saturday.Night.Live.S52E04.Inde.Navarrette.October.31.2026.2160p.PCOK.WEB-DL.DD+5.1.Atmos.HDR.H.265-PlayWEB',
+        );
+
+        $this->assertSame(0, $resolution->videoId);
+        $this->assertTrue($resolution->isAmbiguous());
+    }
+
+    #[Test]
+    public function a_season_one_date_year_still_rejects_an_older_same_named_show(): void
+    {
+        $this->createVideo('Doubt', '2017-02-15');
+
+        $resolution = $this->resolveName('Doubt.S01E01.2024-10-11.1080p.NF.WEB-DL.AAC2.0.H.264-Spidey');
+
+        $this->assertSame(0, $resolution->videoId);
+        $this->assertFalse($resolution->isAmbiguous());
+    }
+
     /** @return array{int, int} */
     private function createCastleCandidates(): array
     {
@@ -229,6 +258,15 @@ final class TvArtifactShowResolutionTest extends TestCase
             'releases_id' => 99,
             'nfo' => pack('V', strlen($text)).gzcompress($text),
         ]);
+    }
+
+    private function resolveName(string $releaseName): TvShowResolution
+    {
+        $provider = new LocalDbProvider;
+        $showInfo = $provider->parseInfo($releaseName);
+        $this->assertIsArray($showInfo);
+
+        return $provider->resolveByRelease($showInfo, 0);
     }
 
     private function resolveCastle(): TvShowResolution
