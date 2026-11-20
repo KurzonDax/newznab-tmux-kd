@@ -394,6 +394,11 @@ class TmdbProvider extends AbstractTvProvider
         ];
     }
 
+    protected function runEpisodeListDownload(int $siteId, int $videoId): void
+    {
+        $this->getEpisodeInfo($siteId, -1, -1, '', $videoId);
+    }
+
     /**
      * Gets the specific episode info for the parsed release after match
      * Returns a formatted array of episode data or false if no match.
@@ -422,9 +427,13 @@ class TmdbProvider extends AbstractTvProvider
 
             $seasons = TmdbClient::getArray($tvDetails, 'seasons');
             if (empty($seasons)) {
+                $this->recordDownloadedEpisodeList([]);
+
                 return false;
             }
 
+            $listed = [];
+            $complete = true;
             foreach ($seasons as $seriesInfo) {
                 if (! is_array($seriesInfo)) {
                     continue;
@@ -438,15 +447,29 @@ class TmdbProvider extends AbstractTvProvider
                 $seriesData = $this->tmdbClient->getTvSeason((int) $siteId, $seasonNumber);
 
                 if ($seriesData === null) {
+                    $complete = false;
+
                     continue;
                 }
 
                 $episodes = TmdbClient::getArray($seriesData, 'episodes');
                 foreach ($episodes as $ep) {
-                    if (is_array($ep) && $this->checkRequiredAttr($ep, 'tmdbE')) {
+                    if (! is_array($ep)) {
+                        continue;
+                    }
+
+                    $listed[] = [
+                        TmdbClient::getInt($ep, 'season_number', $seasonNumber),
+                        TmdbClient::getInt($ep, 'episode_number'),
+                    ];
+                    if ($this->checkRequiredAttr($ep, 'tmdbE')) {
                         $this->addEpisode($videoId, $this->formatEpisodeInfo($ep));
                     }
                 }
+            }
+
+            if ($complete) {
+                $this->recordDownloadedEpisodeList($listed);
             }
 
             return false;

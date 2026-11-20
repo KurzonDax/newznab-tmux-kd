@@ -416,6 +416,11 @@ class TvMazeProvider extends AbstractTvProvider
         return $hasCover;
     }
 
+    protected function runEpisodeListDownload(int $siteId, int $videoId): void
+    {
+        $this->getEpisodeInfo($siteId, -1, -1, '', $videoId);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -437,8 +442,10 @@ class TvMazeProvider extends AbstractTvProvider
                 $return = $this->formatEpisodeInfo($response);
             }
         } elseif (\is_array($response)) {
+            $listed = [];
             // Handle new show/all episodes and airdate lookups
             foreach ($response as $singleEpisode) {
+                $listed[] = [$singleEpisode->season ?? 0, $singleEpisode->number ?? 0];
                 if ($this->checkRequiredAttr($singleEpisode, 'tvmazeE')) {
                     // If this is an airdate lookup and it matches the airdate, set a return
                     if ($airDate !== '' && $airDate === $singleEpisode->airdate) {
@@ -448,6 +455,9 @@ class TvMazeProvider extends AbstractTvProvider
                         $this->addEpisode($videoId, $this->formatEpisodeInfo($singleEpisode));
                     }
                 }
+            }
+            if ($airDate === '' && $videoId > 0) {
+                $this->recordDownloadedEpisodeList($listed);
             }
         }
 

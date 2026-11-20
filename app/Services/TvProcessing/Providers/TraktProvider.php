@@ -314,6 +314,11 @@ class TraktProvider extends AbstractTvProvider
         ];
     }
 
+    protected function runEpisodeListDownload(int $siteId, int $videoId): void
+    {
+        $this->getEpisodeInfo($siteId, -1, -1, $videoId);
+    }
+
     /**
      * Get episode information from Trakt using all available IDs with fallback.
      *
@@ -567,8 +572,12 @@ class TraktProvider extends AbstractTvProvider
             return;
         }
 
+        $listed = [];
+        $complete = true;
         foreach ($seasons as $seasonInfo) {
             if (! is_array($seasonInfo)) {
+                $complete = false;
+
                 continue;
             }
 
@@ -582,14 +591,25 @@ class TraktProvider extends AbstractTvProvider
                 : $this->client->getSeasonEpisodes((string) $siteId, $seasonNumber, 'full');
 
             if (! is_array($episodes)) {
+                $complete = false;
+
                 continue;
             }
 
             foreach ($episodes as $singleEpisode) {
-                if (is_array($singleEpisode) && $this->checkRequiredAttr($singleEpisode, 'traktE')) {
+                if (! is_array($singleEpisode)) {
+                    continue;
+                }
+
+                $listed[] = [$singleEpisode['season'] ?? 0, $singleEpisode['number'] ?? ($singleEpisode['episode'] ?? 0)];
+                if ($this->checkRequiredAttr($singleEpisode, 'traktE')) {
                     $this->addEpisode($videoId, $this->formatEpisodeInfo($singleEpisode));
                 }
             }
+        }
+
+        if ($complete) {
+            $this->recordDownloadedEpisodeList($listed);
         }
     }
 

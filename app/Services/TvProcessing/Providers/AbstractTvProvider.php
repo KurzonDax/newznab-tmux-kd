@@ -159,6 +159,52 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     abstract public function formatEpisodeInfo(mixed $episode): array;
 
     /**
+     * The (season, number) pairs with a season above 0 that the last bulk episode download
+     * listed, or null while no download has completed with every request answered.
+     *
+     * @var list<array{int, int}>|null
+     */
+    private ?array $downloadedEpisodeList = null;
+
+    /**
+     * Runs the show's bulk episode download, which stores the storable episodes as always, and
+     * returns every (season, number) pair with a season above 0 that the provider listed, read
+     * before checkRequiredAttr() drops the entries that lack a field. Returns null when the
+     * download is incomplete: a request returned no data, or this provider has no download.
+     *
+     * @return list<array{int, int}>|null
+     */
+    public function downloadEpisodeList(int $siteId, int $videoId): ?array
+    {
+        $this->downloadedEpisodeList = null;
+        $this->runEpisodeListDownload($siteId, $videoId);
+
+        return $this->downloadedEpisodeList;
+    }
+
+    /**
+     * Calls this provider's bulk download, getEpisodeInfo($siteId, -1, -1, …) with the video id.
+     */
+    protected function runEpisodeListDownload(int $siteId, int $videoId): void {}
+
+    /**
+     * Records the pairs a bulk download listed; call it only when every request returned data.
+     *
+     * @param  iterable<array{mixed, mixed}>  $pairs
+     */
+    protected function recordDownloadedEpisodeList(iterable $pairs): void
+    {
+        $list = [];
+        foreach ($pairs as [$season, $number]) {
+            if ((int) $season > 0) {
+                $list[] = [(int) $season, (int) $number];
+            }
+        }
+
+        $this->downloadedEpisodeList = $list;
+    }
+
+    /**
      * @return Release[]|Builder[]|\Illuminate\Database\Eloquent\Collection<int, mixed>|\Illuminate\Database\Query\Builder[]|Collection<int, mixed>|int
      */
     public function getTvReleases(string $groupID = '', string $guidChar = '', int $lookupSetting = 1, int $status = 0): array|\Illuminate\Database\Eloquent\Collection|int|Collection // @phpstan-ignore missingType.generics

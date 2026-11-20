@@ -24,7 +24,7 @@ final class TvEpisodeRevisitService
     private const int FINALIZE_CHUNK_SIZE = 100;
 
     /** A parsed season of at least this is a year, compared only with year-numbered seasons. */
-    private const int YEAR_SEASON_MINIMUM = 1900;
+    public const int YEAR_SEASON_MINIMUM = 1900;
 
     /**
      * Finalize known-show rows whose postdate window has elapsed.
@@ -152,8 +152,7 @@ final class TvEpisodeRevisitService
             return true;
         }
 
-        if ((int) TvInfo::query()->where('videos_id', $videoId)->value('status') === TvShowDetails::STATUS_ENDED
-            && ! (clone $episodes)->where('firstaired', '>=', $cutoff->toDateString())->exists()) {
+        if (self::isFinished($videoId)) {
             return false;
         }
 
@@ -189,8 +188,21 @@ final class TvEpisodeRevisitService
         return false;
     }
 
+    /**
+     * Whether a show is finished: TMDB reports it ended and none of its stored episodes aired
+     * inside the revisit window or later. A show without a tv_info row is not finished.
+     */
+    public static function isFinished(int $videoId): bool
+    {
+        return (int) TvInfo::query()->where('videos_id', $videoId)->value('status') === TvShowDetails::STATUS_ENDED
+            && ! TvEpisode::query()
+                ->where('videos_id', $videoId)
+                ->where('firstaired', '>=', TvProcessingCandidateQuery::revisitWindowCutoff()->toDateString())
+                ->exists();
+    }
+
     /** A parsed season or episode number as a positive integer, or null when it is none. */
-    private static function positiveNumber(mixed $value, string $prefix): ?int
+    public static function positiveNumber(mixed $value, string $prefix): ?int
     {
         if (! \is_int($value) && ! \is_string($value)) {
             return null;

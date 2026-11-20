@@ -334,6 +334,11 @@ class TvdbProvider extends AbstractTvProvider
         return $hasCover;
     }
 
+    protected function runEpisodeListDownload(int $siteId, int $videoId): void
+    {
+        $this->getEpisodeInfo($siteId, -1, -1, $videoId);
+    }
+
     /**
      * @return array<string, mixed>
      *
@@ -383,11 +388,14 @@ class TvdbProvider extends AbstractTvProvider
                     $return = $this->formatEpisodeInfo($response);
                 }
             } elseif ($videoId > 0 && \is_array($response)) {
+                $listed = [];
                 foreach ($response as $singleEpisode) {
+                    $listed[] = [$singleEpisode->seasonNumber ?? 0, $singleEpisode->number ?? 0];
                     if ($this->checkRequiredAttr($singleEpisode, 'tvdbE')) {
                         $this->addEpisode($videoId, $this->formatEpisodeInfo($singleEpisode));
                     }
                 }
+                $this->recordDownloadedEpisodeList($listed);
             }
         }
 
