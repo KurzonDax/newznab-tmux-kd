@@ -8,6 +8,7 @@ use App\Enums\ImageAssetProfile;
 use App\Models\Video;
 use App\Services\ReleaseImageService;
 use App\Services\TraktService;
+use App\Services\TvProcessing\TagFreeShowLookup;
 use App\Services\TvProcessing\TvEpisodeRevisitService;
 use DariusIII\TVMaze\TVMaze;
 use Illuminate\Support\Carbon;
@@ -38,6 +39,9 @@ class TraktProvider extends AbstractTvProvider
      */
     private string $localizedTZ = '';
 
+    /** The tag-free pass of the current processSite() run. */
+    private ?TagFreeShowLookup $tagFreeLookup = null;
+
     /**
      * @throws \Exception
      */
@@ -62,6 +66,8 @@ class TraktProvider extends AbstractTvProvider
             return;
         }
 
+        $this->tagFreeLookup = null;
+
         if ($res instanceof \Traversable) {
             $processed = 0;
             $matched = 0;
@@ -82,7 +88,9 @@ class TraktProvider extends AbstractTvProvider
                             cli()->primaryOver(' → ');
                             cli()->alternate('Skipped (previously failed)');
                         }
-                        $this->settleFailure($row, $release);
+                        if (! $this->bindWithoutGroupTag($row, $release)) {
+                            $this->settleFailure($row, $release);
+                        }
                         $skipped++;
 
                         continue;
@@ -200,7 +208,9 @@ class TraktProvider extends AbstractTvProvider
                         }
                     } else {
                         // Processing failed, set the episode ID to the next processing group
-                        $this->settleFailure($row, $release);
+                        if (! $this->bindWithoutGroupTag($row, $release)) {
+                            $this->settleFailure($row, $release);
+                        }
                         $this->titleCache[] = $release['cleanname'] ?? null;
                         if ($this->echooutput) {
                             cli()->primaryOver('    → ');
@@ -229,6 +239,20 @@ class TraktProvider extends AbstractTvProvider
                 cli()->primary(sprintf('%d matched, %d skipped', $matched, $skipped));
             }
         }
+    }
+
+    /**
+     * The final stage's last try for a release whose full name found no show at any stage: the
+     * tag-free pass. Returns whether it bound the release to a show and episode.
+     *
+     * @param  array<string, mixed>|\ArrayAccess<string, mixed>  $row
+     * @param  array<string, mixed>  $parsedInfo  The release's parseInfo() result.
+     */
+    private function bindWithoutGroupTag(array|\ArrayAccess $row, array $parsedInfo): bool
+    {
+        $this->tagFreeLookup ??= app(TagFreeShowLookup::class)->setEchoOutput($this->echooutput);
+
+        return $this->tagFreeLookup->run($row, $parsedInfo, resolveFullName: true)?->result->isMatched() === true;
     }
 
     /**

@@ -39,6 +39,8 @@ class TvProcessingPipeline
 
     protected bool $echoOutput;
 
+    private ?TagFreeShowLookup $tagFreeLookup = null;
+
     /**
      * @var array<string, mixed>
      */
@@ -71,6 +73,7 @@ class TvProcessingPipeline
     {
         $this->pipes->push($pipe);
         $this->pipes = $this->pipes->sortBy(fn (AbstractTvProviderPipe $p) => $p->getPriority());
+        $this->tagFreeLookup = null;
 
         return $this;
     }
@@ -106,7 +109,18 @@ class TvProcessingPipeline
 
         // A provider that could not be asked has not said there is no match: the release
         // stays pending for a later pass instead of being settled as unmatched.
-        if (! $result->result->isMatched() && $gateway->unavailableCount(...self::LOOKUP_PROVIDERS) === $unavailableBefore) {
+        $answered = static fn (): bool => $gateway->unavailableCount(...self::LOOKUP_PROVIDERS) === $unavailableBefore;
+
+        // The full name found no show: look it up once more without a leading group tag.
+        $fullParse = $result->getParsedInfo();
+        if (! $result->result->isMatched() && ! $result->isAmbiguous() && $fullParse !== null && $answered()) {
+            $tagFree = RecoveryCatalog::run($context->releaseId, fn (): ?TvProcessingPassable => $this->tagFreeLookup()->run($release, $fullParse, debug: $debug));
+            if ($tagFree !== null && $tagFree->result->isMatched()) {
+                return $tagFree->toArray();
+            }
+        }
+
+        if (! $result->result->isMatched() && $answered()) {
             app(TvEpisodeRevisitService::class)->settleFinalFailure(
                 $context->releaseId,
                 ambiguous: $result->isAmbiguous(),
@@ -115,6 +129,14 @@ class TvProcessingPipeline
         }
 
         return $result->toArray();
+    }
+
+    /**
+     * The tag-free pass runs through this pipeline's own lookup pipes, kept for the pipeline's life.
+     */
+    private function tagFreeLookup(): TagFreeShowLookup
+    {
+        return $this->tagFreeLookup ??= new TagFreeShowLookup($this->pipes->values()->all());
     }
 
     /**
@@ -288,13 +310,22 @@ class TvProcessingPipeline
      */
     public static function createDefault(bool $echoOutput = true): self
     {
-        return new self([
-            new ParseInfoPipe,
+        return new self([new ParseInfoPipe, ...self::lookupPipes()], $echoOutput);
+    }
+
+    /**
+     * New instances of the standard lookup pipes, without the parsing pipe.
+     *
+     * @return list<AbstractTvProviderPipe>
+     */
+    public static function lookupPipes(): array
+    {
+        return [
             new LocalDbPipe,
             new TvdbPipe,
             new TvMazePipe,
             new TmdbPipe,
             new TraktPipe,
-        ], $echoOutput);
+        ];
     }
 }

@@ -90,10 +90,38 @@ abstract class AbstractTvProviderPipe
         TvProcessingPassable $passable,
         int $videoId,
     ): TvProcessingResult {
-        $provider->setVideoIdFound($videoId, $passable->context->releaseId, 0);
+        if (! $this->bindShowOnly($provider, $passable, $videoId)) {
+            return $this->episodeRequired($videoId);
+        }
         $provider->setVideoNotFound(TvEpisodeRevisitService::NO_MATCH_FOUND, $passable->context->releaseId);
 
         return TvProcessingResult::matched($videoId, 0, $this->getName(), ['no_episode' => true]);
+    }
+
+    /**
+     * Bind the release to the show without an episode, unless the lookup may bind only together
+     * with the episode (the tag-free pass). Returns whether the release was bound.
+     */
+    protected function bindShowOnly(AbstractTvProvider $provider, TvProcessingPassable $passable, int $videoId): bool
+    {
+        if ($passable->requiresEpisode()) {
+            return false;
+        }
+
+        $provider->setVideoIdFound($videoId, $passable->context->releaseId, 0);
+
+        return true;
+    }
+
+    /**
+     * The result for a show found without the episode in a lookup that needs the episode.
+     */
+    protected function episodeRequired(int $videoId): TvProcessingResult
+    {
+        return TvProcessingResult::notFound($this->getName(), [
+            'video_id' => $videoId,
+            'episode_required' => true,
+        ]);
     }
 
     /**

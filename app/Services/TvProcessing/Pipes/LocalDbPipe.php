@@ -85,7 +85,9 @@ class LocalDbPipe extends AbstractTvProviderPipe
         }
 
         if (($parsedInfo['episode'] ?? null) === 'all') {
-            $localDb->setVideoIdFound($videoId, $context->releaseId, 0);
+            if (! $this->bindShowOnly($localDb, $passable, $videoId)) {
+                return $this->episodeRequired($videoId);
+            }
             $localDb->setVideoNotFound(TvEpisodeRevisitService::NO_MATCH_FOUND, $context->releaseId);
 
             return TvProcessingResult::matched($videoId, 0, $this->getName(), ['full_season' => true]);
@@ -123,7 +125,7 @@ class LocalDbPipe extends AbstractTvProviderPipe
 
         // Series matched but no specific episode located
         // Set video ID but mark episode as 0 (needs further lookup)
-        $localDb->setVideoIdFound($videoId, $context->releaseId, 0);
+        $this->bindShowOnly($localDb, $passable, $videoId);
 
         if ($this->echoOutput) {
             cli()->primaryOver('    → ');

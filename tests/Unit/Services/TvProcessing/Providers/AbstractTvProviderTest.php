@@ -265,6 +265,40 @@ class AbstractTvProviderTest extends ImdbScraperTestCase
         $this->assertSame([], $warnings);
     }
 
+    #[Test]
+    #[DataProvider('tagFreeNames')]
+    public function the_tag_free_parse_drops_only_a_leading_group_tag(string $releaseName, ?string $tagFreeCleanname): void
+    {
+        $provider = new LocalDbProvider;
+        $fullParse = $provider->parseInfo($releaseName);
+        $this->assertIsArray($fullParse);
+
+        $tagFreeParse = $provider->tagFreeParse($releaseName, $fullParse);
+
+        $this->assertSame($tagFreeCleanname, $tagFreeParse === null ? null : $tagFreeParse['cleanname']);
+    }
+
+    /**
+     * @return array<string, array{string, string|null}>
+     */
+    public static function tagFreeNames(): array
+    {
+        return [
+            'lower-case tag' => ['aaf-dexters.laboratory.s02e25', 'dexters laboratory'],
+            'title-cased tag' => ['Dim-Highlander.The.Raven.S01e03.Bloodlines.Dvdrip.Xvid', 'Highlander The Raven'],
+            'tag with digits' => ['tv4a-monk.s03e12-1080p.mkv', 'monk'],
+            'eight-character tag' => ['abcdefgh-monk.s03e12', 'monk'],
+            'season-shaped name keeps its season' => ['Rgl-sop.s2 DVDRip XviD.e02', 'sop'],
+            'numbered title' => ['aaf-sealab.2021.s01e10', 'sealab (2021)'],
+            'no dash' => ['Monk.S03E12.720p', null],
+            'one-character tag' => ['a-monk.s03e12', null],
+            'nine-character tag' => ['abcdefghi-monk.s03e12', null],
+            'dash before a non-alphanumeric' => ['aaf-.monk.s03e12', null],
+            'episode token as the tag' => ['S01E01-Monk.S03E12', null],
+            'nothing parseable without the tag' => ['wat-s08e20-seinfeld', null],
+        ];
+    }
+
     private function makeProvider(): TraktProvider
     {
         return new TraktProvider;
