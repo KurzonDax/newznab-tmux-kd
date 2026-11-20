@@ -140,6 +140,10 @@ class TvMazeProvider extends AbstractTvProvider
 
                         // Get the show from TVMaze
                         $tvMazeShow = $this->getShowInfo((string) $release['cleanname']);
+                        $numberedTitle = self::numberedTitle($release);
+                        if (! \is_array($tvMazeShow) && ! $isEpisodeRevisit && $numberedTitle !== '') {
+                            $tvMazeShow = $this->getShowInfo($numberedTitle);
+                        }
 
                         $dupeCheck = false;
 

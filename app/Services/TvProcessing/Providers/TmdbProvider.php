@@ -99,6 +99,10 @@ class TmdbProvider extends AbstractTvProvider
 
                         // Get the show from TMDB
                         $tmdbShow = $this->getShowInfo((string) $release['cleanname']);
+                        $numberedTitle = self::numberedTitle($release);
+                        if (! is_array($tmdbShow) && ! $isEpisodeRevisit && $numberedTitle !== '') {
+                            $tmdbShow = $this->getShowInfo($numberedTitle);
+                        }
 
                         if (is_array($tmdbShow)) {
                             // Check if we have the TMDB ID already, if we do use that Video ID

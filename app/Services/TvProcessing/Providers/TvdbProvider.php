@@ -134,6 +134,10 @@ class TvdbProvider extends AbstractTvProvider
                     );
 
                     $tvdbShow = $this->getShowInfo((string) $release['cleanname']);
+                    $numberedTitle = self::numberedTitle($release);
+                    if (! \is_array($tvdbShow) && $numberedTitle !== '') {
+                        $tvdbShow = $this->getShowInfo($numberedTitle);
+                    }
 
                     if (\is_array($tvdbShow)) {
                         $tvdbShow['country'] = $country;

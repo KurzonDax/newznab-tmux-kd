@@ -32,6 +32,7 @@ use App\Models\VideoAlias;
 use App\Services\TvProcessing\TvArtifactIdentityResolver;
 use App\Services\TvProcessing\TvShowResolution;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 /**
  * Parent class for TV/Film and any similar classes to inherit from.
@@ -192,6 +193,17 @@ abstract class BaseVideoProvider
     }
 
     /**
+     * The release's show title with the year written in front of its episode tag ("Sealab 2021"),
+     * or '' when it has none. Parse arrays built without the key have none.
+     *
+     * @param  array<string, mixed>  $parsedInfo
+     */
+    public static function numberedTitle(array $parsedInfo): string
+    {
+        return (string) ($parsedInfo['numbered_title'] ?? '');
+    }
+
+    /**
      * Resolve a local show without making an irreversible choice between ambiguous title siblings.
      *
      * @param  array<string, mixed>  $showInfo
@@ -212,7 +224,12 @@ abstract class BaseVideoProvider
                 : TvShowResolution::notFound();
         }
 
-        $candidateVideoIds = $this->getEpisodeAwareCandidateVideoIds($title, $type, $source);
+        $candidateVideoIds = $this->getEpisodeAwareCandidateVideoIds(
+            $title,
+            self::numberedTitle($showInfo),
+            $type,
+            $source,
+        );
         if ($candidateVideoIds === []) {
             return $existingVideoId > 0
                 ? TvShowResolution::matched($existingVideoId)
@@ -442,9 +459,12 @@ abstract class BaseVideoProvider
     }
 
     /**
+     * The shows a release can belong to: those matching its clean name with a plausible premiere year,
+     * plus those named by its numbered title ("Sealab 2021"), whose number is part of their name.
+     *
      * @return list<int>
      */
-    private function getEpisodeAwareCandidateVideoIds(string $title, int $type, int $source): array
+    private function getEpisodeAwareCandidateVideoIds(string $title, string $numberedTitle, int $type, int $source): array
     {
         $releaseYear = $this->resolveReleaseYear($title);
         [$matchQualityByVideoId] = $this->getTitleCandidateMatchData(
@@ -454,18 +474,48 @@ abstract class BaseVideoProvider
         );
         $candidateVideoIds = array_keys($matchQualityByVideoId);
 
-        if ($releaseYear === null || $candidateVideoIds === []) {
+        if ($releaseYear !== null && $candidateVideoIds !== []) {
+            $candidateVideoIds = Video::query()
+                ->whereKey($candidateVideoIds)
+                ->get(['id', 'started'])
+                ->filter(fn (Video $video): bool => $this->isPremiereYearPlausible($video->started, $releaseYear))
+                ->pluck('id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        if ($numberedTitle === '') {
             return $candidateVideoIds;
         }
 
-        return Video::query()
-            ->whereKey($candidateVideoIds)
-            ->get(['id', 'started'])
-            ->filter(fn (Video $video): bool => $this->isPremiereYearPlausible($video->started, $releaseYear))
-            ->pluck('id')
-            ->map(static fn (mixed $id): int => (int) $id)
-            ->values()
-            ->all();
+        return array_values(array_unique(array_merge(
+            $candidateVideoIds,
+            $this->getNumberedTitleCandidateVideoIds($numberedTitle, $type, $source),
+        )));
+    }
+
+    /**
+     * The shows whose title or alias has the same show-title key as the numbered title.
+     *
+     * @return list<int>
+     */
+    private function getNumberedTitleCandidateVideoIds(string $numberedTitle, int $type, int $source): array
+    {
+        $numberedTitleKey = $this->showTitleKey($numberedTitle);
+        if ($numberedTitleKey === '') {
+            return [];
+        }
+
+        $videoIds = [];
+        foreach ($this->getCandidateTitleRows([$this->getCandidateLikePattern($numberedTitle)], $type, $source) as $candidate) {
+            $candidateTitle = $candidate->getAttribute('candidate_title');
+            if (is_string($candidateTitle) && $this->showTitleKey($candidateTitle) === $numberedTitleKey) {
+                $videoIds[] = (int) $candidate->id;
+            }
+        }
+
+        return array_values(array_unique($videoIds));
     }
 
     /**
@@ -476,28 +526,13 @@ abstract class BaseVideoProvider
         $titleVariants = $this->getTitleVariants($title);
         $likePatterns = array_map($this->getCandidateLikePattern(...), $titleVariants);
 
-        $videoCandidates = $this->constrainCandidateTitles(
-            $this->getVideoCandidateQuery($type, $source)
-                ->select(['videos.id', 'videos.title as candidate_title']),
-            'videos.title',
-            $likePatterns,
-        )->get();
-
-        $aliasCandidates = $this->constrainCandidateTitles(
-            $this->getVideoCandidateQuery($type, $source)
-                ->select(['videos.id', 'videos_aliases.title as candidate_title'])
-                ->join('videos_aliases', 'videos.id', '=', 'videos_aliases.videos_id'),
-            'videos_aliases.title',
-            $likePatterns,
-        )->get();
-
         /** @var array<int, int> $matchQualityByVideoId */
         $matchQualityByVideoId = [];
 
         /** @var array<int, bool> $preferredSiblingByVideoId */
         $preferredSiblingByVideoId = [];
 
-        foreach ($videoCandidates->concat($aliasCandidates) as $candidate) {
+        foreach ($this->getCandidateTitleRows($likePatterns, $type, $source) as $candidate) {
             $candidateTitle = $candidate->getAttribute('candidate_title');
             if (! is_string($candidateTitle)) {
                 continue;
@@ -515,6 +550,32 @@ abstract class BaseVideoProvider
         }
 
         return [$matchQualityByVideoId, $preferredSiblingByVideoId];
+    }
+
+    /**
+     * Every show title and alias that one of the LIKE patterns matches, as rows of id and candidate_title.
+     *
+     * @param  list<string>  $likePatterns
+     * @return Collection<int, Video>
+     */
+    private function getCandidateTitleRows(array $likePatterns, int $type, int $source): Collection
+    {
+        $videoCandidates = $this->constrainCandidateTitles(
+            $this->getVideoCandidateQuery($type, $source)
+                ->select(['videos.id', 'videos.title as candidate_title']),
+            'videos.title',
+            $likePatterns,
+        )->get();
+
+        $aliasCandidates = $this->constrainCandidateTitles(
+            $this->getVideoCandidateQuery($type, $source)
+                ->select(['videos.id', 'videos_aliases.title as candidate_title'])
+                ->join('videos_aliases', 'videos.id', '=', 'videos_aliases.videos_id'),
+            'videos_aliases.title',
+            $likePatterns,
+        )->get();
+
+        return $videoCandidates->concat($aliasCandidates);
     }
 
     /**

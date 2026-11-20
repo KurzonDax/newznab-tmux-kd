@@ -564,7 +564,8 @@ abstract class AbstractTvProvider extends BaseVideoProvider
     public function parseInfo(string $relname): bool|array
     {
         $markerOffset = null;
-        $episodeInfo = $this->parseSeasonEp($relname, $markerOffset);
+        $markerCanFollowTitleNumber = false;
+        $episodeInfo = $this->parseSeasonEp($relname, $markerOffset, $markerCanFollowTitleNumber);
 
         $titleYear = TitleYearName::parse($relname);
         if ($titleYear !== null
@@ -580,6 +581,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
                 'episode' => self::NO_EPISODE,
                 'airdate' => '',
                 'episode_title' => '',
+                'numbered_title' => '',
             ];
         }
 
@@ -596,6 +598,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
             // Get the Season/Episode/Airdate
             $showInfo += $episodeInfo;
             $showInfo['episode_title'] = $this->parseEpisodeTitle($relname);
+            $numberedTitle = '';
 
             // --- Post-parse correction for daily talk shows misclassified as Season = Year ---
             if (isset($showInfo['season'], $showInfo['episode']) && ! isset($showInfo['airdate'])) {
@@ -615,15 +618,21 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
             if (isset($showInfo['season'], $showInfo['episode'])) {
                 if (! isset($showInfo['airdate'])) {
-                    $showYear = $this->parseShowYear($relname, $markerOffset, (int) $showInfo['season']);
+                    $showYearOffset = null;
+                    $showYear = $this->parseShowYear($relname, $markerOffset, (int) $showInfo['season'], $showYearOffset);
                     if ($showYear !== null) {
                         $showInfo['cleanname'] .= ' ('.$showYear.')';
+                        if ($markerCanFollowTitleNumber
+                            && $this->yearLeadsToMarker($relname, (int) $showYearOffset, (int) $markerOffset)) {
+                            $numberedTitle = $showInfo['name'].' '.$showYear;
+                        }
                     }
                     if (\is_array($showInfo['episode'])) {
                         $showInfo['episode'] = $showInfo['episode'][0];
                     }
                     $showInfo['airdate'] = '';
                 }
+                $showInfo['numbered_title'] = $numberedTitle;
 
                 return $showInfo;
             }
@@ -803,9 +812,12 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      * A year written after the season/episode marker as part of a full date
      * is the air date's year, not the show's, unless the season is 1: a first
      * season airs in the show's premiere year or just after.
+     *
+     * @param-out int|null $yearOffset  byte offset of the returned year
      */
-    private function parseShowYear(string $relname, ?int $markerOffset, int $season): ?string
+    private function parseShowYear(string $relname, ?int $markerOffset, int $season, ?int &$yearOffset = null): ?string
     {
+        $yearOffset = null;
         if (preg_match_all('/(?<=[^a-z0-9])(19|20)\d{2}(?=[^a-z0-9])/i', $relname, $years, PREG_OFFSET_CAPTURE) === false) {
             return null;
         }
@@ -816,10 +828,32 @@ abstract class AbstractTvProvider extends BaseVideoProvider
                 continue;
             }
 
+            $yearOffset = $offset;
+
             return $year;
         }
 
         return null;
+    }
+
+    /**
+     * Whether the year at the given byte offset is written in front of the marker, with only
+     * separators and at most one more year between them ("Sealab.2021.S01E10",
+     * "Chief.Detective.1958.2024.S01E01"). Such a year can be part of the show's title.
+     */
+    private function yearLeadsToMarker(string $relname, int $yearOffset, int $markerOffset): bool
+    {
+        $yearEnd = $yearOffset + 4;
+        if ($yearEnd > $markerOffset) {
+            return false;
+        }
+
+        $year = '(?:19|20)\d{2}';
+
+        return preg_match(
+            '/^[._ -]*(?:(?:'.$year.'|\('.$year.'\)|\['.$year.'\])[._ -]*)?$/',
+            substr($relname, $yearEnd, $markerOffset - $yearEnd),
+        ) === 1;
     }
 
     /**
@@ -845,46 +879,56 @@ abstract class AbstractTvProvider extends BaseVideoProvider
      * Parses the release searchname for the season/episode/airdate information.
      *
      * @param-out int|null $markerOffset  byte offset where the matched season/episode marker starts
+     * @param-out bool $markerCanFollowTitleNumber  whether the marker is a season/episode form that a
+     *                                             year in a show's title can stand in front of
      *
      * @return array<string, mixed>
      */
-    private function parseSeasonEp(string $relname, ?int &$markerOffset = null): array
+    private function parseSeasonEp(string $relname, ?int &$markerOffset = null, bool &$markerCanFollowTitleNumber = false): array
     {
         $markerOffset = null;
+        $markerCanFollowTitleNumber = false;
         $episodeArr = [];
 
         // S01E01-E02 and S01E01-02
         if (preg_match('/^(.*?)[^a-z0-9]s(\d{1,2})[^a-z0-9]?e(\d{1,3})[e-](\d{1,3})[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = [(int) $hits[3], (int) $hits[4]];
         }
         // S01E0102 and S01E01E02
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{2})[^a-z0-9]?e(\d{2})e?(\d{2})[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = (int) $hits[3];
         }
         // S01E01 and S01.E01
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{1,2})[^a-z0-9]?e(\d{1,3})[abr]?[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = (int) $hits[3];
         }
         // S2010E05 and S2010.E05
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{4})[^a-z0-9]?e(\d{1,3})[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = (int) $hits[3];
         }
         // S01
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{1,2})[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = 'all';
         }
         // S01D1 and S1D1
         elseif (preg_match('/^(.*?)[^a-z0-9]s(\d{1,2})[^a-z0-9]?d\d{1}[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = 'all';
         }
         // 1x01 and 101
         elseif (preg_match('/^(.*?)[^a-z0-9](\d{1,2})x(\d{1,3})[^a-z0-9]?/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = (int) $hits[3];
         }
@@ -928,6 +972,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         }
         // Band.Of.Brothers.EP06.Bastogne.DVDRiP.XviD-DEiTY
         elseif (preg_match('/^(.*?)[^a-z0-9]EP?[^a-z0-9]?(\d{1,3})/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = 1;
             $episodeArr['episode'] = (int) $hits[2];
         }
@@ -939,6 +984,7 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         }
         // Season.1
         elseif (preg_match('/^(.*?)[^a-z0-9]Seasons?[^a-z0-9]?(\d{1,2})/i', $relname, $hits)) {
+            $markerCanFollowTitleNumber = true;
             $episodeArr['season'] = (int) $hits[2];
             $episodeArr['episode'] = 'all';
         }

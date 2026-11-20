@@ -198,6 +198,65 @@ final class VideoTitleLookupTest extends TestCase
     }
 
     #[Test]
+    public function a_show_whose_title_carries_a_year_resolves_from_its_numbered_title(): void
+    {
+        $sealabId = $this->createVideo('Sealab 2021', '2000-12-21');
+        $chiefDetectiveId = $this->createVideo('Chief Detective 1958', '2024-04-19');
+
+        $this->assertSame($sealabId, $this->resolve('Sealab.2021.S01E10.1080p.WEB.H264-OUTPOST31.mkv'));
+        $this->assertSame($sealabId, $this->resolve('Sealab.2021.S04.iNTERNAL.DVDRip.XviD-VCDVaULT'));
+        $this->assertSame(
+            $chiefDetectiveId,
+            $this->resolve('Chief.Detective.1958.2024.S01E01.Man.From.a.Small.City.1080p.DSNP.WEB-DL.AAC2.0.H.264-MARK'),
+        );
+    }
+
+    #[Test]
+    public function same_named_shows_resolve_by_the_year_in_front_of_the_episode_tag(): void
+    {
+        $oldFlashId = $this->createVideo('The Flash', '1990-09-20');
+        $this->createAlias($oldFlashId, 'The Flash (1990)');
+        $modernFlashId = $this->createVideo('The Flash (2014)', '2014-10-07');
+        $this->createVideo('Doctor Who', '1963-11-23');
+        $modernDoctorWhoId = $this->createVideo('Doctor Who (2005)', '2005-03-26');
+
+        $this->assertSame($modernFlashId, $this->resolve('The.Flash.2014.S01E01.1080p.BluRay.x264-GRP'));
+        $this->assertSame($oldFlashId, $this->resolve('The.Flash.1990.S01E01.1080p.BluRay.x264-GRP'));
+        $provider = new LocalDbProvider;
+        $withoutYear = $provider->parseInfo('The.Flash.S04E01.1080p.BluRay.x264-GRP');
+        $this->assertIsArray($withoutYear);
+        $this->assertTrue($provider->resolveByRelease($withoutYear, 0)->isAmbiguous());
+        $this->assertSame($modernDoctorWhoId, $this->resolve('Doctor.Who.2005.S01E01.720p.HDTV.x264-GRP'));
+    }
+
+    #[Test]
+    public function the_numbered_title_joins_the_existing_evidence_among_several_candidates(): void
+    {
+        $usGhostsId = $this->createVideo('Ghosts (US)', '2021-10-07');
+        $this->createAlias($usGhostsId, 'Ghosts (2021)');
+        $this->createVideo('Ghosts (2019)', '2019-04-15');
+
+        $this->assertSame(
+            $usGhostsId,
+            $this->resolve('Ghosts.2021.S01E01.Pilot.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb'),
+        );
+    }
+
+    #[Test]
+    public function a_parse_without_a_numbered_title_key_resolves_as_if_it_had_none(): void
+    {
+        $this->createVideo('Sealab 2021', '2000-12-21');
+        $modernFlashId = $this->createVideo('The Flash (2014)', '2014-10-07');
+        $provider = new LocalDbProvider;
+
+        $this->assertSame(0, $provider->getByRelease(['name' => 'Sealab', 'cleanname' => 'Sealab (2021)', 'season' => 1, 'episode' => 10], 0));
+        $this->assertSame(
+            $modernFlashId,
+            $provider->getByRelease(['name' => 'The Flash', 'cleanname' => 'The Flash (2014)', 'season' => 1, 'episode' => 1], 0),
+        );
+    }
+
+    #[Test]
     public function it_stores_every_distinct_alias_of_a_show(): void
     {
         Schema::drop('videos_aliases');
@@ -220,6 +279,20 @@ final class VideoTitleLookupTest extends TestCase
     private function aliasesOf(int $videoId): array
     {
         return DB::table('videos_aliases')->where('videos_id', $videoId)->orderBy('title')->pluck('title')->all();
+    }
+
+    private function resolve(string $releaseName): int
+    {
+        $provider = new LocalDbProvider;
+        $showInfo = $provider->parseInfo($releaseName);
+        $this->assertIsArray($showInfo);
+
+        return $provider->resolveByRelease($showInfo, 0)->videoId;
+    }
+
+    private function createAlias(int $videoId, string $title): void
+    {
+        DB::table('videos_aliases')->insert(['videos_id' => $videoId, 'title' => $title]);
     }
 
     private function createVideo(string $title, string $started = '2024-01-01'): int
