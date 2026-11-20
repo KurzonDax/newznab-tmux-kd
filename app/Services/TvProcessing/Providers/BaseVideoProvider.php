@@ -30,6 +30,7 @@ use App\Models\TvInfo;
 use App\Models\Video;
 use App\Models\VideoAlias;
 use App\Services\TvProcessing\TvArtifactIdentityResolver;
+use App\Services\TvProcessing\TvEpisodeExistenceResolver;
 use App\Services\TvProcessing\TvShowResolution;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -270,6 +271,11 @@ abstract class BaseVideoProvider
 
             if ($artifactVideoId !== null) {
                 return TvShowResolution::matched($artifactVideoId);
+            }
+
+            $episodeHolderVideoId = app(TvEpisodeExistenceResolver::class)->resolve($showInfo, $candidateVideoIds);
+            if ($episodeHolderVideoId > 0) {
+                return TvShowResolution::matched($episodeHolderVideoId);
             }
         }
 
