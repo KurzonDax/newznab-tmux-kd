@@ -39,6 +39,15 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
     private const FOLLOWING_RELEASE_TOKEN = '[^a-z0-9]([(|\[]\w+[)|\]]\s)*?(\d\d-\d\d|\d{1,3}x\d{2,3}|\(?(19|20)\d{2}\)?|(480|720|1080|2160)[ip]|AAC2?|BD-?Rip|Blu-?Ray|D0?\d|DD5|DiVX|DLMux|DTS|DVD(-?Rip)?|E\d{2,3}|EP\d{1,3}|[HX][\-_. ]?26[45]|ITA(-ENG)?|HEVC|[HPS]DTV|PROPER|REPACK|Season|Episode|S\d+[^a-z0-9]?((E\d+)[abr]?)*|WEB[\-_. ]?(DL|Rip)|XViD)[^a-z0-9]?';
 
+    /**
+     * A group tag written in front of the name ("aaf-dexters.laboratory.s01e13"): 2 to 8 ASCII
+     * letters or digits, then a dash and a letter or digit.
+     */
+    private const LEADING_TAG = '/^([A-Za-z0-9]{2,8})-(?=[A-Za-z0-9])/';
+
+    /** A leading tag that is itself an episode token ("S02E08-…"), not a group tag. */
+    private const EPISODE_TOKEN = '/^(?:S\d+(?:E\d+)*|EP?\d+|\d+x\d+)$/i';
+
     // Television Sources
     protected const SOURCE_NONE = 0;   // No Scrape source
 
@@ -639,6 +648,30 @@ abstract class AbstractTvProvider extends BaseVideoProvider
         }
 
         return false;
+    }
+
+    /**
+     * The parse of a release name without its leading group tag, for a lookup of a name whose
+     * full form found no show. Null when the name has no tag, or when the name without it does
+     * not parse to a different show name.
+     *
+     * @param  array<string, mixed>  $fullParse  parseInfo() of the full release name
+     * @return array<string, mixed>|null
+     */
+    public function tagFreeParse(string $relname, array $fullParse): ?array
+    {
+        if (preg_match(self::LEADING_TAG, $relname, $tag) !== 1 || preg_match(self::EPISODE_TOKEN, $tag[1]) === 1) {
+            return null;
+        }
+
+        $parse = $this->parseInfo(substr($relname, \strlen($tag[0])));
+        if (! \is_array($parse)) {
+            return null;
+        }
+
+        $cleanName = (string) ($parse['cleanname'] ?? '');
+
+        return $cleanName !== '' && $cleanName !== (string) ($fullParse['cleanname'] ?? '') ? $parse : null;
     }
 
     /**

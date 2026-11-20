@@ -17,6 +17,8 @@ class TvProcessingPassable
 
     private bool $ambiguous = false;
 
+    private bool $episodeRequired = false;
+
     /**
      * @var array<string, mixed>
      */
@@ -100,6 +102,19 @@ class TvProcessingPassable
     public function isAmbiguous(): bool
     {
         return $this->ambiguous;
+    }
+
+    /**
+     * Bind a show found for this lookup only together with the release's episode.
+     */
+    public function requireEpisode(): void
+    {
+        $this->episodeRequired = true;
+    }
+
+    public function requiresEpisode(): bool
+    {
+        return $this->episodeRequired;
     }
 
     /**

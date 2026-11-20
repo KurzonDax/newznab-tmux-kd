@@ -153,7 +153,9 @@ class TvdbPipe extends AbstractTvProviderPipe
 
         if ($episodeNo === 'all') {
             // Full season release
-            $tvdb->setVideoIdFound($videoId, $context->releaseId, 0);
+            if (! $this->bindShowOnly($tvdb, $passable, $videoId)) {
+                return $this->episodeRequired($videoId);
+            }
             $this->outputFullSeason($cleanName);
 
             return TvProcessingResult::matched($videoId, 0, $this->getName(), ['full_season' => true]);
@@ -200,7 +202,7 @@ class TvdbPipe extends AbstractTvProviderPipe
         }
 
         // Episode not found
-        $tvdb->setVideoIdFound($videoId, $context->releaseId, 0);
+        $this->bindShowOnly($tvdb, $passable, $videoId);
 
         if ($this->echoOutput) {
             cli()->primaryOver('    → ');
@@ -279,7 +281,9 @@ class TvdbPipe extends AbstractTvProviderPipe
 
         if ($episodeNo === 'all') {
             // Full season release
-            $tvdb->setVideoIdFound($videoId, $context->releaseId, 0);
+            if (! $this->bindShowOnly($tvdb, $passable, $videoId)) {
+                return $this->episodeRequired($videoId);
+            }
             $this->outputFullSeason($cleanName);
 
             return TvProcessingResult::matched($videoId, 0, $this->getName(), ['full_season' => true]);
@@ -303,7 +307,7 @@ class TvdbPipe extends AbstractTvProviderPipe
         }
 
         // Episode not found in local DB - mark video but episode not matched
-        $tvdb->setVideoIdFound($videoId, $context->releaseId, 0);
+        $this->bindShowOnly($tvdb, $passable, $videoId);
 
         if ($this->echoOutput) {
             cli()->primaryOver('    → ');
