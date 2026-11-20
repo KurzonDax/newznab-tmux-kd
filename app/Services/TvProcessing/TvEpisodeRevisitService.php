@@ -24,7 +24,7 @@ final class TvEpisodeRevisitService
     private const int FINALIZE_CHUNK_SIZE = 100;
 
     /** A parsed season of at least this is a year, compared only with year-numbered seasons. */
-    private const int YEAR_SEASON_MINIMUM = 1900;
+    public const int YEAR_SEASON_MINIMUM = 1900;
 
     /**
      * Finalize known-show rows whose postdate window has elapsed.
@@ -202,7 +202,7 @@ final class TvEpisodeRevisitService
     }
 
     /** A parsed season or episode number as a positive integer, or null when it is none. */
-    private static function positiveNumber(mixed $value, string $prefix): ?int
+    public static function positiveNumber(mixed $value, string $prefix): ?int
     {
         if (! \is_int($value) && ! \is_string($value)) {
             return null;

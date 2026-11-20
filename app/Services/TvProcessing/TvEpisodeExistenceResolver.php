@@ -29,10 +29,7 @@ final class TvEpisodeExistenceResolver
 {
     private const int LIST_CACHE_HOURS = 24;
 
-    /** A season of at least this is a year, compared only with year-numbered seasons. */
-    private const int YEAR_SEASON_MINIMUM = 1900;
-
-    /** The provider and its id column for each videos.source. */
+    /** The provider and its id column for each videos.source (AbstractTvProvider::SOURCE_*). */
     private const array SOURCE_PROVIDERS = [
         1 => [TvdbProvider::class, 'tvdb'],
         2 => [TvMazeProvider::class, 'tvmaze'],
@@ -54,9 +51,9 @@ final class TvEpisodeExistenceResolver
      */
     public function resolve(array $showInfo, array $candidateVideoIds): int
     {
-        $season = (int) preg_replace('/^S0*/i', '', (string) ($showInfo['season'] ?? ''));
-        $episode = (int) preg_replace('/^E0*/i', '', (string) ($showInfo['episode'] ?? ''));
-        if ($season <= 0 || $episode <= 0 || count($candidateVideoIds) < 2) {
+        $season = TvEpisodeRevisitService::positiveNumber($showInfo['season'] ?? null, 'S');
+        $episode = TvEpisodeRevisitService::positiveNumber($showInfo['episode'] ?? null, 'E');
+        if ($season === null || $episode === null || count($candidateVideoIds) < 2) {
             return 0;
         }
 
@@ -89,10 +86,10 @@ final class TvEpisodeExistenceResolver
             return false;
         }
 
-        $yearNumbered = $season >= self::YEAR_SEASON_MINIMUM;
+        $yearNumbered = $season >= TvEpisodeRevisitService::YEAR_SEASON_MINIMUM;
         $newestSeason = 0;
         foreach ($list as [$listedSeason]) {
-            if (($listedSeason >= self::YEAR_SEASON_MINIMUM) === $yearNumbered) {
+            if (($listedSeason >= TvEpisodeRevisitService::YEAR_SEASON_MINIMUM) === $yearNumbered) {
                 $newestSeason = max($newestSeason, $listedSeason);
             }
         }
