@@ -631,36 +631,43 @@ abstract class AbstractTvProvider extends BaseVideoProvider
 
         $following = self::FOLLOWING_RELEASE_TOKEN;
 
-        // Handle fansub/release group prefixes like [SubsPlease], [Erai-raws], [ASW], etc.
-        $cleanRelname = preg_replace('/^\[[^]]+][_\s]*/i', '', $relname);
+        // A valid UTF-8 name reads non-ASCII letters as word characters. Any other
+        // name keeps byte-wise matching, because a /u pattern fails on invalid UTF-8.
+        $flags = mb_check_encoding($relname, 'UTF-8') ? 'iu' : 'i';
 
-        if (preg_match('/^([^a-z0-9]{2,}|(sample|proof|repost)-)(?P<name>[\w .\-!&]+?)'.$following.'/i', $cleanRelname, $hits)) {
+        // Handle fansub/release group prefixes like [SubsPlease], [Erai-raws], [ASW], etc.
+        $cleanRelname = preg_replace('/^\[[^]]+][_\s.]*/'.$flags, '', $relname);
+
+        // Remove a leading host name followed by a pipe, e.g. "PSArips.com | ".
+        $cleanRelname = preg_replace('/^[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*\|\s*/'.$flags, '', $cleanRelname);
+
+        if (preg_match('/^([^a-z0-9]{2,}|(sample|proof|repost)-)(?P<name>[\w .\-!&]+?)'.$following.'/'.$flags, $cleanRelname, $hits)) {
             $showName = $hits['name'];
-        } elseif (preg_match('/^(?P<name>[\w!&][\s\w\'._\-!&]*?)'.$following.'/i', $cleanRelname, $hits)) {
+        } elseif (preg_match('/^(?P<name>[\w!&][\s\w\'._\-!&,]*?)'.$following.'/'.$flags, $cleanRelname, $hits)) {
             $showName = $hits['name'];
         }
 
         // If still no match, try extracting name before common delimiters
         if (empty($showName)) {
             // Try to extract name before - SxxExx pattern
-            if (preg_match('/^(?P<name>.+?)[_\s]*[-_\s]+S\d{1,2}E\d{1,3}/i', $cleanRelname, $hits)) {
+            if (preg_match('/^(?P<name>.+?)[_\s]*[-_\s]+S\d{1,2}E\d{1,3}/'.$flags, $cleanRelname, $hits)) {
                 $showName = $hits['name'];
             }
             // Try to extract name before standalone episode number like "- 06 [" or "_09_["
-            elseif (preg_match('/^(?P<name>.+?)[_\s]+[-_]+[_\s]*\d{1,3}[_\s]*[\[(]/i', $cleanRelname, $hits)) {
+            elseif (preg_match('/^(?P<name>.+?)[_\s]+[-_]+[_\s]*\d{1,3}[_\s]*[\[(]/'.$flags, $cleanRelname, $hits)) {
                 $showName = $hits['name'];
             }
             // Handle anime-style "Show_Name_-_Episode_Title_-_XX_[quality]" format (extract before first _-_)
-            elseif (preg_match('/^(?P<name>.+?)_-_.+?_-_\d{1,3}_[\[(]/i', $cleanRelname, $hits)) {
+            elseif (preg_match('/^(?P<name>.+?)_-_.+?_-_\d{1,3}_[\[(]/'.$flags, $cleanRelname, $hits)) {
                 $showName = $hits['name'];
             }
             // Simpler pattern: extract everything before "_-_" for anime releases
-            elseif (preg_match('/^(?P<name>[^_]+(?:_[^_-]+)*)_-_/i', $cleanRelname, $hits)) {
+            elseif (preg_match('/^(?P<name>[^_]+(?:_[^_-]+)*)_-_/'.$flags, $cleanRelname, $hits)) {
                 $showName = $hits['name'];
             }
         }
 
-        $showName = preg_replace('/'.$following.'/i', ' ', $showName);
+        $showName = preg_replace('/'.$following.'/'.$flags, ' ', $showName);
         $showName = preg_replace('/^\d{6}/', '', $showName);
         $showName = $this->convertAcronyms($showName);
         $showName = preg_replace('/\(.*?\)|[._]/i', ' ', $showName);
