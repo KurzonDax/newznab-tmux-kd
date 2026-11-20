@@ -52,7 +52,7 @@ final class MovieReleaseList extends BandReleaseList
             return self::FILM_INDEX;
         }
 
-        return $filters->importedOnly() ? $this->importedIndex($filters) : 'ix_releases_band_count';
+        return $filters->importedOnly() ? $this->importedIndex($filters) : self::BAND_COUNT_INDEX;
     }
 
     /**

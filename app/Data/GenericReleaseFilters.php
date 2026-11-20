@@ -128,7 +128,7 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
 
     /**
      * The completion threshold applied: the Completion choice, else the legacy `minc`; null for
-     * none, and for Imported only (an explicit choice that is no threshold).
+     * none, and for Imported only and Not imported (explicit choices that are no threshold).
      */
     public function threshold(): ?int
     {
@@ -176,6 +176,12 @@ final readonly class GenericReleaseFilters extends ShelfReleaseFilters
     public function withPage(int $page): static
     {
         return new self(context: $this->context, categories: $this->categories, sort: $this->sort, page: $page, completion: $this->completion,
+            excludeOther: $this->excludeOther, search: $this->search, minCompletion: $this->minCompletion);
+    }
+
+    public function withCompletion(int|string|null $completion): static
+    {
+        return new self(context: $this->context, categories: $this->categories, sort: $this->sort, page: $this->page, completion: $completion,
             excludeOther: $this->excludeOther, search: $this->search, minCompletion: $this->minCompletion);
     }
 

@@ -36,7 +36,7 @@ abstract class ShelfReleaseList extends BandReleaseList
     /** @param ShelfReleaseFilters $filters */
     protected function countIndex(ReleaseListFilters $filters): string
     {
-        return $filters->search === '' && ! $filters->importedOnly() ? 'ix_releases_band_count' : $this->releaseIndex($filters);
+        return $filters->search === '' && ! $filters->importedOnly() ? self::BAND_COUNT_INDEX : $this->releaseIndex($filters);
     }
 
     /**

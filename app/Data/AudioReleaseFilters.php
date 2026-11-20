@@ -29,7 +29,7 @@ final readonly class AudioReleaseFilters extends ShelfReleaseFilters
 
     /**
      * @param  list<int>  $categories  ticked sub-category ids, in menu order
-     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, IMPORTED_ONLY or NOT_IMPORTED
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      * @param  list<int|string>  $genres  ticked audio_genres.id and GENRE_UNKNOWN, in menu order
@@ -141,6 +141,12 @@ final readonly class AudioReleaseFilters extends ShelfReleaseFilters
     public function withPage(int $page): static
     {
         return new self(categories: $this->categories, sort: $this->sort, page: $page, completion: $this->completion, excludeOther: $this->excludeOther,
+            search: $this->search, genres: $this->genres, decades: $this->decades, yearFrom: $this->yearFrom, yearTo: $this->yearTo);
+    }
+
+    public function withCompletion(int|string|null $completion): static
+    {
+        return new self(categories: $this->categories, sort: $this->sort, page: $this->page, completion: $completion, excludeOther: $this->excludeOther,
             search: $this->search, genres: $this->genres, decades: $this->decades, yearFrom: $this->yearFrom, yearTo: $this->yearTo);
     }
 

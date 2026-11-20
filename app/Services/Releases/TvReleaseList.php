@@ -51,7 +51,7 @@ final class TvReleaseList extends BandReleaseList
             return $this->importedIndex($filters);
         }
 
-        return $filters->shows->any() ? 'ix_releases_videos_posted' : 'ix_releases_band_count';
+        return $filters->shows->any() ? 'ix_releases_videos_posted' : self::BAND_COUNT_INDEX;
     }
 
     /**

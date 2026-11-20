@@ -1058,7 +1058,7 @@ final class AdultReleasesPageTest extends TestCase
 
         $response = $this->page('/adult?completion=imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
         $this->assertSame(['Imported dvd', 'Imported scene'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertListed('/adult?completion=95', ['Imported dvd', 'Indexed partial', 'Indexed scene']);
@@ -1079,5 +1079,53 @@ final class AdultReleasesPageTest extends TestCase
             }
         }
         $this->assertSame('ix_releases_band_count', $count(new AdultReleaseFilters(completion: 95)));
+    }
+
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported_on_the_list_and_the_wall(): void
+    {
+        $this->adult('Imported scene', ['is_imported' => 1, 'haspreview' => 1]);
+        $this->adult('Imported dvd', ['is_imported' => 1, 'categories_id' => self::DVD]);
+        $this->adult('Indexed scene', ['completion' => 40, 'haspreview' => 1]);
+        $this->adult('Indexed dvd', ['categories_id' => self::DVD, 'jpgstatus' => 1]);
+        $this->adult('Indexed plain');
+        $this->adult('Indexed locked', ['passwordstatus' => 1, 'haspreview' => 1]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/adult?completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed dvd', 'Indexed plain', 'Indexed scene'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertListed('/adult?completion=not-imported&category[]='.self::DVD, ['Indexed dvd']);
+        $this->assertListed('/adult?completion=not-imported&q=scene', ['Indexed scene']);
+        $this->page('/adult?completion=not-imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('not imported');
+        $this->assertSame('not-imported', $this->remembered($user)['completion']);
+
+        // the Previews wall: the same choice, its own count
+        $wall = $this->page('/adult/previews?completion=not-imported')->assertOk()->assertSee('Showing 1–2 of 2 releases');
+        $this->assertSame(['Indexed dvd', 'Indexed scene'], DB::table('releases')->whereIn('id', $this->cardIds($wall))->orderBy('name')->pluck('name')->all());
+
+        $list = app(AdultReleaseList::class);
+        $count = fn (AdultReleaseFilters $filters): string => (fn (AdultReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        foreach ([[], ['categories' => [self::DVD]], ['resolutions' => ['4k']], ['audio' => ['unknown']], ['search' => 'scene']] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::PostedOldest, ReleaseSort::AddedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $with = new AdultReleaseFilters(...$set, completion: AdultReleaseFilters::NOT_IMPORTED, sort: $sort);
+                $without = new AdultReleaseFilters(...$set, sort: $sort);
+                $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []), json_encode([array_keys($set), $sort->value]));
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($with, []));
+                $this->assertSame($count($without), $count($with));
+            }
+        }
+
+        // the band count subtracts, keeping the other filters; the name search adds the condition on the page's index
+        Cache::flush();
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new AdultReleaseFilters(categories: [self::DVD], completion: AdultReleaseFilters::NOT_IMPORTED), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new AdultReleaseFilters(completion: AdultReleaseFilters::NOT_IMPORTED, search: 'scene'), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
     }
 }

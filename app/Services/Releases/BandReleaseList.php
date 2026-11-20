@@ -29,12 +29,20 @@ use Illuminate\Support\Facades\DB;
  * driven from the titles (a film, game or tag filter) stays as it is, the choice one more
  * condition on it. The imported index is read forwards on every page, never mirrored.
  *
+ * Its opposite, Not imported (issue #1264), never routes a read: pages are read from the index the
+ * list reads with no Completion choice, `is_imported = 0` one more condition on it. A count the
+ * band count index answers (it does not hold `is_imported`) is the no-choice count minus the
+ * Imported only count, each with every other filter; every other count read takes the condition.
+ *
  * @template TFilters of ReleaseListFilters
  */
 abstract class BandReleaseList
 {
     /** How long the counts that steer the index choice and order the menus are kept. */
     protected const int MENU_SECONDS = 3600;
+
+    /** The band's covering count index; it holds no `is_imported`. */
+    protected const string BAND_COUNT_INDEX = 'ix_releases_band_count';
 
     public function __construct(protected readonly ReleaseBrowseService $releases) {}
 
@@ -90,7 +98,20 @@ abstract class BandReleaseList
         $key = $this->countCachePrefix().'_count:'.ReleaseBrowseService::cacheVersion().':'.md5($filters->countKey().'|'.implode(',', $exclusions).'|'.$password);
         $minutes = max(1, (int) config('nntmux.cache_expiry_short', 5)) * 2;
 
-        return (int) Cache::remember($key, now()->addMinutes($minutes), fn (): int => $this->countVisible($filters, $exclusions));
+        return (int) Cache::remember($key, now()->addMinutes($minutes), fn (): int => $this->subtractsImported($filters)
+            ? $this->countVisible($filters->withCompletion(null), $exclusions) - $this->countVisible($filters->withCompletion(ReleaseListFilters::IMPORTED_ONLY), $exclusions)
+            : $this->countVisible($filters, $exclusions));
+    }
+
+    /**
+     * Whether the count is Not imported read from the band count index, which does not hold
+     * `is_imported`: then it is the no-choice count minus the Imported only count.
+     *
+     * @param  TFilters  $filters
+     */
+    private function subtractsImported(ReleaseListFilters $filters): bool
+    {
+        return $filters->notImported() && $this->countIndex($filters) === self::BAND_COUNT_INDEX;
     }
 
     /**
@@ -229,7 +250,7 @@ abstract class BandReleaseList
         return Cache::remember($this->cachePrefix().'_value_counts', self::MENU_SECONDS, function (): array {
             $query = DB::table('releases');
             if ($this->isMariaDb()) {
-                $query->forceIndex('ix_releases_band_count');
+                $query->forceIndex(self::BAND_COUNT_INDEX);
             }
             $counts = ['category' => [], 'resolution' => [], 'source' => [], 'band' => 0];
             foreach ($query->where('category_band', $this->band())->groupBy('categories_id', 'resolution', 'source')
@@ -269,6 +290,8 @@ abstract class BandReleaseList
         }
         if ($filters->importedOnly()) {
             $query->where('releases.is_imported', 1);
+        } elseif ($filters->notImported()) {
+            $query->where('releases.is_imported', 0);
         } elseif ($filters->completionThreshold() !== null) {
             $query->where('releases.completion', '>=', $filters->completionThreshold());
         }

@@ -891,7 +891,7 @@ final class AudioReleasesPageTest extends TestCase
 
         $response = $this->page('/audio?completion=imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
         $this->assertSame(['Imported.Nineties', 'Imported.No.Tag', 'Imported.Rock'], $this->listedNames($response));
-        $this->assertImportedOnlyChosenLast((string) $response->getContent());
+        $this->assertImportedOnlyChosen((string) $response->getContent());
         $this->assertSame('Completion: Imported', $this->cellText($response, 'completion'));
         $this->assertSame(['completion' => 'imported'], $response->viewData('filters')->query());
         $this->assertListed('/audio?completion=95', ['Imported.Nineties', 'Imported.No.Tag', 'Indexed.No.Tag', 'Indexed.Rock']);
@@ -929,5 +929,61 @@ final class AudioReleasesPageTest extends TestCase
             $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []));
             $this->assertSame($count($without), $count($with));
         }
+    }
+
+    public function test_not_imported_lists_exactly_the_visible_releases_that_were_not_imported_and_a_tag_led_read_adds_it_on_its_own(): void
+    {
+        $this->genre(self::ROCK, 'Rock');
+        $this->tag($this->audio('Imported.Rock', ['is_imported' => 1]), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $this->audio('Imported.No.Tag', ['is_imported' => 1]);
+        $this->tag($this->audio('Indexed.Rock', ['completion' => 40]), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $this->tag($this->audio('Indexed.Nineties', ['categories_id' => self::LOSSLESS]), ['recorded_year' => 1995]);
+        $this->audio('Indexed.No.Tag');
+        $this->tag($this->audio('Indexed.Locked.Rock', ['passwordstatus' => 1]), ['recorded_year' => 2010, 'genre' => 'Rock'], [self::ROCK]);
+        $user = $this->user = $this->browserUser();
+
+        $response = $this->page('/audio?completion=not-imported')->assertOk()->assertSee('Showing 1–3 of 3 releases');
+        $this->assertSame(['Indexed.Nineties', 'Indexed.No.Tag', 'Indexed.Rock'], $this->listedNames($response));
+        $this->assertNotImportedChosenLast((string) $response->getContent());
+        $this->assertSame('Completion: Not imported', $this->cellText($response, 'completion'));
+        $this->assertSame(['completion' => 'not-imported'], $response->viewData('filters')->query());
+        $this->assertListed('/audio?completion=not-imported&category[]='.self::LOSSLESS, ['Indexed.Nineties']);
+        $this->page('/audio?completion=not-imported&q=nothing')->assertOk()->assertSee('Showing 0 releases')->assertSee('not imported · release names, artists or albums containing');
+        $this->assertSame('not-imported', $this->remembered($user, 'audio')['completion']);
+
+        // the tag-led reads: the Year or genres and the choice both hold, in the page and in the count
+        $this->assertSame(['Indexed.Rock'], $this->listedNames($this->page('/audio?completion=not-imported&genre[]='.self::ROCK)->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        $this->assertSame(['Indexed.Nineties'], $this->listedNames($this->page('/audio?completion=not-imported&decade[]=1990')->assertOk()->assertSee('Showing 1–1 of 1 release')));
+        // genres with Unknown, without a Year, are release-led on the band index: the count subtracts with the anti-join kept
+        $this->assertSame(['Indexed.Nineties', 'Indexed.No.Tag', 'Indexed.Rock'],
+            $this->listedNames($this->page('/audio?completion=not-imported&genre[]='.self::ROCK.'&genre[]='.AudioReleaseFilters::GENRE_UNKNOWN)->assertOk()->assertSee('Showing 1–3 of 3 releases')));
+        $this->assertSame(['Indexed.Nineties', 'Indexed.No.Tag'],
+            $this->listedNames($this->page('/audio?completion=not-imported&genre[]='.AudioReleaseFilters::GENRE_UNKNOWN)->assertOk()->assertSee('Showing 1–2 of 2 releases')));
+
+        $list = app(AudioReleaseList::class);
+        $count = fn (AudioReleaseFilters $filters): string => (fn (AudioReleaseFilters $filters): string => $this->countIndex($filters))->call($list, $filters);
+        $notImported = ['completion' => AudioReleaseFilters::NOT_IMPORTED];
+        $unknown = AudioReleaseFilters::GENRE_UNKNOWN;
+        foreach ([[], ['categories' => [self::MP3]], ['search' => 'x'], ['genres' => [$unknown]], ['genres' => [self::ROCK, $unknown], 'categories' => [self::MP3], 'search' => 'x'],
+            ['genres' => [self::ROCK]], ['decades' => [1990]], ['genres' => [self::ROCK, $unknown], 'yearFrom' => 1998, 'yearTo' => 2001]] as $set) {
+            foreach ([ReleaseSort::PostedNewest, ReleaseSort::AddedOldest] as $sort) {
+                $with = new AudioReleaseFilters(...$set, ...$notImported, sort: $sort);
+                $without = new AudioReleaseFilters(...$set, sort: $sort);
+                $this->assertSame($list->readIndex($without, []), $list->readIndex($with, []), json_encode([array_keys($set), $sort->value]));
+                $this->assertStringNotContainsString('ix_releases_imported_', $list->readIndex($with, []));
+                $this->assertSame($count($without), $count($with));
+            }
+        }
+
+        // the band count subtracts; a tag-led count adds the condition
+        Cache::flush();
+        $counts = $this->releaseCountReads();
+        $this->assertSame(2, $list->count(new AudioReleaseFilters(...$notImported, genres: [$unknown]), []));
+        $this->assertCount(2, $counts());
+        $this->assertStringNotContainsString('"is_imported" = 0', implode(' ', $counts()));
+        $counts = $this->releaseCountReads();
+        $this->assertSame(1, $list->count(new AudioReleaseFilters(...$notImported, genres: [self::ROCK]), []));
+        $this->assertCount(1, $counts());
+        $this->assertStringContainsString('"is_imported" = 0', $counts()[0]);
     }
 }

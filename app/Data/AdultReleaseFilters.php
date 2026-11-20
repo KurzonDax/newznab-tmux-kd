@@ -26,7 +26,7 @@ final readonly class AdultReleaseFilters extends ReleaseListFilters
      * @param  list<int>  $categories  ticked Adult sub-category ids, in menu order
      * @param  list<string>  $resolutions  ticked keys of RESOLUTIONS, in menu order
      * @param  list<string>  $audio  ticked Audio values (languages.id, or AUDIO_UNKNOWN), in menu order
-     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, or IMPORTED_ONLY
+     * @param  int|string|null  $completion  a key of COMPLETIONS: the lowest completion listed, IMPORTED_ONLY or NOT_IMPORTED
      * @param  bool  $excludeOther  the Category filter is the Exclude Other mode (ReleaseListFilters)
      * @param  string  $search  the name search, trimmed; '' when there is none
      */
@@ -86,6 +86,12 @@ final readonly class AdultReleaseFilters extends ReleaseListFilters
     {
         return new self(categories: $this->categories, resolutions: $this->resolutions, sort: $this->sort, page: $page, audio: $this->audio,
             completion: $this->completion, excludeOther: $this->excludeOther, search: $this->search);
+    }
+
+    public function withCompletion(int|string|null $completion): static
+    {
+        return new self(categories: $this->categories, resolutions: $this->resolutions, sort: $this->sort, page: $this->page, audio: $this->audio,
+            completion: $completion, excludeOther: $this->excludeOther, search: $this->search);
     }
 
     /** @return array<string, list<int|string>|int|string> the URL query for this page; page 1 carries no page */
