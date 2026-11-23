@@ -20,10 +20,17 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * The `mus` pass's shadow check of the music matcher's album choices (issue
- * #1140): every current completed decision with a titled stored candidate is
- * put to the decision model once per criteria version, newest first, at most
- * BATCH per pass, and the answer is written to the decision log. Nothing else
- * changes: no album link, no name, no category, no cover.
+ * #1140): in Shadow or Apply mode, every current completed decision with a
+ * titled stored candidate is put to the decision model once per criteria
+ * version, newest first, at most BATCH per pass, and the answer is written to
+ * the decision log. The catch-up itself only logs: no album link, no name, no
+ * category, no cover. Its rows are mode `shadow`, not applied, in either mode.
+ *
+ * In Apply mode the album link is made by resolution step 9 (#1275), which asks
+ * while a release is matched and logs its answer against the stored decision,
+ * so the catch-up does not ask about that decision again. The catch-up still
+ * asks about accepted decisions (a disagreement with an accepted album stays
+ * log-only) and about undecided ones stored while the service was down.
  *
  * A decision whose answer the service rejected outright (a malformed answer,
  * a 4xx other than a refused key) is logged with that reason and not asked
@@ -58,7 +65,7 @@ class MusicAlbumCheck
      */
     public function catchUp(): int
     {
-        if (DecisionMode::fromSetting(Settings::settingValue(self::SETTING)) !== DecisionMode::Shadow || ! $this->client->isUsable()) {
+        if (! in_array(DecisionMode::fromSetting(Settings::settingValue(self::SETTING)), [DecisionMode::Shadow, DecisionMode::Apply], true) || ! $this->client->isUsable()) {
             return 0;
         }
 
@@ -167,18 +174,28 @@ class MusicAlbumCheck
     private function subjectOf(ReleaseMusicIdentification $identification): ?MusicAlbumCheckSubject
     {
         $releaseName = (string) DB::table('releases')->where('id', $identification->releases_id)->value('searchname');
-        $fileNames = DB::table('release_files')
-            ->where('releases_id', $identification->releases_id)
+
+        $subject = MusicAlbumCheckSubject::build($identification, $releaseName, self::fileNamesOf((int) $identification->releases_id), $identification->candidateAttempts);
+
+        return $subject->candidates === [] ? null : $subject;
+    }
+
+    /**
+     * The file names the model is shown for a release: its first
+     * {@see MusicAlbumCheckSubject::FILE_LIMIT} `release_files` names by name.
+     *
+     * @return list<string>
+     */
+    public static function fileNamesOf(int $releaseId): array
+    {
+        return DB::table('release_files')
+            ->where('releases_id', $releaseId)
             ->orderBy('name')
             ->limit(MusicAlbumCheckSubject::FILE_LIMIT)
             ->pluck('name')
             ->map(static fn (mixed $name): string => (string) $name)
             ->values()
             ->all();
-
-        $subject = MusicAlbumCheckSubject::build($identification, $releaseName, $fileNames, $identification->candidateAttempts);
-
-        return $subject->candidates === [] ? null : $subject;
     }
 
     /**
@@ -197,9 +214,10 @@ class MusicAlbumCheck
     /**
      * The failure reasons that say the service is down, busy or refusing the
      * key rather than rejecting this decision: nothing is logged and the pass
-     * ends, so the next pass retries the same decision.
+     * ends, so the next pass retries the same decision. Resolution step 9
+     * (#1275) logs nothing for them either.
      */
-    private static function serviceUnavailable(string $reason): bool
+    public static function serviceUnavailable(string $reason): bool
     {
         return in_array($reason, ['disabled', 'circuit_open', 'connection_failed', 'http_401', 'http_403', 'http_429'], true)
             || preg_match('/^http_5\d\d$/', $reason) === 1;

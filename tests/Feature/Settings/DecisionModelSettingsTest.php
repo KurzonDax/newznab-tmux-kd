@@ -120,11 +120,11 @@ final class DecisionModelSettingsTest extends TestCase
         );
     }
 
-    public function test_the_music_album_mode_offers_only_off_and_shadow(): void
+    public function test_the_music_album_mode_offers_off_shadow_and_apply(): void
     {
         $definition = app(SettingsRegistry::class)->definition('decision_model_music_album_mode');
 
-        $this->assertSame(['off', 'shadow'], array_keys($definition?->resolvedOptions() ?? []));
+        $this->assertSame(['off', 'shadow', 'apply'], array_keys($definition?->resolvedOptions() ?? []));
     }
 
     public function test_the_music_album_card_saves_shadow(): void
@@ -135,16 +135,12 @@ final class DecisionModelSettingsTest extends TestCase
         $this->assertSame('off', $this->storedSettingValue('decision_model_mode'), 'the other card is untouched');
     }
 
-    public function test_the_music_album_card_rejects_apply(): void
+    public function test_the_music_album_card_saves_apply(): void
     {
-        try {
-            $this->saveCard('decision-model', 'music-album-check', ['decision_model_music_album_mode' => 'apply']);
-            $this->fail('The card saved a mode it does not offer.');
-        } catch (ValidationException $e) {
-            $this->assertSame(['decision_model_music_album_mode'], array_keys($e->errors()));
-        }
+        $this->saveCard('decision-model', 'music-album-check', ['decision_model_music_album_mode' => 'apply']);
 
-        $this->assertSame('off', $this->storedSettingValue('decision_model_music_album_mode'));
+        $this->assertSame('apply', $this->storedSettingValue('decision_model_music_album_mode'));
+        $this->assertSame('off', $this->storedSettingValue('decision_model_mode'), 'the other card is untouched');
     }
 
     public function test_the_mode_offers_off_shadow_and_apply(): void

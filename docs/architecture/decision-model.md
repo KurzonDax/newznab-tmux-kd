@@ -36,7 +36,7 @@ Each use case has its own mode setting (`DecisionMode`):
 | Name | Asks | Modes | Setting |
 | --- | --- | --- | --- |
 | `category_arbitration` | Which root category and subcategory a release belongs to, from its name. | off, shadow, apply | `decision_model_mode` |
-| `music_album_check` | Which of the music matcher's candidate albums a release is, or none, from its name and up to 10 file names. | off, shadow | `decision_model_music_album_mode` |
+| `music_album_check` | Which of the music matcher's candidate albums a release is, or none, from its name and up to 10 file names. | off, shadow, apply | `decision_model_music_album_mode` |
 
 ### Category arbitration
 
@@ -55,13 +55,39 @@ reaches running processes within a minute.
 
 `MusicAlbumCheck` runs once per music pass (`multiprocessing:postprocess mus`, which the
 shelf pane's `ama` pass also runs at its end), after the bucket workers, and only while music
-identity is active (MusicBrainz endpoint configured). In shadow mode it puts up to 50 current
-matcher decisions that have a titled candidate to the model per pass, newest first, once per
-criteria version, including releases matched before the check existed. Releases under 95%
-complete are never sent; one that later reaches 95% is picked up by a later pass. It changes
-nothing: no album link, name, category or cover. A decision whose answer the service rejected outright
+identity is active (MusicBrainz endpoint configured). In shadow or apply mode it puts up to 50
+current matcher decisions that have a titled candidate to the model per pass, newest first,
+once per criteria version, including releases matched before the check existed. Releases under
+95% complete are never sent; one that later reaches 95% is picked up by a later pass. The
+catch-up itself changes nothing: no album link, name, category or cover. Its rows are logged
+with mode `shadow` and not applied, in either mode. A decision whose answer the service rejected outright
 is logged with the reason and not asked again; when the service is down, busy or refusing the
 key, nothing is logged and the next pass retries.
+
+In apply mode the music matcher also asks while it resolves a release, as resolution step 9
+(`MusicIdentityResolver`, after the release-name step and before the album genres). It asks
+only when the matcher's decision is unresolved or needs review, the client is usable, the
+release is at least 95% complete and the decision has a titled candidate. The question is the
+shadow check's own: the release's search name, up to 10 file names, and the first
+`candidate_attempt_limit` candidates the decision would store, in the matcher's order. When the
+model picks a candidate with a release group at probability 0.80 or more, the best-scoring
+evaluation of that release group without a hard contradiction, and consistent with any
+validated embedded identifiers, is accepted as an ordinary `accepted_release_group` decision
+with the reason `decision_model_pick`; the score stays the scorer's, and the album's text,
+track list, genres, search text, cover and MusicBrainz link follow as for any accepted album.
+Renaming is left to the existing rename rule. The model is never asked about an album the
+matcher accepted, a conflicted decision or an accepted recording.
+
+The answer is logged once the decision is stored complete, linked to the stored decision, with
+mode `apply` and `applied` true only when the pick was linked, so the catch-up does not ask
+about that decision again. In the log, `picked_rank` and the option ranks are the matcher's
+order before step 9; a linked album is stored at rank 1 and is named by
+`picked_release_group_id`. A retryable attempt, a lost lease or a failed write logs nothing,
+and the retry asks again. When the model cannot be asked, the matcher's decision stands; a
+rejected answer is logged unapplied with its reason, and when the service is down, busy or
+refusing the key nothing is logged and the catch-up asks about the stored decision later
+without applying it. Switching away from apply stops new links; albums already linked stay
+until the release is matched again.
 
 ## Criteria files
 
