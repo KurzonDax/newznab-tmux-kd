@@ -73,7 +73,7 @@ final class ReleaseNameAlbumParser
         return $this->finish($artist, $title, $year);
     }
 
-    /** Lowercase words only:`&` reads "and", apostrophes vanish, everything else that is not a letter or digit separates words. */
+    /** Lowercase words only: `&` reads "and", apostrophes vanish, everything else that is not a letter or digit separates words. */
     public function fold(?string $text): ?string
     {
         if ($text === null) {

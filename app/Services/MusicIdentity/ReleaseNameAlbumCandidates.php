@@ -61,9 +61,10 @@ final readonly class ReleaseNameAlbumCandidates
     ) {}
 
     /**
-     * The release group the name identifies: the first reading of the name with a passing group
-     * decides, and a reading left with several groups makes the name ambiguous. So does a search
-     * MusicBrainz answered only in part: the groups it held back could pass too.
+     * The release group the name or the album tags identify: the first reading with a passing
+     * group decides, the name's readings before the tags', and a reading left with several groups
+     * ends the match. So does a search MusicBrainz answered only in part: the groups it held back
+     * could pass too.
      *
      * @throws MusicBrainzGatewayException when a search fails
      */
