@@ -186,6 +186,7 @@ final class MusicAlbumPickTest extends TestCase
         $this->assertSame([IdentificationStatus::AcceptedReleaseGroup, self::GROUP_A], [$identification->state, $identification->musicbrainz_release_group_id]);
         $this->assertSame('Example Album', $identification->fresh()?->accepted_title);
         $this->assertSame(['decision_model_pick'], array_column($identification->fresh()?->reasons ?? [], 'code'));
+        $this->assertSame(['First Light', 'Nowhere'], DB::table('musicbrainz_release_tracks')->where('musicbrainz_release_id', self::RELEASE_A)->orderBy('track_position')->pluck('title')->all());
         $this->assertSame(['Electronic', 'Ambient'], $this->genresOf(self::GROUP_A));
         $row = DecisionModelDecision::query()->sole();
         $this->assertSame(['apply', true, 'needs_review'], [$row->mode, $row->applied, $row->pipeline_answer['state'] ?? null]);
@@ -298,6 +299,21 @@ final class MusicAlbumPickTest extends TestCase
         $this->assertSame(IdentificationStatus::Unresolved, $this->resolve($complete, new PickCandidates([self::albumA(), self::albumB()]))?->state);
 
         Http::assertNothingSent();
+        $this->assertSame(0, DecisionModelDecision::query()->count());
+    }
+
+    #[Test]
+    public function a_decision_without_a_titled_candidate_is_not_asked(): void
+    {
+        $this->answer('1', 0.95);
+        $release = $this->release();
+        $this->evidence($release);
+
+        $identification = $this->resolve($release, new PickCandidates([PickCandidates::album(self::RELEASE_A, self::GROUP_A, '', 'Example Artist', '2020-01-01')]));
+
+        $this->assertSame(IdentificationStatus::Unresolved, $identification?->state);
+        $this->assertSame([self::GROUP_A], $this->storedCandidateGroups((int) $identification?->id), 'the untitled candidate is stored');
+        $this->assertSame(0, $this->questionsAsked());
         $this->assertSame(0, DecisionModelDecision::query()->count());
     }
 

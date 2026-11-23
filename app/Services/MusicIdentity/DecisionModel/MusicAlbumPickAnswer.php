@@ -30,7 +30,7 @@ final readonly class MusicAlbumPickAnswer
     }
 
     /** The same answer, as the one that replaced the matcher's decision. */
-    public function applied(): self
+    public function asApplied(): self
     {
         return new self($this->run, $this->pipelineAnswer, true);
     }

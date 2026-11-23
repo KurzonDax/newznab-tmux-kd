@@ -110,41 +110,15 @@ final readonly class MusicIdentityResolver
             fn ($candidate): CandidateEvaluation => $this->scorer->score($evidence, $candidate),
             $this->releaseNameAlbums->supplement($evidence, $pool, $match)->candidates,
         );
-        $embeddedReleases = $this->validatedEmbeddedReleases($evaluations);
-        $embeddedReleaseGroups = $this->validatedEmbeddedReleaseGroups($evaluations);
-        $embeddedRecordings = $this->validatedEmbeddedRecordings($evaluations);
-        $accepted = null;
-        foreach ($evaluations as $evaluation) {
-            if ($evaluation->alignedIdentity->releaseGroupId === $match->releaseGroupId
-                && ! $evaluation->hasHardContradiction()
-                && $this->supportsEmbeddedIdentities($evaluation, $embeddedReleases, $embeddedReleaseGroups, $embeddedRecordings)
-                && ($accepted === null || $evaluation->score > $accepted->score)) {
-                $accepted = $evaluation;
-            }
-        }
-        if ($accepted === null) {
-            return $decision;
-        }
 
-        $others = array_values(array_filter($evaluations, static fn (CandidateEvaluation $evaluation): bool => $evaluation !== $accepted));
-        usort($others, static fn (CandidateEvaluation $left, CandidateEvaluation $right): int => $right->score <=> $left->score);
-        $ranked = [$accepted, ...$others];
-        // As for any accepted group, the margin is to the best candidate of another group: the rename gate reads it.
-        $runnerUp = $this->runnerUpForScope($ranked, $accepted, IdentificationStatus::AcceptedReleaseGroup);
-        $nameDecision = $this->decision(
-            IdentificationStatus::AcceptedReleaseGroup,
-            $accepted,
-            new CandidateIdentity(releaseGroupId: $match->releaseGroupId),
-            [$match->source === 'tags'
+        return $this->acceptReleaseGroup(
+            $evaluations,
+            $match->releaseGroupId,
+            $match->source === 'tags'
                 ? new DecisionReason('album_tags_match', 'The album tags identify one MusicBrainz release group ('.$match->rule.').')
-                : new DecisionReason('release_name_match', 'The release name identifies one MusicBrainz release group ('.$match->rule.').')],
-            array_map(static fn (CandidateEvaluation $evaluation): CandidateSummary => $evaluation->summary, $ranked),
-            $runnerUp === null ? null : $accepted->score - $runnerUp->score,
-        );
-
-        return $decision->acoustIdLookedUpAt === null
-            ? $nameDecision
-            : $nameDecision->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
+                : new DecisionReason('release_name_match', 'The release name identifies one MusicBrainz release group ('.$match->rule.').'),
+            $decision,
+        ) ?? $decision;
     }
 
     /**
@@ -173,12 +147,37 @@ final readonly class MusicIdentityResolver
             fn ($candidate): CandidateEvaluation => $this->scorer->score($evidence, $candidate),
             $pool->candidates,
         );
+        $pickDecision = $this->acceptReleaseGroup(
+            $evaluations,
+            $pickedGroup,
+            new DecisionReason('decision_model_pick', sprintf(
+                'The decision model picked this MusicBrainz release group among the matcher\'s candidates (probability %.2f).',
+                (float) $verdict->probability,
+            )),
+            $decision,
+        );
+
+        return $pickDecision === null
+            ? $decision->withAlbumPick($answer)
+            : $pickDecision->withAlbumPick($answer->asApplied());
+    }
+
+    /**
+     * Steps 8 and 9 accept a release group the same way: the best-scoring evaluation aligned to it,
+     * without a hard contradiction and consistent with every validated embedded identifier, ranked
+     * first ahead of the others by score. The accepted score stays the scorer's. Null when no
+     * evaluation qualifies.
+     *
+     * @param  list<CandidateEvaluation>  $evaluations
+     */
+    private function acceptReleaseGroup(array $evaluations, string $releaseGroupId, DecisionReason $reason, IdentificationDecision $decision): ?IdentificationDecision
+    {
         $embeddedReleases = $this->validatedEmbeddedReleases($evaluations);
         $embeddedReleaseGroups = $this->validatedEmbeddedReleaseGroups($evaluations);
         $embeddedRecordings = $this->validatedEmbeddedRecordings($evaluations);
         $accepted = null;
         foreach ($evaluations as $evaluation) {
-            if ($evaluation->alignedIdentity->releaseGroupId === $pickedGroup
+            if ($evaluation->alignedIdentity->releaseGroupId === $releaseGroupId
                 && ! $evaluation->hasHardContradiction()
                 && $this->supportsEmbeddedIdentities($evaluation, $embeddedReleases, $embeddedReleaseGroups, $embeddedRecordings)
                 && ($accepted === null || $evaluation->score > $accepted->score)) {
@@ -186,29 +185,26 @@ final readonly class MusicIdentityResolver
             }
         }
         if ($accepted === null) {
-            return $decision->withAlbumPick($answer);
+            return null;
         }
 
         $others = array_values(array_filter($evaluations, static fn (CandidateEvaluation $evaluation): bool => $evaluation !== $accepted));
         usort($others, static fn (CandidateEvaluation $left, CandidateEvaluation $right): int => $right->score <=> $left->score);
         $ranked = [$accepted, ...$others];
+        // As for any accepted group, the margin is to the best candidate of another group: the rename gate reads it.
         $runnerUp = $this->runnerUpForScope($ranked, $accepted, IdentificationStatus::AcceptedReleaseGroup);
-        $pickDecision = $this->decision(
+        $accepting = $this->decision(
             IdentificationStatus::AcceptedReleaseGroup,
             $accepted,
-            new CandidateIdentity(releaseGroupId: $pickedGroup),
-            [new DecisionReason('decision_model_pick', sprintf(
-                'The decision model picked this MusicBrainz release group among the matcher\'s candidates (probability %.2f).',
-                (float) $verdict->probability,
-            ))],
+            new CandidateIdentity(releaseGroupId: $releaseGroupId),
+            [$reason],
             array_map(static fn (CandidateEvaluation $evaluation): CandidateSummary => $evaluation->summary, $ranked),
             $runnerUp === null ? null : $accepted->score - $runnerUp->score,
         );
-        if ($decision->acoustIdLookedUpAt !== null) {
-            $pickDecision = $pickDecision->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
-        }
 
-        return $pickDecision->withAlbumPick($answer->applied());
+        return $decision->acoustIdLookedUpAt === null
+            ? $accepting
+            : $accepting->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
     }
 
     /**
