@@ -3690,7 +3690,7 @@ class CollectionRegexesTableSeeder extends Seeder
             459 => [
                 'id' => 461,
                 'group_regex' => '^alt\\.binaries\\.multimedia$',
-                'regex' => '/.*"(?P<match0>.+?)(\\.part\\d*|\\.rar)?(\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}").+?yEnc$/i',
+                'regex' => '/.*"(?P<match0>.+?)(\\.part\\d*|\\.rar)?(\\.(?:avi|mkv|mp4|vob)(?:\\.part\\d+\\.rar|\\.vol\\d+\\+\\d+\\.par2|\\.[A-Za-z0-9]{2,4})"|\\.vol\\d+\\+\\d+\\.par2"|\\.[A-Za-z0-9]{2,4}").+?yEnc$/i',
                 'status' => 1,
                 'description' => '//- "Auction Hunters S04E04.HDTV.x264-StarryNights1.nzb" yEnc',
                 'ordinal' => 10,
