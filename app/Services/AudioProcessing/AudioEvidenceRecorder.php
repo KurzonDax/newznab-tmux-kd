@@ -39,6 +39,8 @@ final class AudioEvidenceRecorder
      * @param  array<string, mixed>|null  $sampledTags
      * @param  AcousticFingerprint|null  $fingerprint  Generated from the sampled track's source.
      * @param  array<int, string>  $nzbSidecarBodies  CUE sheets and rip logs posted as their own NZB file, by ordinal
+     * @param  array<int, array<string, mixed>>  $nzbTrackTags  the other posted tracks' tags read from their first
+     *                                                          article, with `whole_file` and `whole_length`, by NZB ordinal
      */
     public function record(
         Release $release,
@@ -48,6 +50,7 @@ final class AudioEvidenceRecorder
         string $provenance = 'captured',
         ?AcousticFingerprint $fingerprint = null,
         array $nzbSidecarBodies = [],
+        array $nzbTrackTags = [],
     ): ReleaseAudioEvidence {
         $nzbManifest = array_map(
             static fn ($file): array => $file->toArray(),
@@ -58,7 +61,8 @@ final class AudioEvidenceRecorder
             $source->sidecars,
         ), $this->archiveSidecars($fetchResult->archiveMembers));
         $archiveManifest = array_values($fetchResult->archiveMembers);
-        $tracks = $this->tracks($source, $fetchResult, $sampledTags, fingerprint: $fingerprint);
+        $headsMerged = false;
+        $tracks = $this->tracks($source, $fetchResult, $sampledTags, fingerprint: $fingerprint, nzbTrackTags: $nzbTrackTags, headsMerged: $headsMerged);
         [$sidecarManifest, $sheets] = $this->readSidecars($sidecarManifest, $nzbSidecarBodies, $fetchResult->sidecarBodies);
         $tracks = [...$tracks, ...$this->cueTracks($sheets, $tracks)];
         $payload = [
@@ -69,7 +73,7 @@ final class AudioEvidenceRecorder
             'source_file_complete' => $fetchResult->sourceFileComplete,
             'source_starts_at_zero' => $fetchResult->sourceStartsAtZero,
             'whole_duration_reliable' => $fetchResult->wholeDurationReliable,
-            'only_one_track_probed' => $fetchResult->onlyOneTrackProbed,
+            'only_one_track_probed' => $headsMerged ? false : $fetchResult->onlyOneTrackProbed,
             'nzb_manifest' => $nzbManifest,
             'archive_manifest' => $archiveManifest,
             'sidecar_manifest' => $sidecarManifest,
@@ -391,6 +395,8 @@ final class AudioEvidenceRecorder
     /**
      * @param  array<string, mixed>|null  $sampledTags
      * @param  list<AudioEvidenceFile>  $additionalAudioFiles
+     * @param  array<int, array<string, mixed>>  $nzbTrackTags  head tags by NZB ordinal
+     * @param  bool  $headsMerged  set true when a head filled a row other than the sampled row
      * @return list<array<string, mixed>>
      */
     private function tracks(
@@ -399,6 +405,8 @@ final class AudioEvidenceRecorder
         ?array $sampledTags,
         array $additionalAudioFiles = [],
         ?AcousticFingerprint $fingerprint = null,
+        array $nzbTrackTags = [],
+        bool &$headsMerged = false,
     ): array {
         $tracks = [];
 
@@ -437,7 +445,7 @@ final class AudioEvidenceRecorder
         }
 
         if ($sampledTags === null && $fetchResult->sampledFilename === null) {
-            return $tracks;
+            return $this->withHeads($tracks, null, $nzbTrackTags, $headsMerged);
         }
 
         $sampledFilename = (string) ($fetchResult->sampledFilename ?? $sampledTags['source_file'] ?? 'sampled-audio');
@@ -476,7 +484,29 @@ final class AudioEvidenceRecorder
             $tracks[$sampledIndex],
         ), $fingerprint?->toTrackFacts() ?? []);
 
-        return array_values($tracks);
+        return $this->withHeads(array_values($tracks), $sampledIndex, $nzbTrackTags, $headsMerged);
+    }
+
+    /**
+     * Fills every other posted track's `nzb` row from the tags read off its first article.
+     *
+     * @param  list<array<string, mixed>>  $tracks
+     * @param  array<int, array<string, mixed>>  $nzbTrackTags  by NZB ordinal
+     * @return list<array<string, mixed>>
+     */
+    private function withHeads(array $tracks, ?int $sampledIndex, array $nzbTrackTags, bool &$headsMerged): array
+    {
+        foreach ($tracks as $index => $track) {
+            $tags = $nzbTrackTags[(int) $track['source_ordinal']] ?? null;
+            if ($index === $sampledIndex || $track['source_kind'] !== 'nzb' || $tags === null) {
+                continue;
+            }
+
+            $tracks[$index] = array_merge($track, $this->headTrackFacts($tags, $track));
+            $headsMerged = true;
+        }
+
+        return $tracks;
     }
 
     /**
@@ -511,6 +541,54 @@ final class AudioEvidenceRecorder
     private function sampledTrackFacts(array $tags, AudioFetchResult $fetchResult, array $baseTrack): array
     {
         return [
+            ...$this->taggedTrackFacts($tags, $baseTrack),
+            ...$this->releaseIdentifierFacts($tags),
+            'raw_tags' => is_array($tags['raw_tags'] ?? null) ? $tags['raw_tags'] : null,
+            'container' => $this->limitedText($tags['container_format'] ?? $fetchResult->extension, 50),
+            'whole_duration_seconds' => $this->positiveFloat($tags['duration_seconds'] ?? null),
+            'decoded_duration_seconds' => $fetchResult->decodedDurationSeconds,
+            'source_file_complete' => $fetchResult->sourceFileComplete,
+            'source_starts_at_zero' => $fetchResult->sourceStartsAtZero,
+            'whole_duration_reliable' => $fetchResult->wholeDurationReliable,
+        ];
+    }
+
+    /**
+     * Another posted track's row from the tags of its first article. Its release-level identifiers
+     * stay on the sampled row only, so one tagger's album claim reaches the matcher once.
+     *
+     * @param  array<string, mixed>  $tags  with `whole_file` and `whole_length`
+     * @param  array<string, mixed>  $baseTrack
+     * @return array<string, mixed>
+     */
+    private function headTrackFacts(array $tags, array $baseTrack): array
+    {
+        $wholeDuration = ($tags['whole_length'] ?? null) === true ? $this->positiveFloat($tags['duration_seconds'] ?? null) : null;
+
+        return [
+            ...$this->taggedTrackFacts($tags, $baseTrack),
+            // Every release-level identifier column, null.
+            ...$this->releaseIdentifierFacts([]),
+            'raw_tags' => null,
+            'container' => $this->limitedText($tags['container_format'] ?? null, 50),
+            'whole_duration_seconds' => $wholeDuration,
+            'decoded_duration_seconds' => null,
+            'source_file_complete' => ($tags['whole_file'] ?? null) === true,
+            'source_starts_at_zero' => true,
+            'whole_duration_reliable' => $wholeDuration !== null,
+        ];
+    }
+
+    /**
+     * The columns a track's own tags fill, on the sampled row and on the other tracks' rows alike.
+     *
+     * @param  array<string, mixed>  $tags
+     * @param  array<string, mixed>  $baseTrack
+     * @return array<string, mixed>
+     */
+    private function taggedTrackFacts(array $tags, array $baseTrack): array
+    {
+        return [
             'disc_number' => $this->positiveInteger($tags['disc_position'] ?? null) ?? $baseTrack['disc_number'],
             'track_number' => $this->positiveInteger($tags['track_position'] ?? null) ?? $baseTrack['track_number'],
             'normalized_title_hint' => $this->normalizedText($tags['track_name'] ?? null)
@@ -518,7 +596,6 @@ final class AudioEvidenceRecorder
             'normalized_artist_hint' => $this->normalizedText(
                 $tags['album_performer'] ?? $tags['performer'] ?? null,
             ) ?? $baseTrack['normalized_artist_hint'],
-            'raw_tags' => is_array($tags['raw_tags'] ?? null) ? $tags['raw_tags'] : null,
             'album' => $this->limitedText($tags['album'] ?? null),
             'album_artist' => $this->limitedText($tags['album_performer'] ?? null),
             'performer' => $this->limitedText($tags['performer'] ?? null),
@@ -529,16 +606,22 @@ final class AudioEvidenceRecorder
             'normalized_performer' => $this->normalizedText($tags['performer'] ?? null),
             'normalized_title' => $this->normalizedText($tags['track_name'] ?? null),
             'normalized_date' => $this->normalizedText($tags['recorded_date'] ?? null),
-            'container' => $this->limitedText($tags['container_format'] ?? $fetchResult->extension, 50),
             'codec' => $this->limitedText($tags['codec'] ?? null, 50),
-            'whole_duration_seconds' => $this->positiveFloat($tags['duration_seconds'] ?? null),
-            'decoded_duration_seconds' => $fetchResult->decodedDurationSeconds,
-            'source_file_complete' => $fetchResult->sourceFileComplete,
-            'source_starts_at_zero' => $fetchResult->sourceStartsAtZero,
-            'whole_duration_reliable' => $fetchResult->wholeDurationReliable,
             'isrc' => $this->limitedText($tags['isrc'] ?? null, 64),
             'musicbrainz_track_id' => $this->limitedText($tags['musicbrainz_track_id'] ?? null, 36),
             'musicbrainz_recording_id' => $this->limitedText($tags['musicbrainz_recording_id'] ?? null, 36),
+        ];
+    }
+
+    /**
+     * The album-level identifiers a track's tags carry; empty tags give every column null.
+     *
+     * @param  array<string, mixed>  $tags
+     * @return array<string, string|null>
+     */
+    private function releaseIdentifierFacts(array $tags): array
+    {
+        return [
             'musicbrainz_release_id' => $this->limitedText($tags['musicbrainz_album_id'] ?? null, 36),
             'musicbrainz_release_group_id' => $this->limitedText($tags['musicbrainz_release_group_id'] ?? null, 36),
             'musicbrainz_artist_id' => $this->limitedText($tags['musicbrainz_artist_id'] ?? null, 36),

@@ -512,6 +512,23 @@ final class AudioReleasePageTest extends TestCase
         $this->assertSame($noTabs, $this->tabs($this->details($older)), 'an older decision names no stored list');
     }
 
+    public function test_loose_files_read_from_their_first_article_show_their_tag_titles_and_numbers(): void
+    {
+        $id = $this->album('Loose-Files-Album-2021-FLAC');
+        $evidence = $this->evidence($id, 1, null);
+        // The sampled file and two heads: scrambled posted names, titles and numbers from the tags,
+        // and no length where the head's was not the whole file's.
+        $this->track($evidence, 'nzb', 1, ['raw_filename' => 'q8Zt3.flac', 'title' => 'Opening Song', 'track_number' => 1, 'whole_duration_seconds' => 241.25, 'whole_duration_reliable' => 1]);
+        $this->track($evidence, 'nzb', 2, ['raw_filename' => 'Lm02x.flac', 'title' => 'Second Song', 'track_number' => 2, 'whole_duration_seconds' => 187.5, 'whole_duration_reliable' => 1]);
+        $this->track($evidence, 'nzb', 3, ['raw_filename' => 'Vb7pK.mp3', 'title' => 'Closing Song', 'track_number' => 3, 'whole_duration_seconds' => null, 'whole_duration_reliable' => 0]);
+
+        $response = $this->details($id);
+        $this->assertSame(['Overview', 'Tracks (3)', 'Files (1)', 'Media info', 'NFO', 'Comments (0)'], $this->tabs($response));
+        $panel = $this->between($response, 'data-details-panel hidden>', '</section>');
+        $this->assertSame([['1', 'Opening Song', '4:01'], ['2', 'Second Song', '3:08'], ['3', 'Closing Song', '']], $this->cells($panel));
+        $this->assertStringNotContainsString('Vb7pK', $panel);
+    }
+
     public function test_track_titles_lengths_and_disc_rows_follow_the_structural_rules(): void
     {
         $id = $this->album('Nama-Fibir-2021-FLAC');

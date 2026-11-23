@@ -259,6 +259,145 @@ class AudioEvidenceRecorderTest extends TestCase
     }
 
     #[Test]
+    public function the_first_article_tags_of_another_posted_track_fill_its_row_without_the_release_level_identifiers(): void
+    {
+        $release = $this->release();
+        [$source, $fetch, $sampledTags] = $this->looseFileCapture();
+        $recorder = new AudioEvidenceRecorder;
+
+        $without = $recorder->record($release, $source, $fetch, $sampledTags);
+        $with = $recorder->record($release, $source, $fetch, $sampledTags, nzbTrackTags: [2 => [
+            'source_file' => 'a8f3k2.flac',
+            'raw_tags' => ['album' => 'Example Album'],
+            'album' => 'Example Album',
+            'album_performer' => 'Example Artist',
+            'performer' => 'Guest Artist',
+            'track_name' => 'Second Song',
+            'recorded_date' => '2025-02-03',
+            'container_format' => 'FLAC',
+            'codec' => 'FLAC',
+            'disc_position' => 1,
+            'track_position' => 2,
+            'duration_seconds' => 187.5,
+            'isrc' => 'USRC17607840',
+            'barcode' => '0123456789012',
+            'catalog_number' => 'CAT-001',
+            'disc_id' => 'disc-like-value',
+            'musicbrainz_recording_id' => '66666666-6666-4666-8666-666666666666',
+            'musicbrainz_track_id' => '77777777-7777-4777-8777-777777777777',
+            'musicbrainz_album_id' => '33333333-3333-4333-8333-333333333333',
+            'musicbrainz_release_group_id' => '44444444-4444-4444-8444-444444444444',
+            'musicbrainz_artist_id' => '55555555-5555-4555-8555-555555555555',
+            'whole_file' => false,
+            'whole_length' => true,
+        ]]);
+
+        $this->assertTrue($without->only_one_track_probed);
+        $this->assertFalse($with->only_one_track_probed);
+        $this->assertNotSame($without->evidence_hash, $with->evidence_hash);
+        $this->assertSame($this->trackRow($without, 1), $this->trackRow($with, 1), 'the sampled row is unchanged');
+
+        $row = $this->trackRow($with, 2);
+        $expected = [
+            'title' => 'Second Song', 'performer' => 'Guest Artist', 'album' => 'Example Album', 'album_artist' => 'Example Artist',
+            'recorded_date' => '2025-02-03', 'track_number' => 2, 'disc_number' => 1, 'isrc' => 'USRC17607840',
+            'musicbrainz_recording_id' => '66666666-6666-4666-8666-666666666666', 'musicbrainz_track_id' => '77777777-7777-4777-8777-777777777777',
+            'normalized_title' => 'second song', 'normalized_title_hint' => 'second song', 'normalized_artist_hint' => 'example artist',
+            'container' => 'FLAC', 'codec' => 'FLAC', 'whole_duration_seconds' => 187.5, 'whole_duration_reliable' => 1,
+            'decoded_duration_seconds' => null, 'source_file_complete' => 0, 'source_starts_at_zero' => 1, 'raw_tags' => null,
+            'musicbrainz_release_id' => null, 'musicbrainz_release_group_id' => null, 'musicbrainz_artist_id' => null,
+            'barcode' => null, 'catalog_number' => null, 'disc_id_like' => null,
+        ];
+        $actual = array_intersect_key($row, $expected);
+        ksort($expected);
+        ksort($actual);
+        $this->assertSame($expected, $actual);
+        $this->assertSame('a8f3k2.flac', $row['raw_filename'], 'the posted name stays');
+
+        $shortHead = $recorder->record($release, $source, $fetch, $sampledTags, nzbTrackTags: [2 => [
+            'track_name' => 'Second Song', 'duration_seconds' => 7.5, 'whole_file' => true, 'whole_length' => false,
+        ]]);
+        $row = $this->trackRow($shortHead, 2);
+        $this->assertNull($row['whole_duration_seconds'], 'a length that is not the whole file\'s is not stored');
+        $this->assertSame(0, $row['whole_duration_reliable']);
+        $this->assertSame(1, $row['source_file_complete']);
+    }
+
+    #[Test]
+    public function tags_for_the_sampled_file_or_for_an_ordinal_with_no_nzb_row_change_nothing(): void
+    {
+        $release = $this->release();
+        [$source, $fetch, $sampledTags] = $this->looseFileCapture();
+        $recorder = new AudioEvidenceRecorder;
+        $head = ['track_name' => 'Head Title', 'track_position' => 9, 'whole_file' => true, 'whole_length' => true, 'duration_seconds' => 12.0];
+
+        $without = $recorder->record($release, $source, $fetch, $sampledTags);
+        foreach ([1, 7] as $ordinal) {
+            $with = $recorder->record($release, $source, $fetch, $sampledTags, nzbTrackTags: [$ordinal => $head]);
+
+            $this->assertSame($without->evidence_hash, $with->evidence_hash, 'ordinal '.$ordinal);
+            $this->assertTrue($with->only_one_track_probed);
+            $this->assertSame([$this->trackRow($without, 1), $this->trackRow($without, 2)], [$this->trackRow($with, 1), $this->trackRow($with, 2)]);
+        }
+    }
+
+    /**
+     * Two posted FLAC files, the first sampled from its head.
+     *
+     * @return array{AudioSource, AudioFetchResult, array<string, mixed>}
+     */
+    private function looseFileCapture(): array
+    {
+        $source = new AudioSource(
+            kind: AudioSourceKind::BareFile,
+            title: '01 - First Song.flac',
+            extension: 'FLAC',
+            parts: [['<first-1>', '<first-2>']],
+            nzbAudioFiles: [
+                new AudioEvidenceFile(1, '01 - First Song.flac', 2, 'audio'),
+                new AudioEvidenceFile(2, 'a8f3k2.flac', 3, 'audio'),
+            ],
+        );
+        $fetch = AudioFetchResult::fetched(
+            $this->makeTempPath('audio-evidence-heads', '.flac'),
+            'flac',
+            null,
+            sampledFilename: '01 - First Song.flac',
+            sourceFileComplete: true,
+            sourceStartsAtZero: true,
+            wholeDurationReliable: false,
+            onlyOneTrackProbed: true,
+        );
+
+        return [$source, $fetch, [
+            'source_file' => '01 - First Song.flac',
+            'raw_tags' => ['album' => 'Example Album'],
+            'album' => 'Example Album',
+            'album_performer' => 'Example Artist',
+            'performer' => 'Example Artist',
+            'track_name' => 'First Song',
+            'container_format' => 'FLAC',
+            'track_position' => 1,
+            'duration_seconds' => 241.25,
+            'musicbrainz_album_id' => '33333333-3333-4333-8333-333333333333',
+            'barcode' => '0123456789012',
+        ]];
+    }
+
+    /**
+     * One stored row of a revision, without its own and its revision's ids.
+     *
+     * @return array<string, mixed>
+     */
+    private function trackRow(ReleaseAudioEvidence $evidence, int $ordinal): array
+    {
+        $row = (array) DB::table('release_audio_evidence_tracks')
+            ->where('release_audio_evidence_id', $evidence->id)->where('source_kind', 'nzb')->where('source_ordinal', $ordinal)->sole();
+
+        return array_diff_key($row, ['id' => true, 'release_audio_evidence_id' => true, 'created_at' => true, 'updated_at' => true]);
+    }
+
+    #[Test]
     public function evidence_factories_create_valid_header_and_track_rows(): void
     {
         $release = $this->release();
