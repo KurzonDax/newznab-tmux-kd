@@ -10,6 +10,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\MultimediaMediaParityTestCase;
 use Tests\Support\NumberedMkvArchiveTestCase;
 use Tests\TestCase;
 
@@ -303,6 +304,84 @@ class CollectionsCleaningSeededRegexTest extends TestCase
         $this->assertSame($custom, DB::table('collection_regexes')->where('id', 113)->value('regex'));
         $migration->down();
         $this->assertSame($custom, DB::table('collection_regexes')->where('id', 113)->value('regex'));
+    }
+
+    /** @return array<string, array{string, string}> filename => [before, after] */
+    private static function multimediaMediaParityNames(): array
+    {
+        return [
+            'Example.S01E07.mp4' => ['Example.S01E07', 'Example.S01E07'],
+            'Example.S01E07.nfo' => ['Example.S01E07', 'Example.S01E07'],
+            'Example.S01E07.mp4.par2' => ['Example.S01E07.mp4', 'Example.S01E07'],
+            'Example.S01E07.mp4.vol015+16.par2' => ['Example.S01E07.mp4', 'Example.S01E07'],
+            'Example.S01E07.MKV.PAR2' => ['Example.S01E07.MKV', 'Example.S01E07'],
+            'Example.S01E07.vob.vol07+7.PAR2' => ['Example.S01E07.vob', 'Example.S01E07'],
+            'Example.S01E07.avi.r00' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example.S01E07.avi.r000' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example.S01E07.avi.part01.rar' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example.S01E07.avi.rar' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example.S01E07.avi.sfv' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example.S01E07.avi.srr' => ['Example.S01E07.avi', 'Example.S01E07'],
+            'Example-sample.avi.vol1+2.PAR2' => ['Example-sample.avi', 'Example-sample'],
+            'Example.720p.x264.par2' => ['Example.720p.x264', 'Example.720p.x264'],
+            'Example.720p.x264.rar' => ['Example.720p.x264', 'Example.720p.x264'],
+            'Example.par2' => ['Example', 'Example'],
+            'Example.vol00+01.par2' => ['Example', 'Example'],
+            'Example.part01.rar' => ['Example', 'Example'],
+            'Example.r00' => ['Example', 'Example'],
+            'Example 1x24.part.vol15+16.par2' => ['Example 1x24', 'Example 1x24'],
+            'Example.mkv.7z.001' => ['Example.mkv.7z', 'Example.mkv.7z'],
+            'Example.mp4.Extras.par2' => ['Example.mp4.Extras', 'Example.mp4.Extras'],
+            'Example.wmv.par2' => ['Example.wmv', 'Example.wmv'],
+            'Example.m4v.par2' => ['Example.m4v', 'Example.m4v'],
+        ];
+    }
+
+    private function assertMultimediaMediaParityNames(CollectionsCleaningService $cleaner, bool $migrated): void
+    {
+        foreach (self::multimediaMediaParityNames() as $filename => $names) {
+            $subject = '[01/10] - "'.$filename.'" yEnc';
+            $this->assertSame(['id' => 461, 'name' => $names[$migrated ? 1 : 0]],
+                $cleaner->collectionsCleaner($subject, 'alt.binaries.multimedia'), $subject);
+        }
+    }
+
+    public function test_seeded_multimedia_rule_groups_media_named_parity_with_its_video(): void
+    {
+        $this->assertMultimediaMediaParityNames(new CollectionsCleaningService, true);
+    }
+
+    public function test_previous_multimedia_media_parity_split_is_corrected_by_migration(): void
+    {
+        DB::table('collection_regexes')->where('id', 461)->update(['regex' => MultimediaMediaParityTestCase::PREVIOUS]);
+        $cleaner = new CollectionsCleaningService;
+        $this->assertMultimediaMediaParityNames($cleaner, false);
+
+        (require database_path('migrations/2026_11_21_120000_group_media_named_par2_in_multimedia_collection_regex.php'))->up();
+        $this->assertMultimediaMediaParityNames($cleaner, true);
+    }
+
+    public function test_multimedia_media_parity_correction_preserves_neighboring_rule_ownership(): void
+    {
+        $neighbors = [
+            460 => 'Example.S01E07 - [01/05] - "Example.S01E07.mp4" yEnc',
+            462 => 'homeland.s02e12.1080p.bluray-bia.r08 - [011/111]  yEnc',
+            463 => '(TOWN)(www.town.ag ) (partner of www.ssl-news.info ) Twinz-Conversation-CD-FLAC-1995-CUSTODES  [01/23] - #34;Twinz-Conversation-CD-FLAC-1995-CUSTODES.par2#34; - 266,00 MB - yEnc',
+        ];
+        $unmatched = '[01/05] - "Example.mp4"yEnc';
+        DB::table('collection_regexes')->where('id', 461)->update(['regex' => MultimediaMediaParityTestCase::PREVIOUS]);
+        $cleaner = new CollectionsCleaningService;
+        foreach ($neighbors as $id => $subject) {
+            $this->assertSame($id, $cleaner->collectionsCleaner($subject, 'alt.binaries.multimedia')['id'], $subject);
+        }
+        $previous = $cleaner->collectionsCleaner($unmatched, 'alt.binaries.multimedia');
+        $this->assertNotSame(461, $previous['id']);
+
+        (require database_path('migrations/2026_11_21_120000_group_media_named_par2_in_multimedia_collection_regex.php'))->up();
+        foreach ($neighbors as $id => $subject) {
+            $this->assertSame($id, $cleaner->collectionsCleaner($subject, 'alt.binaries.multimedia')['id'], $subject);
+        }
+        $this->assertSame($previous, $cleaner->collectionsCleaner($unmatched, 'alt.binaries.multimedia'));
     }
 
     /**

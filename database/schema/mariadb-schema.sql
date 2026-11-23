@@ -4395,3 +4395,4 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (338,'2026_10_23_12
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (339,'2026_11_16_120000_clear_size_only_recovery_header_conflicts',45);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (340,'2026_11_16_130000_switch_backup_settings_to_daily_only',46);
 INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (341,'2026_11_16_130100_drop_kind_from_database_backups',46);
+INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES (342,'2026_11_21_120000_group_media_named_par2_in_multimedia_collection_regex',47);
