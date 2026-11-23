@@ -7,7 +7,8 @@ return [
     // Raising the version re-resolves every eligible audio release against MusicBrainz; it is
     // written once, in MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION (v2: accepted search
     // text, #308; v3: an accepted album's genres, track list and credited artists, #313;
-    // v4: release-name album matching, #1033; v5: album tags as a reading of the album, #1276).
+    // v4: release-name album matching, #1033; v5: album tags as a reading of the album, #1276;
+    // v6: a later look at releases without an album, #1277).
     'algorithm_version' => MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION,
     'resolver_version' => 'resolver-v1',
     'normalizer_version' => 'normalizer-v1',
@@ -21,6 +22,14 @@ return [
     'retry' => [
         'initial_seconds' => 60,
         'maximum_seconds' => 3_600,
+    ],
+
+    // A finished decision that accepted no album is resolved again, since MusicBrainz lists a new
+    // album days after it is posted (#1277): when the release is twice as old as at its last
+    // decision and at least minimum_seconds later, while it is no older than maximum_age_seconds.
+    'recheck' => [
+        'minimum_seconds' => 86_400,
+        'maximum_age_seconds' => 2_419_200,
     ],
 
     'scoring' => [

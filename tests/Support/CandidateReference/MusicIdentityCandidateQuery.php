@@ -95,6 +95,13 @@ final class MusicIdentityCandidateQuery
                                                                 ->whereNull('current_identification.next_attempt_at')
                                                                 ->orWhere('current_identification.next_attempt_at', '<=', now());
                                                         });
+                                                })
+                                                ->orWhere(function (QueryBuilder $dueRecheck): void {
+                                                    // A decision without an album, looked at again once its time comes (#1277); no time means never.
+                                                    $dueRecheck
+                                                        ->whereIn('current_identification.state', IdentificationStatus::recheckableValues())
+                                                        ->whereNotNull('current_identification.next_attempt_at')
+                                                        ->where('current_identification.next_attempt_at', '<=', now());
                                                 });
                                         })
                                         ->where(function (QueryBuilder $lease): void {

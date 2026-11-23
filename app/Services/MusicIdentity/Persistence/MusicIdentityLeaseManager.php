@@ -45,7 +45,9 @@ final class MusicIdentityLeaseManager
                 $identification->refresh();
             }
 
-            if ($identification->state->isTerminal()) {
+            // A finished decision is leased again only when its later look is due (#1277); its
+            // state stays while leased, so the release keeps showing its current decision.
+            if ($identification->state->isTerminal() && ! $identification->recheckDue()) {
                 return null;
             }
             if ($identification->state === IdentificationStatus::RetryableError
