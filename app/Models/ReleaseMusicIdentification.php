@@ -122,4 +122,12 @@ class ReleaseMusicIdentification extends Model
     {
         return $this->hasMany(ReleaseMusicCandidateAttempt::class, 'release_music_identification_id')->orderBy('rank');
     }
+
+    /** Whether this finished decision is due to be resolved again. */
+    public function recheckDue(): bool
+    {
+        return $this->state->isRecheckable()
+            && $this->next_attempt_at !== null
+            && ! $this->next_attempt_at->isFuture();
+    }
 }

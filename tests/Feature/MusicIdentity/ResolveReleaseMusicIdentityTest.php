@@ -169,6 +169,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
     #[Test]
     public function it_persists_a_shadow_decision_without_mutating_the_legacy_music_projection(): void
     {
+        Carbon::setTestNow('2026-11-23 12:00:00');
         $release = $this->release(musicInfoId: 77);
         $evidence = $this->evidence($release);
         $resolverEvidence = (new AudioEvidenceSetFactory)->make($evidence);
@@ -189,7 +190,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertSame(IdentificationStatus::Unresolved, $identification->state);
         $this->assertSame(1, $identification->attempt_count);
         $this->assertNotNull($identification->decided_at);
-        $this->assertNull($identification->next_attempt_at);
+        $this->assertSame(86_400, (int) now()->diffInSeconds($identification->next_attempt_at, absolute: true));
         $this->assertSame(77, $release->fresh()->musicinfo_id);
         $this->assertNull($this->worker(new EmptyCandidateGenerator)->resolveRelease($release, 'worker-b'));
         $this->assertSame(1, ReleaseMusicIdentification::query()->count());
@@ -373,7 +374,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertSame(IdentificationStatus::Unresolved, $resolved->state);
         $this->assertSame(4, $resolved->attempt_count);
         $this->assertNull($resolved->last_operational_error);
-        $this->assertNull($resolved->next_attempt_at);
+        $this->assertSame(86_400, (int) now()->diffInSeconds($resolved->next_attempt_at, absolute: true));
         $this->assertNotNull($resolved->decided_at);
     }
 
@@ -552,6 +553,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
 
         $this->assertNotNull($identification);
         $this->assertSame(IdentificationStatus::AcceptedEdition, $identification->state);
+        $this->assertNull($identification->next_attempt_at);
         $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release', 'musicbrainz_id' => AcceptingCandidateGenerator::RELEASE_ID, 'outcome' => 'stored']);
         $this->assertNotNull(getImageAssetUrl('audio', AcceptingCandidateGenerator::RELEASE_ID));
     }
@@ -568,6 +570,125 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertNotNull($identification);
         $this->assertSame('Example Artist - Example Album (2020) FLAC', DB::table('releases')->where('id', $release->id)->value('searchname'));
         $this->assertDatabaseHas('release_music_renames', ['release_music_identification_id' => $identification->id, 'outcome' => 'applied']);
+    }
+
+    #[Test]
+    public function a_release_without_an_album_is_looked_at_again_and_gains_the_album_musicbrainz_now_lists(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        Http::fake(['https://caa.test/release/'.AcceptingCandidateGenerator::RELEASE_ID.'/front-500' => Http::response($this->image(), 200)]);
+        $release = $this->release();
+        $this->albumEvidence($release);
+
+        $first = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-a');
+        $this->assertNotNull($first);
+        $this->assertSame(IdentificationStatus::Unresolved, $first->state);
+        $this->assertSame([LowScoringCandidateGenerator::RELEASE_GROUP_ID], $this->storedCandidateGroups($first->id));
+        $this->assertSame('2026-11-24 12:00:00', $first->next_attempt_at?->toDateTimeString());
+
+        Carbon::setTestNow('2026-11-24 11:59:59');
+        $before = (array) DB::table('release_music_identifications')->where('id', $first->id)->first();
+        $this->assertNull($this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-b'));
+        $this->assertSame($before, (array) DB::table('release_music_identifications')->where('id', $first->id)->first());
+
+        Carbon::setTestNow('2026-11-24 12:00:00');
+        $later = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-c');
+
+        $this->assertNotNull($later);
+        $this->assertSame([$first->id, IdentificationStatus::AcceptedEdition, 2, null], [$later->id, $later->state, $later->attempt_count, $later->next_attempt_at]);
+        $this->assertSame([AcceptingCandidateGenerator::RELEASE_GROUP_ID], $this->storedCandidateGroups($first->id));
+        $this->assertDatabaseHas('release_music_renames', ['release_music_identification_id' => $first->id, 'outcome' => 'applied']);
+        $this->assertDatabaseHas('music_cover_art_lookups', ['kind' => 'release', 'musicbrainz_id' => AcceptingCandidateGenerator::RELEASE_ID, 'outcome' => 'stored']);
+        $this->assertSame(1, ReleaseMusicIdentification::query()->count());
+    }
+
+    #[Test]
+    public function a_later_look_that_still_finds_no_album_is_rewritten_and_scheduled_again(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        $release = $this->release();
+        $this->albumEvidence($release);
+        $first = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-a');
+        $this->assertNotNull($first);
+
+        Carbon::setTestNow('2026-11-24 12:00:00');
+        $later = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-b');
+
+        $this->assertNotNull($later);
+        $this->assertSame([$first->id, IdentificationStatus::Unresolved, 2], [$later->id, $later->state, $later->attempt_count]);
+        $this->assertSame(['2026-11-23 12:00:00', '2026-11-24 12:00:00'], [$first->decided_at?->toDateTimeString(), $later->decided_at?->toDateTimeString()]);
+        $this->assertSame('2026-11-25 12:00:00', $later->next_attempt_at?->toDateTimeString());
+        $this->assertSame([LowScoringCandidateGenerator::RELEASE_GROUP_ID], $this->storedCandidateGroups($first->id));
+    }
+
+    #[Test]
+    public function a_failed_later_look_keeps_the_decision_and_is_tried_again_after_the_retry_delay(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        Http::fake(['*' => Http::response('', 503)]);
+        $release = $this->release();
+        $this->albumEvidence($release);
+        $first = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-a');
+        $this->assertNotNull($first);
+        $candidates = DB::table('release_music_candidate_attempts')->where('release_music_identification_id', $first->id)->orderBy('id')->get()->all();
+
+        Carbon::setTestNow('2026-11-24 12:00:00');
+        $this->worker(new FailingCandidateGenerator('mirror unavailable'))->resolveRelease($release, 'worker-b');
+
+        $kept = ReleaseMusicIdentification::query()->findOrFail($first->id);
+        $this->assertSame(IdentificationStatus::Unresolved, $kept->state);
+        $this->assertSame($first->decided_at?->toDateTimeString(), $kept->decided_at?->toDateTimeString());
+        $this->assertSame($first->reasons, $kept->reasons);
+        $this->assertEquals($candidates, DB::table('release_music_candidate_attempts')->where('release_music_identification_id', $first->id)->orderBy('id')->get()->all());
+        $this->assertSame('2026-11-24 12:02:00', $kept->next_attempt_at?->toDateTimeString());
+        $this->assertSame([2, 'mirror unavailable', null, null], [$kept->attempt_count, $kept->last_operational_error, $kept->lease_token, $kept->lease_expires_at]);
+
+        Carbon::setTestNow('2026-11-24 12:01:59');
+        $this->assertNull($this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-c'));
+
+        Carbon::setTestNow('2026-11-24 12:02:00');
+        $rewritten = $this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-d');
+        $this->assertNotNull($rewritten);
+        $this->assertSame([$first->id, IdentificationStatus::AcceptedEdition, 3, null], [$rewritten->id, $rewritten->state, $rewritten->attempt_count, $rewritten->last_operational_error]);
+        $this->assertSame([AcceptingCandidateGenerator::RELEASE_GROUP_ID], $this->storedCandidateGroups($first->id));
+    }
+
+    #[Test]
+    public function a_failed_later_look_on_a_release_past_the_age_limit_keeps_the_decision_and_is_not_tried_again(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        $release = $this->release(postdate: now()->subDays(29));
+        $this->albumEvidence($release);
+        $first = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-a');
+        $this->assertNotNull($first);
+        DB::table('release_music_identifications')->where('id', $first->id)->update(['next_attempt_at' => now()->subMinute()]);
+        $candidates = $this->storedCandidateGroups($first->id);
+
+        $this->worker(new FailingCandidateGenerator('mirror unavailable'))->resolveRelease($release, 'worker-b');
+
+        $kept = ReleaseMusicIdentification::query()->findOrFail($first->id);
+        $this->assertSame([IdentificationStatus::Unresolved, 2, null], [$kept->state, $kept->attempt_count, $kept->next_attempt_at]);
+        $this->assertSame($first->decided_at?->toDateTimeString(), $kept->decided_at?->toDateTimeString());
+        $this->assertSame($first->reasons, $kept->reasons);
+        $this->assertSame([LowScoringCandidateGenerator::RELEASE_GROUP_ID], $candidates);
+        $this->assertSame($candidates, $this->storedCandidateGroups($first->id));
+        $this->assertNull($this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-c'));
+    }
+
+    #[Test]
+    public function a_release_too_old_to_reach_its_next_look_within_the_age_limit_is_not_looked_at_again(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        $release = $this->release(postdate: now()->subDays(20));
+        $this->albumEvidence($release);
+
+        $first = $this->worker(new LowScoringCandidateGenerator)->resolveRelease($release, 'worker-a');
+
+        $this->assertNotNull($first);
+        $this->assertSame(IdentificationStatus::Unresolved, $first->state);
+        $this->assertNull($first->next_attempt_at);
+        Carbon::setTestNow(now()->addDays(30));
+        $this->assertNull($this->worker(new AcceptingCandidateGenerator)->resolveRelease($release, 'worker-b'));
     }
 
     #[Test]
@@ -796,7 +917,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         );
     }
 
-    private function release(?int $musicInfoId = null): Release
+    private function release(?int $musicInfoId = null, ?\DateTimeInterface $postdate = null): Release
     {
         $releaseId = DB::table('releases')->insertGetId([
             'guid' => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
@@ -806,7 +927,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
             'groups_id' => 1,
             'categories_id' => Category::MUSIC_LOSSLESS,
             'musicinfo_id' => $musicInfoId,
-            'postdate' => now(),
+            'postdate' => $postdate ?? now(),
         ]);
 
         return Release::query()->findOrFail($releaseId);
@@ -909,6 +1030,16 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         ]);
     }
 
+    /** @return list<string|null> the release groups of a decision's stored candidates, by rank */
+    private function storedCandidateGroups(int $identificationId): array
+    {
+        return DB::table('release_music_candidate_attempts')
+            ->where('release_music_identification_id', $identificationId)
+            ->orderBy('rank')
+            ->pluck('musicbrainz_release_group_id')
+            ->all();
+    }
+
     private function image(): string
     {
         $image = imagecreatetruecolor(40, 40);
@@ -975,6 +1106,51 @@ final readonly class AcceptingCandidateGenerator implements CandidateGenerator
                 'secondaryTypes' => [], 'firstReleaseDate' => '2020-01-01', 'aliases' => [],
             ]]),
             [new CandidateSignal(CandidateSignalKind::EmbeddedReleaseId, self::RELEASE_ID, $evidence->trackEvidence[0]->provenanceFamily ?? 'tag', true, $identity)],
+        )]);
+    }
+}
+
+/** Another album by the same artist that the album evidence does not fit: an unresolved decision with a stored candidate. */
+final readonly class LowScoringCandidateGenerator implements CandidateGenerator
+{
+    public const string RELEASE_ID = '12121212-1212-4121-8121-121212121212';
+
+    public const string RELEASE_GROUP_ID = '13131313-1313-4131-8131-131313131313';
+
+    public function generate(AudioEvidenceSet $evidence): CandidatePool
+    {
+        $releaseTracks = [];
+        foreach (['First Light', 'Nowhere'] as $index => $title) {
+            $length = $index === 0 ? 180_000 : 210_000;
+            $releaseTracks[] = [
+                'musicBrainzReleaseTrackId' => sprintf('15151515-1515-4151-8151-%012d', $index + 1),
+                'title' => $title, 'position' => $index + 1, 'number' => (string) ($index + 1), 'lengthMs' => $length,
+                'artistCredit' => 'Example Artist',
+                'recording' => [
+                    'recordingId' => sprintf('14141414-1414-4141-8141-%012d', $index + 1), 'title' => $title,
+                    'artistCredit' => 'Example Artist', 'lengthMs' => $length, 'video' => false, 'isrcs' => [],
+                    'releaseIds' => [self::RELEASE_ID], 'releaseGroupIds' => [self::RELEASE_GROUP_ID], 'providerScore' => null, 'sources' => ['fixture'],
+                ],
+            ];
+        }
+
+        return new CandidatePool([new CandidateHypothesis(
+            new CandidateIdentity(releaseId: self::RELEASE_ID, releaseGroupId: self::RELEASE_GROUP_ID),
+            new CandidateMetadata([], [[
+                'releaseId' => self::RELEASE_ID, 'title' => 'Other Album', 'artistCredit' => 'Example Artist', 'releaseGroupId' => self::RELEASE_GROUP_ID,
+                'status' => 'Official', 'date' => '2001-01-01', 'country' => 'GB', 'barcode' => null, 'labels' => [], 'aliases' => [],
+                'media' => [['position' => 1, 'title' => null, 'format' => 'CD', 'releaseTrackCount' => 2, 'discIds' => [], 'releaseTracks' => $releaseTracks]],
+            ]], [[
+                'releaseGroupId' => self::RELEASE_GROUP_ID, 'title' => 'Other Album', 'artistCredit' => 'Example Artist', 'primaryType' => 'Album',
+                'secondaryTypes' => [], 'firstReleaseDate' => '2001-01-01', 'aliases' => [],
+            ]]),
+            [new CandidateSignal(
+                CandidateSignalKind::TrackEvidenceSearch,
+                'search-result-0',
+                'search-file:0',
+                false,
+                new CandidateIdentity(recordingId: '14141414-1414-4141-8141-000000000001', releaseGroupId: self::RELEASE_GROUP_ID),
+            )],
         )]);
     }
 }

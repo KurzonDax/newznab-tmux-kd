@@ -32,6 +32,18 @@ enum IdentificationStatus: string
         return $this === self::AcceptedReleaseGroup || $this === self::AcceptedEdition;
     }
 
+    /** @return list<string> the values of the finished states that accepted no album and are looked at again (#1277) */
+    public static function recheckableValues(): array
+    {
+        return [self::Unresolved->value, self::NeedsReview->value, self::AcceptedRecording->value];
+    }
+
+    /** A finished decision that accepted no album and may gain one when MusicBrainz lists it. */
+    public function isRecheckable(): bool
+    {
+        return in_array($this->value, self::recheckableValues(), true);
+    }
+
     public function isTerminal(): bool
     {
         return ! in_array($this, [self::Pending, self::RetryableError], true);

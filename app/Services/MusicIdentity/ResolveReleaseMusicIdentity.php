@@ -200,9 +200,11 @@ final readonly class ResolveReleaseMusicIdentity
                 releaseId: (int) $release->id,
                 evidence: $evidence,
                 decision: $decision,
-                nextAttemptAt: $decision->status === IdentificationStatus::RetryableError
-                    ? $this->retryPolicy->nextAttemptAt($lease->attempt_count)
-                    : null,
+                nextAttemptAt: match (true) {
+                    $decision->status === IdentificationStatus::RetryableError => $this->retryAt($release, $lease),
+                    $decision->status->isRecheckable() => $this->retryPolicy->recheckAt($release->postdate),
+                    default => null,
+                },
                 leaseToken: $workerToken,
             );
             $this->projectRename($identification);
@@ -229,7 +231,7 @@ final readonly class ResolveReleaseMusicIdentity
                     releaseId: (int) $release->id,
                     evidence: $this->evidenceFactory->make($evidenceRecord),
                     decision: $this->operationalErrorDecision($exception),
-                    nextAttemptAt: $this->retryPolicy->nextAttemptAt($lease->attempt_count),
+                    nextAttemptAt: $this->retryAt($release, $lease),
                     leaseToken: $workerToken,
                 );
             } catch (\Throwable $persistenceException) {
@@ -242,6 +244,18 @@ final readonly class ResolveReleaseMusicIdentity
                 return null;
             }
         }
+    }
+
+    /**
+     * When a failed attempt is tried again: a failed later look at a decision without an album
+     * (#1277) only while the release is young enough to gain one, any other failure on the retry
+     * delay.
+     */
+    private function retryAt(Release $release, ReleaseMusicIdentification $lease): ?\DateTimeInterface
+    {
+        return $lease->state->isRecheckable()
+            ? $this->retryPolicy->recheckRetryAt($release->postdate, $lease->attempt_count)
+            : $this->retryPolicy->nextAttemptAt($lease->attempt_count);
     }
 
     /**

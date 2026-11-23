@@ -97,6 +97,13 @@ final class MusicIdentityCandidateQueryTest extends TestCase
                 if ($id % 2 === 0) {
                     $this->terminalDecision($evidence, 'music-identity-v1');
                 }
+            } elseif ($id % 4 === 1) {
+                $this->decisionWithoutAlbum(
+                    $this->evidence($id, 1, dechex($id % 16)),
+                    [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview, IdentificationStatus::AcceptedRecording][intdiv($id, 16) % 3],
+                    [now()->addMinute(), null, now()->subMinute(), now()->subMinute()][intdiv($id, 4) % 4],
+                    leased: intdiv($id, 4) % 4 === 3,
+                );
             }
         }
         foreach (['music-identity-v1', 'music-identity-v2'] as $version) {
@@ -164,6 +171,48 @@ final class MusicIdentityCandidateQueryTest extends TestCase
     }
 
     #[Test]
+    public function a_decision_without_an_album_is_admitted_once_its_later_look_is_due_and_unleased(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        $states = [IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview, IdentificationStatus::AcceptedRecording];
+        $rows = [];
+        foreach ($states as $index => $state) {
+            $releaseId = 40 + $index;
+            $this->release($releaseId, Category::MUSIC_MP3, 'a');
+            $rows[$releaseId] = $this->decisionWithoutAlbum($this->evidence($releaseId, 1, 'e'), $state, now()->addMinute());
+        }
+
+        $this->assertSame([], MusicIdentityCandidateQuery::query()->pluck('r.id')->all(), 'future time');
+
+        foreach ($rows as $row) {
+            $row->update(['next_attempt_at' => null]);
+        }
+        $this->assertSame([], MusicIdentityCandidateQuery::query()->pluck('r.id')->all(), 'no time');
+
+        foreach ($rows as $row) {
+            $row->update(['next_attempt_at' => now()->subMinute()]);
+        }
+        $this->assertSame([40, 41, 42], MusicIdentityCandidateQuery::query()->orderBy('r.id')->pluck('r.id')->all(), 'due');
+
+        foreach ($rows as $row) {
+            $row->update(['lease_token' => 'active-worker', 'lease_expires_at' => now()->addMinute()]);
+        }
+        $this->assertSame([], MusicIdentityCandidateQuery::query()->pluck('r.id')->all(), 'leased');
+    }
+
+    #[Test]
+    public function an_accepted_album_or_a_conflicted_decision_is_never_looked_at_again(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        foreach ([IdentificationStatus::AcceptedReleaseGroup, IdentificationStatus::AcceptedEdition, IdentificationStatus::Conflicted] as $index => $state) {
+            $this->release(50 + $index, Category::MUSIC_MP3, 'a');
+            $this->decisionWithoutAlbum($this->evidence(50 + $index, 1, 'f'), $state, now()->subMinute());
+        }
+
+        $this->assertSame([], MusicIdentityCandidateQuery::query()->pluck('r.id')->all());
+    }
+
+    #[Test]
     public function bucket_selection_collapses_hot_guid_prefixes_before_applying_the_limit(): void
     {
         $this->release(30, Category::MUSIC_MP3, 'a');
@@ -219,6 +268,23 @@ final class MusicIdentityCandidateQueryTest extends TestCase
             'releases_id' => $evidence->releases_id,
             'evidence_hash' => $evidence->evidence_hash,
             'algorithm_version' => $algorithmVersion,
+        ]);
+    }
+
+    private function decisionWithoutAlbum(
+        ReleaseAudioEvidence $evidence,
+        IdentificationStatus $state,
+        ?\DateTimeInterface $nextAttemptAt,
+        bool $leased = false,
+    ): ReleaseMusicIdentification {
+        return ReleaseMusicIdentification::factory()->create([
+            'release_audio_evidence_id' => $evidence->id,
+            'releases_id' => $evidence->releases_id,
+            'evidence_hash' => $evidence->evidence_hash,
+            'state' => $state,
+            'next_attempt_at' => $nextAttemptAt,
+            'lease_token' => $leased ? 'active-worker' : null,
+            'lease_expires_at' => $leased ? now()->addMinute() : null,
         ]);
     }
 

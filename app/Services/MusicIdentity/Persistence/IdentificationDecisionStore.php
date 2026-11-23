@@ -214,14 +214,21 @@ final readonly class IdentificationDecisionStore
         }
     }
 
-    /** @return array{0: ReleaseMusicIdentification, 1: bool} the row and whether it was written (a completed row never is) */
+    /**
+     * A completed row is written again only when its later look is due (#1277): a new decision
+     * replaces it and its candidates, while a failed look keeps the decision and only schedules
+     * the next try.
+     *
+     * @return array{0: ReleaseMusicIdentification, 1: bool} the row and whether its decision was written
+     */
     private function completeExistingAttempt(
         ReleaseMusicIdentification $identification,
         IdentificationDecision $decision,
         ?DateTimeInterface $nextAttemptAt,
         ?string $leaseToken,
     ): array {
-        if ($identification->state->isTerminal()) {
+        $laterLook = $identification->state->isTerminal();
+        if ($laterLook && ! $identification->recheckDue()) {
             return [$identification, false];
         }
         if ($leaseToken !== null
@@ -232,12 +239,27 @@ final readonly class IdentificationDecisionStore
             throw new LostMusicIdentityLease('The music identity work lease belongs to another worker.');
         }
 
+        if ($laterLook && $decision->status === IdentificationStatus::RetryableError) {
+            $identification->forceFill([
+                'next_attempt_at' => $nextAttemptAt,
+                'attempt_count' => $identification->attempt_count + 1,
+                'last_operational_error' => $decision->operationalError,
+                'lease_token' => null,
+                'lease_expires_at' => null,
+            ])->save();
+
+            return [$identification, false];
+        }
+
         $identification->fill($this->decisionAttributes(
             $decision,
             $identification->attempt_count + 1,
             $nextAttemptAt,
         ));
         $identification->save();
+        if ($laterLook) {
+            $identification->candidateAttempts()->delete();
+        }
         $this->persistCandidates($identification, $decision);
 
         return [$identification->load('candidateAttempts'), true];
@@ -268,7 +290,7 @@ final readonly class IdentificationDecisionStore
             'attempt_count' => $attemptCount,
             'lease_token' => null,
             'lease_expires_at' => null,
-            'next_attempt_at' => $decision->status === IdentificationStatus::RetryableError ? $nextAttemptAt : null,
+            'next_attempt_at' => $decision->status === IdentificationStatus::RetryableError || $decision->status->isRecheckable() ? $nextAttemptAt : null,
             'last_operational_error' => $decision->operationalError,
             'resolver_version' => $decision->resolverVersion,
             'normalizer_version' => $decision->normalizerVersion,

@@ -111,6 +111,47 @@ final class IdentificationDecisionStoreTest extends TestCase
     }
 
     #[Test]
+    public function a_later_look_time_is_stored_only_for_a_decision_that_accepted_no_album(): void
+    {
+        $store = new IdentificationDecisionStore;
+        $lookAgainAt = Carbon::parse('2026-11-24 12:00:00');
+        $stored = [];
+        foreach ([
+            IdentificationStatus::Unresolved, IdentificationStatus::NeedsReview, IdentificationStatus::AcceptedRecording,
+            IdentificationStatus::AcceptedEdition, IdentificationStatus::AcceptedReleaseGroup, IdentificationStatus::Conflicted,
+        ] as $index => $status) {
+            $identification = $store->persist(10, $this->evidence(), $this->decision('music-identity-v'.($index + 1), $status), $lookAgainAt);
+            $stored[$status->value] = ReleaseMusicIdentification::query()->findOrFail($identification->id)->next_attempt_at?->toDateTimeString();
+        }
+
+        $this->assertSame([
+            'unresolved' => '2026-11-24 12:00:00',
+            'needs_review' => '2026-11-24 12:00:00',
+            'accepted_recording' => '2026-11-24 12:00:00',
+            'accepted_edition' => null,
+            'accepted_release_group' => null,
+            'conflicted' => null,
+        ], $stored);
+    }
+
+    #[Test]
+    public function a_decision_without_album_is_not_rewritten_before_its_later_look_is_due(): void
+    {
+        Carbon::setTestNow('2026-11-23 12:00:00');
+        $store = new IdentificationDecisionStore;
+        $never = $store->persist(10, $this->evidence(), $this->decision('music-identity-v1', IdentificationStatus::Unresolved));
+        $notYet = $store->persist(10, $this->evidence(), $this->decision('music-identity-v2', IdentificationStatus::NeedsReview), now()->addDay());
+
+        $neverAgain = $store->persist(10, $this->evidence(), $this->decision('music-identity-v1'));
+        $notYetAgain = $store->persist(10, $this->evidence(), $this->decision('music-identity-v2'));
+
+        $this->assertSame([$never->id, IdentificationStatus::Unresolved, 1], [$neverAgain->id, $neverAgain->state, $neverAgain->attempt_count]);
+        $this->assertSame([$notYet->id, IdentificationStatus::NeedsReview, 1], [$notYetAgain->id, $notYetAgain->state, $notYetAgain->attempt_count]);
+        $this->assertSame(2, ReleaseMusicIdentification::query()->count());
+        Carbon::setTestNow();
+    }
+
+    #[Test]
     public function a_new_algorithm_version_appends_a_row_that_supersedes_the_previous_conclusion(): void
     {
         $store = new IdentificationDecisionStore;
