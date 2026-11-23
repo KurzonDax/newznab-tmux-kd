@@ -148,7 +148,6 @@ final class IdentificationDecisionStoreTest extends TestCase
         $this->assertSame([$never->id, IdentificationStatus::Unresolved, 1], [$neverAgain->id, $neverAgain->state, $neverAgain->attempt_count]);
         $this->assertSame([$notYet->id, IdentificationStatus::NeedsReview, 1], [$notYetAgain->id, $notYetAgain->state, $notYetAgain->attempt_count]);
         $this->assertSame(2, ReleaseMusicIdentification::query()->count());
-        Carbon::setTestNow();
     }
 
     #[Test]

@@ -190,7 +190,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertSame(IdentificationStatus::Unresolved, $identification->state);
         $this->assertSame(1, $identification->attempt_count);
         $this->assertNotNull($identification->decided_at);
-        $this->assertSame(86_400, (int) now()->diffInSeconds($identification->next_attempt_at, absolute: true));
+        $this->assertSame('2026-11-24 12:00:00', $identification->next_attempt_at?->toDateTimeString());
         $this->assertSame(77, $release->fresh()->musicinfo_id);
         $this->assertNull($this->worker(new EmptyCandidateGenerator)->resolveRelease($release, 'worker-b'));
         $this->assertSame(1, ReleaseMusicIdentification::query()->count());
@@ -374,7 +374,7 @@ final class ResolveReleaseMusicIdentityTest extends TestCase
         $this->assertSame(IdentificationStatus::Unresolved, $resolved->state);
         $this->assertSame(4, $resolved->attempt_count);
         $this->assertNull($resolved->last_operational_error);
-        $this->assertSame(86_400, (int) now()->diffInSeconds($resolved->next_attempt_at, absolute: true));
+        $this->assertSame(now()->addDay()->toDateTimeString(), $resolved->next_attempt_at?->toDateTimeString());
         $this->assertNotNull($resolved->decided_at);
     }
 

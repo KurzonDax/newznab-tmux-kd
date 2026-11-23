@@ -227,8 +227,8 @@ final readonly class IdentificationDecisionStore
         ?DateTimeInterface $nextAttemptAt,
         ?string $leaseToken,
     ): array {
-        $laterLook = $identification->state->isTerminal();
-        if ($laterLook && ! $identification->recheckDue()) {
+        $finished = $identification->state->isTerminal();
+        if ($finished && ! $identification->recheckDue()) {
             return [$identification, false];
         }
         if ($leaseToken !== null
@@ -239,7 +239,7 @@ final readonly class IdentificationDecisionStore
             throw new LostMusicIdentityLease('The music identity work lease belongs to another worker.');
         }
 
-        if ($laterLook && $decision->status === IdentificationStatus::RetryableError) {
+        if ($finished && $decision->status === IdentificationStatus::RetryableError) {
             $identification->forceFill([
                 'next_attempt_at' => $nextAttemptAt,
                 'attempt_count' => $identification->attempt_count + 1,
@@ -257,7 +257,7 @@ final readonly class IdentificationDecisionStore
             $nextAttemptAt,
         ));
         $identification->save();
-        if ($laterLook) {
+        if ($finished) {
             $identification->candidateAttempts()->delete();
         }
         $this->persistCandidates($identification, $decision);
