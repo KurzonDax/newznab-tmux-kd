@@ -61,19 +61,16 @@ final readonly class ReleaseNameAlbumCandidates
     ) {}
 
     /**
-     * The release group the name identifies: the first reading of the name with a passing group
-     * decides, and a reading left with several groups makes the name ambiguous. So does a search
-     * MusicBrainz answered only in part: the groups it held back could pass too.
+     * The release group the name or the album tags identify: the first reading with a passing
+     * group decides, the name's readings before the tags', and a reading left with several groups
+     * ends the match. So does a search MusicBrainz answered only in part: the groups it held back
+     * could pass too.
      *
      * @throws MusicBrainzGatewayException when a search fails
      */
     public function match(AudioEvidenceSet $evidence): ?ReleaseNameAlbumMatch
     {
-        if ($evidence->releaseTitle === null) {
-            return null;
-        }
-
-        foreach ($this->parser->parse($evidence->releaseTitle) as $album) {
+        foreach ($this->readings($evidence) as [$album, $source]) {
             $found = $this->search($album);
             if ($found === null) {
                 return null;
@@ -114,6 +111,7 @@ final readonly class ReleaseNameAlbumCandidates
                 year: $album->year,
                 rule: $rule,
                 responseCacheKeys: $responseCacheKeys,
+                source: $source,
             );
         }
 
@@ -121,18 +119,54 @@ final readonly class ReleaseNameAlbumCandidates
     }
 
     /**
+     * The readings searched, in order: the name's, then the album tags' (issue #1276) when both
+     * the artist and the album title are tagged. A name with the word VA or Various belongs to a
+     * compilation or a chart pack, whose one probed track is tagged with its own artist and album,
+     * so the tags are read only when their artist is Various Artists too.
+     *
+     * @return list<array{ReleaseNameAlbum, 'name'|'tags'}>
+     */
+    private function readings(AudioEvidenceSet $evidence): array
+    {
+        $readings = [];
+        foreach ($evidence->releaseTitle === null ? [] : $this->parser->parse($evidence->releaseTitle) as $album) {
+            $readings[] = [$album, 'name'];
+        }
+        if ($evidence->albumArtist === null || $evidence->albumTitle === null) {
+            return $readings;
+        }
+        $tags = $this->parser->fromTags($evidence->albumArtist, $evidence->albumTitle, $evidence->releaseYear);
+        if ($tags === null || ($tags->artist !== 'Various Artists' && $this->namesVariousArtists($evidence->releaseTitle))) {
+            return $readings;
+        }
+        $readings[] = [$tags, 'tags'];
+
+        return $readings;
+    }
+
+    private function namesVariousArtists(?string $releaseName): bool
+    {
+        $words = explode(' ', $this->parser->fold($releaseName) ?? '');
+
+        return in_array('va', $words, true) || in_array('various', $words, true);
+    }
+
+    /**
      * The pool with the name's signal on the matched release group's candidate, which is appended
-     * (hydrated) when the file evidence produced none.
+     * (hydrated) when the file evidence produced none. A match through the album tags signals in
+     * the tags' own provenance family: the tags are the evidence the album-title search used, not
+     * a second independent source.
      *
      * @throws MusicBrainzGatewayException when hydrating the new candidate fails
      */
     public function supplement(AudioEvidenceSet $evidence, CandidatePool $pool, ReleaseNameAlbumMatch $match): CandidatePool
     {
         $identity = new CandidateIdentity(releaseGroupId: $match->releaseGroupId);
+        $byTags = $match->source === 'tags';
         $signal = new CandidateSignal(
-            kind: CandidateSignalKind::ReleaseName,
+            kind: $byTags ? CandidateSignalKind::AlbumTags : CandidateSignalKind::ReleaseName,
             value: $match->artist.' - '.$match->title,
-            provenanceFamily: 'evidence:'.$evidence->evidenceId.':release-name',
+            provenanceFamily: $byTags ? $evidence->albumProvenanceFamily() : 'evidence:'.$evidence->evidenceId.':release-name',
             exact: false,
             identity: $identity,
             responseCacheKeys: $match->responseCacheKeys,

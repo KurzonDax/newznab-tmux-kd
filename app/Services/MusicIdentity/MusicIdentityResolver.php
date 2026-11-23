@@ -75,8 +75,9 @@ final readonly class MusicIdentityResolver
 
     /**
      * Resolution step 8: when the file evidence accepted no album, the release group the release
-     * name identifies is accepted, unless the file evidence points to another group or contradicts
-     * this one. The accepted score stays the scorer's, so it says how far the files agree.
+     * name or the album tags identify is accepted, unless the file evidence points to another group
+     * or contradicts this one. The accepted score stays the scorer's, so it says how far the files
+     * agree.
      *
      * @throws MusicBrainzGatewayException
      */
@@ -131,7 +132,9 @@ final readonly class MusicIdentityResolver
             IdentificationStatus::AcceptedReleaseGroup,
             $accepted,
             new CandidateIdentity(releaseGroupId: $match->releaseGroupId),
-            [new DecisionReason('release_name_match', 'The release name identifies one MusicBrainz release group ('.$match->rule.').')],
+            [$match->source === 'tags'
+                ? new DecisionReason('album_tags_match', 'The album tags identify one MusicBrainz release group ('.$match->rule.').')
+                : new DecisionReason('release_name_match', 'The release name identifies one MusicBrainz release group ('.$match->rule.').')],
             array_map(static fn (CandidateEvaluation $evaluation): CandidateSummary => $evaluation->summary, $ranked),
             $runnerUp === null ? null : $accepted->score - $runnerUp->score,
         );

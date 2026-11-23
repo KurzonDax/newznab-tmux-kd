@@ -44,6 +44,9 @@ final class ReleaseNameResolutionTest extends TestCase
 {
     private const string NAME = 'Example Artist - Example Album (2020) [FLAC]';
 
+    /** A release name with no reading: no artist stands in it. */
+    private const string UNREADABLE_NAME = 'Example Album';
+
     private const string GROUP = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
     private const string OTHER_GROUP = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -83,6 +86,39 @@ final class ReleaseNameResolutionTest extends TestCase
         $this->assertSame('Example Artist', $decision->acceptedText?->artistCredit);
         $this->assertContains('search:Example Artist|Example Album', $decision->candidates[0]->responseCacheKeys);
         $this->assertNull($decision->acoustIdLookedUpAt);
+    }
+
+    #[Test]
+    public function a_release_whose_name_has_no_reading_takes_the_release_group_its_album_tags_identify(): void
+    {
+        $gateway = new NameStageGateway;
+
+        $decision = $this->resolver([], $gateway)->resolve($this->evidence([], releaseName: self::UNREADABLE_NAME, albumTitle: 'Example Album'));
+
+        $this->assertSame(IdentificationStatus::AcceptedReleaseGroup, $decision->status);
+        $this->assertSame(self::GROUP, $decision->acceptedIdentity?->releaseGroupId);
+        $this->assertSame(['album_tags_match'], array_map(static fn ($reason): string => $reason->code, $decision->reasons));
+        $this->assertSame('The album tags identify one MusicBrainz release group (unique).', $decision->reasons[0]->description);
+        $this->assertSame(['Example Artist|Example Album'], $gateway->searches);
+    }
+
+    #[Test]
+    public function file_evidence_scoring_75_or_more_for_another_group_outweighs_the_album_tags(): void
+    {
+        $evidence = $this->evidence(
+            [new TrackEvidence(1, 'tag', 1, '01.flac', 'First Light', 'Example Artist', 180_000)],
+            releaseName: self::UNREADABLE_NAME,
+        );
+        $pool = [$this->recordingCandidate(self::OTHER_RELEASE, self::OTHER_GROUP)];
+        $withoutNameStage = $this->resolver($pool, null)->resolve($evidence);
+        $this->assertGreaterThanOrEqual(75, $withoutNameStage->candidates[0]->score);
+        $gateway = new NameStageGateway;
+
+        $decision = $this->resolver($pool, $gateway)->resolve($evidence);
+
+        $this->assertEquals($withoutNameStage, $decision);
+        $this->assertSame(['Example Artist|Example Album'], $gateway->searches, 'the tags were matched; the file evidence outweighed them');
+        $this->assertSame([], $gateway->hydrated);
     }
 
     #[Test]
@@ -314,15 +350,22 @@ final class ReleaseNameResolutionTest extends TestCase
     }
 
     /** @param list<TrackEvidence> $trackEvidence */
-    private function evidence(array $trackEvidence, ?bool $complete = true, ?string $albumArtist = null): AudioEvidenceSet
-    {
+    private function evidence(
+        array $trackEvidence,
+        ?bool $complete = true,
+        ?string $albumArtist = null,
+        string $releaseName = self::NAME,
+        ?string $albumTitle = null,
+    ): AudioEvidenceSet {
+        $tagged = $trackEvidence !== [] || $albumTitle !== null;
+
         return new AudioEvidenceSet(
             evidenceId: 7,
             evidenceHash: str_repeat('e', 64),
-            releaseTitle: self::NAME,
-            albumTitle: $trackEvidence === [] ? null : 'Example Album',
-            albumArtist: $albumArtist ?? ($trackEvidence === [] ? null : 'Example Artist'),
-            releaseYear: $trackEvidence === [] ? null : 2020,
+            releaseTitle: $releaseName,
+            albumTitle: $albumTitle ?? ($trackEvidence === [] ? null : 'Example Album'),
+            albumArtist: $albumArtist ?? ($tagged ? 'Example Artist' : null),
+            releaseYear: $tagged ? 2020 : null,
             trackEvidence: $trackEvidence,
             trackEvidenceListComplete: $trackEvidence === [] ? null : $complete,
             albumProvenanceFamily: 'album-tags',
