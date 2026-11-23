@@ -6,6 +6,7 @@ namespace App\Services\MusicIdentity;
 
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
+use App\Services\MusicIdentity\DecisionModel\MusicAlbumPick;
 use App\Services\MusicIdentity\DTO\AcceptedMusicText;
 use App\Services\MusicIdentity\DTO\AudioEvidenceSet;
 use App\Services\MusicIdentity\DTO\CandidateEvaluation;
@@ -39,6 +40,7 @@ final readonly class MusicIdentityResolver
         private ?AcousticFingerprintCandidates $fingerprintCandidates = null,
         private ?MusicBrainzGateway $musicBrainz = null,
         private ?ReleaseNameAlbumCandidates $releaseNameAlbums = null,
+        private ?MusicAlbumPick $albumPicks = null,
     ) {}
 
     public function resolve(AudioEvidenceSet $evidence): IdentificationDecision
@@ -69,6 +71,7 @@ final readonly class MusicIdentityResolver
         } catch (MusicBrainzGatewayException $exception) {
             return $this->terminalDecision(IdentificationStatus::RetryableError, 'provider_retryable_error', $exception->getMessage());
         }
+        $decision = $this->withModelAlbumPick($evidence, $pool, $decision);
 
         return $this->withAlbumGenres($decision);
     }
@@ -142,6 +145,70 @@ final readonly class MusicIdentityResolver
         return $decision->acoustIdLookedUpAt === null
             ? $nameDecision
             : $nameDecision->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
+    }
+
+    /**
+     * Resolution step 9 (issue #1275): in Apply mode, when the matcher left the release unresolved
+     * or for review, the decision model is asked which of the decision's candidates it is. A pick
+     * at or above MusicAlbumVerdict::LINK_THRESHOLD is accepted as step 8 accepts the release-name
+     * match: the best-scoring evaluation of the picked release group in the pool the decision was
+     * scored from, unless every one is contradicted or disagrees with a validated embedded
+     * identifier. The score stays the scorer's. The answer rides on the decision, applied or not,
+     * to be logged once the decision is stored; a run that could not be made leaves the decision.
+     */
+    private function withModelAlbumPick(AudioEvidenceSet $evidence, CandidatePool $pool, IdentificationDecision $decision): IdentificationDecision
+    {
+        $answer = $this->albumPicks?->ask($evidence, $decision);
+        if ($answer === null) {
+            return $decision;
+        }
+
+        $verdict = $answer->verdict();
+        $pickedGroup = $verdict?->pickedReleaseGroupId;
+        if ($verdict === null || ! $verdict->wouldLink || $pickedGroup === null) {
+            return $decision->withAlbumPick($answer);
+        }
+
+        $evaluations = array_map(
+            fn ($candidate): CandidateEvaluation => $this->scorer->score($evidence, $candidate),
+            $pool->candidates,
+        );
+        $embeddedReleases = $this->validatedEmbeddedReleases($evaluations);
+        $embeddedReleaseGroups = $this->validatedEmbeddedReleaseGroups($evaluations);
+        $embeddedRecordings = $this->validatedEmbeddedRecordings($evaluations);
+        $accepted = null;
+        foreach ($evaluations as $evaluation) {
+            if ($evaluation->alignedIdentity->releaseGroupId === $pickedGroup
+                && ! $evaluation->hasHardContradiction()
+                && $this->supportsEmbeddedIdentities($evaluation, $embeddedReleases, $embeddedReleaseGroups, $embeddedRecordings)
+                && ($accepted === null || $evaluation->score > $accepted->score)) {
+                $accepted = $evaluation;
+            }
+        }
+        if ($accepted === null) {
+            return $decision->withAlbumPick($answer);
+        }
+
+        $others = array_values(array_filter($evaluations, static fn (CandidateEvaluation $evaluation): bool => $evaluation !== $accepted));
+        usort($others, static fn (CandidateEvaluation $left, CandidateEvaluation $right): int => $right->score <=> $left->score);
+        $ranked = [$accepted, ...$others];
+        $runnerUp = $this->runnerUpForScope($ranked, $accepted, IdentificationStatus::AcceptedReleaseGroup);
+        $pickDecision = $this->decision(
+            IdentificationStatus::AcceptedReleaseGroup,
+            $accepted,
+            new CandidateIdentity(releaseGroupId: $pickedGroup),
+            [new DecisionReason('decision_model_pick', sprintf(
+                'The decision model picked this MusicBrainz release group among the matcher\'s candidates (probability %.2f).',
+                (float) $verdict->probability,
+            ))],
+            array_map(static fn (CandidateEvaluation $evaluation): CandidateSummary => $evaluation->summary, $ranked),
+            $runnerUp === null ? null : $accepted->score - $runnerUp->score,
+        );
+        if ($decision->acoustIdLookedUpAt !== null) {
+            $pickDecision = $pickDecision->withAcoustIdLookedUpAt($decision->acoustIdLookedUpAt);
+        }
+
+        return $pickDecision->withAlbumPick($answer->applied());
     }
 
     /**

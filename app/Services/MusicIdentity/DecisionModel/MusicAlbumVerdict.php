@@ -7,15 +7,16 @@ namespace App\Services\MusicIdentity\DecisionModel;
 use App\Services\DecisionModel\DecisionVerdict;
 
 /**
- * What the model's answer means for one matcher decision. Nothing acts on it:
- * the check runs in shadow, and the log is read later to decide whether it
- * ever should.
+ * What the model's answer means for one matcher decision. In Apply mode,
+ * resolution step 9 (#1275) links a pick that would link, when the matcher left
+ * the release unresolved or for review; every other answer, and every answer
+ * the shadow catch-up logs, is only logged.
  */
 final readonly class MusicAlbumVerdict implements DecisionVerdict
 {
     /**
-     * The probability at or above which a pick would be linked, were the answer
-     * ever applied: the spike's threshold, fixed because nothing is applied.
+     * The probability at or above which a pick is linked in Apply mode (#1275):
+     * the spike's threshold, kept for apply so the log compares like for like.
      */
     public const float LINK_THRESHOLD = 0.8;
 

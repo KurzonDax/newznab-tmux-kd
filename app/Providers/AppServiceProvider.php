@@ -39,6 +39,7 @@ use App\Services\MusicIdentity\AcousticFingerprintCandidates;
 use App\Services\MusicIdentity\Contracts\AcousticFingerprintMatcher;
 use App\Services\MusicIdentity\Contracts\CandidateGenerator;
 use App\Services\MusicIdentity\Contracts\MusicBrainzGateway;
+use App\Services\MusicIdentity\DecisionModel\MusicAlbumPick;
 use App\Services\MusicIdentity\Gateways\HttpAcoustIdFingerprintMatcher;
 use App\Services\MusicIdentity\Gateways\HttpMusicBrainzGateway;
 use App\Services\MusicIdentity\Matching\WholeReleaseAlignmentScorer;
@@ -155,6 +156,7 @@ class AppServiceProvider extends ServiceProvider
             fingerprintCandidates: $app->make(AcousticFingerprintCandidates::class),
             musicBrainz: $app->make(MusicBrainzGateway::class),
             releaseNameAlbums: $app->make(ReleaseNameAlbumCandidates::class),
+            albumPicks: $app->make(MusicAlbumPick::class),
         ));
     }
 }

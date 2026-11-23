@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\MusicIdentity\DTO;
 
+use App\Services\MusicIdentity\DecisionModel\MusicAlbumPickAnswer;
 use App\Services\MusicIdentity\Enums\IdentificationBand;
 use App\Services\MusicIdentity\Enums\IdentificationStatus;
 use DateTimeInterface;
@@ -18,6 +19,8 @@ final readonly class IdentificationDecision
      * @param  list<CandidateSummary>  $candidates
      * @param  list<MusicGenre>|null  $releaseGroupGenres  An accepted album's release group genres, as the
      *                                                     release-group lookup listed them; null when no lookup was made.
+     * @param  MusicAlbumPickAnswer|null  $albumPick  The decision model's answer to resolution step 9 (#1275), logged
+     *                                                once the decision is stored; null when the model was not asked.
      */
     public function __construct(
         public IdentificationStatus $status,
@@ -36,6 +39,7 @@ final readonly class IdentificationDecision
         public ?AcceptedMusicText $acceptedText = null,
         public ?DateTimeInterface $acoustIdLookedUpAt = null,
         public ?array $releaseGroupGenres = null,
+        public ?MusicAlbumPickAnswer $albumPick = null,
     ) {}
 
     /** The same decision, reached after consulting fingerprint lookups at the given time. */
@@ -58,6 +62,7 @@ final readonly class IdentificationDecision
             acceptedText: $this->acceptedText,
             acoustIdLookedUpAt: $lookedUpAt,
             releaseGroupGenres: $this->releaseGroupGenres,
+            albumPick: $this->albumPick,
         );
     }
 
@@ -69,5 +74,11 @@ final readonly class IdentificationDecision
     public function withReleaseGroupGenres(array $genres): self
     {
         return new self(...[...get_object_vars($this), 'releaseGroupGenres' => $genres]);
+    }
+
+    /** The same decision, carrying the decision model's answer to resolution step 9. */
+    public function withAlbumPick(MusicAlbumPickAnswer $albumPick): self
+    {
+        return new self(...[...get_object_vars($this), 'albumPick' => $albumPick]);
     }
 }

@@ -6,17 +6,22 @@ namespace App\Services\MusicIdentity\DecisionModel;
 
 use App\Models\ReleaseMusicCandidateAttempt;
 use App\Models\ReleaseMusicIdentification;
+use App\Services\MusicIdentity\DTO\IdentificationDecision;
+use App\Services\MusicIdentity\Enums\IdentificationBand;
+use App\Services\MusicIdentity\Enums\IdentificationStatus;
 
 /**
  * One music matcher decision the model is asked to second-guess: the release's
- * name and file names it judges from, and the matcher's stored candidates as
- * the options it may pick from.
+ * name and file names it judges from, and the matcher's candidates as the
+ * options it may pick from.
  *
- * Candidates are the identification's stored attempts in rank order, with the
- * untitled ones (no title or no artist credit in the display snapshot) left
- * out, and then one row per MusicBrainz release group: the lowest rank wins.
- * A row with no release group is kept apart under its lower-cased title and
- * artist credit. The survivors are keyed "1", "2", … in that order.
+ * The candidates are a stored identification's attempts in rank order, or the
+ * summaries a decision not yet stored would store as its attempts (resolution
+ * step 9, #1275), with the untitled ones (no title or no artist credit in the
+ * display snapshot) left out, and then one row per MusicBrainz release group:
+ * the lowest rank wins. A row with no release group is kept apart under its
+ * lower-cased title and artist credit. The survivors are keyed "1", "2", … in
+ * that order.
  */
 final readonly class MusicAlbumCheckSubject
 {
@@ -29,14 +34,21 @@ final readonly class MusicAlbumCheckSubject
     /**
      * @param  list<string>  $fileNames  Base names, cut at both path separators, at most FILE_LIMIT.
      * @param  list<array{key: string, rank: int, release_group_id: ?string, label: string}>  $candidates  De-duplicated, in rank order.
-     * @param  int  $untitledCandidates  How many stored rows were left out for want of a title or artist credit.
+     * @param  int  $untitledCandidates  How many candidate rows were left out for want of a title or artist credit.
+     * @param  IdentificationStatus  $state  The matcher's decision.
+     * @param  ?string  $acceptedReleaseGroupId  The release group the matcher accepted; null when it accepted none.
+     * @param  int  $releasesId  The release the decision is about.
      */
     public function __construct(
-        public ReleaseMusicIdentification $identification,
         public string $releaseName,
         public array $fileNames,
         public array $candidates,
-        public int $untitledCandidates = 0,
+        public int $untitledCandidates,
+        public IdentificationStatus $state,
+        public IdentificationBand $band,
+        public int $score,
+        public ?string $acceptedReleaseGroupId,
+        public int $releasesId,
     ) {}
 
     /**
@@ -45,21 +57,68 @@ final readonly class MusicAlbumCheckSubject
      */
     public static function build(ReleaseMusicIdentification $identification, string $releaseName, array $fileNames, iterable $attempts): self
     {
+        $rows = [];
+        foreach ($attempts as $attempt) {
+            $rows[] = [(int) $attempt->rank, self::id($attempt->musicbrainz_release_group_id), $attempt->display_snapshot];
+        }
+
+        return self::fromRows(
+            $rows,
+            $releaseName,
+            $fileNames,
+            $identification->state,
+            $identification->band,
+            (int) $identification->score,
+            self::id($identification->musicbrainz_release_group_id),
+            (int) $identification->releases_id,
+        );
+    }
+
+    /**
+     * A decision the matcher has reached but not stored: its first $candidateLimit
+     * candidate summaries, the rows IdentificationDecisionStore would store, ranked
+     * from 1 in the decision's order. It accepts no album the check would compare.
+     *
+     * @param  list<string>  $fileNames  `release_files.name` values, ordered by name; the first FILE_LIMIT are kept.
+     */
+    public static function fromDecision(IdentificationDecision $decision, int $candidateLimit, int $releasesId, string $releaseName, array $fileNames): self
+    {
+        $rows = [];
+        foreach (array_slice($decision->candidates, 0, max(0, $candidateLimit)) as $index => $summary) {
+            $rows[] = [$index + 1, self::id($summary->identity->releaseGroupId), $summary->displaySnapshot];
+        }
+
+        return self::fromRows($rows, $releaseName, $fileNames, $decision->status, $decision->band, $decision->score, null, $releasesId);
+    }
+
+    /**
+     * @param  list<array{0: int, 1: ?string, 2: array<string, mixed>}>  $rows  rank, release group, display snapshot, in rank order
+     * @param  list<string>  $fileNames
+     */
+    private static function fromRows(
+        array $rows,
+        string $releaseName,
+        array $fileNames,
+        IdentificationStatus $state,
+        IdentificationBand $band,
+        int $score,
+        ?string $acceptedReleaseGroupId,
+        int $releasesId,
+    ): self {
         $candidates = [];
         $untitled = 0;
         $seen = [];
 
-        foreach ($attempts as $attempt) {
-            $label = self::label($attempt->display_snapshot);
+        foreach ($rows as [$rank, $releaseGroupId, $snapshot]) {
+            $label = self::label($snapshot);
             if ($label === null) {
                 $untitled++;
 
                 continue;
             }
 
-            $releaseGroupId = self::id($attempt->musicbrainz_release_group_id);
             $dedupeKey = $releaseGroupId === null
-                ? 'untracked|'.mb_strtolower((string) self::text($attempt->display_snapshot['title'] ?? null)).'|'.mb_strtolower((string) self::text($attempt->display_snapshot['artistCredit'] ?? null))
+                ? 'untracked|'.mb_strtolower((string) self::text($snapshot['title'] ?? null)).'|'.mb_strtolower((string) self::text($snapshot['artistCredit'] ?? null))
                 : 'group|'.$releaseGroupId;
             if (isset($seen[$dedupeKey])) {
                 continue;
@@ -68,7 +127,7 @@ final readonly class MusicAlbumCheckSubject
 
             $candidates[] = [
                 'key' => (string) (count($candidates) + 1),
-                'rank' => (int) $attempt->rank,
+                'rank' => $rank,
                 'release_group_id' => $releaseGroupId,
                 'label' => $label,
             ];
@@ -76,7 +135,7 @@ final readonly class MusicAlbumCheckSubject
 
         $names = array_map(self::baseName(...), array_slice(array_values($fileNames), 0, self::FILE_LIMIT));
 
-        return new self($identification, $releaseName, $names, $candidates, $untitled);
+        return new self($releaseName, $names, $candidates, $untitled, $state, $band, $score, $acceptedReleaseGroupId, $releasesId);
     }
 
     /**
@@ -134,11 +193,11 @@ final readonly class MusicAlbumCheckSubject
      */
     public function acceptedCandidate(): ?array
     {
-        if (! $this->identification->state->acceptsAlbum()) {
+        if (! $this->state->acceptsAlbum()) {
             return null;
         }
 
-        $accepted = self::id($this->identification->musicbrainz_release_group_id);
+        $accepted = $this->acceptedReleaseGroupId;
         if ($accepted === null) {
             return null;
         }
@@ -172,15 +231,15 @@ final readonly class MusicAlbumCheckSubject
         }
 
         return [
-            'state' => $this->identification->state->value,
-            'band' => $this->identification->band->value,
-            'score' => (int) $this->identification->score,
-            'accepted_release_group_id' => self::id($this->identification->musicbrainz_release_group_id),
+            'state' => $this->state->value,
+            'band' => $this->band->value,
+            'score' => $this->score,
+            'accepted_release_group_id' => $this->acceptedReleaseGroupId,
             'candidate_count' => count($this->candidates),
             'untitled_candidates' => $this->untitledCandidates,
             'options' => $options,
             'matcher_renamed' => $matcherRenamed,
-            'releases_id' => (int) $this->identification->releases_id,
+            'releases_id' => $this->releasesId,
         ];
     }
 

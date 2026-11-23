@@ -75,11 +75,12 @@ final class DecisionModelSection implements SettingsSectionProvider
                         new SettingDefinition(
                             key: 'decision_model_music_album_mode',
                             label: 'Mode',
-                            help: 'Shadow asks the model and records its answer in the decision log without changing the album, the name or anything else.',
+                            help: 'Shadow asks the model and records its answer in the decision log without changing the album, the name or anything else. Apply also asks while a release is being matched: when the matcher found no album and the model is at least 80% sure of one of the matcher\'s candidates, that album is linked. An album the matcher accepted is never replaced, and renaming is left to the existing rename rule. Switching away from Apply stops new links; albums already linked stay until the release is matched again.',
                             type: SettingType::Enum,
                             options: [
                                 'off' => 'Off — the model is not asked',
                                 'shadow' => 'Shadow — ask and log, change nothing',
+                                'apply' => 'Apply — ask, log and link a confident album the matcher could not decide',
                             ],
                             icon: 'fas fa-toggle-on',
                         ),

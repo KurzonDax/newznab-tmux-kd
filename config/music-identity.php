@@ -8,7 +8,8 @@ return [
     // written once, in MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION (v2: accepted search
     // text, #308; v3: an accepted album's genres, track list and credited artists, #313;
     // v4: release-name album matching, #1033; v5: album tags as a reading of the album, #1276;
-    // v6: a later look at releases without an album, #1277).
+    // v6: a later look at releases without an album, #1277; v7: the decision model's album pick,
+    // #1275).
     'algorithm_version' => MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION,
     'resolver_version' => 'resolver-v1',
     'normalizer_version' => 'normalizer-v1',

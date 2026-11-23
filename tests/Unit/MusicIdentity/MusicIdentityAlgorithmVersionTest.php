@@ -19,7 +19,7 @@ final class MusicIdentityAlgorithmVersionTest extends TestCase
         $root = dirname(__DIR__, 3);
         /** @var array{algorithm_version: string} $config */
         $config = require $root.'/config/music-identity.php';
-        $this->assertSame('music-identity-v6', MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION);
+        $this->assertSame('music-identity-v7', MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION);
         $this->assertSame(MusicIdentityConfiguration::DEFAULT_ALGORITHM_VERSION, $config['algorithm_version']);
 
         $literals = [];

@@ -8,6 +8,8 @@ use App\Models\Release;
 use App\Models\ReleaseAudioEvidence;
 use App\Models\ReleaseMusicIdentification;
 use App\Services\AudioProcessing\AudioEvidenceSynthesizer;
+use App\Services\DecisionModel\DecisionLog;
+use App\Services\DecisionModel\DecisionMode;
 use App\Services\MusicIdentity\CoverArt\AlbumCoverFetcher;
 use App\Services\MusicIdentity\DecisionModel\MusicAlbumCheck;
 use App\Services\MusicIdentity\DTO\DecisionReason;
@@ -39,6 +41,7 @@ final readonly class ResolveReleaseMusicIdentity
         private AlbumCoverFetcher $covers,
         private MusicRenameProjection $renames,
         private MusicAlbumCheck $albumChecks,
+        private DecisionLog $decisionLog = new DecisionLog,
     ) {}
 
     /** @return list<object{id: string}> */
@@ -207,6 +210,7 @@ final readonly class ResolveReleaseMusicIdentity
                 },
                 leaseToken: $workerToken,
             );
+            $this->recordAlbumPick($decision, $identification);
             $this->projectRename($identification);
             $this->fetchCover($identification);
 
@@ -256,6 +260,26 @@ final readonly class ResolveReleaseMusicIdentity
         return $lease->state->isRecheckable()
             ? $this->retryPolicy->recheckRetryAt($release->postdate, $lease->attempt_count)
             : $this->retryPolicy->nextAttemptAt($lease->attempt_count);
+    }
+
+    /**
+     * The decision model's answer to resolution step 9 (#1275) is logged once its decision is
+     * stored complete, linked to the stored row, so the shadow catch-up never asks about that row
+     * again under the same criteria. A retryable attempt logs nothing: the retry asks again.
+     * Logging never changes or fails the persisted decision.
+     */
+    private function recordAlbumPick(IdentificationDecision $decision, ReleaseMusicIdentification $identification): void
+    {
+        $pick = $decision->albumPick;
+        if ($pick === null || ! $identification->state->isTerminal()) {
+            return;
+        }
+
+        try {
+            $this->decisionLog->record($pick->run, MusicAlbumCheck::SUBJECT_TYPE, (int) $identification->id, $pick->pipelineAnswer, DecisionMode::Apply, $pick->applied);
+        } catch (\Throwable $exception) {
+            Log::warning('Music album pick could not be logged.', ['identification_id' => $identification->id, 'exception' => $exception]);
+        }
     }
 
     /**

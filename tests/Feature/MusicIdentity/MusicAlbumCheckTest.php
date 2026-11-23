@@ -286,9 +286,6 @@ final class MusicAlbumCheckTest extends TestCase
         DB::table('settings')->where('name', MusicAlbumCheck::SETTING)->update(['value' => 'off']);
         $this->assertSame(0, $this->check());
 
-        DB::table('settings')->where('name', MusicAlbumCheck::SETTING)->update(['value' => 'apply']);
-        $this->assertSame(0, $this->check(), 'a stored mode the setting does not offer is off');
-
         DB::table('settings')->where('name', MusicAlbumCheck::SETTING)->update(['value' => 'shadow']);
         config(['decision-model.enabled' => false]);
         $this->assertSame(0, $this->check());
@@ -296,6 +293,30 @@ final class MusicAlbumCheckTest extends TestCase
         Http::assertNothingSent();
         $this->assertSame(0, DecisionModelDecision::query()->count());
         $this->assertSame(0, DecisionModelCriteria::query()->count());
+    }
+
+    #[Test]
+    public function apply_mode_asks_and_logs_as_shadow_does_and_off_does_nothing(): void
+    {
+        $this->answer('1', 0.9);
+        $accepted = $this->decision(IdentificationStatus::AcceptedReleaseGroup, [[self::GROUP_A, 'Lenka', 'Good Days', '2026']], acceptedGroup: self::GROUP_A);
+        $unresolved = $this->decision(IdentificationStatus::Unresolved, [[self::GROUP_A, 'Lenka', 'Good Days', '2026']]);
+
+        DB::table('settings')->where('name', MusicAlbumCheck::SETTING)->update(['value' => 'off']);
+        $this->assertSame(0, $this->check());
+        Http::assertNothingSent();
+
+        DB::table('settings')->where('name', MusicAlbumCheck::SETTING)->update(['value' => 'apply']);
+        $before = $this->everythingButTheLog();
+        $this->assertSame(2, $this->check());
+
+        Http::assertSentCount(2);
+        $this->assertSame([$unresolved, $accepted], $this->loggedSubjects());
+        $this->assertSame(
+            [['shadow', false], ['shadow', false]],
+            DecisionModelDecision::query()->orderBy('id')->get()->map(static fn (DecisionModelDecision $row): array => [$row->mode, $row->applied])->all(),
+        );
+        $this->assertEquals($before, $this->everythingButTheLog(), 'the catch-up links nothing, even in Apply mode');
     }
 
     #[Test]
