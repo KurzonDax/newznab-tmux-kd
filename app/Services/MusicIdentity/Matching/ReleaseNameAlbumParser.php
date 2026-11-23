@@ -60,7 +60,20 @@ final class ReleaseNameAlbumParser
         return $albums;
     }
 
-    /** Lowercase words only: `&` reads "and", apostrophes vanish, everything else that is not a letter or digit separates words. */
+    /**
+     * The album tags read as a release name's reading is finished (issue #1276): edges trimmed,
+     * `VA` and `Various` read as Various Artists, the title's variants built.
+     */
+    public function fromTags(string $artist, string $title, ?int $year): ?ReleaseNameAlbum
+    {
+        if (! mb_check_encoding($artist, 'UTF-8') || ! mb_check_encoding($title, 'UTF-8')) {
+            return null;
+        }
+
+        return $this->finish($artist, $title, $year);
+    }
+
+    /** Lowercase words only:`&` reads "and", apostrophes vanish, everything else that is not a letter or digit separates words. */
     public function fold(?string $text): ?string
     {
         if ($text === null) {

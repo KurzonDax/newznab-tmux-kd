@@ -307,6 +307,136 @@ final class ReleaseNameAlbumCandidatesTest extends TestCase
         $this->assertSame([], $gateway->searches);
     }
 
+    /**
+     * Issue #1276: the album tags are one more reading, after the name's.
+     *
+     * @param  list<string>  $searches
+     */
+    #[Test]
+    #[DataProvider('namesTheTagsFollow')]
+    public function the_album_tags_identify_the_group_when_the_name_has_no_reading(?string $name, array $searches): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Down|Volume V' => [$this->group(self::GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ]);
+
+        $match = $this->candidates($gateway)->match($this->evidence($name, 'Down', 'Volume V', 2026));
+
+        $this->assertNotNull($match);
+        $this->assertSame([self::GROUP, 'unique', 'tags'], [$match->releaseGroupId, $match->rule, $match->source]);
+        $this->assertSame(['Down', 'Volume V', 2026], [$match->artist, $match->title, $match->year]);
+        $this->assertSame(['cache:Down|Volume V'], $match->responseCacheKeys);
+        $this->assertSame($searches, $gateway->searches);
+    }
+
+    /** @return iterable<string, array{string|null, list<string>}> */
+    public static function namesTheTagsFollow(): iterable
+    {
+        yield 'no release name' => [null, ['Down|Volume V']];
+        yield 'a release name with no reading' => ['Volume V', ['Down|Volume V']];
+    }
+
+    #[Test]
+    public function a_name_reading_that_identifies_one_group_decides_before_the_album_tags(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Candy Dulfer|Crazy' => [$this->group(self::GROUP, 'Crazy', 'Candy Dulfer', 'Album', [], '2011-09-30')],
+            'Down|Volume V' => [$this->group(self::OTHER_GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ]);
+
+        $match = $this->candidates($gateway)->match($this->evidence('Candy Dulfer - Crazy (2011)(flac)', 'Down', 'Volume V', 2026));
+
+        $this->assertNotNull($match);
+        $this->assertSame([self::GROUP, 'name'], [$match->releaseGroupId, $match->source]);
+        $this->assertSame(['Candy Dulfer|Crazy'], $gateway->searches);
+    }
+
+    #[Test]
+    public function the_album_tags_are_searched_after_a_name_reading_without_a_passing_group(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Candy Dulfer|Crazy' => [$this->group(self::OTHER_GROUP, 'Unrelated', 'Someone Else', 'Album', [], '1990')],
+            'Down|Volume V' => [$this->group(self::GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ]);
+
+        $match = $this->candidates($gateway)->match($this->evidence('Candy Dulfer - Crazy (2011)(flac)', 'Down', 'Volume V', 2026));
+
+        $this->assertNotNull($match);
+        $this->assertSame([self::GROUP, 'tags'], [$match->releaseGroupId, $match->source]);
+        $this->assertSame(['Candy Dulfer|Crazy', 'Down|Volume V'], $gateway->searches);
+    }
+
+    #[Test]
+    public function an_ambiguous_name_reading_ends_the_match_before_the_album_tags(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Phenomena|Phenomena' => [
+                $this->group(self::GROUP, 'Phenomena', 'Phenomena', 'Album', [], '1985'),
+                $this->group(self::OTHER_GROUP, 'Phenomena', 'Phenomena', 'Album', [], '1997'),
+            ],
+            'Down|Volume V' => [$this->group(self::THIRD_GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ]);
+
+        $this->assertNull($this->candidates($gateway)->match($this->evidence('Phenomena - Phenomena [FLAC]', 'Down', 'Volume V', 2026)));
+        $this->assertSame(['Phenomena|Phenomena'], $gateway->searches);
+    }
+
+    #[Test]
+    public function a_name_search_answered_only_in_part_ends_the_match_before_the_album_tags(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Candy Dulfer|Crazy' => [$this->group(self::OTHER_GROUP, 'Unrelated', 'Someone Else', 'Album', [], '1990')],
+            'Down|Volume V' => [$this->group(self::GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ], ['Candy Dulfer|Crazy' => 140]);
+
+        $this->assertNull($this->candidates($gateway)->match($this->evidence('Candy Dulfer - Crazy (2011)(flac)', 'Down', 'Volume V', 2026)));
+        $this->assertSame(['Candy Dulfer|Crazy'], $gateway->searches);
+    }
+
+    #[Test]
+    public function an_album_tagged_without_its_artist_or_title_searches_nothing(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Down|Volume V' => [$this->group(self::GROUP, 'Volume V', 'Down', 'Album', [], '2026-11-14')],
+        ]);
+
+        $this->assertNull($this->candidates($gateway)->match($this->evidence(null, null, 'Volume V', 2026)));
+        $this->assertNull($this->candidates($gateway)->match($this->evidence(null, 'Down', null, 2026)));
+        $this->assertSame([], $gateway->searches);
+    }
+
+    #[Test]
+    public function a_various_artists_name_has_no_album_tags_reading_unless_the_tags_are_various_artists_too(): void
+    {
+        $name = '000-va-italy_top_100_single_charts_15.11.2026-audial_int.nfo';
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Keshi|Requiem' => [$this->group(self::GROUP, 'Requiem', 'Keshi', 'Album', [], '2024-09-13')],
+        ]);
+
+        $this->assertNull($this->candidates($gateway)->match($this->evidence($name, 'Keshi', 'Requiem', 2024)));
+        $this->assertSame(['000|va'], $gateway->searches);
+
+        $gateway = new ScriptedReleaseGroupGateway;
+        $this->candidates($gateway)->match($this->evidence($name, 'VA', 'Italy Top 100', 2026));
+        $this->assertSame(['000|va', 'Various Artists|Italy Top 100'], $gateway->searches);
+    }
+
+    #[Test]
+    public function the_tagged_year_decides_between_passing_groups(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway([
+            'Toto|Toto' => [
+                $this->group(self::OTHER_GROUP, 'Toto', 'Toto', 'Album', ['Live'], '1996'),
+                $this->group(self::GROUP, 'Toto', 'Toto', 'Album', [], '1978-10-10'),
+            ],
+        ]);
+
+        $match = $this->candidates($gateway)->match($this->evidence(null, 'Toto', 'Toto', 1978));
+
+        $this->assertNotNull($match);
+        $this->assertSame([self::GROUP, 'year', 'tags'], [$match->releaseGroupId, $match->rule, $match->source]);
+    }
+
     #[Test]
     public function the_matched_group_is_appended_hydrated_when_the_pool_has_no_candidate_for_it(): void
     {
@@ -344,6 +474,27 @@ final class ReleaseNameAlbumCandidatesTest extends TestCase
         $this->assertSame([], $gateway->hydrated);
     }
 
+    #[Test]
+    public function a_match_through_the_album_tags_adds_an_album_tags_signal_of_the_tags_family(): void
+    {
+        $gateway = new ScriptedReleaseGroupGateway;
+        $evidence = $this->evidence(null, 'Down', 'Volume V', 2026);
+        $match = new ReleaseNameAlbumMatch(self::GROUP, 'Down', 'Volume V', 2026, 'unique', ['cache:Down|Volume V'], 'tags');
+
+        $pool = $this->candidates($gateway)->supplement($evidence, new CandidatePool([]), $match);
+
+        $this->assertCount(1, $pool->candidates);
+        $this->assertCount(1, $pool->candidates[0]->signals);
+        $signal = $pool->candidates[0]->signals[0];
+        $this->assertSame(CandidateSignalKind::AlbumTags, $signal->kind);
+        $this->assertSame('Down - Volume V', $signal->value);
+        $this->assertSame('album-tags:7', $evidence->albumProvenanceFamily());
+        $this->assertSame($evidence->albumProvenanceFamily(), $signal->provenanceFamily);
+        $this->assertFalse($signal->exact);
+        $this->assertSame('release-group:'.self::GROUP, $signal->identity->key());
+        $this->assertSame(['cache:Down|Volume V'], $signal->responseCacheKeys);
+    }
+
     private function assertNameSignal(CandidateSignal $signal): void
     {
         $this->assertSame(CandidateSignalKind::ReleaseName, $signal->kind);
@@ -365,16 +516,17 @@ final class ReleaseNameAlbumCandidatesTest extends TestCase
         return new ReleaseNameAlbumCandidates($gateway, new ReleaseNameAlbumParser);
     }
 
-    private function evidence(?string $releaseName): AudioEvidenceSet
+    private function evidence(?string $releaseName, ?string $albumArtist = null, ?string $albumTitle = null, ?int $releaseYear = null): AudioEvidenceSet
     {
         return new AudioEvidenceSet(
             evidenceId: 7,
             evidenceHash: str_repeat('e', 64),
             releaseTitle: $releaseName,
-            albumTitle: null,
-            albumArtist: null,
-            releaseYear: null,
+            albumTitle: $albumTitle,
+            albumArtist: $albumArtist,
+            releaseYear: $releaseYear,
             trackEvidence: [],
+            albumProvenanceFamily: $albumTitle === null ? null : 'album-tags:7',
         );
     }
 

@@ -129,4 +129,38 @@ final class ReleaseNameAlbumParserTest extends TestCase
         yield 'an obfuscated name' => ['6nrUSrcwHgGoYcrXIyeKP', []];
         yield 'a discography post' => ['Purple Yoda Posts: Primus Discography.part22.rar <23 vd 36>', []];
     }
+
+    /**
+     * Issue #1276: the album tags read as artist, title and year.
+     *
+     * @param  list<string>  $titles
+     */
+    #[Test]
+    #[DataProvider('albumTags')]
+    public function album_tags_read_as_artist_title_variants_and_year(string $artist, string $title, ?int $year, string $expectedArtist, array $titles): void
+    {
+        $album = (new ReleaseNameAlbumParser)->fromTags($artist, $title, $year);
+
+        $this->assertNotNull($album);
+        $this->assertSame([$expectedArtist, $titles, $year], [$album->artist, $album->titles, $album->year]);
+    }
+
+    /** @return iterable<string, array{string, string, int|null, string, list<string>}> */
+    public static function albumTags(): iterable
+    {
+        yield 'plain tags' => ['Down', 'Volume V', 2026, 'Down', ['Volume V']];
+        yield 'a various-artists tag' => ['VA', 'Kings Riddim Part 2', 2026, 'Various Artists', ['Kings Riddim Part 2']];
+        yield 'a bracket group' => ['Grand Funk Railroad', 'E Pluribus Funk [Bonus Tracks]', 2002, 'Grand Funk Railroad', ['E Pluribus Funk [Bonus Tracks]', 'E Pluribus Funk']];
+        yield 'a different-work group and no year' => ['Little Mix', 'DNA (Remixes)', null, 'Little Mix', ['DNA (Remixes)']];
+    }
+
+    #[Test]
+    public function album_tags_without_a_word_or_not_in_utf8_read_as_nothing(): void
+    {
+        $parser = new ReleaseNameAlbumParser;
+
+        $this->assertNull($parser->fromTags('...', 'Album', null));
+        $this->assertNull($parser->fromTags('Artist', ' - ', null));
+        $this->assertNull($parser->fromTags("Art\xFFist", 'Album', null));
+    }
 }

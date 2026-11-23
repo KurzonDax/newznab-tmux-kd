@@ -6,6 +6,7 @@ namespace App\Services\MusicIdentity\Enums;
 
 enum CandidateSignalKind: string
 {
+    case AlbumTags = 'album_tags';
     case Barcode = 'barcode';
     case CatalogNumber = 'catalog_number';
     case DiscId = 'disc_id';
