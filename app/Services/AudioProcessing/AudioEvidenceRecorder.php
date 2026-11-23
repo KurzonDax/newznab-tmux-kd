@@ -567,6 +567,7 @@ final class AudioEvidenceRecorder
 
         return [
             ...$this->taggedTrackFacts($tags, $baseTrack),
+            // Every release-level identifier column, null.
             ...$this->releaseIdentifierFacts([]),
             'raw_tags' => null,
             'container' => $this->limitedText($tags['container_format'] ?? null, 50),

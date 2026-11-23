@@ -393,7 +393,7 @@ class AudioReleaseProcessorTest extends TestCase
 
         $this->downloadResults = [
             '<f2>' => $this->failedDownload(),
-            '<f3>' => ['success' => false, 'data' => str_repeat('x', 2048), 'groupUnavailable' => false, 'error' => 'crc', 'crcFailures' => 1, 'crcFailed' => true],
+            '<f3>' => ['success' => true, 'data' => str_repeat('x', 2048), 'groupUnavailable' => false, 'error' => null, 'crcFailures' => 1, 'crcFailed' => true],
         ];
         mkdir($this->tmpPath.'track-head-7.mp3');
         $result = $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb, probes: $probes)->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
@@ -420,7 +420,7 @@ class AudioReleaseProcessorTest extends TestCase
                 $nzb[] = ['title' => '"file'.$ordinal.'.mp3" yEnc', 'segments' => ['<f'.$ordinal.'>']];
             }
             // An audio entry with no message ids is never read and does not count.
-            $nzb[] = ['title' => '"empty.mp3" yEnc', 'segments' => ['']];
+            $nzb[] = ['title' => '"empty.mp3" yEnc', 'segments' => []];
 
             $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
@@ -429,6 +429,14 @@ class AudioReleaseProcessorTest extends TestCase
             $evidence = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole();
             $this->assertSame($expectedHeads === 0, $evidence->only_one_track_probed);
             $this->assertSame($expectedHeads, $evidence->tracks()->where('source_ordinal', '>', 1)->whereNotNull('album')->count());
+            if ($expectedHeads === 0) {
+                // Today's evidence: every other row holds its posted name's hints alone.
+                $this->assertSame(0, $evidence->tracks()->where('source_ordinal', '>', 1)->where(static function ($rows): void {
+                    foreach (['title', 'performer', 'album', 'isrc', 'container', 'whole_duration_seconds', 'source_file_complete', 'source_starts_at_zero'] as $column) {
+                        $rows->orWhereNotNull($column);
+                    }
+                })->count());
+            }
         }
     }
 
@@ -1508,7 +1516,8 @@ class AudioReleaseProcessorTest extends TestCase
         $driver->shouldReceive('command')->andReturnUsing(function (array $command) use ($commandFails): string {
             $this->encoderCommands[] = array_values(array_map('strval', $command));
             $input = array_search('-i', $command, true);
-            $this->encoderInputs[] = $input === false ? false : @file_get_contents((string) $command[$input + 1]);
+            $source = $input === false ? null : (string) $command[$input + 1];
+            $this->encoderInputs[] = $source !== null && is_file($source) ? file_get_contents($source) : false;
             if ($commandFails) {
                 throw new \RuntimeException('Forced ffmpeg WavPack decode failure.');
             }

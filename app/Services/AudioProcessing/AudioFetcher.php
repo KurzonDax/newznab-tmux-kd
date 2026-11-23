@@ -148,10 +148,7 @@ final class AudioFetcher
             if ($downloads >= self::MAX_NZB_SIDECAR_DOWNLOADS) {
                 break;
             }
-            $segments = array_values(array_filter(
-                array_map('strval', is_array($nzbContents[$sidecar->ordinal - 1]['segments'] ?? null) ? $nzbContents[$sidecar->ordinal - 1]['segments'] : []),
-                static fn (string $messageId): bool => $messageId !== '',
-            ));
+            $segments = $this->nzbMessageIds($nzbContents, $sidecar->ordinal);
             if (! in_array($sidecar->kind, ['cue', 'eac_log'], true) || $sidecar->segmentCount !== 1 || count($segments) !== 1) {
                 continue;
             }
@@ -177,7 +174,7 @@ final class AudioFetcher
     /**
      * The first article of every other audio file posted as its own NZB file, probed with MediaInfo
      * (issue #1278), so the matcher sees the whole track list. Each is downloaded alone, written
-     * beside the sampled file under its own name, probed and deleted. A file that cannot be
+     * to its own `track-head-<ordinal>` temp file (never the sampled file's path), probed and deleted. A file that cannot be
      * downloaded, written or probed, or whose probe finds video or no audio, is skipped and never
      * changes the capture's outcome; a release with more than MAX_NZB_TRACK_HEAD_DOWNLOADS such
      * files is left as it is today.
@@ -194,10 +191,7 @@ final class AudioFetcher
         $sampledFirst = $source->firstPartSegments()[0] ?? null;
         $files = [];
         foreach ($source->nzbAudioFiles as $file) {
-            $segments = array_values(array_filter(
-                array_map('strval', is_array($nzbContents[$file->ordinal - 1]['segments'] ?? null) ? $nzbContents[$file->ordinal - 1]['segments'] : []),
-                static fn (string $messageId): bool => $messageId !== '',
-            ));
+            $segments = $this->nzbMessageIds($nzbContents, $file->ordinal);
             if ($segments !== [] && $segments[0] !== $sampledFirst) {
                 $files[] = ['file' => $file, 'segments' => $segments];
             }
@@ -246,6 +240,22 @@ final class AudioFetcher
         }
 
         return $heads;
+    }
+
+    /**
+     * The non-empty message ids of the NZB entry at an ordinal, in posted order.
+     *
+     * @param  list<array<string, mixed>>  $nzbContents
+     * @return list<string>
+     */
+    private function nzbMessageIds(array $nzbContents, int $ordinal): array
+    {
+        $segments = $nzbContents[$ordinal - 1]['segments'] ?? null;
+
+        return array_values(array_filter(
+            array_map('strval', is_array($segments) ? $segments : []),
+            static fn (string $messageId): bool => $messageId !== '',
+        ));
     }
 
     /**
