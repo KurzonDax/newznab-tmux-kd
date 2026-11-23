@@ -142,6 +142,11 @@ final class AudioReleaseProcessor
         // CUE sheets and rip logs posted as their own file are read as evidence whatever the
         // fetch's outcome (issue #313); they never change it.
         $sidecarBodies = $this->fetcher->nzbSidecarBodies($release, $source, $contents, $groupName);
+        // The other posted tracks' tags, from their first article alone (issue #1278); they never
+        // change the fetch's outcome, and the tag row, rename and preview stay the sampled file's.
+        $trackHeads = $fetched->succeeded()
+            ? $this->fetcher->nzbTrackHeads($release, $source, $contents, $groupName, $tmpPath)
+            : [];
         $this->recordEvidence(
             $releaseAtCapture,
             $source,
@@ -149,6 +154,7 @@ final class AudioReleaseProcessor
             $evidenceTags,
             $this->fingerprint($source, $fetched),
             $sidecarBodies,
+            $this->trackHeadTags($source, $trackHeads),
         );
 
         if ($fetched->declined) {
@@ -316,12 +322,34 @@ final class AudioReleaseProcessor
     }
 
     /**
+     * Each head's tags, as the sampled file's are read, with whether the probe saw the whole file
+     * and the whole file's length.
+     *
+     * @param  array<int, DTO\AudioTrackHead>  $heads  by NZB ordinal
+     * @return array<int, array<string, mixed>> by NZB ordinal
+     */
+    private function trackHeadTags(DTO\AudioSource $source, array $heads): array
+    {
+        $tags = [];
+        foreach ($source->nzbAudioFiles as $file) {
+            $head = $heads[$file->ordinal] ?? null;
+            $evidence = $head === null ? null : $this->tagExtractor->extractEvidence($head->mediaInfo, $file->filename);
+            if ($head !== null && $evidence !== null) {
+                $tags[$file->ordinal] = [...$evidence, 'whole_file' => $head->wholeFile, 'whole_length' => $head->wholeLength];
+            }
+        }
+
+        return $tags;
+    }
+
+    /**
      * Evidence is useful even when preview generation later fails. Its ledger
      * is deliberately best-effort so a local database problem cannot turn a
      * playable source into a failed audio-processing result.
      *
      * @param  array<string, mixed>|null  $sampledTags
      * @param  array<int, string>  $nzbSidecarBodies  CUE sheets and rip logs posted as their own file, by NZB ordinal
+     * @param  array<int, array<string, mixed>>  $nzbTrackTags  the other posted tracks' head tags, by NZB ordinal
      */
     private function recordEvidence(
         Release $release,
@@ -330,9 +358,10 @@ final class AudioReleaseProcessor
         ?array $sampledTags,
         ?AcousticFingerprint $fingerprint,
         array $nzbSidecarBodies = [],
+        array $nzbTrackTags = [],
     ): void {
         try {
-            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags, fingerprint: $fingerprint, nzbSidecarBodies: $nzbSidecarBodies);
+            $this->evidenceRecorder->record($release, $source, $fetchResult, $sampledTags, fingerprint: $fingerprint, nzbSidecarBodies: $nzbSidecarBodies, nzbTrackTags: $nzbTrackTags);
         } catch (\Throwable $exception) {
             Log::debug(
                 'Audio evidence persistence failed for release '.$release->id.': '.$exception->getMessage()

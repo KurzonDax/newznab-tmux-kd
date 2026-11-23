@@ -54,6 +54,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Attribute\Duration;
 use Mhor\MediaInfo\Attribute\Mode;
+use Mhor\MediaInfo\Attribute\Size;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 use Mhor\MediaInfo\MediaInfo;
 use Mhor\MediaInfo\Type\Audio;
@@ -86,6 +87,12 @@ class AudioReleaseProcessorTest extends TestCase
 
     /** @var list<list<string>> */
     private array $encoderCommands = [];
+
+    /** @var list<string|false> the encoder's input file's bytes when each command ran */
+    private array $encoderInputs = [];
+
+    /** @var list<string> the name of each file MediaInfo was asked to read */
+    private array $probedFiles = [];
 
     private bool $renamesFromTags = false;
 
@@ -207,6 +214,8 @@ class AudioReleaseProcessorTest extends TestCase
         $this->timeoutCountsAtDownload = [];
         $this->synchronized = [];
         $this->encoderCommands = [];
+        $this->encoderInputs = [];
+        $this->probedFiles = [];
     }
 
     protected function tearDown(): void
@@ -233,8 +242,9 @@ class AudioReleaseProcessorTest extends TestCase
         $processor->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
 
         // The probe article on its own, then the remaining head in one request; then the
-        // one-article CUE sheet and log, read as evidence (the playlist is not read).
-        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>'], ['<cue>'], ['<log>']], $this->downloads);
+        // one-article CUE sheet and log, read as evidence (the playlist is not read); then the
+        // other track's first article alone.
+        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>'], ['<cue>'], ['<log>'], ['<second-1>']], $this->downloads);
 
         $tags = ReleaseAudioTag::query()->where('releases_id', $release->id)->firstOrFail();
         $this->assertSame('Test Album', $tags->album);
@@ -247,13 +257,233 @@ class AudioReleaseProcessorTest extends TestCase
         $this->assertTrue($evidence->source_file_complete);
         $this->assertTrue($evidence->source_starts_at_zero);
         $this->assertFalse($evidence->whole_duration_reliable);
-        $this->assertTrue($evidence->only_one_track_probed);
+        $this->assertFalse($evidence->only_one_track_probed);
         $this->assertNull($evidence->archive_manifest_complete);
         $this->assertSame('USRC17607839', $evidence->tracks()->where('source_ordinal', 1)->value('isrc'));
         $this->assertSame(
             '11111111-1111-4111-8111-111111111111',
             $evidence->tracks()->where('source_ordinal', 1)->value('musicbrainz_recording_id'),
         );
+    }
+
+    public function test_the_first_article_of_every_other_posted_track_is_read_after_the_sidecars(): void
+    {
+        $release = $this->makeRelease();
+        $nzb = [
+            ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>', '<seg-3>']],
+            ['title' => '"x7Hq2.mp3" yEnc', 'segments' => ['<second-1>', '<second-2>']],
+            ['title' => '"Pz91k.mp3" yEnc', 'segments' => ['<third-1>']],
+            ['title' => '"Album.cue" yEnc', 'segments' => ['<cue>']],
+            ['title' => '"Album.log" yEnc', 'segments' => ['<log>']],
+        ];
+        $sampled = $this->taggedContainer();
+        $this->setTags($sampled, [
+            'MusicBrainz Album Id' => '33333333-3333-4333-8333-333333333333',
+            'MusicBrainz Release Group Id' => '44444444-4444-4444-8444-444444444444',
+            'MusicBrainz Artist Id' => '55555555-5555-4555-8555-555555555555',
+            'BARCODE' => '0123456789012', 'CATALOGNUMBER' => 'CAT-001', 'DISCID' => 'disc-one',
+        ]);
+        $probes = [];
+        foreach ([2 => 'Second Song', 3 => 'Third Song'] as $ordinal => $title) {
+            $probes['track-head-'.$ordinal.'.mp3'] = $this->headContainer('MPEG Audio', null, [
+                'track_name' => $title, 'track_name_position' => (string) $ordinal, 'part_position' => '1',
+                'performer' => 'Head Artist '.$ordinal, 'album' => 'Head Album', 'album_performer' => 'Head Album Artist',
+                'recorded_date' => '2020-0'.$ordinal, 'ISRC' => 'USRC1760784'.$ordinal,
+                'MusicBrainz Recording Id' => $ordinal.$ordinal.$ordinal.$ordinal.'0000-0000-4000-8000-000000000000',
+                'MusicBrainz Album Id' => '99999999-9999-4999-8999-999999999999',
+                'MusicBrainz Release Group Id' => '88888888-8888-4888-8888-888888888888',
+                'MusicBrainz Artist Id' => '77777777-7777-4777-8777-777777777777',
+                'BARCODE' => '9999999999999', 'CATALOGNUMBER' => 'HEAD-9', 'DISCID' => 'disc-head',
+            ]);
+        }
+
+        // Today's capture of the same release: no head is readable.
+        $this->downloadResults = ['<second-1>' => $this->failedDownload(), '<third-1>' => $this->failedDownload()];
+        $this->makeProcessor($sampled, nzbContents: $nzb, probes: $probes)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->downloads = [];
+        $this->downloadResults = [];
+
+        $result = $this->makeProcessor($sampled, nzbContents: $nzb, probes: $probes)->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame([['<seg-1>'], ['<seg-2>', '<seg-3>'], ['<cue>'], ['<log>'], ['<second-1>'], ['<third-1>']], $this->downloads);
+        [$today, $evidence] = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->orderBy('revision')->get()->all();
+        $this->assertFalse($evidence->only_one_track_probed);
+        $this->assertTrue($today->only_one_track_probed);
+        $this->assertSame($this->evidenceRow($today, 1), $this->evidenceRow($evidence, 1), 'the sampled row holds what it holds today');
+        $this->assertSame('33333333-3333-4333-8333-333333333333', $this->evidenceRow($evidence, 1)['musicbrainz_release_id']);
+
+        foreach ([2 => 'Second Song', 3 => 'Third Song'] as $ordinal => $title) {
+            $expected = [
+                'title' => $title, 'performer' => 'Head Artist '.$ordinal, 'album' => 'Head Album', 'album_artist' => 'Head Album Artist',
+                'recorded_date' => '2020-0'.$ordinal, 'track_number' => $ordinal, 'disc_number' => 1, 'isrc' => 'USRC1760784'.$ordinal,
+                'musicbrainz_recording_id' => $ordinal.$ordinal.$ordinal.$ordinal.'0000-0000-4000-8000-000000000000',
+                'musicbrainz_release_id' => null, 'musicbrainz_release_group_id' => null, 'musicbrainz_artist_id' => null,
+                'barcode' => null, 'catalog_number' => null, 'disc_id_like' => null, 'raw_tags' => null,
+            ];
+            $actual = array_intersect_key($this->evidenceRow($evidence, $ordinal), $expected);
+            ksort($expected);
+            ksort($actual);
+            $this->assertSame($expected, $actual, 'ordinal '.$ordinal);
+        }
+    }
+
+    public function test_a_head_keeps_its_length_only_when_it_is_the_whole_files(): void
+    {
+        $release = $this->makeRelease();
+        $files = [
+            2 => ['flac', 2, 'FLAC', null],
+            3 => ['mp3', 2, 'MPEG Audio', 5_000_000],
+            4 => ['mp3', 2, 'MPEG Audio', 2048],
+            5 => ['mp3', 2, 'MPEG Audio', null],
+            6 => ['m4a', 2, 'MPEG-4', 5_000_000],
+            7 => ['m4a', 1, 'MPEG-4', null],
+            8 => ['mp3', 1, 'MPEG Audio', 2048],
+        ];
+        $nzb = [['title' => '"01 - track.flac" yEnc', 'segments' => ['<seg-1>']]];
+        $probes = [];
+        foreach ($files as $ordinal => [$extension, $articles, $format, $streamSize]) {
+            $nzb[] = ['title' => '"file'.$ordinal.'.'.$extension.'" yEnc', 'segments' => array_map(static fn (int $article): string => '<f'.$ordinal.'-'.$article.'>', range(1, $articles)),
+                ...($ordinal === 8 ? ['partstotal' => 17] : [])];
+            $probes['track-head-'.$ordinal.'.'.$extension] = $this->headContainer($format, $streamSize, ['track_name' => 'Song '.$ordinal, 'duration' => new Duration(180_500)]);
+        }
+
+        $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb, probes: $probes)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $evidence = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole();
+        $rows = [];
+        foreach (array_keys($files) as $ordinal) {
+            $row = $this->evidenceRow($evidence, $ordinal);
+            $rows[$ordinal] = [$row['whole_duration_seconds'], $row['whole_duration_reliable'], $row['source_file_complete']];
+        }
+        $this->assertSame([
+            2 => [180.5, 1, 0],  // several articles, FLAC
+            3 => [180.5, 1, 0],  // several articles, MP3 declaring more than the bytes read
+            4 => [null, 0, 0],   // several articles, MP3 declaring no more than the bytes read
+            5 => [null, 0, 0],   // several articles, MP3 declaring no size
+            6 => [null, 0, 0],   // several articles, another format
+            7 => [180.5, 1, 1],  // one article, the whole file
+            8 => [null, 0, 0],   // one article listed of 17 declared parts
+        ], $rows);
+    }
+
+    public function test_an_unreadable_head_leaves_its_row_as_it_is_today_and_never_changes_the_outcome(): void
+    {
+        $release = $this->makeRelease();
+        $nzb = [['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>']]];
+        foreach (range(2, 8) as $ordinal) {
+            $nzb[] = ['title' => '"file'.$ordinal.'.mp3" yEnc', 'segments' => ['<f'.$ordinal.'>']];
+        }
+        $audioOnly = $this->headContainer('MPEG Audio', null, ['track_name' => 'Silent']);
+        $noAudio = new MediaInfoContainer;
+        $noAudio->setGeneral($audioOnly->getGeneral() ?? new General);
+        $video = $this->headContainer('MPEG Audio', null, ['track_name' => 'Video']);
+        $video->add(new Video);
+        $probes = [
+            'track-head-4.mp3' => new \RuntimeException('MediaInfo failed.'),
+            'track-head-5.mp3' => $video,
+            'track-head-6.mp3' => $noAudio,
+            'track-head-8.mp3' => $this->headContainer('MPEG Audio', null, ['track_name' => 'Readable']),
+        ];
+        $unreadable = ['<f2>' => $this->failedDownload(), '<f3>' => $this->failedDownload(), '<f4>' => $this->failedDownload(),
+            '<f5>' => $this->failedDownload(), '<f6>' => $this->failedDownload(), '<f7>' => $this->failedDownload(), '<f8>' => $this->failedDownload()];
+
+        $this->downloadResults = $unreadable;
+        $today = $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb, probes: $probes)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->downloadResults = [
+            '<f2>' => $this->failedDownload(),
+            '<f3>' => ['success' => false, 'data' => str_repeat('x', 2048), 'groupUnavailable' => false, 'error' => 'crc', 'crcFailures' => 1, 'crcFailed' => true],
+        ];
+        mkdir($this->tmpPath.'track-head-7.mp3');
+        $result = $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb, probes: $probes)->process($release->refresh(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(ProcessingOutcome::Completed, $result->outcome);
+        $this->assertSame($today->crcFailures, $result->crcFailures);
+        $this->assertSame(1, (int) DB::table('releases')->where('id', $release->id)->value('haspreview'));
+        [$before, $after] = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->orderBy('revision')->get()->all();
+        foreach (range(2, 7) as $ordinal) {
+            $this->assertSame($this->evidenceRow($before, $ordinal), $this->evidenceRow($after, $ordinal), 'ordinal '.$ordinal);
+        }
+        $this->assertSame('Readable', $this->evidenceRow($after, 8)['title']);
+        $this->assertFalse($after->only_one_track_probed);
+    }
+
+    public function test_up_to_forty_other_tracks_are_read_and_a_release_with_more_is_left_as_it_is_today(): void
+    {
+        foreach ([40 => 40, 41 => 0] as $others => $expectedHeads) {
+            DB::table('releases')->delete();
+            $this->downloads = [];
+            $release = $this->makeRelease();
+            $nzb = [['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>']]];
+            foreach (range(2, $others + 1) as $ordinal) {
+                $nzb[] = ['title' => '"file'.$ordinal.'.mp3" yEnc', 'segments' => ['<f'.$ordinal.'>']];
+            }
+            // An audio entry with no message ids is never read and does not count.
+            $nzb[] = ['title' => '"empty.mp3" yEnc', 'segments' => ['']];
+
+            $this->makeProcessor($this->taggedContainer(), nzbContents: $nzb)->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+            $this->assertCount(1 + $expectedHeads, $this->downloads, $others.' other tracks');
+            $this->assertNotContains([''], $this->downloads);
+            $evidence = ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole();
+            $this->assertSame($expectedHeads === 0, $evidence->only_one_track_probed);
+            $this->assertSame($expectedHeads, $evidence->tracks()->where('source_ordinal', '>', 1)->whereNotNull('album')->count());
+        }
+    }
+
+    public function test_no_head_is_read_for_an_archive_a_video_probe_or_an_incomplete_release(): void
+    {
+        $loose = ['title' => '"02 - loose.flac" yEnc', 'segments' => []];
+        $this->makeProcessor(
+            $this->taggedContainer(),
+            nzbContents: [['title' => '"Invented.Album.rar" yEnc', 'segments' => ['<rar-1>']], $loose],
+            archiveService: $this->archiveWithTrack('01 - Invented Song.flac', declaredSize: 2048, extractedBytes: 2048),
+        )->process($this->makeRelease(), $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->assertSame([['<rar-1>']], $this->downloads, 'an archive source');
+
+        $twoTracks = [
+            ['title' => '"01 - track.mp3" yEnc', 'segments' => ['<seg-1>', '<seg-2>']],
+            ['title' => '"02 - track.mp3" yEnc', 'segments' => ['<second-1>']],
+        ];
+        DB::table('releases')->delete();
+        $this->downloads = [];
+        $this->makeProcessor($this->videoContainer(), expectsPreview: false, expectsExtraXml: false, nzbContents: $twoTracks)
+            ->process($this->makeRelease(), $this->tmpPath, 'alt.binaries.multimedia');
+        $this->assertSame([['<seg-1>']], $this->downloads, 'a video probe');
+
+        DB::table('releases')->delete();
+        $this->downloads = [];
+        $this->makeProcessor($this->taggedContainer(), expectsPreview: false, expectsExtraXml: false, nzbContents: $twoTracks)
+            ->process($this->makeRelease(['completion' => 50]), $this->tmpPath, 'alt.binaries.sounds.lossless');
+        $this->assertSame([], $this->downloads, 'an incomplete release');
+    }
+
+    public function test_heads_are_read_beside_the_sampled_file_and_leave_nothing_behind(): void
+    {
+        $release = $this->makeRelease();
+        $this->downloadResults = [
+            '<second-1>' => ['success' => true, 'data' => str_repeat('h', 1024), 'groupUnavailable' => false, 'error' => null, 'crcFailures' => 0, 'crcFailed' => false],
+            '<third-1>' => ['success' => true, 'data' => str_repeat('h', 1024), 'groupUnavailable' => false, 'error' => null, 'crcFailures' => 0, 'crcFailed' => false],
+        ];
+        $this->makeProcessor($this->taggedContainer(), nzbContents: [
+            ['title' => '"01 - track.flac" yEnc', 'segments' => ['<seg-1>', '<seg-2>']],
+            ['title' => '"02 - track.flac" yEnc', 'segments' => ['<second-1>', '<second-2>']],
+            ['title' => '"03 - track.flac" yEnc', 'segments' => ['<third-1>']],
+        ], probes: [
+            'track-head-2.flac' => $this->headContainer('FLAC', null, ['track_name' => 'Two']),
+            'track-head-3.flac' => $this->headContainer('FLAC', null, ['track_name' => 'Three']),
+        ])->process($release, $this->tmpPath, 'alt.binaries.sounds.lossless');
+
+        $this->assertSame(['audio.flac', 'audio.flac', 'track-head-2.flac', 'track-head-3.flac'], $this->probedFiles);
+        $inputs = array_filter($this->encoderInputs, static fn (string|false $input): bool => $input !== false);
+        $this->assertNotSame([], $inputs);
+        foreach ($inputs as $input) {
+            $this->assertSame(str_repeat('x', 4096), $input, 'the preview is made from the sampled file\'s bytes');
+        }
+        $this->assertSame([], glob($this->tmpPath.'track-head-*') ?: []);
+        $this->assertSame(['Two', 'Three'], ReleaseAudioEvidence::query()->where('releases_id', $release->id)->sole()
+            ->tracks()->where('source_ordinal', '>', 1)->orderBy('source_ordinal')->pluck('title')->all());
     }
 
     public function test_audio_processing_captures_the_sampled_file_as_a_complete_snapshot(): void
@@ -1117,6 +1347,8 @@ class AudioReleaseProcessorTest extends TestCase
 
     /**
      * @param  list<array<string, mixed>>|null  $nzbContents
+     * @param  array<string, MediaInfoContainer|\Throwable>  $probes  a probe's container (or what it throws) by the
+     *                                                                probed file's name; any other probe reads $container
      */
     private function makeProcessor(
         MediaInfoContainer $container,
@@ -1139,6 +1371,7 @@ class AudioReleaseProcessorTest extends TestCase
         ?ArchiveExtractionService $archiveService = null,
         float $decodableSeconds = 0.0,
         ?AcousticFingerprintGenerator $fingerprints = null,
+        array $probes = [],
     ): AudioReleaseProcessor {
         $config = $this->config($maxArchiveBytes, $minimumCompletionPercent);
 
@@ -1175,19 +1408,26 @@ class AudioReleaseProcessorTest extends TestCase
         );
 
         $mediaInfo = Mockery::mock(MediaInfo::class);
-        if ($completeProbeThrows) {
-            $probeCount = 0;
-            $mediaInfo->shouldReceive('getInfo')->andReturnUsing(function () use ($container, &$probeCount): MediaInfoContainer {
+        $probeCount = 0;
+        $mediaInfo->shouldReceive('getInfo')->andReturnUsing(
+            function (string $path) use ($container, $completeContainer, $completeProbeThrows, $probes, &$probeCount): MediaInfoContainer {
+                $this->probedFiles[] = basename($path);
+                $probe = $probes[basename($path)] ?? null;
+                if ($probe instanceof \Throwable) {
+                    throw $probe;
+                }
+                if ($probe !== null) {
+                    return $probe;
+                }
+
                 $probeCount++;
-                if ($probeCount > 1) {
+                if ($probeCount > 1 && $completeProbeThrows) {
                     throw new \RuntimeException('Complete-file probe failed.');
                 }
 
-                return $container;
-            });
-        } else {
-            $mediaInfo->shouldReceive('getInfo')->andReturn($container, $completeContainer ?? $container);
-        }
+                return $probeCount === 1 ? $container : ($completeContainer ?? $container);
+            },
+        );
         $tools = new MediaTools;
         (new ReflectionProperty(MediaTools::class, 'mediaInfo'))->setValue($tools, $mediaInfo);
 
@@ -1267,6 +1507,8 @@ class AudioReleaseProcessorTest extends TestCase
         $driver = Mockery::mock(FFMpegDriver::class);
         $driver->shouldReceive('command')->andReturnUsing(function (array $command) use ($commandFails): string {
             $this->encoderCommands[] = array_values(array_map('strval', $command));
+            $input = array_search('-i', $command, true);
+            $this->encoderInputs[] = $input === false ? false : @file_get_contents((string) $command[$input + 1]);
             if ($commandFails) {
                 throw new \RuntimeException('Forced ffmpeg WavPack decode failure.');
             }
@@ -1388,6 +1630,60 @@ class AudioReleaseProcessorTest extends TestCase
         }
 
         return $config;
+    }
+
+    /**
+     * One stored `nzb` row of a revision, without its own and its revision's ids.
+     *
+     * @return array<string, mixed>
+     */
+    private function evidenceRow(ReleaseAudioEvidence $evidence, int $ordinal): array
+    {
+        $row = (array) DB::table('release_audio_evidence_tracks')
+            ->where('release_audio_evidence_id', $evidence->id)->where('source_kind', 'nzb')->where('source_ordinal', $ordinal)->sole();
+
+        return array_diff_key($row, ['id' => true, 'release_audio_evidence_id' => true, 'created_at' => true, 'updated_at' => true]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function failedDownload(): array
+    {
+        return ['success' => false, 'data' => null, 'groupUnavailable' => false, 'error' => 'missing', 'crcFailures' => 0, 'crcFailed' => false];
+    }
+
+    /**
+     * @param  array<string, mixed>  $tags
+     */
+    private function setTags(MediaInfoContainer $container, array $tags): void
+    {
+        foreach ($tags as $key => $value) {
+            $container->getGeneral()?->set($key, $value);
+        }
+    }
+
+    /**
+     * Another posted track's first article as MediaInfo reads it.
+     *
+     * @param  int|null  $streamSize  the audio track's declared stream size in bytes; null leaves it out
+     * @param  array<string, mixed>  $tags
+     */
+    private function headContainer(string $format, ?int $streamSize, array $tags = []): MediaInfoContainer
+    {
+        $general = new General;
+        $general->set('format', new Mode($format, $format));
+        $general->set('duration', new Duration(7_500));
+        $container = new MediaInfoContainer;
+        $container->setGeneral($general);
+        $this->setTags($container, $tags);
+        $audio = new Audio;
+        if ($streamSize !== null) {
+            $audio->set('stream_size', new Size($streamSize));
+        }
+        $container->add($audio);
+
+        return $container;
     }
 
     private function taggedContainer(): MediaInfoContainer

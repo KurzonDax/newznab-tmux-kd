@@ -12,6 +12,7 @@ use App\Services\AdditionalProcessing\PostedFileClassifier;
 use App\Services\AdditionalProcessing\UsenetDownloadService;
 use App\Services\AudioProcessing\DTO\AudioFetchResult;
 use App\Services\AudioProcessing\DTO\AudioSource;
+use App\Services\AudioProcessing\DTO\AudioTrackHead;
 use App\Services\AudioProcessing\Enums\AudioSourceKind;
 use App\Services\AudioProcessing\Exceptions\WavPackDecoderUnavailable;
 use App\Services\AudioProcessing\Sidecars\SidecarText;
@@ -20,6 +21,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Mhor\MediaInfo\Attribute\Duration;
+use Mhor\MediaInfo\Attribute\Mode;
+use Mhor\MediaInfo\Attribute\Size;
 use Mhor\MediaInfo\Container\MediaInfoContainer;
 
 /**
@@ -49,6 +52,9 @@ final class AudioFetcher
 
     /** CUE sheets and rip logs posted as their own NZB file downloaded per capture (at most 4 seen on one release). */
     public const int MAX_NZB_SIDECAR_DOWNLOADS = 8;
+
+    /** Other audio files probed per capture; a release with more is left as it is today. */
+    public const int MAX_NZB_TRACK_HEAD_DOWNLOADS = 40;
 
     private int $crcFailures = 0;
 
@@ -166,6 +172,97 @@ final class AudioFetcher
         }
 
         return $bodies;
+    }
+
+    /**
+     * The first article of every other audio file posted as its own NZB file, probed with MediaInfo
+     * (issue #1278), so the matcher sees the whole track list. Each is downloaded alone, written
+     * beside the sampled file under its own name, probed and deleted. A file that cannot be
+     * downloaded, written or probed, or whose probe finds video or no audio, is skipped and never
+     * changes the capture's outcome; a release with more than MAX_NZB_TRACK_HEAD_DOWNLOADS such
+     * files is left as it is today.
+     *
+     * @param  list<array<string, mixed>>  $nzbContents  the parsed NZB the source was selected from
+     * @return array<int, AudioTrackHead> by NZB ordinal
+     */
+    public function nzbTrackHeads(Release $release, AudioSource $source, array $nzbContents, string $groupName, string $tmpPath): array
+    {
+        if ($source->kind !== AudioSourceKind::BareFile) {
+            return [];
+        }
+
+        $sampledFirst = $source->firstPartSegments()[0] ?? null;
+        $files = [];
+        foreach ($source->nzbAudioFiles as $file) {
+            $segments = array_values(array_filter(
+                array_map('strval', is_array($nzbContents[$file->ordinal - 1]['segments'] ?? null) ? $nzbContents[$file->ordinal - 1]['segments'] : []),
+                static fn (string $messageId): bool => $messageId !== '',
+            ));
+            if ($segments !== [] && $segments[0] !== $sampledFirst) {
+                $files[] = ['file' => $file, 'segments' => $segments];
+            }
+        }
+        if ($files === [] || count($files) > self::MAX_NZB_TRACK_HEAD_DOWNLOADS) {
+            return [];
+        }
+
+        $heads = [];
+        foreach ($files as ['file' => $file, 'segments' => $segments]) {
+            try {
+                $result = $this->downloadService->download(DownloadKind::Audio, [$segments[0]], $groupName, (int) $release->id, $file->filename);
+            } catch (\Throwable $exception) {
+                Log::debug('Audio track head download failed for release '.$release->id.': '.$exception->getMessage());
+
+                continue;
+            }
+            $data = $result['data'] ?? null;
+            if (($result['success'] ?? false) !== true || ($result['crcFailed'] ?? false) === true || ! is_string($data) || $data === '') {
+                continue;
+            }
+
+            $extension = strtolower(pathinfo($file->filename, PATHINFO_EXTENSION)) ?: 'audio';
+            $path = $tmpPath.'track-head-'.$file->ordinal.'.'.$extension;
+            try {
+                try {
+                    if (File::put($path, $data) === false) {
+                        continue;
+                    }
+                    $container = $this->mediaTools->mediaInfo()->getInfo($path, false);
+                    if ($container->getVideos() !== [] || $container->getAudios() === []) {
+                        continue;
+                    }
+                    $wholeFile = count($segments) === 1 && (int) ($file->facts['parts_total'] ?? 1) <= 1;
+                    $heads[$file->ordinal] = new AudioTrackHead(
+                        $container,
+                        $wholeFile,
+                        $wholeFile || $this->headLengthIsWhole($container, strlen($data)),
+                    );
+                } finally {
+                    File::delete($path);
+                }
+            } catch (\Throwable $exception) {
+                Log::debug('Audio track head probe failed for release '.$release->id.': '.$exception->getMessage());
+            }
+        }
+
+        return $heads;
+    }
+
+    /**
+     * Whether a probe of part of a file reports the whole file's length: FLAC reads it from its
+     * header; MP3 does when its audio stream declares more bytes than were probed.
+     */
+    private function headLengthIsWhole(MediaInfoContainer $container, int $probedBytes): bool
+    {
+        $format = $container->getGeneral()?->get('format');
+        $format = $format instanceof Mode ? $format->getFullName() : (is_string($format) ? $format : null);
+        if ($format === 'FLAC') {
+            return true;
+        }
+
+        $streamSize = ($container->getAudios()[0] ?? null)?->get('stream_size');
+
+        return $format === 'MPEG Audio' && $streamSize instanceof Size && $streamSize->getBit() > $probedBytes;
     }
 
     /**
